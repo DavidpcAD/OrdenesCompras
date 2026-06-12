@@ -1,0 +1,224 @@
+"use client";
+
+import { useParams, useRouter } from "next/navigation";
+import { useMemo, useState } from "react";
+import { AppShell } from "@/components/shell";
+import { Badge, Button, Card, Field, Input, Modal, useToast } from "@/components/ui";
+import { useStore } from "@/lib/store";
+import { CRC, distribuirCargo, num, ordenLineaPendiente, todayISO } from "@/lib/helpers";
+
+export default function RegistrarFacturaPage() {
+  const { id } = useParams<{ id: string }>();
+  const router = useRouter();
+  const toast = useToast();
+  const { ordenes, proveedores, registrarRecepcion } = useStore();
+
+  const orden = ordenes.find((o) => o.id === id);
+
+  const articulo = (orden?.lineas ?? []).filter((l) => l.tipo === "articulo");
+  const cargo = (orden?.lineas ?? []).find((l) => l.tipo === "cargo");
+
+  const [recibir, setRecibir] = useState<Record<string, string>>(() => {
+    const init: Record<string, string> = {};
+    (orden?.lineas ?? []).filter((l) => l.tipo === "articulo").forEach((l) => {
+      init[l.id] = String(ordenLineaPendiente(l));
+    });
+    return init;
+  });
+  const [numeroFactura, setNumeroFactura] = useState("");
+  const [fechaFactura, setFechaFactura] = useState(todayISO());
+  const [fechaRegistro, setFechaRegistro] = useState(todayISO());
+  const [fechaRecepcion, setFechaRecepcion] = useState(todayISO());
+  const [preview, setPreview] = useState(false);
+
+  // ¿esta recepción completa toda la orden?
+  const completaOrden = useMemo(() => {
+    if (!orden) return false;
+    return articulo.every((l) => {
+      const rec = Number(recibir[l.id] || 0);
+      return l.cantidadRecibida + rec >= l.cantidad - 1e-9;
+    });
+  }, [orden, articulo, recibir]);
+
+  const subtotalRecibido = useMemo(
+    () => articulo.reduce((s, l) => s + Number(recibir[l.id] || 0) * l.precioUnitario, 0),
+    [articulo, recibir]
+  );
+  // el flete solo se factura cuando se completa la orden (regla de BC)
+  const fleteAplicado = completaOrden && cargo ? cargo.precioUnitario : 0;
+  const totalFactura = subtotalRecibido + fleteAplicado;
+  const algoRecibido = articulo.some((l) => Number(recibir[l.id] || 0) > 0);
+  const fechasCoinciden = fechaFactura === fechaRegistro;
+
+  if (!orden) {
+    return <AppShell role="facturacion"><main className="page"><div className="empty">Orden no encontrada.</div></main></AppShell>;
+  }
+  const prov = proveedores.find((p) => p.id === orden.proveedorId);
+
+  // distribución del flete sobre lo recibido (informativo)
+  const distrib = fleteAplicado
+    ? distribuirCargo(fleteAplicado, articulo.map((l) => ({ ...l, cantidad: Number(recibir[l.id] || 0) })))
+    : {};
+
+  function registrar() {
+    if (!numeroFactura.trim()) { toast("Ingresá el número de factura.", "error"); return; }
+    if (!algoRecibido) { toast("Indicá al menos una cantidad a recibir.", "error"); return; }
+    const lineas = articulo
+      .filter((l) => Number(recibir[l.id] || 0) > 0)
+      .map((l) => ({ ordenLineaId: l.id, cantidadRecibida: Number(recibir[l.id]) }));
+    if (completaOrden && cargo) lineas.push({ ordenLineaId: cargo.id, cantidadRecibida: cargo.cantidad });
+
+    registrarRecepcion({
+      ordenId: orden!.id, numeroFactura: numeroFactura.trim(),
+      fechaFactura, fechaRecepcion, fechaRegistro, total: totalFactura, lineas,
+    });
+    toast(`Factura ${numeroFactura} registrada${completaOrden ? " — orden completada" : " (parcial)"}`, "success");
+    router.push(`/facturacion`);
+  }
+
+  return (
+    <AppShell role="facturacion">
+      <main className="page">
+        <div className="back-link" onClick={() => router.push("/facturacion")}>‹ Volver a órdenes por recibir</div>
+        <div className="page__head">
+          <div className="page__title">
+            <h1 className="ds-heading">Registrar factura · {orden.numero}</h1>
+            <p className="ds-muted">{prov?.code} · {prov?.nombre}</p>
+          </div>
+        </div>
+
+        <Card>
+          <h3 className="ds-subtitle" style={{ marginBottom: 16 }}>Datos de la factura</h3>
+          <div className="grid-2">
+            <Field label="N.º de factura del proveedor">
+              <Input value={numeroFactura} onChange={(e) => setNumeroFactura(e.target.value)} placeholder="Ej. F-0099281" />
+            </Field>
+            <Field label="Fecha de recepción en bodega">
+              <Input type="date" value={fechaRecepcion} onChange={(e) => setFechaRecepcion(e.target.value)} />
+            </Field>
+            <Field label="Fecha de la factura">
+              <Input type="date" value={fechaFactura} onChange={(e) => { setFechaFactura(e.target.value); setFechaRegistro(e.target.value); }} />
+            </Field>
+            <Field label="Fecha de registro (contable)"
+              warning={!fechasCoinciden}
+              help={fechasCoinciden ? "Coincide con la fecha de factura ✓" : "Debe coincidir con la fecha de factura para que cuadre con el estado de cuenta del proveedor."}>
+              <Input type="date" value={fechaRegistro} onChange={(e) => setFechaRegistro(e.target.value)} />
+            </Field>
+          </div>
+        </Card>
+
+        <Card className="mt-4" style={{ padding: 0, overflow: "hidden" }}>
+          <div className="ds-table-wrap" style={{ boxShadow: "none" }}>
+            <table className="ds-table">
+              <thead>
+                <tr>
+                  <th>Artículo</th><th>Almacén</th>
+                  <th className="ds-num">Ordenado</th><th className="ds-num">Ya recibido</th>
+                  <th className="ds-num">Pendiente</th><th className="ds-num">Cantidad a recibir</th>
+                  <th className="ds-num">A facturar</th>
+                </tr>
+              </thead>
+              <tbody>
+                {articulo.map((l) => {
+                  const pend = ordenLineaPendiente(l);
+                  const val = Number(recibir[l.id] || 0);
+                  const importe = val * l.precioUnitario;
+                  return (
+                    <tr key={l.id} className={pend > 0 && val < pend ? "row-pending" : ""}>
+                      <td>{l.descripcion}</td>
+                      <td className="ds-muted">{l.almacen}</td>
+                      <td className="ds-num">{num.format(l.cantidad)} {l.unidad}</td>
+                      <td className="ds-num">{num.format(l.cantidadRecibida)}</td>
+                      <td className="ds-num">{pend > 0 ? <span className="ds-pending-text">{num.format(pend)}</span> : "0"}</td>
+                      <td className="ds-num">
+                        <input className="ds-cell-input" type="number" min={0} max={pend} value={recibir[l.id] ?? ""}
+                          onChange={(e) => setRecibir((r) => ({ ...r, [l.id]: e.target.value }))} />
+                      </td>
+                      <td className="ds-num ds-strong">{CRC.format(importe || 0)}</td>
+                    </tr>
+                  );
+                })}
+                {cargo && (
+                  <tr style={{ opacity: completaOrden ? 1 : 0.5 }}>
+                    <td><Badge tone="yellow">Cargo</Badge> {cargo.descripcion}</td>
+                    <td className="ds-muted">{cargo.almacen}</td>
+                    <td className="ds-num">{num.format(cargo.cantidad)}</td>
+                    <td className="ds-num">{num.format(cargo.cantidadRecibida)}</td>
+                    <td className="ds-num">—</td>
+                    <td className="ds-num">{completaOrden ? num.format(cargo.cantidad) : "—"}</td>
+                    <td className="ds-num ds-strong">{CRC.format(fleteAplicado)}</td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+
+        {cargo && !completaOrden && (
+          <Card flat className="mt-4 ds-form-field--advertencia">
+            <div className="row gap-3">
+              <span style={{ fontSize: 20 }}>⚠️</span>
+              <div>
+                <div className="ds-strong">El flete corresponde a toda la orden</div>
+                <p className="ds-label ds-muted">
+                  Como esta es una entrega parcial, el flete (cargo de producto) no se factura todavía: se aplica
+                  proporcionalmente solo cuando se recibe la orden completa. Las líneas faltantes quedan pendientes en rojo.
+                </p>
+              </div>
+            </div>
+          </Card>
+        )}
+
+        <div className="row row--between wrap gap-4 mt-6" style={{ alignItems: "flex-end" }}>
+          <div className="totals" style={{ minWidth: 320 }}>
+            <div className="totals__row"><span>Subtotal recibido</span><span>{CRC.format(subtotalRecibido)}</span></div>
+            <div className="totals__row"><span>Flete</span><span>{CRC.format(fleteAplicado)}</span></div>
+            <div className="totals__row totals__row--grand" style={{ gridColumn: "1 / -1" }}>
+              <span>Total factura</span><span>{CRC.format(totalFactura)}</span>
+            </div>
+            <div style={{ gridColumn: "1 / -1" }}>
+              {completaOrden ? <Badge tone="green">Recepción completa</Badge> : <Badge tone="yellow">Recepción parcial — la orden queda abierta</Badge>}
+            </div>
+          </div>
+          <div className="row gap-3">
+            <Button variant="outline" onClick={() => setPreview(true)} disabled={!algoRecibido}>Vista previa</Button>
+            <Button variant="red" onClick={registrar} disabled={!algoRecibido || !numeroFactura.trim()}>Registrar factura</Button>
+          </div>
+        </div>
+
+        {preview && (
+          <Modal
+            title="Vista previa del registro"
+            onClose={() => setPreview(false)}
+            footer={<>
+              <Button variant="outline" onClick={() => setPreview(false)}>Cerrar</Button>
+              <Button variant="red" onClick={() => { setPreview(false); registrar(); }} disabled={!numeroFactura.trim()}>Confirmar y registrar</Button>
+            </>}
+          >
+            <p className="ds-label">Factura del proveedor <span className="ds-strong">{prov?.nombre}</span> por:</p>
+            <h2 className="ds-heading" style={{ margin: "8px 0 16px" }}>{CRC.format(totalFactura)}</h2>
+            <div className="ds-table-wrap" style={{ boxShadow: "none", border: "1.5px solid var(--ds-color-gray-100)" }}>
+              <table className="ds-table">
+                <thead><tr><th>Concepto</th><th className="ds-num">Cant.</th><th className="ds-num">Importe</th></tr></thead>
+                <tbody>
+                  {articulo.filter((l) => Number(recibir[l.id] || 0) > 0).map((l) => (
+                    <tr key={l.id}>
+                      <td>{l.descripcion}{distrib[l.id] ? <div className="ds-body-sm ds-muted">+ flete {CRC.format(distrib[l.id])}</div> : null}</td>
+                      <td className="ds-num">{num.format(Number(recibir[l.id]))}</td>
+                      <td className="ds-num">{CRC.format(Number(recibir[l.id]) * l.precioUnitario)}</td>
+                    </tr>
+                  ))}
+                  {fleteAplicado > 0 && <tr><td>{cargo?.descripcion}</td><td className="ds-num">1</td><td className="ds-num">{CRC.format(fleteAplicado)}</td></tr>}
+                </tbody>
+              </table>
+            </div>
+            <p className="ds-body-sm ds-muted mt-4">
+              Verificá que el total físico de la factura coincida. Fecha de registro: {fechaRegistro}
+              {!fechasCoinciden && " ⚠️ no coincide con la fecha de factura"}.
+            </p>
+          </Modal>
+        )}
+      </main>
+    </AppShell>
+  );
+}
