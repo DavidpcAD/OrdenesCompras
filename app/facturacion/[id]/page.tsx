@@ -4,8 +4,9 @@ import { useParams, useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 import { AppShell } from "@/components/shell";
 import { Badge, Button, Card, Field, Input, Modal, useToast } from "@/components/ui";
+import { IconWarning } from "@/components/icons";
 import { useStore } from "@/lib/store";
-import { CRC, distribuirCargo, num, ordenLineaPendiente, todayISO } from "@/lib/helpers";
+import { money, distribuirCargo, num, ordenLineaPendiente, todayISO } from "@/lib/helpers";
 
 export default function RegistrarFacturaPage() {
   const { id } = useParams<{ id: string }>();
@@ -134,7 +135,7 @@ export default function RegistrarFacturaPage() {
                         <input className="ds-cell-input" type="number" min={0} max={pend} value={recibir[l.id] ?? ""}
                           onChange={(e) => setRecibir((r) => ({ ...r, [l.id]: e.target.value }))} />
                       </td>
-                      <td className="ds-num ds-strong">{CRC.format(importe || 0)}</td>
+                      <td className="ds-num ds-strong">{money(importe || 0, orden.currencyCode)}</td>
                     </tr>
                   );
                 })}
@@ -146,7 +147,7 @@ export default function RegistrarFacturaPage() {
                     <td className="ds-num">{num.format(cargo.cantidadRecibida)}</td>
                     <td className="ds-num">—</td>
                     <td className="ds-num">{completaOrden ? num.format(cargo.cantidad) : "—"}</td>
-                    <td className="ds-num ds-strong">{CRC.format(fleteAplicado)}</td>
+                    <td className="ds-num ds-strong">{money(fleteAplicado, orden.currencyCode)}</td>
                   </tr>
                 )}
               </tbody>
@@ -157,7 +158,7 @@ export default function RegistrarFacturaPage() {
         {cargo && !completaOrden && (
           <Card flat className="mt-4 ds-form-field--advertencia">
             <div className="row gap-3">
-              <span style={{ fontSize: 20 }}>⚠️</span>
+              <span style={{ color: "var(--ds-color-red-200)" }}><IconWarning /></span>
               <div>
                 <div className="ds-strong">El flete corresponde a toda la orden</div>
                 <p className="ds-label ds-muted">
@@ -171,10 +172,10 @@ export default function RegistrarFacturaPage() {
 
         <div className="row row--between wrap gap-4 mt-6" style={{ alignItems: "flex-end" }}>
           <div className="totals" style={{ minWidth: 320 }}>
-            <div className="totals__row"><span>Subtotal recibido</span><span>{CRC.format(subtotalRecibido)}</span></div>
-            <div className="totals__row"><span>Flete</span><span>{CRC.format(fleteAplicado)}</span></div>
+            <div className="totals__row"><span>Subtotal recibido</span><span>{money(subtotalRecibido, orden.currencyCode)}</span></div>
+            <div className="totals__row"><span>Flete</span><span>{money(fleteAplicado, orden.currencyCode)}</span></div>
             <div className="totals__row totals__row--grand" style={{ gridColumn: "1 / -1" }}>
-              <span>Total factura</span><span>{CRC.format(totalFactura)}</span>
+              <span>Total factura</span><span>{money(totalFactura, orden.currencyCode)}</span>
             </div>
             <div style={{ gridColumn: "1 / -1" }}>
               {completaOrden ? <Badge tone="green">Recepción completa</Badge> : <Badge tone="yellow">Recepción parcial — la orden queda abierta</Badge>}
@@ -196,25 +197,25 @@ export default function RegistrarFacturaPage() {
             </>}
           >
             <p className="ds-label">Factura del proveedor <span className="ds-strong">{prov?.nombre}</span> por:</p>
-            <h2 className="ds-heading" style={{ margin: "8px 0 16px" }}>{CRC.format(totalFactura)}</h2>
+            <h2 className="ds-heading" style={{ margin: "8px 0 16px" }}>{money(totalFactura, orden.currencyCode)}</h2>
             <div className="ds-table-wrap" style={{ boxShadow: "none", border: "1.5px solid var(--ds-color-gray-100)" }}>
               <table className="ds-table">
                 <thead><tr><th>Concepto</th><th className="ds-num">Cant.</th><th className="ds-num">Importe</th></tr></thead>
                 <tbody>
                   {articulo.filter((l) => Number(recibir[l.id] || 0) > 0).map((l) => (
                     <tr key={l.id}>
-                      <td>{l.descripcion}{distrib[l.id] ? <div className="ds-body-sm ds-muted">+ flete {CRC.format(distrib[l.id])}</div> : null}</td>
+                      <td>{l.descripcion}{distrib[l.id] ? <div className="ds-body-sm ds-muted">+ flete {money(distrib[l.id], orden.currencyCode)}</div> : null}</td>
                       <td className="ds-num">{num.format(Number(recibir[l.id]))}</td>
-                      <td className="ds-num">{CRC.format(Number(recibir[l.id]) * l.precioUnitario)}</td>
+                      <td className="ds-num">{money(Number(recibir[l.id]) * l.precioUnitario, orden.currencyCode)}</td>
                     </tr>
                   ))}
-                  {fleteAplicado > 0 && <tr><td>{cargo?.descripcion}</td><td className="ds-num">1</td><td className="ds-num">{CRC.format(fleteAplicado)}</td></tr>}
+                  {fleteAplicado > 0 && <tr><td>{cargo?.descripcion}</td><td className="ds-num">1</td><td className="ds-num">{money(fleteAplicado, orden.currencyCode)}</td></tr>}
                 </tbody>
               </table>
             </div>
             <p className="ds-body-sm ds-muted mt-4">
               Verificá que el total físico de la factura coincida. Fecha de registro: {fechaRegistro}
-              {!fechasCoinciden && " ⚠️ no coincide con la fecha de factura"}.
+              {!fechasCoinciden && " — no coincide con la fecha de factura"}.
             </p>
           </Modal>
         )}

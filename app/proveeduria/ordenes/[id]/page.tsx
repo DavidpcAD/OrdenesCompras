@@ -5,7 +5,7 @@ import { AppShell } from "@/components/shell";
 import { Badge, Button, Card, useToast } from "@/components/ui";
 import { OrderLinesTable } from "@/components/order-lines";
 import { useStore } from "@/lib/store";
-import { CRC, formatDate, ordenBadge, ordenRecibidoPct, ordenSubtotal } from "@/lib/helpers";
+import { money, formatDate, ordenBadge, ordenRecibidoPct } from "@/lib/helpers";
 
 export default function ProvOrdenDetallePage() {
   const { id } = useParams<{ id: string }>();
@@ -65,9 +65,9 @@ export default function ProvOrdenDetallePage() {
 
         <div className="row mt-6" style={{ justifyContent: "flex-end" }}>
           <div className="totals" style={{ minWidth: 320 }}>
-            <div className="totals__row"><span>Subtotal artículos</span><span>{CRC.format(subtotal)}</span></div>
-            <div className="totals__row"><span>Flete</span><span>{CRC.format(flete)}</span></div>
-            <div className="totals__row totals__row--grand" style={{ gridColumn: "1 / -1" }}><span>Total orden</span><span>{CRC.format(subtotal + flete)}</span></div>
+            <div className="totals__row"><span>Subtotal artículos</span><span>{money(subtotal, orden.currencyCode)}</span></div>
+            <div className="totals__row"><span>Flete</span><span>{money(flete, orden.currencyCode)}</span></div>
+            <div className="totals__row totals__row--grand" style={{ gridColumn: "1 / -1" }}><span>Total orden</span><span>{money(subtotal + flete, orden.currencyCode)}</span></div>
           </div>
         </div>
 
@@ -85,7 +85,7 @@ export default function ProvOrdenDetallePage() {
                       <td className="ds-strong">{r.numeroFactura}</td>
                       <td>{formatDate(r.fechaFactura)}</td>
                       <td>{formatDate(r.fechaRegistro)}</td>
-                      <td className="ds-num">{CRC.format(r.total)}</td>
+                      <td className="ds-num">{money(r.total, orden.currencyCode)}</td>
                       <td>{r.parcial ? <Badge tone="yellow">Parcial</Badge> : <Badge tone="green">Completa</Badge>}</td>
                     </tr>
                   ))}

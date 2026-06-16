@@ -1,5 +1,11 @@
 import type { Orden, OrdenLinea, Pedido, PedidoLinea } from "./types";
 
+export function destinoLabel(p: Pedido): string {
+  return p.tipoSolicitud === "repuesto"
+    ? `${p.maquinaNombre ?? p.maquinaNo ?? "Máquina"}`
+    : `${p.obraNombre ?? p.obraCodigo ?? "Obra"}`;
+}
+
 export const CRC = new Intl.NumberFormat("es-CR", {
   style: "currency",
   currency: "CRC",
@@ -7,6 +13,11 @@ export const CRC = new Intl.NumberFormat("es-CR", {
 });
 
 export const num = new Intl.NumberFormat("es-CR", { maximumFractionDigits: 2 });
+
+export function money(amount: number, currencyCode?: string): string {
+  const cur = currencyCode && currencyCode.trim() ? currencyCode : "CRC";
+  return new Intl.NumberFormat("es-CR", { style: "currency", currency: cur, minimumFractionDigits: 2 }).format(amount || 0);
+}
 
 export function formatDate(iso: string): string {
   if (!iso) return "—";

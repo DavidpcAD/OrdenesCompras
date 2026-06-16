@@ -6,23 +6,23 @@ import { useEffect } from "react";
 import { useStore } from "@/lib/store";
 import type { Role } from "@/lib/types";
 
-const ROLE_META: Record<Role, { label: string; home: string; nav: { href: string; label: string }[]; color: string }> = {
+const ROLE_META: Record<Role, { label: string; persona: string; home: string; nav: { href: string; label: string }[]; color: string }> = {
   ingenieria: {
-    label: "Ingeniería", home: "/ingenieria", color: "var(--ds-color-green-100)",
+    label: "Ingeniería", persona: "Laura", home: "/ingenieria", color: "var(--ds-color-green-100)",
     nav: [
-      { href: "/ingenieria", label: "Mis pedidos" },
-      { href: "/ingenieria/nuevo", label: "Nuevo pedido" },
+      { href: "/ingenieria", label: "Mis solicitudes" },
+      { href: "/ingenieria/nuevo", label: "Nueva solicitud" },
     ],
   },
   proveeduria: {
-    label: "Proveeduría", home: "/proveeduria", color: "var(--ds-color-yellow)",
+    label: "Proveeduría", persona: "Angie", home: "/proveeduria", color: "var(--ds-color-yellow)",
     nav: [
-      { href: "/proveeduria", label: "Pedidos por ordenar" },
+      { href: "/proveeduria", label: "Materiales solicitados" },
       { href: "/proveeduria/ordenes", label: "Órdenes" },
     ],
   },
   facturacion: {
-    label: "Facturación", home: "/facturacion", color: "var(--ds-color-red-100)",
+    label: "Bodega", persona: "Kattya", home: "/facturacion", color: "var(--ds-color-red-100)",
     nav: [
       { href: "/facturacion", label: "Órdenes por recibir" },
       { href: "/facturacion/archivo", label: "Archivo / recepciones" },
@@ -66,11 +66,11 @@ export function AppShell({ role, children }: { role: Role; children: React.React
         </nav>
         <div className="topbar__spacer" />
         <div className="topbar__user">
-          <span className="ds-badge" style={{ background: meta.color, color: "#000" }}>{meta.label}</span>
+          <span className="ds-badge" style={{ background: meta.color, color: "#000" }}>{meta.label} · {meta.persona}</span>
           <button className="link-btn" onClick={() => { setRole(null); router.replace("/"); }}>
             Cambiar rol
           </button>
-          <span className="topbar__avatar">DC</span>
+          <span className="topbar__avatar">{meta.persona.slice(0, 2).toUpperCase()}</span>
         </div>
       </header>
       {children}

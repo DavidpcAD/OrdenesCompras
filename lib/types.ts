@@ -1,28 +1,36 @@
 // ============================================================================
 // Modelo de datos — App de solicitud de material a proveedores
 //
-// Flujo (terminología de Adelante, no la de Business Central):
-//   1. INGENIERÍA   crea un PEDIDO de compra (solicitud de material).
-//   2. PROVEEDURÍA  toma líneas de pedidos y genera una ORDEN de compra
-//                   que se envía al proveedor (asigna proveedor, precio, flete).
-//   3. FACTURACIÓN  registra la RECEPCIÓN/FACTURA cuando el material llega a
-//                   bodega. Soporta entregas parciales: la orden queda ABIERTA
-//                   hasta que todas las líneas se reciben al 100%.
+// Flujo y personas reales:
+//   1. INGENIERÍA  (Laura)  crea una SOLICITUD de material.
+//        - tipo 'material'  → destino una OBRA
+//        - tipo 'repuesto'  → destino una MÁQUINA
+//        Pone ítems, almacén y cantidad. NO pone proveedor ni precio.
+//   2. PROVEEDURÍA (Angie)  ve todos los materiales solicitados (de varios
+//        pedidos) y selecciona líneas de DISTINTOS pedidos para armar UNA orden
+//        que se envía al proveedor. Aquí elige proveedor, fechas, IVA, tipo.
+//   3. BODEGA      (Kattya) recibe el material y registra la FACTURA, lo que
+//        genera los movimientos contables y alimenta el inventario.
 //
-// Estos tipos están pensados para reflejarse 1:1 en SQL y mapearse a las
-// entidades de Business Central (Purchase Header / Purchase Line).
+// Pedido ↔ Orden es N:M (el enlace vive a nivel de línea: OrdenLinea.pedidoLineaId).
+// Una Orden tiene muchas Recepciones (entregas parciales).
 // ============================================================================
 
+// nota: la ruta interna 'facturacion' se muestra como "Bodega" (Kattya) en la UI
 export type Role = "ingenieria" | "proveeduria" | "facturacion";
 
 export type LineType = "articulo" | "cargo"; // 'cargo' = flete / cargo de producto
+export type TipoSolicitud = "material" | "repuesto";
 
-// ---- Catálogos ----
+// ---- Catálogos (espejo de Business Central) ----
 export interface Proveedor {
   id: string;
   code: string;        // PROV-001305
   nombre: string;
-  contacto?: string;
+  paymentTermsCode?: string;   // CONTADO
+  paymentMethodCode?: string;  // TRANSFER
+  currencyCode?: string;       // "" = CRC
+  cedula?: string;
 }
 
 export interface Articulo {
@@ -30,11 +38,30 @@ export interface Articulo {
   code: string;        // M16-0075
   descripcion: string;
   unidad: string;      // UND, KG, M, ...
-  almacenDefault: string; // ALM-SSO
+  almacenDefault: string;
   precioReferencia: number;
+  tipo: "inventario" | "servicio"; // BC Item.Type
 }
 
-// ============================ PEDIDO (Ingeniería) ===========================
+export interface Obra {
+  id: string;
+  codigo: string;      // OBRA-001
+  nombre: string;
+}
+
+export interface Maquina {
+  id: string;
+  no: string;          // GomEqp Machine No.
+  nombre: string;
+  placa?: string;
+}
+
+export interface Almacen {
+  codigo: string;      // ALM-GRAL
+  nombre: string;
+}
+
+// ============================ PEDIDO (Ingeniería · Laura) ===================
 export type PedidoEstado = "borrador" | "aprobado" | "en_orden" | "cerrado";
 
 export interface PedidoLinea {
@@ -44,41 +71,46 @@ export interface PedidoLinea {
   cantidad: number;
   unidad: string;
   almacen: string;
-  cantidadOrdenada: number; // cuánto de esta línea ya pasó a una orden de compra
+  cantidadOrdenada: number; // cuánto de esta línea ya pasó a una orden
   notas?: string;
 }
 
 export interface Pedido {
   id: string;
-  numero: string;       // PED-000123
-  proyecto: string;
-  solicitante: string;
-  fecha: string;        // ISO
+  numero: string;            // PED-000123
+  tipoSolicitud: TipoSolicitud;
+  obraCodigo?: string;       // destino si material
+  obraNombre?: string;
+  maquinaNo?: string;        // destino si repuesto
+  maquinaNombre?: string;
+  solicitante: string;       // Laura
+  fecha: string;             // ISO
   estado: PedidoEstado;
   prioridad: "normal" | "alta" | "urgente";
   notas?: string;
   lineas: PedidoLinea[];
 }
 
-// ============================ ORDEN (Proveeduría) ===========================
+// ============================ ORDEN (Proveeduría · Angie) ===================
 export type OrdenEstado =
-  | "abierto"               // creada, aún editable
-  | "pendiente_aprobacion"  // enviada a aprobación
-  | "lanzado"               // aprobada / enviada al proveedor
-  | "completado";           // recibida al 100% (se archiva)
+  | "abierto"
+  | "pendiente_aprobacion"
+  | "lanzado"
+  | "completado";
 
 export interface OrdenLinea {
   id: string;
   tipo: LineType;
   articuloId?: string;
-  pedidoLineaId?: string;   // trazabilidad al pedido origen
+  pedidoLineaId?: string;   // enlace N:M a la línea de pedido origen
   pedidoNumero?: string;
   descripcion: string;
   cantidad: number;
   unidad: string;
   almacen: string;
   precioUnitario: number;
-  cantidadRecibida: number; // acumulado recibido por recepciones
+  ivaPct: number;
+  cantidadRecibida: number;
   cantidadFacturada: number;
 }
 
@@ -86,25 +118,27 @@ export interface Orden {
   id: string;
   numero: string;           // CP-000862
   proveedorId: string;
-  fecha: string;            // ISO — fecha de emisión
+  fecha: string;            // ISO emisión
+  fechaRecepEsperada?: string;
+  currencyCode: string;     // "" = CRC, "USD"
   estado: OrdenEstado;
   versionesArchivadas: number;
   lineas: OrdenLinea[];
 }
 
-// ============================ RECEPCIÓN / FACTURA ===========================
+// ============================ RECEPCIÓN / FACTURA (Bodega · Kattya) =========
 export interface RecepcionLinea {
   ordenLineaId: string;
-  cantidadRecibida: number; // cantidad que llegó en esta entrega
+  cantidadRecibida: number;
 }
 
 export interface Recepcion {
   id: string;
   ordenId: string;
   numeroFactura: string;
-  fechaFactura: string;     // ISO — fecha del documento del proveedor
-  fechaRecepcion: string;   // ISO — fecha en que llegó a bodega
-  fechaRegistro: string;    // ISO — fecha contable (la que "vale" al buscar)
+  fechaFactura: string;
+  fechaRecepcion: string;
+  fechaRegistro: string;
   total: number;
   lineas: RecepcionLinea[];
   parcial: boolean;

@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import { AppShell } from "@/components/shell";
 import { Badge, Button, Card, QtyRing, Tile } from "@/components/ui";
 import { useStore } from "@/lib/store";
-import { CRC, formatDate, ordenEsParcial, ordenRecibidoPct } from "@/lib/helpers";
+import { money, formatDate, ordenEsParcial, ordenRecibidoPct } from "@/lib/helpers";
 
 export default function FacturacionPage() {
   const { ordenes, proveedores } = useStore();
@@ -51,7 +51,7 @@ export default function FacturacionPage() {
                   </div>
                   <div className="row gap-6">
                     <div className="col" style={{ alignItems: "flex-end" }}>
-                      <span className="ds-strong">{CRC.format(total)}</span>
+                      <span className="ds-strong">{money(total, o.currencyCode)}</span>
                       <span className="ds-muted ds-body-sm">total orden</span>
                     </div>
                     <Button variant="red">Registrar factura</Button>

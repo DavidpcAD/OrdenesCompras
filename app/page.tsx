@@ -1,15 +1,16 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { useStore } from "@/lib/store";
 import { Button } from "@/components/ui";
+import { IconBox, IconReceipt, IconWrench } from "@/components/icons";
 import type { Role } from "@/lib/types";
 
-const ROLES: { id: Role; title: string; desc: string; icon: string; bg: string }[] = [
-  { id: "ingenieria", title: "Ingeniería", desc: "Crear y dar seguimiento a pedidos de material", icon: "🛠️", bg: "color-mix(in srgb, var(--ds-color-green-100) 22%, #fff)" },
-  { id: "proveeduria", title: "Proveeduría", desc: "Convertir pedidos en órdenes de compra al proveedor", icon: "📦", bg: "color-mix(in srgb, var(--ds-color-yellow) 28%, #fff)" },
-  { id: "facturacion", title: "Facturación", desc: "Registrar recepción de material y facturas", icon: "🧾", bg: "color-mix(in srgb, var(--ds-color-red-100) 22%, #fff)" },
+const ROLES: { id: Role; title: string; persona: string; desc: string; icon: ReactNode; bg: string }[] = [
+  { id: "ingenieria", title: "Ingeniería", persona: "Laura", desc: "Solicitar material o repuestos para obras y máquinas", icon: <IconWrench />, bg: "color-mix(in srgb, var(--ds-color-green-100) 22%, #fff)" },
+  { id: "proveeduria", title: "Proveeduría", persona: "Angie", desc: "Armar órdenes de compra al proveedor desde las solicitudes", icon: <IconBox />, bg: "color-mix(in srgb, var(--ds-color-yellow) 28%, #fff)" },
+  { id: "facturacion", title: "Bodega", persona: "Kattya", desc: "Recibir material y registrar la factura en inventario", icon: <IconReceipt />, bg: "color-mix(in srgb, var(--ds-color-red-100) 22%, #fff)" },
 ];
 
 export default function LoginPage() {
@@ -48,7 +49,7 @@ export default function LoginPage() {
             >
               <span className="role-option__icon" style={{ background: r.bg }}>{r.icon}</span>
               <span className="col" style={{ gap: 2 }}>
-                <span className="role-option__title">{r.title}</span>
+                <span className="role-option__title">{r.title} · <span style={{ color: "var(--ds-color-gray-400)", fontWeight: 400 }}>{r.persona}</span></span>
                 <span className="role-option__desc">{r.desc}</span>
               </span>
             </button>
@@ -56,7 +57,7 @@ export default function LoginPage() {
         </div>
 
         <Button block className="mt-6" onClick={entrar} disabled={!selected}>
-          Entrar como {selected ? ROLES.find((r) => r.id === selected)!.title : "…"}
+          Entrar como {selected ? ROLES.find((r) => r.id === selected)!.persona : "…"}
         </Button>
 
         <p className="ds-body-sm ds-muted mt-4" style={{ textAlign: "center" }}>

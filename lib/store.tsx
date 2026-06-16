@@ -2,13 +2,18 @@
 
 import React, { createContext, useContext, useEffect, useMemo, useState } from "react";
 import type {
-  Articulo, Orden, OrdenLinea, Pedido, PedidoLinea, Proveedor, Recepcion, RecepcionLinea, Role,
+  Almacen, Articulo, Maquina, Obra, Orden, OrdenLinea, Pedido, PedidoLinea,
+  Proveedor, Recepcion, RecepcionLinea, Role, TipoSolicitud,
 } from "./types";
 import * as seed from "./seed";
 import { nextNumero, ordenEstaCompleta, todayISO } from "./helpers";
 
 interface NewPedidoInput {
-  proyecto: string;
+  tipoSolicitud: TipoSolicitud;
+  obraCodigo?: string;
+  obraNombre?: string;
+  maquinaNo?: string;
+  maquinaNombre?: string;
   solicitante: string;
   prioridad: Pedido["prioridad"];
   notas?: string;
@@ -17,6 +22,8 @@ interface NewPedidoInput {
 
 interface NewOrdenInput {
   proveedorId: string;
+  currencyCode: string;
+  fechaRecepEsperada?: string;
   lineas: Omit<OrdenLinea, "id" | "cantidadRecibida" | "cantidadFacturada">[];
 }
 
@@ -36,6 +43,9 @@ interface StoreShape {
 
   proveedores: Proveedor[];
   articulos: Articulo[];
+  obras: Obra[];
+  maquinas: Maquina[];
+  almacenes: Almacen[];
   pedidos: Pedido[];
   ordenes: Orden[];
   recepciones: Recepcion[];
@@ -54,7 +64,7 @@ interface StoreShape {
 }
 
 const StoreCtx = createContext<StoreShape | null>(null);
-const LS_KEY = "adelante_oc_state_v1";
+const LS_KEY = "adelante_oc_state_v2";
 
 interface Persisted {
   pedidos: Pedido[];
@@ -62,13 +72,7 @@ interface Persisted {
   recepciones: Recepcion[];
 }
 
-function loadInitial(): Persisted {
-  if (typeof window !== "undefined") {
-    try {
-      const raw = localStorage.getItem(LS_KEY);
-      if (raw) return JSON.parse(raw) as Persisted;
-    } catch { /* ignore */ }
-  }
+function freshData(): Persisted {
   return {
     pedidos: structuredClone(seed.pedidos),
     ordenes: structuredClone(seed.ordenes),
@@ -78,16 +82,14 @@ function loadInitial(): Persisted {
 
 export function StoreProvider({ children }: { children: React.ReactNode }) {
   const [role, setRole] = useState<Role | null>(null);
-  const [data, setData] = useState<Persisted>(() => ({
-    pedidos: structuredClone(seed.pedidos),
-    ordenes: structuredClone(seed.ordenes),
-    recepciones: structuredClone(seed.recepciones),
-  }));
+  const [data, setData] = useState<Persisted>(() => freshData());
   const [hydrated, setHydrated] = useState(false);
 
-  // hydrate from localStorage after mount (avoids SSR mismatch)
   useEffect(() => {
-    setData(loadInitial());
+    try {
+      const raw = localStorage.getItem(LS_KEY);
+      if (raw) setData(JSON.parse(raw) as Persisted);
+    } catch { /* ignore */ }
     const r = localStorage.getItem("adelante_oc_role") as Role | null;
     if (r) setRole(r);
     setHydrated(true);
@@ -112,8 +114,11 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       setData((d) => {
         const numero = nextNumero("PED", d.pedidos.map((p) => p.numero));
         created = {
-          id: uid(), numero, proyecto: input.proyecto, solicitante: input.solicitante,
-          fecha: todayISO(), estado: "borrador", prioridad: input.prioridad, notas: input.notas,
+          id: uid(), numero, tipoSolicitud: input.tipoSolicitud,
+          obraCodigo: input.obraCodigo, obraNombre: input.obraNombre,
+          maquinaNo: input.maquinaNo, maquinaNombre: input.maquinaNombre,
+          solicitante: input.solicitante, fecha: todayISO(), estado: "borrador",
+          prioridad: input.prioridad, notas: input.notas,
           lineas: input.lineas.map((l) => ({ ...l, id: uid(), cantidadOrdenada: 0 })),
         };
         return { ...d, pedidos: [created, ...d.pedidos] };
@@ -139,9 +144,10 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         }));
         created = {
           id: uid(), numero, proveedorId: input.proveedorId, fecha: todayISO(),
+          fechaRecepEsperada: input.fechaRecepEsperada, currencyCode: input.currencyCode,
           estado: "abierto", versionesArchivadas: 0, lineas,
         };
-        // descontar saldo en las líneas de pedido origen + marcar pedido en_orden
+        // descontar saldo en las líneas de pedido origen (N:M, a través de varios pedidos)
         const pedidos = d.pedidos.map((p) => {
           let touched = false;
           const ls = p.lineas.map((pl) => {
@@ -194,16 +200,12 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       return created;
     };
 
-    const reset: StoreShape["reset"] = () =>
-      setData({
-        pedidos: structuredClone(seed.pedidos),
-        ordenes: structuredClone(seed.ordenes),
-        recepciones: structuredClone(seed.recepciones),
-      });
+    const reset: StoreShape["reset"] = () => setData(freshData());
 
     return {
       role, setRole,
-      proveedores: seed.proveedores, articulos: seed.articulos,
+      proveedores: seed.proveedores, articulos: seed.articulos, obras: seed.obras,
+      maquinas: seed.maquinas, almacenes: seed.almacenes,
       pedidos: data.pedidos, ordenes: data.ordenes, recepciones: data.recepciones,
       addPedido, updatePedido, setPedidoEstado, deletePedido,
       createOrden, setOrdenEstado, registrarRecepcion, reset,

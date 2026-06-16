@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import { AppShell } from "@/components/shell";
 import { Badge, Card, Tile } from "@/components/ui";
 import { useStore } from "@/lib/store";
-import { CRC, formatDate } from "@/lib/helpers";
+import { money, formatDate } from "@/lib/helpers";
 
 export default function ArchivoPage() {
   const { ordenes, recepciones, proveedores } = useStore();
@@ -25,7 +25,7 @@ export default function ArchivoPage() {
         <div className="tiles mt-2">
           <Tile value={recepciones.length} label="Facturas registradas" accent="var(--ds-color-green-100)" />
           <Tile value={completadas.length} label="Órdenes completadas" accent="var(--ds-color-green-200)" />
-          <Tile value={CRC.format(recepciones.reduce((s, r) => s + r.total, 0))} label="Total facturado" accent="var(--ds-color-gray-300)" />
+          <Tile value={money(recepciones.reduce((s, r) => s + r.total, 0))} label="Total facturado" accent="var(--ds-color-gray-300)" />
           <Tile value={recepciones.filter((r) => r.parcial).length} label="Entregas parciales" accent="var(--ds-color-yellow)" />
         </div>
 
@@ -44,7 +44,7 @@ export default function ArchivoPage() {
                       <td>{o?.numero ?? "—"}</td>
                       <td>{o ? prov(o.proveedorId)?.nombre : "—"}</td>
                       <td>{formatDate(r.fechaRegistro)}</td>
-                      <td className="ds-num">{CRC.format(r.total)}</td>
+                      <td className="ds-num">{money(r.total, o?.currencyCode)}</td>
                       <td>{r.parcial ? <Badge tone="yellow">Parcial</Badge> : <Badge tone="green">Completa</Badge>}</td>
                     </tr>
                   );

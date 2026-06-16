@@ -1,7 +1,7 @@
 "use client";
 
 import { Badge } from "@/components/ui";
-import { CRC, num, ordenLineaPendiente } from "@/lib/helpers";
+import { money, num, ordenLineaPendiente } from "@/lib/helpers";
 import type { Orden } from "@/lib/types";
 
 export function OrderLinesTable({ orden, showRecepcion = true }: { orden: Orden; showRecepcion?: boolean }) {
@@ -35,8 +35,8 @@ export function OrderLinesTable({ orden, showRecepcion = true }: { orden: Orden;
                       : <span className="ds-muted">0</span>}
                   </td>
                 )}
-                <td className="ds-num">{CRC.format(l.precioUnitario)}</td>
-                <td className="ds-num ds-strong">{CRC.format(l.cantidad * l.precioUnitario)}</td>
+                <td className="ds-num">{money(l.precioUnitario, orden.currencyCode)}</td>
+                <td className="ds-num ds-strong">{money(l.cantidad * l.precioUnitario, orden.currencyCode)}</td>
               </tr>
             );
           })}

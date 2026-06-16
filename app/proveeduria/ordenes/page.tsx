@@ -5,7 +5,7 @@ import { AppShell } from "@/components/shell";
 import { Badge, Card, Tile } from "@/components/ui";
 import { QtyRing } from "@/components/ui";
 import { useStore } from "@/lib/store";
-import { CRC, formatDate, ordenBadge, ordenRecibidoPct, ordenSubtotal } from "@/lib/helpers";
+import { money, formatDate, ordenBadge, ordenRecibidoPct } from "@/lib/helpers";
 
 export default function OrdenesPage() {
   const { ordenes, proveedores } = useStore();
@@ -49,7 +49,7 @@ export default function OrdenesPage() {
                       <td className="ds-strong">{o.numero}</td>
                       <td>{prov(o.proveedorId)?.nombre ?? "—"}</td>
                       <td>{formatDate(o.fecha)}</td>
-                      <td className="ds-num">{CRC.format(total)}</td>
+                      <td className="ds-num">{money(total, o.currencyCode)}</td>
                       <td><div className="row gap-3"><QtyRing recibida={o.lineas.reduce((s,l)=>s+l.cantidadRecibida,0)} total={o.lineas.reduce((s,l)=>s+l.cantidad,0)} /><span className="ds-body-sm ds-muted">{ordenRecibidoPct(o)}%</span></div></td>
                       <td><Badge tone={b.tone}>{b.label}</Badge></td>
                       <td className="ds-num">›</td>

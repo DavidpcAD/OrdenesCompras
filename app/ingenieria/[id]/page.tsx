@@ -4,7 +4,7 @@ import { useParams, useRouter } from "next/navigation";
 import { AppShell } from "@/components/shell";
 import { Badge, Button, Card, useToast } from "@/components/ui";
 import { useStore } from "@/lib/store";
-import { formatDate, num, pedidoBadge, pedidoLineaPendiente } from "@/lib/helpers";
+import { destinoLabel, formatDate, num, pedidoBadge, pedidoLineaPendiente } from "@/lib/helpers";
 
 export default function PedidoDetallePage() {
   const { id } = useParams<{ id: string }>();
@@ -31,9 +31,10 @@ export default function PedidoDetallePage() {
           <div className="page__title">
             <div className="row gap-3">
               <h1 className="ds-heading">{pedido.numero}</h1>
+              {pedido.tipoSolicitud === "repuesto" ? <Badge tone="yellow">Repuesto</Badge> : <Badge tone="green">Material</Badge>}
               <Badge tone={b.tone}>{b.label}</Badge>
             </div>
-            <p className="ds-muted">{pedido.proyecto} · {pedido.solicitante} · {formatDate(pedido.fecha)}</p>
+            <p className="ds-muted">{destinoLabel(pedido)} · {pedido.solicitante} · {formatDate(pedido.fecha)}</p>
           </div>
           <div className="row gap-3">
             {pedido.estado === "borrador" && (
