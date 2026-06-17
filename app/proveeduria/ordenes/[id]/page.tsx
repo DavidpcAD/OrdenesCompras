@@ -101,32 +101,41 @@ export default function ProvOrdenDetallePage() {
                         </tr>
                         {abierto && (
                           <tr>
-                            <td colSpan={6} style={{ background: "var(--ds-color-surface)", padding: 0 }}>
-                              <div style={{ padding: "8px 16px 12px" }}>
-                                <div className="ds-body-sm ds-muted" style={{ marginBottom: 6 }}>Detalle de la factura {r.numeroFactura}</div>
-                                <table className="ds-table" style={{ background: "transparent" }}>
-                                  <thead>
-                                    <tr><th>Artículo</th><th className="ds-num">Cantidad</th><th className="ds-num">Precio factura</th><th className="ds-num">Importe</th></tr>
-                                  </thead>
-                                  <tbody>
-                                    {r.lineas.map((rl, i) => {
-                                      const ol = orden!.lineas.find((x) => x.id === rl.ordenLineaId);
-                                      const precio = rl.precioFactura ?? ol?.precioUnitario ?? 0;
-                                      const distinto = ol != null && rl.precioFactura != null && rl.precioFactura !== ol.precioUnitario;
-                                      return (
-                                        <tr key={i}>
-                                          <td>{ol?.descripcion ?? `Línea ${rl.ordenLineaId}`}</td>
-                                          <td className="ds-num">{num.format(rl.cantidadRecibida)} {ol?.unidad ?? ""}</td>
-                                          <td className="ds-num">
-                                            {money(precio, orden!.currencyCode)}
-                                            {distinto && <div className="ds-body-sm ds-pending-text">orden: {money(ol!.precioUnitario, orden!.currencyCode)}</div>}
-                                          </td>
-                                          <td className="ds-num ds-strong">{money(precio * rl.cantidadRecibida, orden!.currencyCode)}</td>
-                                        </tr>
-                                      );
-                                    })}
-                                  </tbody>
-                                </table>
+                            <td colSpan={6} style={{ background: "var(--ds-color-surface)", padding: "6px 12px 14px" }}>
+                              <div className="fac-det">
+                                <div className="fac-det__head">
+                                  <span className="ds-strong">Factura {r.numeroFactura}</span>
+                                  <span className="ds-body-sm ds-muted">Registrada {formatDate(r.fechaRegistro)} · {r.parcial ? "entrega parcial" : "entrega completa"}</span>
+                                </div>
+                                <div className="fac-det__grid fac-det__colhead">
+                                  <span>Artículo</span>
+                                  <span className="fac-det__num">Cantidad</span>
+                                  <span className="fac-det__num">Precio factura</span>
+                                  <span className="fac-det__num">Importe</span>
+                                </div>
+                                {r.lineas.map((rl, i) => {
+                                  const ol = orden!.lineas.find((x) => x.id === rl.ordenLineaId);
+                                  const precio = rl.precioFactura ?? ol?.precioUnitario ?? 0;
+                                  const distinto = ol != null && rl.precioFactura != null && rl.precioFactura !== ol.precioUnitario;
+                                  return (
+                                    <div className="fac-det__grid" key={i}>
+                                      <div>
+                                        <div className="ds-strong">{ol?.descripcion ?? `Línea ${rl.ordenLineaId}`}</div>
+                                        {ol?.articuloId && <div className="ds-body-sm ds-muted">{ol.articuloId}</div>}
+                                      </div>
+                                      <div className="fac-det__num">{num.format(rl.cantidadRecibida)} {ol?.unidad ?? ""}</div>
+                                      <div className="fac-det__num">
+                                        {money(precio, orden!.currencyCode)}
+                                        {distinto && <div className="ds-body-sm ds-pending-text">orden: {money(ol!.precioUnitario, orden!.currencyCode)}</div>}
+                                      </div>
+                                      <div className="fac-det__num ds-strong">{money(precio * rl.cantidadRecibida, orden!.currencyCode)}</div>
+                                    </div>
+                                  );
+                                })}
+                                <div className="fac-det__total">
+                                  <span>Total factura</span>
+                                  <span className="fac-det__num">{money(r.total, orden!.currencyCode)}</span>
+                                </div>
                               </div>
                             </td>
                           </tr>
