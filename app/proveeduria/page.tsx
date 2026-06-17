@@ -131,7 +131,7 @@ export default function ProveeduriaMaterialesPage() {
           </div>
 
           {/* líneas */}
-          <Card style={{ padding: 0, overflow: "hidden" }}>
+          <Card className="md-detail" style={{ padding: 0, overflow: "hidden" }}>
             <div className="row row--between" style={{ padding: "14px 16px", borderBottom: "1.5px solid var(--ds-color-gray-100)" }}>
               <span className="ds-label ds-muted">{visibles.length} línea(s){filtro !== "all" ? " del pedido" : ""}</span>
               <input className="ds-form-field__input" style={{ maxWidth: 240, borderRadius: 12, padding: "8px 14px" }}
