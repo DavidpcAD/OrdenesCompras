@@ -4,6 +4,21 @@ import { useStore } from "@/lib/store";
 import { formatDateTime, ROL_LABEL } from "@/lib/helpers";
 import type { Movimiento } from "@/lib/types";
 
+// Códigos de estado -> nombre legible (pedidos y órdenes).
+const ESTADO_LABEL: Record<string, string> = {
+  borrador: "Borrador",
+  aprobado: "Aprobado",
+  en_orden: "En orden",
+  cerrado: "Cerrado",
+  abierto: "Abierto",
+  pendiente_aprobacion: "Pendiente de aprobación",
+  lanzado: "Lanzado",
+  parcial: "Parcial",
+  completado: "Completado",
+  anulado: "Anulado",
+};
+const estadoLabel = (c?: string) => (c ? (ESTADO_LABEL[c] ?? c) : undefined);
+
 const LABEL: Record<string, string> = {
   creado: "Creado",
   reabierto: "Reabierto",
@@ -33,10 +48,27 @@ function etiqueta(m: Movimiento): string {
   return LABEL[m.tipoMovimiento] ?? m.tipoMovimiento;
 }
 
-function tono(tipo: string): string {
-  if (["aprobado", "aprobado_lanzado", "recepcion_total", "completado"].includes(tipo)) return "var(--ds-color-green-100)";
-  if (["enviado_aprobacion", "recepcion_parcial"].includes(tipo)) return "var(--ds-color-yellow)";
-  if (["eliminado", "rechazado"].includes(tipo)) return "var(--ds-color-red-100)";
+// Color del punto por etapa, para que cada evento se distinga de un vistazo.
+function colorPunto(m: Movimiento): string {
+  if (m.entidad === "orden") {
+    switch (m.tipoMovimiento) {
+      case "creado": return "#3b82f6";                    // En proveeduría · azul
+      case "enviado_aprobacion": return "var(--ds-color-yellow)"; // pendiente · amarillo
+      case "aprobado_lanzado": return "var(--ds-color-green-200)"; // lanzada · verde
+      case "recepcion_parcial": return "#f2994a";         // recibido parcial · naranja
+      case "recepcion_total":
+      case "completado": return "#1f9d57";                // recibido total / completado · verde fuerte
+      case "eliminado": return "var(--ds-color-red-100)";
+    }
+  }
+  // Pedido (ingeniería)
+  switch (m.tipoMovimiento) {
+    case "creado": return "var(--ds-color-gray-300)";     // creado · gris
+    case "aprobado": return "var(--ds-color-green-100)";  // aprobado · verde lima
+    case "reabierto": return "var(--ds-color-gray-400)";
+    case "eliminado":
+    case "rechazado": return "var(--ds-color-red-100)";
+  }
   return "var(--ds-color-gray-300)";
 }
 
@@ -84,13 +116,19 @@ export function Timeline({
         const ctxOrden = m.entidad === "orden" ? numeroDeOrden.get(m.idEntidad) : undefined;
         return (
           <div key={m.id} className="timeline__item">
-            <span className="timeline__dot" style={{ background: tono(m.tipoMovimiento) }} />
+            <span className="timeline__dot" style={{ background: colorPunto(m) }} />
             <div className="timeline__title">
               {etiqueta(m)}
               {ctxOrden && <span className="ds-muted" style={{ fontWeight: 400 }}> · {ctxOrden}</span>}
-              {m.estadoAnterior && m.estadoNuevo && m.estadoAnterior !== m.estadoNuevo && (
-                <span className="ds-muted" style={{ fontWeight: 400 }}> · {m.estadoAnterior} → {m.estadoNuevo}</span>
-              )}
+              {(() => {
+                const ant = estadoLabel(m.estadoAnterior);
+                const nue = estadoLabel(m.estadoNuevo);
+                if (ant && nue && m.estadoAnterior !== m.estadoNuevo)
+                  return <span className="ds-muted" style={{ fontWeight: 400 }}> · {ant} → {nue}</span>;
+                if (nue)
+                  return <span className="ds-muted" style={{ fontWeight: 400 }}> · {nue}</span>;
+                return null;
+              })()}
             </div>
             <div className="timeline__meta">
               {m.usuario} · {ROL_LABEL[m.rol]} · {formatDateTime(m.fecha)}{m.detalle ? ` · ${m.detalle}` : ""}
