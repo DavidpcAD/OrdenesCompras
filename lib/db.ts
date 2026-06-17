@@ -14,13 +14,12 @@ export function getPool(): Promise<sql.ConnectionPool> {
   if (!poolPromise) {
     const conn = process.env.SQL_CONNECTION_STRING;
     if (conn) {
-      // La base AdelanteSBX es serverless (auto-pausa): el primer intento debe
-      // esperar a que "despierte" (~30-60s), por eso el connectionTimeout alto.
-      poolPromise = new sql.ConnectionPool({
-        connectionString: conn,
-        connectionTimeout: 60000,
-        requestTimeout: 60000,
-      }).connect();
+      // Si viene una cadena completa, usamos el overload de string y forzamos
+      // timeout de conexión para tolerar el resume de Azure SQL serverless.
+      const hasTimeout = /(Connection Timeout|Connect Timeout)\s*=\s*\d+/i.test(conn);
+      const suffix = conn.trim().endsWith(";") ? "" : ";";
+      const connWithTimeout = hasTimeout ? conn : `${conn}${suffix}Connection Timeout=60;`;
+      poolPromise = new sql.ConnectionPool(connWithTimeout).connect();
     } else {
       const config: sql.config = {
         server: process.env.SQL_SERVER ?? "",
