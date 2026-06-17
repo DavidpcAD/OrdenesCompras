@@ -33,7 +33,7 @@ export default function FacturacionPage() {
         </div>
 
         <div className="col gap-4 mt-6">
-          {porRecibir.length === 0 && <Card><div className="empty">No hay órdenes pendientes de recibir.</div></Card>}
+          {porRecibir.length === 0 && <Card><div className="empty" style={{ lineHeight: 1.6 }}>No hay órdenes pendientes de recibir.<br /><span className="ds-muted ds-body-sm">Para ver todas las órdenes y sus facturas, abrí la pestaña <strong>“Todas las órdenes”</strong> arriba.</span></div></Card>}
           {porRecibir.map((o) => {
             const total = o.lineas.reduce((s, l) => s + l.cantidad * l.precioUnitario, 0);
             return (

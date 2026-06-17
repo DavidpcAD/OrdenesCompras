@@ -38,7 +38,7 @@ export default function AprobacionPage() {
         </div>
 
         <div className="col gap-4 mt-6">
-          {porAprobar.length === 0 && <Card><div className="empty">No hay órdenes pendientes de aprobación.</div></Card>}
+          {porAprobar.length === 0 && <Card><div className="empty" style={{ lineHeight: 1.6 }}>No hay órdenes pendientes de aprobación.<br /><span className="ds-muted ds-body-sm">Para ver las que ya aprobaste o se completaron, abrí la pestaña <strong>“Todas las órdenes”</strong> arriba.</span></div></Card>}
           {porAprobar.map((o) => {
             const articulos = o.lineas.filter((l) => l.tipo === "articulo");
             const total = o.lineas.reduce((s, l) => s + ordenLineaImporte(l), 0);
