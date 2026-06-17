@@ -29,6 +29,30 @@ export function todayISO(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
+export function nowISO(): string {
+  return new Date().toISOString();
+}
+
+export function formatDateTime(iso: string): string {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  return d.toLocaleString("es-CR", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
+}
+
+export const PERSONA_POR_ROL: Record<string, string> = {
+  ingenieria: "Laura Jiménez",
+  proveeduria: "Angie",
+  aprobacion: "Luis Roberto",
+  facturacion: "Kattya",
+};
+
+export const ROL_LABEL: Record<string, string> = {
+  ingenieria: "Ingeniería",
+  proveeduria: "Proveeduría",
+  aprobacion: "Aprobación",
+  facturacion: "Bodega",
+};
+
 // ---- líneas de pedido ----
 export function pedidoLineaPendiente(l: PedidoLinea): number {
   return Math.max(0, l.cantidad - l.cantidadOrdenada);
@@ -47,8 +71,21 @@ export function ordenLineaCompleta(l: OrdenLinea): boolean {
   return l.cantidadRecibida >= l.cantidad - 1e-9;
 }
 
+// Último precio usado para un artículo con un proveedor (para detectar aumentos)
+export function ultimoPrecioProveedor(ordenes: Orden[], articuloId: string, proveedorId: string): number | null {
+  const cand = ordenes
+    .filter((o) => o.proveedorId === proveedorId)
+    .flatMap((o) => o.lineas.filter((l) => l.articuloId === articuloId).map((l) => ({ fecha: o.fecha, precio: l.precioUnitario })))
+    .sort((a, b) => (a.fecha < b.fecha ? 1 : -1));
+  return cand.length ? cand[0].precio : null;
+}
+
+export function ordenLineaImporte(l: OrdenLinea): number {
+  return l.cantidad * l.precioUnitario * (1 - (l.descuentoPct ?? 0) / 100);
+}
+
 export function ordenSubtotal(o: Orden): number {
-  return o.lineas.reduce((s, l) => s + l.cantidad * l.precioUnitario, 0);
+  return o.lineas.reduce((s, l) => s + ordenLineaImporte(l), 0);
 }
 
 export function ordenRecibidoPct(o: Orden): number {

@@ -4,12 +4,13 @@ import { useRouter } from "next/navigation";
 import { useState, type ReactNode } from "react";
 import { useStore } from "@/lib/store";
 import { Button } from "@/components/ui";
-import { IconBox, IconReceipt, IconWrench } from "@/components/icons";
+import { IconBox, IconCheck, IconReceipt, IconWrench } from "@/components/icons";
 import type { Role } from "@/lib/types";
 
 const ROLES: { id: Role; title: string; persona: string; desc: string; icon: ReactNode; bg: string }[] = [
   { id: "ingenieria", title: "Ingeniería", persona: "Laura", desc: "Solicitar material o repuestos para obras y máquinas", icon: <IconWrench />, bg: "color-mix(in srgb, var(--ds-color-green-100) 22%, #fff)" },
   { id: "proveeduria", title: "Proveeduría", persona: "Angie", desc: "Armar órdenes de compra al proveedor desde las solicitudes", icon: <IconBox />, bg: "color-mix(in srgb, var(--ds-color-yellow) 28%, #fff)" },
+  { id: "aprobacion", title: "Aprobación", persona: "Luis Roberto", desc: "Aprobar o rechazar las órdenes antes de enviarlas al proveedor", icon: <IconCheck />, bg: "color-mix(in srgb, var(--ds-color-green-200) 24%, #fff)" },
   { id: "facturacion", title: "Bodega", persona: "Kattya", desc: "Recibir material y registrar la factura en inventario", icon: <IconReceipt />, bg: "color-mix(in srgb, var(--ds-color-red-100) 22%, #fff)" },
 ];
 

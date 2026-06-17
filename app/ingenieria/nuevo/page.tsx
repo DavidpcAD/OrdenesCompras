@@ -49,14 +49,18 @@ export default function NuevaSolicitudPage() {
   const lineasValidas = lineas.filter((l) => l.articuloId && Number(l.cantidad) > 0);
   const puedeGuardar = destinoOk && solicitante.trim() && lineasValidas.length > 0;
 
-  function guardar() {
+  const [guardando, setGuardando] = useState(false);
+
+  async function guardar() {
     if (!puedeGuardar) {
       toast(`Indicá ${tipo === "material" ? "la obra" : "la máquina"} y al menos una línea válida.`, "error");
       return;
     }
     const obra = obras.find((o) => o.id === obraId);
     const maquina = maquinas.find((m) => m.id === maquinaId);
-    const p = addPedido({
+    setGuardando(true);
+    try {
+    const p = await addPedido({
       tipoSolicitud: tipo,
       obraCodigo: tipo === "material" ? obra?.codigo : undefined,
       obraNombre: tipo === "material" ? obra?.nombre : undefined,
@@ -75,6 +79,10 @@ export default function NuevaSolicitudPage() {
     });
     toast(`Solicitud ${p.numero} creada`, "success");
     router.push(`/ingenieria/${p.id}`);
+    } catch (e: any) {
+      toast(String(e?.message ?? e), "error");
+      setGuardando(false);
+    }
   }
 
   return (
@@ -186,7 +194,7 @@ export default function NuevaSolicitudPage() {
 
         <div className="row gap-3 mt-6" style={{ justifyContent: "flex-end" }}>
           <Button variant="outline" onClick={() => router.push("/ingenieria")}>Cancelar</Button>
-          <Button onClick={guardar} disabled={!puedeGuardar}>Guardar solicitud</Button>
+          <Button onClick={guardar} disabled={!puedeGuardar || guardando}>{guardando ? "Guardando…" : "Guardar solicitud"}</Button>
         </div>
       </main>
     </AppShell>

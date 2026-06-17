@@ -123,7 +123,10 @@ Campos de BC que el espejo SQL debe guardar (No. de campo entre paréntesis):
 ## Catálogos para selección (lookups vía API de BC)
 
 Al crear una oferta/orden se **selecciona el proveedor** y luego se **buscan y seleccionan
-materiales**. Esos datos vienen de BC por API y se cachean en `dbo.Proveedor` y `dbo.Material`.
+materiales**. Esos datos **viven en Business Central** y se consultan EN VIVO por API
+(`GET vendors?search=`, `GET items?search=`). **No se almacenan en SQL** como catálogo;
+solo se persiste la selección dentro de los documentos (proveedorNo, itemNo, obra, maquinaNo,
+nombres y grupos contables como snapshot en texto al momento de elegir).
 
 ### Proveedor ← Vendor (tabla 23, Vendor Lookup 34)
 

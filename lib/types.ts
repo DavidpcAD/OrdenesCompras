@@ -17,7 +17,7 @@
 // ============================================================================
 
 // nota: la ruta interna 'facturacion' se muestra como "Bodega" (Kattya) en la UI
-export type Role = "ingenieria" | "proveeduria" | "facturacion";
+export type Role = "ingenieria" | "proveeduria" | "aprobacion" | "facturacion";
 
 export type LineType = "articulo" | "cargo"; // 'cargo' = flete / cargo de producto
 export type TipoSolicitud = "material" | "repuesto";
@@ -110,6 +110,9 @@ export interface OrdenLinea {
   almacen: string;
   precioUnitario: number;
   ivaPct: number;
+  descuentoPct?: number;     // descuento de línea
+  proyecto?: string;         // obra / Job No.
+  taskNo?: string;           // N.º tarea proyecto
   cantidadRecibida: number;
   cantidadFacturada: number;
 }
@@ -142,4 +145,19 @@ export interface Recepcion {
   total: number;
   lineas: RecepcionLinea[];
   parcial: boolean;
+}
+
+// ============================ BITÁCORA / MOVIMIENTOS ========================
+export interface Movimiento {
+  id: string;
+  entidad: "pedido" | "orden" | "recepcion";
+  idEntidad: string;
+  documentoNo: string;
+  tipoMovimiento: string;       // creado, enviado_aprobacion, aprobado, rechazado, recepcion_parcial…
+  estadoAnterior?: string;
+  estadoNuevo?: string;
+  detalle?: string;
+  usuario: string;
+  rol: Role;
+  fecha: string;                // ISO datetime
 }

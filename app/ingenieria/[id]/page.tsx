@@ -3,6 +3,7 @@
 import { useParams, useRouter } from "next/navigation";
 import { AppShell } from "@/components/shell";
 import { Badge, Button, Card, useToast } from "@/components/ui";
+import { Timeline } from "@/components/timeline";
 import { useStore } from "@/lib/store";
 import { destinoLabel, formatDate, num, pedidoBadge, pedidoLineaPendiente } from "@/lib/helpers";
 
@@ -39,16 +40,16 @@ export default function PedidoDetallePage() {
           <div className="row gap-3">
             {pedido.estado === "borrador" && (
               <>
-                <Button variant="outline" onClick={() => { deletePedido(pedido.id); toast("Pedido eliminado"); router.push("/ingenieria"); }}>
+                <Button variant="outline" onClick={async () => { await deletePedido(pedido.id); toast("Pedido eliminado"); router.push("/ingenieria"); }}>
                   Eliminar
                 </Button>
-                <Button onClick={() => { setPedidoEstado(pedido.id, "aprobado"); toast(`${pedido.numero} aprobado y enviado a proveeduría`, "success"); }}>
+                <Button onClick={async () => { await setPedidoEstado(pedido.id, "aprobado"); toast(`${pedido.numero} aprobado y enviado a proveeduría`, "success"); }}>
                   Aprobar y enviar a proveeduría
                 </Button>
               </>
             )}
             {pedido.estado === "aprobado" && (
-              <Button variant="outline" onClick={() => { setPedidoEstado(pedido.id, "borrador"); toast("Pedido reabierto como borrador"); }}>
+              <Button variant="outline" onClick={async () => { await setPedidoEstado(pedido.id, "borrador"); toast("Pedido reabierto como borrador"); }}>
                 Volver a borrador
               </Button>
             )}
@@ -91,6 +92,9 @@ export default function PedidoDetallePage() {
         {pedido.estado === "aprobado" && !ordenado && (
           <p className="ds-muted ds-label mt-4">Este pedido está aprobado. Proveeduría puede convertirlo en una orden de compra.</p>
         )}
+
+        <h3 className="ds-subtitle mt-6" style={{ marginBottom: 12 }}>Historial</h3>
+        <Card><Timeline entidad="pedido" idEntidad={pedido.id} /></Card>
       </main>
     </AppShell>
   );

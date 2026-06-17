@@ -60,6 +60,41 @@ lib/
   helpers.ts                    Cálculos: saldos, % recibido, distribución de flete…
 ```
 
+## Conexión a SQL (API)
+
+La app ya trae la capa de acceso a la base que creaste (`db/schema_compras_boletas_style.sql`):
+
+1. Copiá `.env.local.example` a `.env.local` y completá `SQL_SERVER`, `SQL_DATABASE`, `SQL_USER`, `SQL_PASSWORD` (o `SQL_CONNECTION_STRING`).
+2. `npm install` (ya incluye `mssql`) y `npm run dev`.
+3. Probá la conexión: abrí `http://localhost:3000/api/health` → debe devolver el conteo de filas de cada tabla.
+
+Endpoints disponibles (`lib/repo.ts` + `app/api/*`):
+
+| Método | Ruta | Acción |
+|---|---|---|
+| GET | `/api/health` | Verifica conexión + conteos |
+| GET / POST | `/api/pedidos` | Listar / crear solicitud |
+| GET / PATCH | `/api/pedidos/[id]` | Detalle / cambiar estado |
+| GET / POST | `/api/ordenes` | Listar / crear orden |
+| GET / PATCH | `/api/ordenes/[id]` | Detalle / cambiar estado |
+| POST | `/api/recepciones` | Registrar factura/recepción |
+| GET | `/api/movimientos?entidad=&id=` | Bitácora de un documento |
+
+Cada escritura registra automáticamente un `Movimiento` (bitácora). El `estado` de la app
+se mapea al catálogo `dbo.Estado` (se crean los nombres que falten).
+
+### Modo API vs. modo prueba
+
+La app funciona en dos modos según `NEXT_PUBLIC_USE_API` en `.env.local`:
+
+- **`NEXT_PUBLIC_USE_API=1`** → la UI lee y escribe en tu SQL real (vía las API routes).
+  Al abrir cada pantalla se cargan los datos desde `/api/bootstrap` y cada acción
+  (crear solicitud, armar orden, aprobar, recibir factura) hace POST/PATCH y refresca.
+- **sin la variable (o `0`)** → la UI usa datos de prueba en memoria + `localStorage`
+  (útil para diseño/demos sin base).
+
+Así podés desarrollar la parte visual sin base, y prender el modo real cuando quieras.
+
 ## Design system
 
 La interfaz replica el **Adelante Design System**

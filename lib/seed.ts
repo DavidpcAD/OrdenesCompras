@@ -1,4 +1,4 @@
-import type { Articulo, Almacen, Maquina, Obra, Orden, Pedido, Proveedor, Recepcion } from "./types";
+import type { Articulo, Almacen, Maquina, Movimiento, Obra, Orden, Pedido, Proveedor, Recepcion } from "./types";
 
 export const proveedores: Proveedor[] = [
   { id: "p1", code: "PROV-001305", nombre: "PRECISE FORMS INC", paymentTermsCode: "CONTADO", paymentMethodCode: "TRANSFER", currencyCode: "USD", cedula: "3-012-882795" },
@@ -99,6 +99,27 @@ export const ordenes: Orden[] = [
         precioUnitario: 45000, ivaPct: 13, cantidadRecibida: 0, cantidadFacturada: 0 },
     ],
   },
+  {
+    id: "ord2", numero: "CP-000863", proveedorId: "p3", fecha: "2026-06-12",
+    currencyCode: "", estado: "pendiente_aprobacion", versionesArchivadas: 0,
+    lineas: [
+      { id: "o2l1", tipo: "articulo", articuloId: "a6", pedidoLineaId: "seed", pedidoNumero: "PED-000110",
+        descripcion: "VARILLA #4 GRADO 40 (6m)", cantidad: 120, unidad: "UND", almacen: "ALM-CENTRAL",
+        precioUnitario: 4200, ivaPct: 13, cantidadRecibida: 0, cantidadFacturada: 0 },
+      { id: "o2l2", tipo: "articulo", articuloId: "a7", pedidoLineaId: "seed", pedidoNumero: "PED-000110",
+        descripcion: "CEMENTO GRIS 50KG", cantidad: 80, unidad: "SACO", almacen: "ALM-CENTRAL",
+        precioUnitario: 7800, ivaPct: 13, cantidadRecibida: 0, cantidadFacturada: 0 },
+    ],
+  },
+];
+
+export const movimientos: Movimiento[] = [
+  { id: "m1", entidad: "orden", idEntidad: "ord1", documentoNo: "CP-000862", tipoMovimiento: "creado", estadoNuevo: "abierto", usuario: "Angie", rol: "proveeduria", fecha: "2026-06-05T09:10:00", detalle: "Desde PED-000101" },
+  { id: "m2", entidad: "orden", idEntidad: "ord1", documentoNo: "CP-000862", tipoMovimiento: "enviado_aprobacion", estadoAnterior: "abierto", estadoNuevo: "pendiente_aprobacion", usuario: "Angie", rol: "proveeduria", fecha: "2026-06-05T09:25:00" },
+  { id: "m3", entidad: "orden", idEntidad: "ord1", documentoNo: "CP-000862", tipoMovimiento: "aprobado_lanzado", estadoAnterior: "pendiente_aprobacion", estadoNuevo: "lanzado", usuario: "Luis Roberto", rol: "aprobacion", fecha: "2026-06-05T14:02:00" },
+  { id: "m4", entidad: "orden", idEntidad: "ord1", documentoNo: "CP-000862", tipoMovimiento: "recepcion_parcial", estadoNuevo: "lanzado", usuario: "Kattya", rol: "facturacion", fecha: "2026-06-10T10:40:00", detalle: "Factura F-0099281" },
+  { id: "m5", entidad: "orden", idEntidad: "ord2", documentoNo: "CP-000863", tipoMovimiento: "creado", estadoNuevo: "abierto", usuario: "Angie", rol: "proveeduria", fecha: "2026-06-12T11:00:00" },
+  { id: "m6", entidad: "orden", idEntidad: "ord2", documentoNo: "CP-000863", tipoMovimiento: "enviado_aprobacion", estadoAnterior: "abierto", estadoNuevo: "pendiente_aprobacion", usuario: "Angie", rol: "proveeduria", fecha: "2026-06-12T11:05:00" },
 ];
 
 export const recepciones: Recepcion[] = [

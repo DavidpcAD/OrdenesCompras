@@ -17,8 +17,14 @@ const ROLE_META: Record<Role, { label: string; persona: string; home: string; na
   proveeduria: {
     label: "Proveeduría", persona: "Angie", home: "/proveeduria", color: "var(--ds-color-yellow)",
     nav: [
-      { href: "/proveeduria", label: "Materiales solicitados" },
-      { href: "/proveeduria/ordenes", label: "Órdenes" },
+      { href: "/proveeduria", label: "Líneas por ordenar" },
+      { href: "/proveeduria/ordenes", label: "Órdenes creadas" },
+    ],
+  },
+  aprobacion: {
+    label: "Aprobación", persona: "Luis Roberto", home: "/aprobacion", color: "var(--ds-color-green-200)",
+    nav: [
+      { href: "/aprobacion", label: "Por aprobar" },
     ],
   },
   facturacion: {
@@ -54,16 +60,19 @@ export function AppShell({ role, children }: { role: Role; children: React.React
           <span className="topbar__logo">A</span>
           <span>Compras Adelante</span>
         </Link>
-        <nav className="topbar__nav">
-          {meta.nav.map((n) => {
-            const active = pathname === n.href;
-            return (
-              <Link key={n.href} href={n.href} className={`topbar__link ${active ? "is-active" : ""}`}>
-                {n.label}
-              </Link>
-            );
-          })}
-        </nav>
+        {meta.nav.length > 1 && (
+          <div className="segmented topbar__tabs">
+            {meta.nav.map((n) => {
+              const matches = meta.nav.map((x) => x.href).filter((h) => pathname.startsWith(h)).sort((a, b) => b.length - a.length);
+              const activeHref = matches[0] ?? meta.home;
+              return (
+                <button key={n.href} className={`segmented__btn ${activeHref === n.href ? "is-active" : ""}`} onClick={() => router.push(n.href)}>
+                  {n.label}
+                </button>
+              );
+            })}
+          </div>
+        )}
         <div className="topbar__spacer" />
         <div className="topbar__user">
           <span className="ds-badge" style={{ background: meta.color, color: "#000" }}>{meta.label} · {meta.persona}</span>

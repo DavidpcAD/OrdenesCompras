@@ -7,9 +7,10 @@
      - Cabecera PascalCase + detalle con sufijo  Det
      - PK  id<Tabla>  int IDENTITY(1,1)   (pk_<Tabla>)
      - idEstado  FK -> dbo.Estado
-     - Encadenamiento por FK:  OrdenCompra.idPedidoCompra -> PedidoCompra
-                               RecepcionCompra.idOrdenCompra -> OrdenCompra
+     - Encadenamiento por FK:  RecepcionCompra.idOrdenCompra -> OrdenCompra
        (igual que BoletaEntrega.idBoletaSalida, BoletaTraslado.idBoletaEntrega)
+     - Pedido<->Orden es N:M: el enlace vive en OrdenCompraDet.idPedidoCompraDet
+       (una orden combina líneas de varios pedidos; no hay FK de cabecera).
      - Soft delete  esEliminada  +  auditoría
        fechaCreacion / creadoPor / fechaModificacion / modificadoPor
      - Flujo de aprobación  esAprobado / fechaAprobado / aprobadoPor / notaAprobador
@@ -83,7 +84,7 @@ CREATE TABLE [dbo].[PedidoCompra](
 	[bcStatus] [nvarchar](25) NULL,
 	[syncedToBc] [bit] NULL,
 	-- soft delete + auditoría
-	[esEliminada] [bit] NULL,
+	[esEliminada] [bit] NOT NULL DEFAULT (0),
 	[fechaCreacion] [datetime2](7) NOT NULL,
 	[creadoPor] [nvarchar](100) NOT NULL,
 	[fechaModificacion] [datetime2](7) NULL,
@@ -193,7 +194,7 @@ CREATE TABLE [dbo].[OrdenCompra](
 	[taxRegime] [nvarchar](40) NULL,               -- LLB Type Of Tax Regime
 	[syncedToBc] [bit] NULL,
 	-- soft delete + auditoría
-	[esEliminada] [bit] NULL,
+	[esEliminada] [bit] NOT NULL DEFAULT (0),
 	[fechaCreacion] [datetime2](7) NOT NULL,
 	[creadoPor] [nvarchar](100) NOT NULL,
 	[fechaModificacion] [datetime2](7) NULL,
@@ -237,7 +238,8 @@ CREATE TABLE [dbo].[OrdenCompraDet](
 	[lineAmount] [decimal](18, 2) NULL,
 	[amountLcy] [decimal](18, 2) NULL,
 	[vatPct] [decimal](9, 4) NULL,
-	[lineDiscountPct] [decimal](9, 4) NULL,
+	[lineDiscountPct] [decimal](9, 4) NULL,        -- descuento de línea
+	[jobNo] [nvarchar](20) NULL,                   -- proyecto / obra (Job No.)
 	[postingGroup] [nvarchar](20) NULL,            -- MATERIALES
 	[genProdPostingGroup] [nvarchar](20) NULL,     -- BIENES
 	[vatProdPostingGroup] [nvarchar](20) NULL,     -- EXENTO-BIENES
@@ -305,7 +307,7 @@ CREATE TABLE [dbo].[RecepcionCompra](
 	[postingNoSeries] [nvarchar](20) NULL,
 	[syncedToBc] [bit] NULL,
 	-- soft delete + auditoría
-	[esEliminada] [bit] NULL,
+	[esEliminada] [bit] NOT NULL DEFAULT (0),
 	[fechaCreacion] [datetime2](7) NOT NULL,
 	[creadoPor] [nvarchar](100) NOT NULL,
 	[fechaModificacion] [datetime2](7) NULL,
@@ -342,6 +344,7 @@ CREATE TABLE [dbo].[RecepcionCompraDet](
 	[locationCode] [nvarchar](20) NULL,
 	[taskNo] [nvarchar](15) NULL,
 	[quantityRecibida] [decimal](18, 4) NULL,
+	[precioFactura] [decimal](18, 4) NULL,         -- precio unitario que trae la factura (para verificar vs orden)
 	[importeAsignadoFlete] [decimal](18, 2) NULL,
 	[postingDate] [date] NULL,
 	[documentNo] [varchar](50) NULL,
@@ -369,160 +372,13 @@ ALTER TABLE [dbo].[RecepcionCompraDet] CHECK CONSTRAINT [fk_RecepcionCompraDet_i
 GO
 
 /* ===========================================================================
-   CATÁLOGOS ESPEJO DE BUSINESS CENTRAL
-   La API trae Vendor (proveedores) e Item (materiales) para seleccionarlos.
-   Se guardan localmente como caché de búsqueda (lookup), sincronizados por
-   `bcSystemId`. Los documentos guardan el código (proveedorNo / itemNo) como
-   texto, igual que las Boletas — estas tablas respaldan el selector.
+   CATÁLOGOS (Proveedor, Material, Obra, Maquina) — NO se almacenan en SQL.
+   Viven en Business Central. La app los consulta EN VIVO por API al armar el
+   pedido / la orden (lookup: GET vendors?search=, GET items?search=).
+   Lo único que se persiste es la SELECCIÓN, dentro de los documentos:
+   proveedorNo/proveedorNombre, itemNo/descripcion, obra, maquinaNo, grupos
+   contables, etc. (snapshot en texto al momento de elegir, igual que Boletas).
    =========================================================================== */
-
-SET ANSI_NULLS ON
-GO
-SET QUOTED_IDENTIFIER ON
-GO
-CREATE TABLE [dbo].[Proveedor](
-	[idProveedor] [int] IDENTITY(1,1) NOT NULL,
-	[no] [nvarchar](20) NOT NULL,                  -- No. (1)  PROV-000001
-	[nombre] [nvarchar](100) NULL,                 -- Name (2)
-	[searchName] [nvarchar](100) NULL,             -- Search Name (3)
-	[nombre2] [nvarchar](50) NULL,
-	[direccion] [nvarchar](100) NULL,              -- Address (5)
-	[direccion2] [nvarchar](50) NULL,
-	[ciudad] [nvarchar](30) NULL,                  -- City (7)
-	[codigoPostal] [nvarchar](20) NULL,            -- Post Code (91)
-	[provincia] [nvarchar](30) NULL,               -- County (92)
-	[countryRegionCode] [nvarchar](10) NULL,       -- Country/Region Code (35)
-	[telefono] [nvarchar](30) NULL,                -- Phone No. (9)
-	[movil] [nvarchar](30) NULL,                   -- Mobile Phone No. (5061)
-	[email] [nvarchar](80) NULL,                   -- E-Mail (102)
-	[contacto] [nvarchar](100) NULL,               -- Contact (8)
-	[vatRegistrationNo] [nvarchar](20) NULL,       -- VAT Registration No. (86)  cédula
-	[vatRegistrationType] [nvarchar](30) NULL,     -- LLB VAT registration Type  (Cédula Jurídica)
-	[personType] [nvarchar](20) NULL,              -- LLB Person Type
-	[foreignVendor] [bit] NULL,                    -- LLB Foreign Vendor
-	[vendorPostingGroup] [nvarchar](20) NULL,      -- Vendor Posting Group (21)  CXP PRO LOC CRC
-	[genBusPostingGroup] [nvarchar](20) NULL,      -- Gen. Bus. Posting Group (88)  NACIONAL
-	[vatBusPostingGroup] [nvarchar](20) NULL,      -- VAT Bus. Posting Group (110)  NACIONAL
-	[paymentTermsCode] [nvarchar](10) NULL,        -- Payment Terms Code (27)  CONTADO
-	[paymentMethodCode] [nvarchar](10) NULL,       -- Payment Method Code (47)  TRANSFER
-	[currencyCode] [nvarchar](10) NULL,            -- Currency Code (22)
-	[purchaserCode] [nvarchar](20) NULL,
-	[blocked] [nvarchar](20) NULL,                 -- Blocked (39)
-	[privacyBlocked] [bit] NULL,
-	[noSeries] [nvarchar](20) NULL,                -- C PROV
-	[bcSystemId] [uniqueidentifier] NULL,
-	[syncedAt] [datetime2](7) NULL,
-	[esEliminada] [bit] NULL,
-	[fechaCreacion] [datetime2](7) NOT NULL,
-	[creadoPor] [nvarchar](100) NOT NULL,
-	[fechaModificacion] [datetime2](7) NULL,
-	[modificadoPor] [nvarchar](100) NULL
-) ON [PRIMARY]
-GO
-ALTER TABLE [dbo].[Proveedor] ADD  CONSTRAINT [pk_Proveedor] PRIMARY KEY CLUSTERED ([idProveedor] ASC) ON [PRIMARY]
-GO
-ALTER TABLE [dbo].[Proveedor] ADD  CONSTRAINT [df_Proveedor_fechaCreacion]  DEFAULT (getdate()) FOR [fechaCreacion]
-GO
-CREATE UNIQUE NONCLUSTERED INDEX [ix_Proveedor_no] ON [dbo].[Proveedor]([no] ASC)
-GO
-
-SET ANSI_NULLS ON
-GO
-SET QUOTED_IDENTIFIER ON
-GO
-CREATE TABLE [dbo].[Material](
-	[idMaterial] [int] IDENTITY(1,1) NOT NULL,
-	[no] [nvarchar](20) NOT NULL,                  -- No. (1)  M01-0001 / CERTIF
-	[no2] [nvarchar](20) NULL,
-	[descripcion] [nvarchar](100) NULL,            -- Description (3)
-	[descripcion2] [nvarchar](50) NULL,
-	[searchDescription] [nvarchar](100) NULL,      -- Search Description (4)
-	[tipo] [nvarchar](20) NULL,                    -- Type (10)  Inventario / Servicio / No inventariable
-	[baseUnitOfMeasure] [nvarchar](10) NULL,       -- Base Unit of Measure (8)  UND
-	[purchUnitOfMeasure] [nvarchar](10) NULL,      -- Purch. Unit of Measure (5426)
-	[salesUnitOfMeasure] [nvarchar](10) NULL,
-	[inventory] [decimal](18, 4) NULL,             -- Inventory (68)  existencias
-	[unitCost] [decimal](18, 4) NULL,              -- Unit Cost (22)
-	[lastDirectCost] [decimal](18, 4) NULL,        -- Last Direct Cost (25)
-	[unitPrice] [decimal](18, 4) NULL,             -- Unit Price (18)
-	[inventoryPostingGroup] [nvarchar](20) NULL,   -- Inventory Posting Group (11)
-	[genProdPostingGroup] [nvarchar](20) NULL,     -- Gen. Prod. Posting Group (91)
-	[vatProdPostingGroup] [nvarchar](20) NULL,     -- VAT Prod. Posting Group (99)  IVA13%-SERV
-	[itemCategoryCode] [nvarchar](20) NULL,        -- Item Category Code (5702)
-	[vendorNo] [nvarchar](20) NULL,                -- Vendor No. (31)
-	[vendorItemNo] [nvarchar](50) NULL,            -- Vendor Item No. (32)
-	[gtin] [nvarchar](14) NULL,                    -- GTIN (1217)
-	[blocked] [bit] NULL,                          -- Blocked (54)
-	[purchasingBlocked] [bit] NULL,                -- Purchasing Blocked (8004)
-	[bcSystemId] [uniqueidentifier] NULL,
-	[syncedAt] [datetime2](7) NULL,
-	[esEliminada] [bit] NULL,
-	[fechaCreacion] [datetime2](7) NOT NULL,
-	[creadoPor] [nvarchar](100) NOT NULL,
-	[fechaModificacion] [datetime2](7) NULL,
-	[modificadoPor] [nvarchar](100) NULL
-) ON [PRIMARY]
-GO
-ALTER TABLE [dbo].[Material] ADD  CONSTRAINT [pk_Material] PRIMARY KEY CLUSTERED ([idMaterial] ASC) ON [PRIMARY]
-GO
-ALTER TABLE [dbo].[Material] ADD  CONSTRAINT [df_Material_fechaCreacion]  DEFAULT (getdate()) FOR [fechaCreacion]
-GO
-CREATE UNIQUE NONCLUSTERED INDEX [ix_Material_no] ON [dbo].[Material]([no] ASC)
-GO
-
--- Obra (destino de las solicitudes tipo 'material') — espejo de Job/Dimensión de BC
-SET ANSI_NULLS ON
-GO
-SET QUOTED_IDENTIFIER ON
-GO
-CREATE TABLE [dbo].[Obra](
-	[idObra] [int] IDENTITY(1,1) NOT NULL,
-	[codigo] [nvarchar](20) NOT NULL,              -- OBRA-001 / jobNo
-	[nombre] [nvarchar](150) NULL,
-	[taskNo] [nvarchar](15) NULL,
-	[shortcutDimension1Code] [nvarchar](50) NULL,
-	[activa] [bit] NULL,
-	[bcSystemId] [uniqueidentifier] NULL,
-	[esEliminada] [bit] NULL,
-	[fechaCreacion] [datetime2](7) NOT NULL,
-	[creadoPor] [nvarchar](100) NOT NULL,
-	[fechaModificacion] [datetime2](7) NULL,
-	[modificadoPor] [nvarchar](100) NULL
-) ON [PRIMARY]
-GO
-ALTER TABLE [dbo].[Obra] ADD  CONSTRAINT [pk_Obra] PRIMARY KEY CLUSTERED ([idObra] ASC) ON [PRIMARY]
-GO
-ALTER TABLE [dbo].[Obra] ADD  CONSTRAINT [df_Obra_fechaCreacion]  DEFAULT (getdate()) FOR [fechaCreacion]
-GO
-CREATE UNIQUE NONCLUSTERED INDEX [ix_Obra_codigo] ON [dbo].[Obra]([codigo] ASC)
-GO
-
--- Maquina (destino de las solicitudes tipo 'repuesto') — espejo de Parque Maquinaria (GomEqp)
-SET ANSI_NULLS ON
-GO
-SET QUOTED_IDENTIFIER ON
-GO
-CREATE TABLE [dbo].[Maquina](
-	[idMaquina] [int] IDENTITY(1,1) NOT NULL,
-	[no] [nvarchar](20) NOT NULL,                  -- GomEqp Machine No.
-	[nombre] [nvarchar](150) NULL,
-	[placa] [nvarchar](20) NULL,
-	[obraActual] [nvarchar](20) NULL,
-	[activa] [bit] NULL,
-	[bcSystemId] [uniqueidentifier] NULL,
-	[esEliminada] [bit] NULL,
-	[fechaCreacion] [datetime2](7) NOT NULL,
-	[creadoPor] [nvarchar](100) NOT NULL,
-	[fechaModificacion] [datetime2](7) NULL,
-	[modificadoPor] [nvarchar](100) NULL
-) ON [PRIMARY]
-GO
-ALTER TABLE [dbo].[Maquina] ADD  CONSTRAINT [pk_Maquina] PRIMARY KEY CLUSTERED ([idMaquina] ASC) ON [PRIMARY]
-GO
-ALTER TABLE [dbo].[Maquina] ADD  CONSTRAINT [df_Maquina_fechaCreacion]  DEFAULT (getdate()) FOR [fechaCreacion]
-GO
-CREATE UNIQUE NONCLUSTERED INDEX [ix_Maquina_no] ON [dbo].[Maquina]([no] ASC)
-GO
 
 /* ===========================================================================
    VISTAS DE SALDO — "qué se pidió completo y qué no"
@@ -561,4 +417,74 @@ FROM dbo.OrdenCompraDet od
 LEFT JOIN dbo.RecepcionCompraDet rd ON rd.idOrdenCompraDet = od.idOrdenCompraDet
 WHERE od.tipoLinea = 'articulo'
 GROUP BY od.idOrdenCompra, od.idOrdenCompraDet, od.itemNo, od.descripcion, od.quantity;
+GO
+
+/* ===========================================================================
+   BITÁCORA DE MOVIMIENTOS — trazabilidad total
+   Registra CADA acción y cambio de estado de Pedidos, Órdenes y Recepciones:
+   quién, cuándo, qué tipo de movimiento, estado anterior -> nuevo, y el detalle
+   (JSON con antes/después). Es la fuente única de auditoría del proceso.
+   =========================================================================== */
+SET ANSI_NULLS ON
+GO
+SET QUOTED_IDENTIFIER ON
+GO
+CREATE TABLE [dbo].[Movimiento](
+	[idMovimiento] [int] IDENTITY(1,1) NOT NULL,
+	[entidad] [nvarchar](20) NOT NULL,             -- 'pedido' | 'orden' | 'recepcion'
+	[idEntidad] [int] NOT NULL,                    -- id del PedidoCompra / OrdenCompra / RecepcionCompra
+	[documentoNo] [nvarchar](50) NULL,             -- número visible (PED- / CP- / …)
+	[tipoMovimiento] [nvarchar](50) NOT NULL,      -- creado, editado, enviado_aprobacion, aprobado,
+	                                               -- rechazado, lanzado, reabierto, recepcion_parcial,
+	                                               -- recepcion_total, cambio_precio, cambio_proveedor, anulado…
+	[idEstadoAnterior] [int] NULL,
+	[idEstadoNuevo] [int] NULL,
+	[detalle] [nvarchar](max) NULL,                -- JSON: { campo, antes, despues } o datos del cambio
+	[usuario] [nvarchar](100) NOT NULL,
+	[rol] [nvarchar](20) NULL,                     -- ingenieria | proveeduria | aprobacion | bodega
+	[fecha] [datetime2](7) NOT NULL
+) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
+GO
+ALTER TABLE [dbo].[Movimiento] ADD  CONSTRAINT [pk_Movimiento] PRIMARY KEY CLUSTERED ([idMovimiento] ASC) ON [PRIMARY]
+GO
+ALTER TABLE [dbo].[Movimiento] ADD  CONSTRAINT [df_Movimiento_fecha]  DEFAULT (getdate()) FOR [fecha]
+GO
+ALTER TABLE [dbo].[Movimiento]  WITH CHECK ADD  CONSTRAINT [ck_Movimiento_entidad] CHECK ([entidad] IN ('pedido','orden','recepcion'))
+GO
+ALTER TABLE [dbo].[Movimiento]  WITH CHECK ADD  CONSTRAINT [fk_Movimiento_idEstadoAnterior] FOREIGN KEY([idEstadoAnterior]) REFERENCES [dbo].[Estado]([idEstado])
+GO
+ALTER TABLE [dbo].[Movimiento] CHECK CONSTRAINT [fk_Movimiento_idEstadoAnterior]
+GO
+ALTER TABLE [dbo].[Movimiento]  WITH CHECK ADD  CONSTRAINT [fk_Movimiento_idEstadoNuevo] FOREIGN KEY([idEstadoNuevo]) REFERENCES [dbo].[Estado]([idEstado])
+GO
+ALTER TABLE [dbo].[Movimiento] CHECK CONSTRAINT [fk_Movimiento_idEstadoNuevo]
+GO
+
+/* ===========================================================================
+   ÍNDICES Y UNICIDAD
+   --------------------------------------------------------------------------- */
+
+-- Índices en llaves foráneas (SQL Server no los crea solo; aceleran joins/filtros)
+CREATE NONCLUSTERED INDEX [ix_PedidoCompra_idEstado]        ON [dbo].[PedidoCompra]([idEstado]);
+CREATE NONCLUSTERED INDEX [ix_PedidoCompraDet_idPedido]     ON [dbo].[PedidoCompraDet]([idPedidoCompra]);
+CREATE NONCLUSTERED INDEX [ix_OrdenCompra_idEstado]         ON [dbo].[OrdenCompra]([idEstado]);
+CREATE NONCLUSTERED INDEX [ix_OrdenCompraDet_idOrden]       ON [dbo].[OrdenCompraDet]([idOrdenCompra]);
+CREATE NONCLUSTERED INDEX [ix_OrdenCompraDet_idPedidoDet]   ON [dbo].[OrdenCompraDet]([idPedidoCompraDet]);
+CREATE NONCLUSTERED INDEX [ix_RecepcionCompra_idOrden]      ON [dbo].[RecepcionCompra]([idOrdenCompra]);
+CREATE NONCLUSTERED INDEX [ix_RecepcionCompraDet_idRecep]   ON [dbo].[RecepcionCompraDet]([idRecepcionCompra]);
+CREATE NONCLUSTERED INDEX [ix_RecepcionCompraDet_idOrdenDet] ON [dbo].[RecepcionCompraDet]([idOrdenCompraDet]);
+CREATE NONCLUSTERED INDEX [ix_Movimiento_entidad]           ON [dbo].[Movimiento]([entidad],[idEntidad]);
+CREATE NONCLUSTERED INDEX [ix_Movimiento_fecha]             ON [dbo].[Movimiento]([fecha] DESC);
+GO
+
+-- Números de documento únicos (clave de negocio) — filtrado para no chocar con soft-deletes
+CREATE UNIQUE NONCLUSTERED INDEX [ux_PedidoCompra_pedidoNo]   ON [dbo].[PedidoCompra]([pedidoNo])   WHERE [pedidoNo]   IS NOT NULL AND [esEliminada] = 0;
+CREATE UNIQUE NONCLUSTERED INDEX [ux_OrdenCompra_ordenNo]     ON [dbo].[OrdenCompra]([ordenNo])     WHERE [ordenNo]     IS NOT NULL AND [esEliminada] = 0;
+CREATE UNIQUE NONCLUSTERED INDEX [ux_RecepcionCompra_recepcionNo] ON [dbo].[RecepcionCompra]([recepcionNo]) WHERE [recepcionNo] IS NOT NULL AND [esEliminada] = 0;
+GO
+
+-- bcSystemId único por tabla (garantiza el 1:1 con Business Central)
+CREATE UNIQUE NONCLUSTERED INDEX [ux_PedidoCompra_bcSystemId]    ON [dbo].[PedidoCompra]([bcSystemId])    WHERE [bcSystemId] IS NOT NULL;
+CREATE UNIQUE NONCLUSTERED INDEX [ux_OrdenCompra_bcSystemId]     ON [dbo].[OrdenCompra]([bcSystemId])     WHERE [bcSystemId] IS NOT NULL;
+CREATE UNIQUE NONCLUSTERED INDEX [ux_RecepcionCompra_bcSystemId] ON [dbo].[RecepcionCompra]([bcSystemId]) WHERE [bcSystemId] IS NOT NULL;
 GO

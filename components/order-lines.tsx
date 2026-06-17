@@ -1,7 +1,7 @@
 "use client";
 
 import { Badge } from "@/components/ui";
-import { money, num, ordenLineaPendiente } from "@/lib/helpers";
+import { money, num, ordenLineaImporte, ordenLineaPendiente } from "@/lib/helpers";
 import type { Orden } from "@/lib/types";
 
 export function OrderLinesTable({ orden, showRecepcion = true }: { orden: Orden; showRecepcion?: boolean }) {
@@ -24,7 +24,12 @@ export function OrderLinesTable({ orden, showRecepcion = true }: { orden: Orden;
             return (
               <tr key={l.id} className={pendiente ? "row-pending" : ""}>
                 <td>{l.tipo === "cargo" ? <Badge tone="yellow">Cargo</Badge> : <Badge tone="gray">Artículo</Badge>}</td>
-                <td>{l.descripcion}{l.pedidoNumero && <div className="ds-body-sm ds-muted">{l.pedidoNumero}</div>}</td>
+                <td>
+                  {l.descripcion}
+                  <div className="ds-body-sm ds-muted">
+                    {[l.pedidoNumero, l.proyecto && `Proy. ${l.proyecto}`, l.taskNo && `Tarea ${l.taskNo}`, l.descuentoPct ? `−${l.descuentoPct}%` : null].filter(Boolean).join(" · ")}
+                  </div>
+                </td>
                 <td className="ds-muted">{l.almacen}</td>
                 <td className="ds-num">{num.format(l.cantidad)} {l.unidad}</td>
                 {showRecepcion && <td className="ds-num">{num.format(l.cantidadRecibida)}</td>}
@@ -36,7 +41,7 @@ export function OrderLinesTable({ orden, showRecepcion = true }: { orden: Orden;
                   </td>
                 )}
                 <td className="ds-num">{money(l.precioUnitario, orden.currencyCode)}</td>
-                <td className="ds-num ds-strong">{money(l.cantidad * l.precioUnitario, orden.currencyCode)}</td>
+                <td className="ds-num ds-strong">{money(ordenLineaImporte(l), orden.currencyCode)}</td>
               </tr>
             );
           })}

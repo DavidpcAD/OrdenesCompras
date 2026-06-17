@@ -4,8 +4,9 @@ import { useParams, useRouter } from "next/navigation";
 import { AppShell } from "@/components/shell";
 import { Badge, Button, Card, useToast } from "@/components/ui";
 import { OrderLinesTable } from "@/components/order-lines";
+import { Timeline } from "@/components/timeline";
 import { useStore } from "@/lib/store";
-import { money, formatDate, ordenBadge, ordenRecibidoPct } from "@/lib/helpers";
+import { money, formatDate, ordenBadge, ordenLineaImporte, ordenRecibidoPct } from "@/lib/helpers";
 
 export default function ProvOrdenDetallePage() {
   const { id } = useParams<{ id: string }>();
@@ -20,11 +21,11 @@ export default function ProvOrdenDetallePage() {
   const prov = proveedores.find((p) => p.id === orden.proveedorId);
   const b = ordenBadge(orden.estado);
   const recs = recepciones.filter((r) => r.ordenId === orden.id);
-  const subtotal = orden.lineas.filter((l) => l.tipo === "articulo").reduce((s, l) => s + l.cantidad * l.precioUnitario, 0);
+  const subtotal = orden.lineas.filter((l) => l.tipo === "articulo").reduce((s, l) => s + ordenLineaImporte(l), 0);
   const flete = orden.lineas.filter((l) => l.tipo === "cargo").reduce((s, l) => s + l.cantidad * l.precioUnitario, 0);
 
-  function act(estado: NonNullable<typeof orden>["estado"], msg: string) {
-    setOrdenEstado(orden!.id, estado);
+  async function act(estado: NonNullable<typeof orden>["estado"], msg: string) {
+    await setOrdenEstado(orden!.id, estado);
     toast(msg, "success");
   }
 
@@ -39,18 +40,22 @@ export default function ProvOrdenDetallePage() {
               <Badge tone={b.tone}>{b.label}</Badge>
             </div>
             <p className="ds-muted">{prov?.code} · {prov?.nombre} · emitida {formatDate(orden.fecha)} · recibido {ordenRecibidoPct(orden)}%</p>
+            <div className="row gap-2 wrap mt-2">
+              <span className="ds-muted ds-body-sm">Solicitudes origen:</span>
+              {[...new Set(orden.lineas.filter((l) => l.pedidoNumero).map((l) => l.pedidoNumero!))].map((n) => (
+                <Badge key={n} tone="gray">{n}</Badge>
+              ))}
+              {orden.lineas.every((l) => !l.pedidoNumero) && <span className="ds-muted ds-body-sm">—</span>}
+            </div>
           </div>
           <div className="row gap-3">
             {orden.estado === "abierto" && (
-              <>
-                <Button variant="outline" onClick={() => act("pendiente_aprobacion", "Enviada a aprobación")}>Enviar a aprobación</Button>
-                <Button onClick={() => act("lanzado", `${orden.numero} lanzada al proveedor`)}>Lanzar</Button>
-              </>
+              <Button onClick={() => act("pendiente_aprobacion", `${orden.numero} enviada a aprobación`)}>Enviar a aprobación</Button>
             )}
             {orden.estado === "pendiente_aprobacion" && (
               <>
-                <Button variant="outline" onClick={() => act("abierto", "Orden cancelada — vuelve a abierta")}>Cancelar</Button>
-                <Button onClick={() => act("lanzado", `${orden.numero} aprobada y lanzada`)}>Aprobar y lanzar</Button>
+                <span className="ds-muted ds-label" style={{ alignSelf: "center" }}>En espera de aprobación de Luis Roberto</span>
+                <Button variant="outline" onClick={() => act("abierto", "Solicitud de aprobación cancelada")}>Cancelar envío</Button>
               </>
             )}
             {orden.estado === "lanzado" && (
@@ -94,6 +99,9 @@ export default function ProvOrdenDetallePage() {
             </div>
           </Card>
         )}
+
+        <h3 className="ds-subtitle mt-6" style={{ marginBottom: 12 }}>Historial</h3>
+        <Card><Timeline entidad="orden" idEntidad={orden.id} /></Card>
       </main>
     </AppShell>
   );

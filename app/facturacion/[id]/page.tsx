@@ -6,7 +6,7 @@ import { AppShell } from "@/components/shell";
 import { Badge, Button, Card, Field, Input, Modal, useToast } from "@/components/ui";
 import { IconWarning } from "@/components/icons";
 import { useStore } from "@/lib/store";
-import { money, distribuirCargo, num, ordenLineaPendiente, todayISO } from "@/lib/helpers";
+import { money, distribuirCargo, num, ordenBadge, ordenLineaPendiente, ordenRecibidoPct, todayISO } from "@/lib/helpers";
 
 export default function RegistrarFacturaPage() {
   const { id } = useParams<{ id: string }>();
@@ -26,11 +26,18 @@ export default function RegistrarFacturaPage() {
     });
     return init;
   });
+  // precio de la factura por línea (default = precio de la orden = precio de BC)
+  const [precioFact, setPrecioFact] = useState<Record<string, string>>(() => {
+    const init: Record<string, string> = {};
+    (orden?.lineas ?? []).filter((l) => l.tipo === "articulo").forEach((l) => { init[l.id] = String(l.precioUnitario); });
+    return init;
+  });
   const [numeroFactura, setNumeroFactura] = useState("");
   const [fechaFactura, setFechaFactura] = useState(todayISO());
   const [fechaRegistro, setFechaRegistro] = useState(todayISO());
   const [fechaRecepcion, setFechaRecepcion] = useState(todayISO());
   const [preview, setPreview] = useState(false);
+  const [guardando, setGuardando] = useState(false);
 
   // ¿esta recepción completa toda la orden?
   const completaOrden = useMemo(() => {
@@ -41,10 +48,16 @@ export default function RegistrarFacturaPage() {
     });
   }, [orden, articulo, recibir]);
 
+  const precioDe = (l: { id: string; precioUnitario: number }) => Number(precioFact[l.id] ?? l.precioUnitario);
+  const hayDiferencia = (l: { id: string; precioUnitario: number }) =>
+    Number(recibir[l.id] || 0) > 0 && Math.abs(precioDe(l) - l.precioUnitario) > 1e-9;
+  const importeRecibir = (l: { id: string; precioUnitario: number; descuentoPct?: number }) =>
+    Number(recibir[l.id] || 0) * precioDe(l) * (1 - (l.descuentoPct ?? 0) / 100);
   const subtotalRecibido = useMemo(
-    () => articulo.reduce((s, l) => s + Number(recibir[l.id] || 0) * l.precioUnitario, 0),
-    [articulo, recibir]
+    () => articulo.reduce((s, l) => s + importeRecibir(l), 0),
+    [articulo, recibir, precioFact]
   );
+  const lineasConDiferencia = articulo.filter(hayDiferencia);
   // el flete solo se factura cuando se completa la orden (regla de BC)
   const fleteAplicado = completaOrden && cargo ? cargo.precioUnitario : 0;
   const totalFactura = subtotalRecibido + fleteAplicado;
@@ -61,7 +74,7 @@ export default function RegistrarFacturaPage() {
     ? distribuirCargo(fleteAplicado, articulo.map((l) => ({ ...l, cantidad: Number(recibir[l.id] || 0) })))
     : {};
 
-  function registrar() {
+  async function registrar() {
     if (!numeroFactura.trim()) { toast("Ingresá el número de factura.", "error"); return; }
     if (!algoRecibido) { toast("Indicá al menos una cantidad a recibir.", "error"); return; }
     const lineas = articulo
@@ -69,22 +82,36 @@ export default function RegistrarFacturaPage() {
       .map((l) => ({ ordenLineaId: l.id, cantidadRecibida: Number(recibir[l.id]) }));
     if (completaOrden && cargo) lineas.push({ ordenLineaId: cargo.id, cantidadRecibida: cargo.cantidad });
 
-    registrarRecepcion({
-      ordenId: orden!.id, numeroFactura: numeroFactura.trim(),
-      fechaFactura, fechaRecepcion, fechaRegistro, total: totalFactura, lineas,
-    });
-    toast(`Factura ${numeroFactura} registrada${completaOrden ? " — orden completada" : " (parcial)"}`, "success");
-    router.push(`/facturacion`);
+    setGuardando(true);
+    try {
+      await registrarRecepcion({
+        ordenId: orden!.id, numeroFactura: numeroFactura.trim(),
+        fechaFactura, fechaRecepcion, fechaRegistro, total: totalFactura, lineas,
+      });
+      toast(`Factura ${numeroFactura} registrada${completaOrden ? " — orden completada" : " (parcial)"}`, "success");
+      router.push(`/facturacion`);
+    } catch (e: any) {
+      toast(String(e?.message ?? e), "error");
+      setGuardando(false);
+    }
   }
 
   return (
     <AppShell role="facturacion">
-      <main className="page">
+      <main className="page page--wide">
         <div className="back-link" onClick={() => router.push("/facturacion")}>‹ Volver a órdenes por recibir</div>
         <div className="page__head">
           <div className="page__title">
-            <h1 className="ds-heading">Registrar factura · {orden.numero}</h1>
-            <p className="ds-muted">{prov?.code} · {prov?.nombre}</p>
+            <div className="row gap-3">
+              <h1 className="ds-heading">Registrar factura · {orden.numero}</h1>
+              <Badge tone={ordenBadge(orden.estado).tone}>{ordenBadge(orden.estado).label}</Badge>
+            </div>
+            <p className="ds-muted">{prov?.code} · {prov?.nombre} · recibido {ordenRecibidoPct(orden)}%{orden.currencyCode ? ` · ${orden.currencyCode}` : ""}</p>
+            <div className="row gap-2 wrap mt-2">
+              <span className="ds-muted ds-body-sm">Solicitudes origen:</span>
+              {[...new Set(orden.lineas.filter((l) => l.pedidoNumero).map((l) => l.pedidoNumero!))].map((n) => <Badge key={n} tone="gray">{n}</Badge>)}
+              {orden.lineas.every((l) => !l.pedidoNumero) && <span className="ds-muted ds-body-sm">—</span>}
+            </div>
           </div>
         </div>
 
@@ -109,13 +136,21 @@ export default function RegistrarFacturaPage() {
         </Card>
 
         <Card className="mt-4" style={{ padding: 0, overflow: "hidden" }}>
+          <div className="row row--between" style={{ padding: "12px 16px", borderBottom: "1.5px solid var(--ds-color-gray-100)" }}>
+            <span className="ds-label ds-muted">{articulo.length} línea(s) de artículo</span>
+            <div className="row gap-3">
+              <button className="link-btn" onClick={() => setRecibir(Object.fromEntries(articulo.map((l) => [l.id, String(ordenLineaPendiente(l))])))}>Recibir todo</button>
+              <button className="link-btn" onClick={() => setRecibir(Object.fromEntries(articulo.map((l) => [l.id, "0"])))}>Recibir nada</button>
+            </div>
+          </div>
           <div className="ds-table-wrap" style={{ boxShadow: "none" }}>
             <table className="ds-table">
               <thead>
                 <tr>
                   <th>Artículo</th><th>Almacén</th>
-                  <th className="ds-num">Ordenado</th><th className="ds-num">Ya recibido</th>
-                  <th className="ds-num">Pendiente</th><th className="ds-num">Cantidad a recibir</th>
+                  <th className="ds-num">Ordenado</th><th className="ds-num">Ya recib.</th>
+                  <th className="ds-num">Pend.</th><th className="ds-num">A recibir</th>
+                  <th className="ds-num">Precio orden</th><th className="ds-num">Precio factura</th>
                   <th className="ds-num">A facturar</th>
                 </tr>
               </thead>
@@ -123,10 +158,15 @@ export default function RegistrarFacturaPage() {
                 {articulo.map((l) => {
                   const pend = ordenLineaPendiente(l);
                   const val = Number(recibir[l.id] || 0);
-                  const importe = val * l.precioUnitario;
+                  const importe = importeRecibir(l);
                   return (
                     <tr key={l.id} className={pend > 0 && val < pend ? "row-pending" : ""}>
-                      <td>{l.descripcion}</td>
+                      <td>
+                        {l.descripcion}
+                        <div className="ds-body-sm ds-muted">
+                          {[l.pedidoNumero, l.proyecto && `Proy. ${l.proyecto}`, l.taskNo && `Tarea ${l.taskNo}`, l.descuentoPct ? `−${l.descuentoPct}%` : null].filter(Boolean).join(" · ")}
+                        </div>
+                      </td>
                       <td className="ds-muted">{l.almacen}</td>
                       <td className="ds-num">{num.format(l.cantidad)} {l.unidad}</td>
                       <td className="ds-num">{num.format(l.cantidadRecibida)}</td>
@@ -134,6 +174,12 @@ export default function RegistrarFacturaPage() {
                       <td className="ds-num">
                         <input className="ds-cell-input" type="number" min={0} max={pend} value={recibir[l.id] ?? ""}
                           onChange={(e) => setRecibir((r) => ({ ...r, [l.id]: e.target.value }))} />
+                      </td>
+                      <td className="ds-num ds-muted">{money(l.precioUnitario, orden.currencyCode)}</td>
+                      <td className="ds-num">
+                        <input className="ds-cell-input" type="number" min={0} value={precioFact[l.id] ?? ""} style={{ width: 100, borderColor: hayDiferencia(l) ? "var(--ds-color-red-100)" : undefined }}
+                          onChange={(e) => setPrecioFact((p) => ({ ...p, [l.id]: e.target.value }))} />
+                        {hayDiferencia(l) && <div className="ds-body-sm ds-pending-text">≠ orden</div>}
                       </td>
                       <td className="ds-num ds-strong">{money(importe || 0, orden.currencyCode)}</td>
                     </tr>
@@ -147,6 +193,8 @@ export default function RegistrarFacturaPage() {
                     <td className="ds-num">{num.format(cargo.cantidadRecibida)}</td>
                     <td className="ds-num">—</td>
                     <td className="ds-num">{completaOrden ? num.format(cargo.cantidad) : "—"}</td>
+                    <td className="ds-num ds-muted">{money(cargo.precioUnitario, orden.currencyCode)}</td>
+                    <td className="ds-num ds-muted">—</td>
                     <td className="ds-num ds-strong">{money(fleteAplicado, orden.currencyCode)}</td>
                   </tr>
                 )}
@@ -154,6 +202,20 @@ export default function RegistrarFacturaPage() {
             </table>
           </div>
         </Card>
+
+        {lineasConDiferencia.length > 0 && (
+          <Card flat className="mt-4 ds-form-field--advertencia">
+            <div className="row gap-3">
+              <span style={{ color: "var(--ds-color-red-200)" }}><IconWarning /></span>
+              <div>
+                <div className="ds-strong">{lineasConDiferencia.length} línea(s) con precio distinto al de la orden</div>
+                <p className="ds-label ds-muted">
+                  El precio de la factura no coincide con el precio acordado (BC) en: {lineasConDiferencia.map((l) => l.descripcion).join(", ")}. Verificá la factura física antes de registrar.
+                </p>
+              </div>
+            </div>
+          </Card>
+        )}
 
         {cargo && !completaOrden && (
           <Card flat className="mt-4 ds-form-field--advertencia">
@@ -183,7 +245,7 @@ export default function RegistrarFacturaPage() {
           </div>
           <div className="row gap-3">
             <Button variant="outline" onClick={() => setPreview(true)} disabled={!algoRecibido}>Vista previa</Button>
-            <Button variant="red" onClick={registrar} disabled={!algoRecibido || !numeroFactura.trim()}>Registrar factura</Button>
+            <Button variant="red" onClick={registrar} disabled={!algoRecibido || !numeroFactura.trim() || guardando}>{guardando ? "Registrando…" : "Registrar factura"}</Button>
           </div>
         </div>
 
@@ -193,7 +255,7 @@ export default function RegistrarFacturaPage() {
             onClose={() => setPreview(false)}
             footer={<>
               <Button variant="outline" onClick={() => setPreview(false)}>Cerrar</Button>
-              <Button variant="red" onClick={() => { setPreview(false); registrar(); }} disabled={!numeroFactura.trim()}>Confirmar y registrar</Button>
+              <Button variant="red" onClick={() => { setPreview(false); registrar(); }} disabled={!numeroFactura.trim() || guardando}>Confirmar y registrar</Button>
             </>}
           >
             <p className="ds-label">Factura del proveedor <span className="ds-strong">{prov?.nombre}</span> por:</p>
@@ -206,13 +268,16 @@ export default function RegistrarFacturaPage() {
                     <tr key={l.id}>
                       <td>{l.descripcion}{distrib[l.id] ? <div className="ds-body-sm ds-muted">+ flete {money(distrib[l.id], orden.currencyCode)}</div> : null}</td>
                       <td className="ds-num">{num.format(Number(recibir[l.id]))}</td>
-                      <td className="ds-num">{money(Number(recibir[l.id]) * l.precioUnitario, orden.currencyCode)}</td>
+                      <td className="ds-num">{money(importeRecibir(l), orden.currencyCode)}</td>
                     </tr>
                   ))}
                   {fleteAplicado > 0 && <tr><td>{cargo?.descripcion}</td><td className="ds-num">1</td><td className="ds-num">{money(fleteAplicado, orden.currencyCode)}</td></tr>}
                 </tbody>
               </table>
             </div>
+            {lineasConDiferencia.length > 0 && (
+              <p className="ds-body-sm ds-pending-text mt-4">⚠ {lineasConDiferencia.length} línea(s) con precio distinto al de la orden — confirmá que la factura sea correcta.</p>
+            )}
             <p className="ds-body-sm ds-muted mt-4">
               Verificá que el total físico de la factura coincida. Fecha de registro: {fechaRegistro}
               {!fechasCoinciden && " — no coincide con la fecha de factura"}.
