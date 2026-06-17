@@ -1,18 +1,20 @@
 "use client";
 
+import { Fragment, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { AppShell } from "@/components/shell";
 import { Badge, Button, Card, useToast } from "@/components/ui";
 import { OrderLinesTable } from "@/components/order-lines";
 import { Timeline } from "@/components/timeline";
 import { useStore } from "@/lib/store";
-import { money, formatDate, ordenBadge, ordenLineaImporte, ordenRecibidoPct } from "@/lib/helpers";
+import { money, num, formatDate, ordenBadge, ordenLineaImporte, ordenRecibidoPct } from "@/lib/helpers";
 
 export default function ProvOrdenDetallePage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
   const toast = useToast();
   const { ordenes, proveedores, recepciones, setOrdenEstado } = useStore();
+  const [verFactura, setVerFactura] = useState<string | null>(null);
 
   const orden = ordenes.find((o) => o.id === id);
   if (!orden) {
@@ -83,17 +85,55 @@ export default function ProvOrdenDetallePage() {
           <Card style={{ padding: 0, overflow: "hidden" }}>
             <div className="ds-table-wrap" style={{ boxShadow: "none" }}>
               <table className="ds-table">
-                <thead><tr><th>Factura</th><th>Fecha factura</th><th>Fecha registro</th><th className="ds-num">Total</th><th>Tipo</th></tr></thead>
+                <thead><tr><th>Factura</th><th>Fecha factura</th><th>Fecha registro</th><th className="ds-num">Total</th><th>Tipo</th><th></th></tr></thead>
                 <tbody>
-                  {recs.map((r) => (
-                    <tr key={r.id}>
-                      <td className="ds-strong">{r.numeroFactura}</td>
-                      <td>{formatDate(r.fechaFactura)}</td>
-                      <td>{formatDate(r.fechaRegistro)}</td>
-                      <td className="ds-num">{money(r.total, orden.currencyCode)}</td>
-                      <td>{r.parcial ? <Badge tone="yellow">Parcial</Badge> : <Badge tone="green">Completa</Badge>}</td>
-                    </tr>
-                  ))}
+                  {recs.map((r) => {
+                    const abierto = verFactura === r.id;
+                    return (
+                      <Fragment key={r.id}>
+                        <tr className="is-clickable" onClick={() => setVerFactura(abierto ? null : r.id)}>
+                          <td className="ds-strong">{r.numeroFactura}</td>
+                          <td>{formatDate(r.fechaFactura)}</td>
+                          <td>{formatDate(r.fechaRegistro)}</td>
+                          <td className="ds-num">{money(r.total, orden.currencyCode)}</td>
+                          <td>{r.parcial ? <Badge tone="yellow">Parcial</Badge> : <Badge tone="green">Completa</Badge>}</td>
+                          <td className="ds-num ds-muted">{abierto ? "▾ ocultar" : "› ver"}</td>
+                        </tr>
+                        {abierto && (
+                          <tr>
+                            <td colSpan={6} style={{ background: "var(--ds-color-surface)", padding: 0 }}>
+                              <div style={{ padding: "8px 16px 12px" }}>
+                                <div className="ds-body-sm ds-muted" style={{ marginBottom: 6 }}>Detalle de la factura {r.numeroFactura}</div>
+                                <table className="ds-table" style={{ background: "transparent" }}>
+                                  <thead>
+                                    <tr><th>Artículo</th><th className="ds-num">Cantidad</th><th className="ds-num">Precio factura</th><th className="ds-num">Importe</th></tr>
+                                  </thead>
+                                  <tbody>
+                                    {r.lineas.map((rl, i) => {
+                                      const ol = orden!.lineas.find((x) => x.id === rl.ordenLineaId);
+                                      const precio = rl.precioFactura ?? ol?.precioUnitario ?? 0;
+                                      const distinto = ol != null && rl.precioFactura != null && rl.precioFactura !== ol.precioUnitario;
+                                      return (
+                                        <tr key={i}>
+                                          <td>{ol?.descripcion ?? `Línea ${rl.ordenLineaId}`}</td>
+                                          <td className="ds-num">{num.format(rl.cantidadRecibida)} {ol?.unidad ?? ""}</td>
+                                          <td className="ds-num">
+                                            {money(precio, orden!.currencyCode)}
+                                            {distinto && <div className="ds-body-sm ds-pending-text">orden: {money(ol!.precioUnitario, orden!.currencyCode)}</div>}
+                                          </td>
+                                          <td className="ds-num ds-strong">{money(precio * rl.cantidadRecibida, orden!.currencyCode)}</td>
+                                        </tr>
+                                      );
+                                    })}
+                                  </tbody>
+                                </table>
+                              </div>
+                            </td>
+                          </tr>
+                        )}
+                      </Fragment>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>

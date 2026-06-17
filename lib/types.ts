@@ -133,6 +133,7 @@ export interface Orden {
 export interface RecepcionLinea {
   ordenLineaId: string;
   cantidadRecibida: number;
+  precioFactura?: number;   // precio facturado de la línea (puede diferir del de la orden)
 }
 
 export interface Recepcion {

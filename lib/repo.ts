@@ -371,7 +371,11 @@ export async function listRecepciones(): Promise<Recepcion[]> {
     fechaRegistro: (r.fechaRegistro?.toISOString?.() ?? "").slice(0, 10),
     total: Number(r.total ?? 0), parcial: !!r.esParcial,
     lineas: d.recordset.filter((x) => x.idRecepcionCompra === r.idRecepcionCompra)
-      .map((l): RecepcionLinea => ({ ordenLineaId: String(l.idOrdenCompraDet), cantidadRecibida: Number(l.quantityRecibida ?? 0) })),
+      .map((l): RecepcionLinea => ({
+        ordenLineaId: String(l.idOrdenCompraDet),
+        cantidadRecibida: Number(l.quantityRecibida ?? 0),
+        precioFactura: l.precioFactura != null ? Number(l.precioFactura) : undefined,
+      })),
   }));
 }
 
