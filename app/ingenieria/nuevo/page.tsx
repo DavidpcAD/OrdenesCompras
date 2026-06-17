@@ -1,11 +1,12 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { AppShell } from "@/components/shell";
 import { Button, Card, Field, Input, Select, Textarea, useToast } from "@/components/ui";
 import { IconTrash } from "@/components/icons";
 import { useStore } from "@/lib/store";
+import { num } from "@/lib/helpers";
 import type { Pedido, TipoSolicitud } from "@/lib/types";
 
 interface DraftLine {
@@ -26,59 +27,92 @@ export default function NuevaSolicitudPage() {
   const [solicitante, setSolicitante] = useState("Laura Jiménez");
   const [prioridad, setPrioridad] = useState<Pedido["prioridad"]>("normal");
   const [notas, setNotas] = useState("");
-  const [lineas, setLineas] = useState<DraftLine[]>([
-    { key: Math.random().toString(36).slice(2), articuloId: "", almacen: "", cantidad: "" },
-  ]);
+  const [lineas, setLineas] = useState<DraftLine[]>([]);
 
   // catálogo filtrado: repuestos (R..) vs materiales
-  const catalogo = articulos.filter((a) =>
-    tipo === "repuesto" ? a.code.startsWith("R") : !a.code.startsWith("R")
+  const catalogo = useMemo(
+    () => articulos.filter((a) => (tipo === "repuesto" ? a.code.startsWith("R") : !a.code.startsWith("R"))),
+    [articulos, tipo]
   );
 
-  function setLine(key: string, patch: Partial<DraftLine>) {
-    setLineas((ls) => ls.map((l) => (l.key === key ? { ...l, ...patch } : l)));
+  // ---- alta rápida ----
+  const [qaArticuloId, setQaArticuloId] = useState("");
+  const [qaQuery, setQaQuery] = useState("");
+  const [qaAlmacen, setQaAlmacen] = useState("");
+  const [qaCantidad, setQaCantidad] = useState("");
+  const [qaOpen, setQaOpen] = useState(false);
+  const cantRef = useRef<HTMLInputElement>(null);
+
+  const q = qaQuery.trim().toLowerCase();
+  const sugerencias = useMemo(() => {
+    const base = q
+      ? catalogo.filter((a) => a.code.toLowerCase().includes(q) || a.descripcion.toLowerCase().includes(q))
+      : catalogo;
+    return base.slice(0, 8);
+  }, [catalogo, q]);
+
+  function elegir(a: (typeof articulos)[number]) {
+    setQaArticuloId(a.id);
+    setQaQuery(`${a.code} — ${a.descripcion}`);
+    setQaAlmacen(a.almacenDefault || "");
+    setQaOpen(false);
+    setTimeout(() => cantRef.current?.focus(), 0);
   }
-  function addLine() {
-    setLineas((ls) => [...ls, { key: Math.random().toString(36).slice(2), articuloId: "", almacen: "", cantidad: "" }]);
+
+  const qaArticulo = articulos.find((a) => a.id === qaArticuloId);
+  const puedeAgregar = !!qaArticuloId && Number(qaCantidad) > 0;
+
+  function agregar() {
+    if (!puedeAgregar) return;
+    setLineas((ls) => [
+      { key: Math.random().toString(36).slice(2), articuloId: qaArticuloId, almacen: qaAlmacen || qaArticulo?.almacenDefault || "", cantidad: qaCantidad },
+      ...ls,
+    ]);
+    setQaArticuloId(""); setQaQuery(""); setQaAlmacen(""); setQaCantidad(""); setQaOpen(false);
   }
   function removeLine(key: string) {
-    setLineas((ls) => (ls.length === 1 ? ls : ls.filter((l) => l.key !== key)));
+    setLineas((ls) => ls.filter((l) => l.key !== key));
+  }
+  function cambiarTipo(t: TipoSolicitud) {
+    if (t === tipo) return;
+    setTipo(t);
+    setLineas([]);
+    setQaArticuloId(""); setQaQuery(""); setQaAlmacen(""); setQaCantidad("");
   }
 
   const destinoOk = tipo === "material" ? !!obraId : !!maquinaId;
-  const lineasValidas = lineas.filter((l) => l.articuloId && Number(l.cantidad) > 0);
-  const puedeGuardar = destinoOk && solicitante.trim() && lineasValidas.length > 0;
+  const puedeGuardar = destinoOk && solicitante.trim() && lineas.length > 0;
 
   const [guardando, setGuardando] = useState(false);
 
   async function guardar() {
     if (!puedeGuardar) {
-      toast(`Indicá ${tipo === "material" ? "la obra" : "la máquina"} y al menos una línea válida.`, "error");
+      toast(`Indicá ${tipo === "material" ? "la obra" : "la máquina"} y al menos un ${tipo === "material" ? "material" : "repuesto"}.`, "error");
       return;
     }
     const obra = obras.find((o) => o.id === obraId);
     const maquina = maquinas.find((m) => m.id === maquinaId);
     setGuardando(true);
     try {
-    const p = await addPedido({
-      tipoSolicitud: tipo,
-      obraCodigo: tipo === "material" ? obra?.codigo : undefined,
-      obraNombre: tipo === "material" ? obra?.nombre : undefined,
-      maquinaNo: tipo === "repuesto" ? maquina?.no : undefined,
-      maquinaNombre: tipo === "repuesto" ? maquina?.nombre : undefined,
-      solicitante: solicitante.trim(),
-      prioridad,
-      notas: notas.trim() || undefined,
-      lineas: lineasValidas.map((l) => {
-        const a = articulos.find((x) => x.id === l.articuloId)!;
-        return {
-          articuloId: a.id, descripcion: a.descripcion, cantidad: Number(l.cantidad),
-          unidad: a.unidad, almacen: l.almacen || a.almacenDefault,
-        };
-      }),
-    });
-    toast(`Solicitud ${p.numero} creada`, "success");
-    router.push(`/ingenieria/${p.id}`);
+      const p = await addPedido({
+        tipoSolicitud: tipo,
+        obraCodigo: tipo === "material" ? obra?.codigo : undefined,
+        obraNombre: tipo === "material" ? obra?.nombre : undefined,
+        maquinaNo: tipo === "repuesto" ? maquina?.no : undefined,
+        maquinaNombre: tipo === "repuesto" ? maquina?.nombre : undefined,
+        solicitante: solicitante.trim(),
+        prioridad,
+        notas: notas.trim() || undefined,
+        lineas: lineas.map((l) => {
+          const a = articulos.find((x) => x.id === l.articuloId)!;
+          return {
+            articuloId: a.id, descripcion: a.descripcion, cantidad: Number(l.cantidad),
+            unidad: a.unidad, almacen: l.almacen || a.almacenDefault,
+          };
+        }),
+      });
+      toast(`Solicitud ${p.numero} creada`, "success");
+      router.push(`/ingenieria/${p.id}`);
     } catch (e: any) {
       toast(String(e?.message ?? e), "error");
       setGuardando(false);
@@ -92,7 +126,7 @@ export default function NuevaSolicitudPage() {
         <div className="page__head">
           <div className="page__title">
             <h1 className="ds-heading">Nueva solicitud</h1>
-            <p className="ds-muted">Indicá el destino y las líneas de material que necesitás.</p>
+            <p className="ds-muted">Indicá el destino y agregá los materiales que necesitás.</p>
           </div>
         </div>
 
@@ -100,14 +134,14 @@ export default function NuevaSolicitudPage() {
           {/* toggle material / repuesto */}
           <div className="row gap-3" style={{ marginBottom: 20 }}>
             <button type="button" className={`role-option ${tipo === "material" ? "is-selected" : ""}`}
-              style={{ flex: 1, padding: "12px 16px" }} onClick={() => setTipo("material")}>
+              style={{ flex: 1, padding: "12px 16px" }} onClick={() => cambiarTipo("material")}>
               <span className="col" style={{ gap: 2 }}>
                 <span className="role-option__title">Material</span>
                 <span className="role-option__desc">Va a una obra</span>
               </span>
             </button>
             <button type="button" className={`role-option ${tipo === "repuesto" ? "is-selected" : ""}`}
-              style={{ flex: 1, padding: "12px 16px" }} onClick={() => setTipo("repuesto")}>
+              style={{ flex: 1, padding: "12px 16px" }} onClick={() => cambiarTipo("repuesto")}>
               <span className="col" style={{ gap: 2 }}>
                 <span className="role-option__title">Repuesto</span>
                 <span className="role-option__desc">Va a una máquina</span>
@@ -148,42 +182,72 @@ export default function NuevaSolicitudPage() {
         </Card>
 
         <Card className="mt-4">
-          <div className="row row--between" style={{ marginBottom: 16 }}>
-            <h3 className="ds-subtitle">{tipo === "material" ? "Materiales" : "Repuestos"}</h3>
-            <Button variant="outline" size="sm" onClick={addLine}>+ Agregar línea</Button>
+          <h3 className="ds-subtitle" style={{ marginBottom: 4 }}>{tipo === "material" ? "Materiales" : "Repuestos"}</h3>
+          <p className="ds-muted ds-body-sm" style={{ marginBottom: 16 }}>
+            Buscá el {tipo === "material" ? "material" : "repuesto"}, elegí almacén y cantidad, y agregalo. Se van sumando a la lista.
+          </p>
+
+          {/* alta rápida */}
+          <div className="qa-row">
+            <div className="qa-field">
+              <label>{tipo === "material" ? "Material" : "Repuesto"}</label>
+              <div className="combo">
+                <input
+                  className="ds-form-field__input"
+                  placeholder="Buscar por código o nombre…"
+                  value={qaQuery}
+                  onChange={(e) => { setQaQuery(e.target.value); setQaArticuloId(""); setQaOpen(true); }}
+                  onFocus={() => setQaOpen(true)}
+                  onBlur={() => setTimeout(() => setQaOpen(false), 150)}
+                />
+                {qaOpen && (
+                  <div className="combo__menu">
+                    {sugerencias.length === 0 && <div className="combo__empty">Sin coincidencias.</div>}
+                    {sugerencias.map((a) => (
+                      <button key={a.id} type="button" className="combo__item" onMouseDown={(e) => { e.preventDefault(); elegir(a); }}>
+                        <strong>{a.code}</strong> — {a.descripcion} <small>· {a.unidad}</small>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+            <div className="qa-field">
+              <label>Almacén</label>
+              <select className="ds-form-field__select" value={qaAlmacen} onChange={(e) => setQaAlmacen(e.target.value)}>
+                {!qaAlmacen && <option value="">—</option>}
+                {almacenes.map((al) => <option key={al.codigo} value={al.codigo}>{al.codigo}</option>)}
+              </select>
+            </div>
+            <div className="qa-field">
+              <label>Cantidad{qaArticulo ? ` (${qaArticulo.unidad})` : ""}</label>
+              <input ref={cantRef} className="ds-form-field__input" type="number" min={0} value={qaCantidad}
+                placeholder="0"
+                onChange={(e) => setQaCantidad(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter") agregar(); }} />
+            </div>
+            <Button onClick={agregar} disabled={!puedeAgregar}>+ Agregar</Button>
           </div>
 
-          <div className="ds-table-wrap" style={{ boxShadow: "none" }}>
+          {/* lista (más reciente primero) */}
+          <div className="ds-table-wrap mt-4" style={{ boxShadow: "none", border: "1.5px solid var(--ds-color-gray-100)" }}>
             <table className="ds-table">
               <thead>
-                <tr><th style={{ minWidth: 300 }}>{tipo === "material" ? "Artículo" : "Repuesto"}</th><th>Unidad</th><th>Almacén</th><th className="ds-num">Cantidad</th><th></th></tr>
+                <tr><th style={{ minWidth: 280 }}>{tipo === "material" ? "Artículo" : "Repuesto"}</th><th>Unidad</th><th>Almacén</th><th className="ds-num">Cantidad</th><th></th></tr>
               </thead>
               <tbody>
+                {lineas.length === 0 && (
+                  <tr><td colSpan={5}><div className="empty" style={{ padding: "28px 0" }}>Todavía no agregaste {tipo === "material" ? "materiales" : "repuestos"}.</div></td></tr>
+                )}
                 {lineas.map((l) => {
                   const a = articulos.find((x) => x.id === l.articuloId);
                   return (
                     <tr key={l.key}>
-                      <td>
-                        <select className="ds-form-field__select" style={{ borderRadius: 8, padding: "8px 12px" }}
-                          value={l.articuloId} onChange={(e) => setLine(l.key, { articuloId: e.target.value })}>
-                          <option value="">Seleccionar…</option>
-                          {catalogo.map((x) => (
-                            <option key={x.id} value={x.id}>{x.code} — {x.descripcion}</option>
-                          ))}
-                        </select>
-                      </td>
+                      <td><span className="ds-strong">{a?.code}</span> <span className="ds-muted">— {a?.descripcion}</span></td>
                       <td className="ds-muted">{a?.unidad ?? "—"}</td>
-                      <td>
-                        <select className="ds-form-field__select" style={{ borderRadius: 8, padding: "8px 12px" }}
-                          value={l.almacen || a?.almacenDefault || ""} onChange={(e) => setLine(l.key, { almacen: e.target.value })}>
-                          {almacenes.map((al) => <option key={al.codigo} value={al.codigo}>{al.codigo}</option>)}
-                        </select>
-                      </td>
-                      <td className="ds-num">
-                        <input className="ds-cell-input" type="number" min={0} value={l.cantidad}
-                          onChange={(e) => setLine(l.key, { cantidad: e.target.value })} placeholder="0" />
-                      </td>
-                      <td><button className="icon-btn" onClick={() => removeLine(l.key)} aria-label="Borrar línea"><IconTrash /></button></td>
+                      <td className="ds-muted">{l.almacen}</td>
+                      <td className="ds-num ds-strong">{num.format(Number(l.cantidad))}</td>
+                      <td><button className="icon-btn" onClick={() => removeLine(l.key)} aria-label="Quitar"><IconTrash /></button></td>
                     </tr>
                   );
                 })}

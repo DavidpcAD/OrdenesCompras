@@ -100,6 +100,12 @@ export default function ProveeduriaMaterialesPage() {
           </div>
         </div>
 
+        {baseRows.length === 0 ? (
+          <Card className="mt-4"><div className="empty" style={{ padding: "56px 16px", lineHeight: 1.6 }}>
+            No hay líneas pendientes por ordenar.<br />
+            <span className="ds-muted ds-body-sm">Cuando Ingeniería apruebe nuevas solicitudes, van a aparecer acá.</span>
+          </div></Card>
+        ) : (
         <div className="md-layout mt-2">
           {/* pedidos */}
           <div className="md-list">
@@ -185,6 +191,7 @@ export default function ProveeduriaMaterialesPage() {
             </div>
           </Card>
         </div>
+        )}
       </main>
 
       {/* barra inferior */}

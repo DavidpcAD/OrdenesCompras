@@ -25,12 +25,14 @@ const ROLE_META: Record<Role, { label: string; persona: string; home: string; na
     label: "Aprobación", persona: "Luis Roberto", home: "/aprobacion", color: "var(--ds-color-green-200)",
     nav: [
       { href: "/aprobacion", label: "Por aprobar" },
+      { href: "/aprobacion/todas", label: "Todas las órdenes" },
     ],
   },
   facturacion: {
     label: "Bodega", persona: "Kattya", home: "/facturacion", color: "var(--ds-color-red-100)",
     nav: [
-      { href: "/facturacion", label: "Órdenes por recibir" },
+      { href: "/facturacion", label: "Por recibir" },
+      { href: "/facturacion/todas", label: "Todas las órdenes" },
       { href: "/facturacion/archivo", label: "Archivo / recepciones" },
     ],
   },

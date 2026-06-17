@@ -234,6 +234,18 @@ h1, h2, h3, h4, p { margin: 0; }
 .ds-num { text-align: right; font-variant-numeric: tabular-nums; }
 .ds-pending-text { color: var(--ds-color-red-200); font-weight: var(--ds-font-weight-semibold); }
 
+/* Alta rápida de líneas (Ingeniería · nueva solicitud) */
+.qa-row { display: grid; grid-template-columns: 1fr 130px 110px auto; gap: var(--ds-space-3); align-items: end; }
+.qa-field { display: flex; flex-direction: column; gap: 4px; }
+.qa-field > label { font-size: var(--ds-font-size-body-sm); color: var(--ds-color-gray-500); font-weight: var(--ds-font-weight-semibold); }
+.combo { position: relative; }
+.combo__menu { position: absolute; z-index: 30; top: calc(100% + 4px); left: 0; right: 0; max-height: 280px; overflow-y: auto; background: #fff; border: 1.5px solid var(--ds-color-gray-200); border-radius: var(--ds-radius-lg); box-shadow: 0 8px 24px #00000022; padding: 4px; }
+.combo__item { display: block; width: 100%; text-align: left; background: transparent; border: 0; padding: 9px 12px; border-radius: 8px; cursor: pointer; font-size: var(--ds-font-size-label); color: var(--ds-color-black); }
+.combo__item:hover { background: var(--ds-color-gray-100); }
+.combo__item small { color: var(--ds-color-gray-400); }
+.combo__empty { padding: 10px 12px; color: var(--ds-color-gray-400); font-size: var(--ds-font-size-body-sm); }
+@media (max-width: 640px) { .qa-row { grid-template-columns: 1fr; } }
+
 /* Detalle expandible de una factura (proveeduría) */
 .fac-det { margin: 2px 0 6px; background: var(--ds-color-white); border: 1.5px solid var(--ds-color-gray-100); border-radius: var(--ds-radius-lg); box-shadow: var(--ds-shadow-01); overflow: hidden; }
 .fac-det__head { display: flex; justify-content: space-between; align-items: center; gap: var(--ds-space-3); padding: var(--ds-space-3) var(--ds-space-4); background: var(--ds-color-surface); border-bottom: 1px solid var(--ds-color-gray-100); }
