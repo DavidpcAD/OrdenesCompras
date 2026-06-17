@@ -40,8 +40,8 @@ export default function OrdenesPage() {
                 <tr><th>N.º</th><th>Proveedor</th><th>Solicitudes</th><th>Fecha</th><th className="ds-num">Total</th><th>Recibido</th><th>Estado</th><th></th></tr>
               </thead>
               <tbody>
-                {ordenes.filter((o) => o.estado !== "completado").length === 0 && <tr><td colSpan={8}><div className="empty">No hay órdenes activas.</div></td></tr>}
-                {ordenes.filter((o) => o.estado !== "completado").map((o) => {
+                {ordenes.length === 0 && <tr><td colSpan={8}><div className="empty">Todavía no hay órdenes creadas.</div></td></tr>}
+                {ordenes.map((o) => {
                   const b = ordenBadge(o.estado);
                   const total = ordenSubtotal(o);
                   const peds = [...new Set(o.lineas.filter((l) => l.pedidoNumero).map((l) => l.pedidoNumero!))];
