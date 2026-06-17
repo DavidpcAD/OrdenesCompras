@@ -94,7 +94,7 @@ export default function PedidoDetallePage() {
         )}
 
         <h3 className="ds-subtitle mt-6" style={{ marginBottom: 12 }}>Historial</h3>
-        <Card><Timeline entidad="pedido" idEntidad={pedido.id} /></Card>
+        <Card><Timeline entidad="pedido" idEntidad={pedido.id} traza /></Card>
       </main>
     </AppShell>
   );
