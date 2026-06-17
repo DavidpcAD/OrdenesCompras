@@ -26,18 +26,22 @@ let estadoIdToNombre: Map<number, string> | null = null;
 async function ensureEstados() {
   if (estadoNombreToId) return;
   const pool = await getPool();
-  // crear los nombres que falten
+  // crear los nombres que falten.
+  // OJO: la tabla dbo.Estado es compartida con boletas: la columna del nombre
+  // se llama `estado` (no `nombre`), y `creadoPor`/`fechaCreacion` son NOT NULL.
   for (const nombre of new Set(Object.values(NOMBRE_POR_CODIGO))) {
     await pool.request().input("n", sql.NVarChar(50), nombre).query(
-      "IF NOT EXISTS (SELECT 1 FROM dbo.Estado WHERE nombre=@n AND modulo='Compras') INSERT dbo.Estado(nombre,modulo) VALUES(@n,'Compras')"
+      "IF NOT EXISTS (SELECT 1 FROM dbo.Estado WHERE estado=@n AND modulo='Compras') " +
+      "INSERT dbo.Estado(estado,modulo,fechaCreacion,creadoPor) VALUES(@n,'Compras',SYSUTCDATETIME(),'sistema')"
     );
   }
-  const r = await pool.request().query("SELECT idEstado, nombre FROM dbo.Estado");
+  // Solo los estados del módulo Compras, para no colisionar con los de otros módulos.
+  const r = await pool.request().query("SELECT idEstado, estado FROM dbo.Estado WHERE modulo='Compras'");
   estadoNombreToId = new Map();
   estadoIdToNombre = new Map();
   for (const row of r.recordset) {
-    estadoNombreToId.set(row.nombre, row.idEstado);
-    estadoIdToNombre.set(row.idEstado, row.nombre);
+    estadoNombreToId.set(row.estado, row.idEstado);
+    estadoIdToNombre.set(row.idEstado, row.estado);
   }
 }
 
