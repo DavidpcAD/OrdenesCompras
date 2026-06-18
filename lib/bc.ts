@@ -1,15 +1,14 @@
 // Cliente de Business Central (SaaS, API v2.0) por OAuth client-credentials (S2S).
-// Variables de entorno necesarias (Azure App Settings):
+// Variables de entorno (Azure App Settings):
 //   BC_TENANT_ID, BC_CLIENT_ID, BC_CLIENT_SECRET
-//   BC_ENVIRONMENT   (ej. "Sandbox" o "Production")
-//   BC_COMPANY_ID    (GUID de la compañía)  -- opcional si se usa BC_COMPANY
-//   BC_COMPANY       (nombre de la compañía) -- opcional, se resuelve a id
-//   BC_BASE_URL      (opcional; si no, se construye con tenant + environment)
+//   BC_ENVIRONMENT   (ej. "Sandbox")
+//   BC_COMPANY       (nombre de la compañía, ej. "ADELANTE_DESARROLLOS_NUEVA")
+//   BC_COMPANY_ID    (opcional; GUID de la compañía)
+//   BC_BASE_URL      (opcional; se usa para deducir tenant/environment)
 //
-// IMPORTANTE: además del registro en Azure AD, el App Registration debe estar
-// dado de alta DENTRO de Business Central (Microsoft Entra Applications) con un
-// permission set que permita leer Items / Locations / Projects. Sin eso, BC
-// responde 401 aunque el token de Azure AD sea válido.
+// Usamos la API ESTÁNDAR /api/v2.0 (items, locations, projects), que siempre
+// está publicada en BC SaaS, y resolvemos la compañía por nombre para no
+// depender de un id que pueda venir mal configurado.
 
 type TokenCache = { token: string; exp: number };
 let tokenCache: TokenCache | null = null;
@@ -19,6 +18,26 @@ function env(name: string): string {
   const v = process.env[name];
   if (!v) throw new Error(`Falta la variable de entorno ${name}`);
   return v;
+}
+
+function soloGuid(v?: string): string | null {
+  const m = (v ?? "").match(/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}/);
+  return m ? m[0] : null;
+}
+
+// Deduce tenant y environment desde BC_BASE_URL (.../v2.0/{tenant}/{env}/api/...)
+// o, si no, desde BC_TENANT_ID / BC_ENVIRONMENT.
+function tenantYEntorno(): { tenant: string; environment: string } {
+  const base = process.env.BC_BASE_URL ?? "";
+  const m = base.match(/\/v2\.0\/([^/]+)\/([^/]+)\/api\b/i);
+  if (m) return { tenant: m[1], environment: m[2] };
+  return { tenant: env("BC_TENANT_ID"), environment: process.env.BC_ENVIRONMENT ?? "Production" };
+}
+
+// Raíz de la API estándar v2.0.
+function stdRoot(): string {
+  const { tenant, environment } = tenantYEntorno();
+  return `https://api.businesscentral.dynamics.com/v2.0/${tenant}/${environment}/api/v2.0`;
 }
 
 async function getToken(): Promise<string> {
@@ -35,57 +54,41 @@ async function getToken(): Promise<string> {
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body,
   });
-  if (!res.ok) {
-    const t = await res.text();
-    throw new Error(`OAuth BC falló (${res.status}): ${t.slice(0, 300)}`);
-  }
+  if (!res.ok) throw new Error(`OAuth BC falló (${res.status}): ${(await res.text()).slice(0, 300)}`);
   const json = await res.json();
   tokenCache = { token: json.access_token, exp: Date.now() + (json.expires_in ?? 3600) * 1000 };
   return tokenCache.token;
 }
 
-function apiRoot(): string {
-  if (process.env.BC_BASE_URL) return process.env.BC_BASE_URL.replace(/\/$/, "");
-  const tenant = env("BC_TENANT_ID");
-  const environment = env("BC_ENVIRONMENT");
-  return `https://api.businesscentral.dynamics.com/v2.0/${tenant}/${environment}/api/v2.0`;
-}
-
-async function bcFetch(path: string): Promise<any> {
+async function bcFetch(url: string): Promise<any> {
   const token = await getToken();
-  const url = path.startsWith("http") ? path : `${apiRoot()}${path}`;
   const res = await fetch(url, { headers: { Authorization: `Bearer ${token}`, Accept: "application/json" } });
-  if (!res.ok) {
-    const t = await res.text();
-    throw new Error(`BC ${res.status} en ${path}: ${t.slice(0, 300)}`);
-  }
+  if (!res.ok) throw new Error(`BC ${res.status} en ${url}: ${(await res.text()).slice(0, 300)}`);
   return res.json();
 }
 
-// Extrae un GUID limpio de un string (tolera basura pegada, p.ej. "...acffalse").
-function soloGuid(v?: string): string | null {
-  const m = (v ?? "").match(/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}/);
-  return m ? m[0] : null;
+export async function bcCompanies(): Promise<{ id: string; name: string; displayName: string }[]> {
+  const data = await bcFetch(`${stdRoot()}/companies?$select=id,name,displayName`);
+  return (data.value ?? []).map((c: any) => ({ id: c.id, name: c.name, displayName: c.displayName }));
 }
 
 async function getCompanyId(): Promise<string> {
   if (companyIdCache) return companyIdCache;
-  const limpio = soloGuid(process.env.BC_COMPANY_ID);
-  if (limpio) { companyIdCache = limpio; return companyIdCache; }
-  if (process.env.BC_COMPANY_ID) { companyIdCache = process.env.BC_COMPANY_ID.trim(); return companyIdCache; }
-  const data = await bcFetch(`/companies`);
+  const comps = await bcCompanies();
   const nombre = process.env.BC_COMPANY;
-  const lista: any[] = data.value ?? [];
-  const comp = nombre ? lista.find((c) => c.name === nombre || c.displayName === nombre) : lista[0];
-  if (!comp) throw new Error(`No se encontró la compañía${nombre ? ` "${nombre}"` : ""} en BC`);
+  const idCfg = soloGuid(process.env.BC_COMPANY_ID);
+  const comp =
+    (nombre && comps.find((c) => c.name === nombre || c.displayName === nombre)) ||
+    (idCfg && comps.find((c) => c.id.toLowerCase() === idCfg.toLowerCase())) ||
+    comps[0];
+  if (!comp) throw new Error(`No se encontró ninguna compañía en BC (${comps.length} disponibles)`);
   companyIdCache = comp.id;
   return comp.id;
 }
 
-// Trae todas las páginas de un entitySet de la compañía.
-async function listAll(entity: string, select?: string): Promise<any[]> {
+async function listAll(entity: string): Promise<any[]> {
   const cid = await getCompanyId();
-  let url: string | null = `${apiRoot()}/companies(${cid})/${entity}${select ? `?$select=${select}` : ""}`;
+  let url: string | null = `${stdRoot()}/companies(${cid})/${entity}`;
   const out: any[] = [];
   let guard = 0;
   while (url && guard++ < 50) {
@@ -116,19 +119,15 @@ export async function bcAlmacenes(): Promise<BcAlmacen[]> {
 }
 
 export async function bcObras(): Promise<BcObra[]> {
-  // En la API estándar las obras son "projects" (jobs). Si usan un objeto custom
-  // (p.ej. GomJob de la localización CR), hay que publicar una API page y cambiar
-  // este entitySet por el de esa API.
   const rows = await listAll("projects");
-  return rows.map((p) => ({
-    id: p.id ?? p.number ?? "",
-    codigo: p.number ?? p.code ?? "",
-    nombre: p.displayName ?? p.name ?? p.number ?? "",
-  }));
+  return rows.map((p) => ({ id: p.id ?? "", codigo: p.number ?? p.code ?? "", nombre: p.displayName ?? p.name ?? p.number ?? "" }));
 }
 
+// Diagnóstico: lista compañías, intenta items, y reporta cada error por separado.
 export async function bcHealth() {
-  const cid = await getCompanyId();
-  const items = await bcItems();
-  return { ok: true, companyId: cid, items: items.length };
+  const out: any = { stdRoot: stdRoot() };
+  try { out.companies = await bcCompanies(); } catch (e: any) { out.companiesError = String(e?.message ?? e); }
+  try { out.companyIdUsado = await getCompanyId(); } catch (e: any) { out.companyError = String(e?.message ?? e); }
+  try { out.items = (await bcItems()).length; out.ok = true; } catch (e: any) { out.itemsError = String(e?.message ?? e); out.ok = false; }
+  return out;
 }
