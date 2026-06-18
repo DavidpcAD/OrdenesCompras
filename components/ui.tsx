@@ -60,7 +60,29 @@ export function Card({
 }
 
 // ---------------------------------------------------------------- Tile
-export function Tile({ value, label, accent = "var(--ds-color-green-100)" }: { value: React.ReactNode; label: string; accent?: string }) {
+export function Tile({
+  value,
+  label,
+  accent = "var(--ds-color-green-100)",
+  onClick,
+  active,
+}: {
+  value: React.ReactNode;
+  label: string;
+  accent?: string;
+  onClick?: () => void;
+  active?: boolean;
+}) {
+  const cls = ["tile", onClick ? "tile--clickable" : "", active ? "is-active" : ""].filter(Boolean).join(" ");
+  if (onClick) {
+    return (
+      <button type="button" className={cls} style={{ "--tile-accent": accent } as React.CSSProperties} onClick={onClick} aria-pressed={active}>
+        <div className="tile__accent" style={{ background: accent }} />
+        <div className="tile__value">{value}</div>
+        <div className="tile__label">{label}</div>
+      </button>
+    );
+  }
   return (
     <div className="tile">
       <div className="tile__accent" style={{ background: accent }} />

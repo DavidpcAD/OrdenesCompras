@@ -2,18 +2,35 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { useState } from "react";
 import { AppShell } from "@/components/shell";
 import { Badge, Button, Card, Tile } from "@/components/ui";
 import { useStore } from "@/lib/store";
 import { destinoLabel, formatDate, pedidoBadge } from "@/lib/helpers";
 
+type Filtro = "todas" | "material" | "repuesto" | "aprobado";
+
 export default function IngenieriaPage() {
   const { pedidos } = useStore();
   const router = useRouter();
+  const [filtro, setFiltro] = useState<Filtro>("todas");
 
   const material = pedidos.filter((p) => p.tipoSolicitud === "material").length;
   const repuesto = pedidos.filter((p) => p.tipoSolicitud === "repuesto").length;
   const aprobados = pedidos.filter((p) => p.estado === "aprobado").length;
+
+  const visibles = pedidos.filter((p) =>
+    filtro === "material" ? p.tipoSolicitud === "material"
+      : filtro === "repuesto" ? p.tipoSolicitud === "repuesto"
+      : filtro === "aprobado" ? p.estado === "aprobado"
+      : true
+  );
+  const etiquetaFiltro: Record<Filtro, string> = {
+    todas: "Todas las solicitudes",
+    material: "Solicitudes de material",
+    repuesto: "Solicitudes de repuesto",
+    aprobado: "Solicitudes aprobadas",
+  };
 
   return (
     <AppShell role="ingenieria">
@@ -27,13 +44,18 @@ export default function IngenieriaPage() {
         </div>
 
         <div className="tiles mt-2">
-          <Tile value={pedidos.length} label="Solicitudes totales" />
-          <Tile value={material} label="De material (obra)" accent="var(--ds-color-green-100)" />
-          <Tile value={repuesto} label="De repuesto (máquina)" accent="var(--ds-color-yellow)" />
-          <Tile value={aprobados} label="Aprobadas" accent="var(--ds-color-green-200)" />
+          <Tile value={pedidos.length} label="Solicitudes totales" onClick={() => setFiltro("todas")} active={filtro === "todas"} />
+          <Tile value={material} label="De material (obra)" accent="var(--ds-color-green-100)" onClick={() => setFiltro("material")} active={filtro === "material"} />
+          <Tile value={repuesto} label="De repuesto (máquina)" accent="var(--ds-color-yellow)" onClick={() => setFiltro("repuesto")} active={filtro === "repuesto"} />
+          <Tile value={aprobados} label="Aprobadas" accent="var(--ds-color-green-200)" onClick={() => setFiltro("aprobado")} active={filtro === "aprobado"} />
         </div>
 
-        <Card className="mt-6" style={{ padding: 0, overflow: "hidden" }}>
+        <div className="row row--between mt-6" style={{ marginBottom: 12, alignItems: "baseline" }}>
+          <span className="ds-label ds-muted">{etiquetaFiltro[filtro]} · {visibles.length}</span>
+          {filtro !== "todas" && <button className="link-btn" onClick={() => setFiltro("todas")}>Ver todas</button>}
+        </div>
+
+        <Card style={{ padding: 0, overflow: "hidden" }}>
           <div className="ds-table-wrap" style={{ boxShadow: "none" }}>
             <table className="ds-table">
               <thead>
@@ -43,10 +65,10 @@ export default function IngenieriaPage() {
                 </tr>
               </thead>
               <tbody>
-                {pedidos.length === 0 && (
-                  <tr><td colSpan={9}><div className="empty">Aún no hay solicitudes. Creá la primera.</div></td></tr>
+                {visibles.length === 0 && (
+                  <tr><td colSpan={9}><div className="empty">{pedidos.length === 0 ? "Aún no hay solicitudes. Creá la primera." : "No hay solicitudes en esta categoría."}</div></td></tr>
                 )}
-                {pedidos.map((p) => {
+                {visibles.map((p) => {
                   const b = pedidoBadge(p.estado);
                   return (
                     <tr key={p.id} className="is-clickable" onClick={() => router.push(`/ingenieria/${p.id}`)}>
