@@ -40,6 +40,12 @@ function stdRoot(): string {
   return `https://api.businesscentral.dynamics.com/v2.0/${tenant}/${environment}/api/v2.0`;
 }
 
+// Raíz de la API a usar: la personalizada (BC_BASE_URL, p.ej. .../api/adelante/v2.0)
+// si está configurada; si no, la estándar.
+function apiRoot(): string {
+  return process.env.BC_BASE_URL ? process.env.BC_BASE_URL.replace(/\/$/, "") : stdRoot();
+}
+
 async function getToken(): Promise<string> {
   if (tokenCache && tokenCache.exp > Date.now() + 60_000) return tokenCache.token;
   const tenant = env("BC_TENANT_ID");
@@ -74,21 +80,21 @@ export async function bcCompanies(): Promise<{ id: string; name: string; display
 
 async function getCompanyId(): Promise<string> {
   if (companyIdCache) return companyIdCache;
+  // Preferimos el GUID configurado (limpio). La API personalizada no
+  // necesariamente expone /companies, así que no dependemos de eso.
+  const idCfg = soloGuid(process.env.BC_COMPANY_ID);
+  if (idCfg) { companyIdCache = idCfg; return idCfg; }
   const comps = await bcCompanies();
   const nombre = process.env.BC_COMPANY;
-  const idCfg = soloGuid(process.env.BC_COMPANY_ID);
-  const comp =
-    (nombre && comps.find((c) => c.name === nombre || c.displayName === nombre)) ||
-    (idCfg && comps.find((c) => c.id.toLowerCase() === idCfg.toLowerCase())) ||
-    comps[0];
-  if (!comp) throw new Error(`No se encontró ninguna compañía en BC (${comps.length} disponibles)`);
+  const comp = (nombre && comps.find((c) => c.name === nombre || c.displayName === nombre)) || comps[0];
+  if (!comp) throw new Error("No se pudo resolver la compañía de BC");
   companyIdCache = comp.id;
   return comp.id;
 }
 
 async function listAll(entity: string): Promise<any[]> {
   const cid = await getCompanyId();
-  let url: string | null = `${stdRoot()}/companies(${cid})/${entity}`;
+  let url: string | null = `${apiRoot()}/companies(${cid})/${entity}`;
   const out: any[] = [];
   let guard = 0;
   while (url && guard++ < 50) {
@@ -125,7 +131,7 @@ export async function bcObras(): Promise<BcObra[]> {
 
 // Diagnóstico: lista compañías, intenta items, y reporta cada error por separado.
 export async function bcHealth() {
-  const out: any = { stdRoot: stdRoot() };
+  const out: any = { apiRoot: apiRoot(), companyId: soloGuid(process.env.BC_COMPANY_ID) };
   try { out.companies = await bcCompanies(); } catch (e: any) { out.companiesError = String(e?.message ?? e); }
   try { out.companyIdUsado = await getCompanyId(); } catch (e: any) { out.companyError = String(e?.message ?? e); }
   try { out.items = (await bcItems()).length; out.ok = true; } catch (e: any) { out.itemsError = String(e?.message ?? e); out.ok = false; }
