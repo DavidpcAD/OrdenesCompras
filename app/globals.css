@@ -236,6 +236,8 @@ h1, h2, h3, h4, p { margin: 0; }
 
 /* Alta rápida de líneas (Ingeniería · nueva solicitud) */
 .qa-row { display: grid; grid-template-columns: 1fr 120px auto; gap: var(--ds-space-3); align-items: end; }
+.qa-row--obra { grid-template-columns: 1fr 240px 120px auto; }
+@media (max-width: 640px) { .qa-row--obra { grid-template-columns: 1fr; } }
 .qa-field { display: flex; flex-direction: column; gap: 4px; }
 .qa-field > label { font-size: var(--ds-font-size-body-sm); color: var(--ds-color-gray-500); font-weight: var(--ds-font-weight-semibold); }
 .combo { position: relative; }

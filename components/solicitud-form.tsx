@@ -8,7 +8,7 @@ import { useStore, type NewPedidoInput } from "@/lib/store";
 import { num } from "@/lib/helpers";
 import type { Almacen, Articulo, Obra, Pedido, TipoSolicitud } from "@/lib/types";
 
-interface DraftLine { key: string; articuloId: string; almacen: string; cantidad: string; }
+interface DraftLine { key: string; articuloId: string; obraCodigo: string; obraNombre: string; cantidad: string; }
 
 // Personas que pueden solicitar material (rol Ingeniería).
 const SOLICITANTES = ["Laura Ureña", "Loana", "Michael Thames", "Roger Solano"];
@@ -20,6 +20,7 @@ export interface SolicitudInicial {
   solicitante: string;
   prioridad: Pedido["prioridad"];
   notas?: string;
+  // En material, `almacen` de cada línea guarda el código de obra de esa línea.
   lineas: { articuloId: string; almacen: string; cantidad: number }[];
 }
 
@@ -37,7 +38,6 @@ export function SolicitudForm({
   const { articulos, obras, maquinas, almacenes } = useStore();
   const toast = useToast();
 
-  // catálogo desde Business Central (con respaldo al de ejemplo)
   const [bcArt, setBcArt] = useState<Articulo[] | null>(null);
   const [bcObras, setBcObras] = useState<Obra[] | null>(null);
   const [bcAlm, setBcAlm] = useState<Almacen[] | null>(null);
@@ -66,10 +66,11 @@ export function SolicitudForm({
 
   const catArticulos = bcArt ?? articulos;
   const catObras = bcObras ?? obras;
-  void bcAlm; void almacenes; // almacén ya no se pide al solicitar
+  void bcAlm; void almacenes; // almacén ya no se usa al solicitar
+
+  const obraNombreDe = (codigo: string) => catObras.find((o) => o.codigo === codigo)?.nombre ?? codigo;
 
   const [tipo, setTipo] = useState<TipoSolicitud>(inicial?.tipoSolicitud ?? "material");
-  const [obraId, setObraId] = useState("");
   const [maquinaId, setMaquinaId] = useState("");
   const [solicitante, setSolicitante] = useState(inicial?.solicitante ?? SOLICITANTES[0]);
   const opcionesSolicitante = inicial?.solicitante && !SOLICITANTES.includes(inicial.solicitante)
@@ -77,29 +78,32 @@ export function SolicitudForm({
   const [prioridad, setPrioridad] = useState<Pedido["prioridad"]>(inicial?.prioridad ?? "normal");
   const [notas, setNotas] = useState(inicial?.notas ?? "");
   const [lineas, setLineas] = useState<DraftLine[]>(
-    (inicial?.lineas ?? []).map((l) => ({ key: Math.random().toString(36).slice(2), articuloId: l.articuloId, almacen: l.almacen, cantidad: String(l.cantidad) }))
+    (inicial?.lineas ?? []).map((l) => ({
+      key: Math.random().toString(36).slice(2),
+      articuloId: l.articuloId,
+      obraCodigo: l.almacen, // en material, almacen = código de obra
+      obraNombre: "",
+      cantidad: String(l.cantidad),
+    }))
   );
 
-  // resolver obra/máquina inicial (por código) cuando carga el catálogo
+  // máquina inicial (repuesto)
   useEffect(() => {
-    if (!inicial) return;
-    if (inicial.tipoSolicitud === "material" && inicial.obraCodigo && !obraId) {
-      const o = catObras.find((x) => x.codigo === inicial.obraCodigo);
-      if (o) setObraId(o.id);
-    }
-    if (inicial.tipoSolicitud === "repuesto" && inicial.maquinaNo && !maquinaId) {
+    if (inicial?.tipoSolicitud === "repuesto" && inicial.maquinaNo && !maquinaId) {
       const m = maquinas.find((x) => x.no === inicial.maquinaNo);
       if (m) setMaquinaId(m.id);
     }
-  }, [catObras, maquinas]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [maquinas]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const catalogo = useMemo(
     () => catArticulos.filter((a) => (tipo === "repuesto" ? a.code.startsWith("R") : !a.code.startsWith("R"))),
     [catArticulos, tipo]
   );
 
+  // ---- alta rápida ----
   const [qaArticuloId, setQaArticuloId] = useState("");
   const [qaQuery, setQaQuery] = useState("");
+  const [qaObraId, setQaObraId] = useState("");
   const [qaCantidad, setQaCantidad] = useState("");
   const [qaOpen, setQaOpen] = useState(false);
   const cantRef = useRef<HTMLInputElement>(null);
@@ -115,44 +119,57 @@ export function SolicitudForm({
     setTimeout(() => cantRef.current?.focus(), 0);
   }
   const qaArticulo = catArticulos.find((a) => a.id === qaArticuloId);
-  const puedeAgregar = !!qaArticuloId && Number(qaCantidad) > 0;
+  const puedeAgregar = !!qaArticuloId && Number(qaCantidad) > 0 && (tipo === "repuesto" || !!qaObraId);
+
   function agregar() {
     if (!puedeAgregar) return;
-    setLineas((ls) => [{ key: Math.random().toString(36).slice(2), articuloId: qaArticuloId, almacen: "", cantidad: qaCantidad }, ...ls]);
-    setQaArticuloId(""); setQaQuery(""); setQaCantidad(""); setQaOpen(false);
+    const obra = catObras.find((o) => o.id === qaObraId);
+    setLineas((ls) => [{
+      key: Math.random().toString(36).slice(2),
+      articuloId: qaArticuloId,
+      obraCodigo: tipo === "material" ? (obra?.codigo ?? "") : "",
+      obraNombre: tipo === "material" ? (obra?.nombre ?? "") : "",
+      cantidad: qaCantidad,
+    }, ...ls]);
+    setQaArticuloId(""); setQaQuery(""); setQaObraId(""); setQaCantidad(""); setQaOpen(false);
   }
   function removeLine(key: string) { setLineas((ls) => ls.filter((l) => l.key !== key)); }
   function cambiarTipo(t: TipoSolicitud) {
     if (t === tipo) return;
-    setTipo(t); setLineas([]); setObraId(""); setMaquinaId("");
-    setQaArticuloId(""); setQaQuery(""); setQaCantidad("");
+    setTipo(t); setLineas([]); setMaquinaId("");
+    setQaArticuloId(""); setQaQuery(""); setQaObraId(""); setQaCantidad("");
   }
 
-  const destinoOk = tipo === "material" ? !!obraId : !!maquinaId;
-  const puedeGuardar = destinoOk && solicitante.trim() && lineas.length > 0;
+  const destinoOk = tipo === "material" ? true : !!maquinaId;
+  const puedeGuardar = destinoOk && !!solicitante && lineas.length > 0;
   const [guardando, setGuardando] = useState(false);
 
   async function onGuardar() {
     if (!puedeGuardar) {
-      toast(`Indicá ${tipo === "material" ? "la obra" : "la máquina"} y al menos un ${tipo === "material" ? "material" : "repuesto"}.`, "error");
+      toast(tipo === "repuesto" ? "Indicá la máquina y al menos un repuesto." : "Agregá al menos un material (con su obra).", "error");
       return;
     }
-    const obra = catObras.find((o) => o.id === obraId);
     const maquina = maquinas.find((m) => m.id === maquinaId);
+    // En material, la obra del encabezado se deriva de las líneas.
+    const obrasUnicas = [...new Set(lineas.map((l) => l.obraCodigo))];
+    const headerObraCodigo = tipo === "material" ? (obrasUnicas.length === 1 ? obrasUnicas[0] : "(varias)") : undefined;
+    const headerObraNombre = tipo === "material"
+      ? (obrasUnicas.length === 1 ? (obraNombreDe(obrasUnicas[0]) || obrasUnicas[0]) : "Varias obras")
+      : undefined;
     setGuardando(true);
     try {
       await guardar({
         tipoSolicitud: tipo,
-        obraCodigo: tipo === "material" ? obra?.codigo : undefined,
-        obraNombre: tipo === "material" ? obra?.nombre : undefined,
+        obraCodigo: headerObraCodigo,
+        obraNombre: headerObraNombre,
         maquinaNo: tipo === "repuesto" ? maquina?.no : undefined,
         maquinaNombre: tipo === "repuesto" ? maquina?.nombre : undefined,
-        solicitante: solicitante.trim(),
+        solicitante,
         prioridad,
         notas: notas.trim() || undefined,
         lineas: lineas.map((l) => {
           const a = catArticulos.find((x) => x.id === l.articuloId)!;
-          return { articuloId: a.id, descripcion: a.descripcion, cantidad: Number(l.cantidad), unidad: a.unidad, almacen: l.almacen || a.almacenDefault };
+          return { articuloId: a.id, descripcion: a.descripcion, cantidad: Number(l.cantidad), unidad: a.unidad, almacen: tipo === "material" ? l.obraCodigo : "" };
         }),
       });
     } catch (e: any) {
@@ -161,24 +178,22 @@ export function SolicitudForm({
     }
   }
 
+  const esMaterial = tipo === "material";
+
   return (
     <>
       <Card>
         <div className="row gap-3" style={{ marginBottom: 20 }}>
-          <button type="button" className={`role-option ${tipo === "material" ? "is-selected" : ""}`} style={{ flex: 1, padding: "12px 16px" }} onClick={() => cambiarTipo("material")}>
+          <button type="button" className={`role-option ${esMaterial ? "is-selected" : ""}`} style={{ flex: 1, padding: "12px 16px" }} onClick={() => cambiarTipo("material")}>
             <span className="col" style={{ gap: 2 }}><span className="role-option__title">Material</span><span className="role-option__desc">Va a una obra</span></span>
           </button>
-          <button type="button" className={`role-option ${tipo === "repuesto" ? "is-selected" : ""}`} style={{ flex: 1, padding: "12px 16px" }} onClick={() => cambiarTipo("repuesto")}>
+          <button type="button" className={`role-option ${!esMaterial ? "is-selected" : ""}`} style={{ flex: 1, padding: "12px 16px" }} onClick={() => cambiarTipo("repuesto")}>
             <span className="col" style={{ gap: 2 }}><span className="role-option__title">Repuesto</span><span className="role-option__desc">Va a una máquina</span></span>
           </button>
         </div>
 
         <div className="grid-2">
-          {tipo === "material" ? (
-            <Field label="Obra destino">
-              <Combobox items={catObras} value={obraId} onChange={(k) => setObraId(k)} getKey={(o) => o.id} getLabel={(o) => `${o.codigo} — ${o.nombre}`} placeholder="Buscar obra por código o nombre…" />
-            </Field>
-          ) : (
+          {!esMaterial && (
             <Field label="Máquina destino">
               <Combobox items={maquinas} value={maquinaId} onChange={(k) => setMaquinaId(k)} getKey={(m) => m.id} getLabel={(m) => `${m.no} — ${m.nombre}`} placeholder="Buscar máquina…" />
             </Field>
@@ -198,12 +213,14 @@ export function SolicitudForm({
       </Card>
 
       <Card className="mt-4">
-        <h3 className="ds-subtitle">{tipo === "material" ? "Materiales" : "Repuestos"}</h3>
-        <p className="ds-muted ds-body-sm" style={{ marginBottom: 16 }}>Buscá el {tipo === "material" ? "material" : "repuesto"} y la cantidad, y agregalo. Se van sumando a la lista.</p>
+        <h3 className="ds-subtitle">{esMaterial ? "Materiales" : "Repuestos"}</h3>
+        <p className="ds-muted ds-body-sm" style={{ marginBottom: 16 }}>
+          Buscá el {esMaterial ? "material, elegí la obra" : "repuesto"} y la cantidad, y agregalo. Se van sumando a la lista.
+        </p>
 
-        <div className="qa-row">
+        <div className={esMaterial ? "qa-row qa-row--obra" : "qa-row"}>
           <div className="qa-field">
-            <label>{tipo === "material" ? "Material" : "Repuesto"}</label>
+            <label>{esMaterial ? "Material" : "Repuesto"}</label>
             <div className="combo">
               <input className="ds-form-field__input" placeholder="Buscar por código o nombre…" value={qaQuery}
                 onChange={(e) => { setQaQuery(e.target.value); setQaArticuloId(""); setQaOpen(true); }}
@@ -220,6 +237,12 @@ export function SolicitudForm({
               )}
             </div>
           </div>
+          {esMaterial && (
+            <div className="qa-field">
+              <label>Obra</label>
+              <Combobox items={catObras} value={qaObraId} onChange={(k) => setQaObraId(k)} getKey={(o) => o.id} getLabel={(o) => `${o.codigo} — ${o.nombre}`} placeholder="Buscar obra…" />
+            </div>
+          )}
           <div className="qa-field">
             <label>Cantidad{qaArticulo ? ` (${qaArticulo.unidad})` : ""}</label>
             <input ref={cantRef} className="ds-form-field__input" type="number" min={0} value={qaCantidad} placeholder="0"
@@ -230,14 +253,21 @@ export function SolicitudForm({
 
         <div className="ds-table-wrap mt-4" style={{ boxShadow: "none", border: "1.5px solid var(--ds-color-gray-100)" }}>
           <table className="ds-table">
-            <thead><tr><th style={{ minWidth: 280 }}>{tipo === "material" ? "Artículo" : "Repuesto"}</th><th>Unidad</th><th className="ds-num">Cantidad</th><th></th></tr></thead>
+            <thead>
+              <tr>
+                <th style={{ minWidth: 260 }}>{esMaterial ? "Artículo" : "Repuesto"}</th>
+                {esMaterial && <th>Obra</th>}
+                <th>Unidad</th><th className="ds-num">Cantidad</th><th></th>
+              </tr>
+            </thead>
             <tbody>
-              {lineas.length === 0 && (<tr><td colSpan={4}><div className="empty" style={{ padding: "28px 0" }}>Todavía no agregaste {tipo === "material" ? "materiales" : "repuestos"}.</div></td></tr>)}
+              {lineas.length === 0 && (<tr><td colSpan={esMaterial ? 5 : 4}><div className="empty" style={{ padding: "28px 0" }}>Todavía no agregaste {esMaterial ? "materiales" : "repuestos"}.</div></td></tr>)}
               {lineas.map((l) => {
                 const a = catArticulos.find((x) => x.id === l.articuloId);
                 return (
                   <tr key={l.key}>
                     <td><span className="ds-strong">{a?.code}</span> <span className="ds-muted">— {a?.descripcion}</span></td>
+                    {esMaterial && <td className="ds-muted">{l.obraCodigo}{l.obraNombre ? ` — ${l.obraNombre}` : ""}</td>}
                     <td className="ds-muted">{a?.unidad ?? "—"}</td>
                     <td className="ds-num ds-strong">{num.format(Number(l.cantidad))}</td>
                     <td><button className="icon-btn" onClick={() => removeLine(l.key)} aria-label="Quitar"><IconTrash /></button></td>
