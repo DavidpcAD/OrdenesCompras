@@ -262,10 +262,14 @@ export default function NuevaSolicitudPage() {
             </div>
             <div className="qa-field">
               <label>Almacén</label>
-              <select className="ds-form-field__select" value={qaAlmacen} onChange={(e) => setQaAlmacen(e.target.value)}>
-                {!qaAlmacen && <option value="">—</option>}
-                {catAlmacenes.map((al) => <option key={al.codigo} value={al.codigo}>{al.codigo}</option>)}
-              </select>
+              <Combobox
+                items={catAlmacenes}
+                value={qaAlmacen}
+                onChange={(k) => setQaAlmacen(k)}
+                getKey={(a) => a.codigo}
+                getLabel={(a) => (a.nombre ? `${a.codigo} — ${a.nombre}` : a.codigo)}
+                placeholder="Buscar almacén…"
+              />
             </div>
             <div className="qa-field">
               <label>Cantidad{qaArticulo ? ` (${qaArticulo.unidad})` : ""}</label>
