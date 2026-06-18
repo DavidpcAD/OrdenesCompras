@@ -38,10 +38,37 @@ function stdRoot(): string {
   return `https://api.businesscentral.dynamics.com/v2.0/${tenant}/${environment}/api/v2.0`;
 }
 
-function companyId(): string {
+let companyIdCache: string | null = null;
+
+// Resuelve el id de la compañía. Preferimos resolver por NOMBRE listando
+// /companies del API custom (así no dependemos de un GUID mal configurado y
+// caemos en la compañía a la que la app SÍ tiene permiso). Fallback al GUID.
+async function getCompanyId(): Promise<string> {
+  if (companyIdCache) return companyIdCache;
+  const nombre = process.env.BC_COMPANY || "ADELANTE_DESARROLLOS_NUEVA";
+  try {
+    const token = await getToken();
+    const res = await fetch(`${customRoot("inventory")}/companies`, { headers: { Authorization: `Bearer ${token}`, Accept: "application/json" } });
+    if (res.ok) {
+      const data = await res.json();
+      const lista: any[] = data.value ?? [];
+      const comp = lista.find((c) => c.name === nombre || c.displayName === nombre) ?? lista[0];
+      if (comp?.id) { companyIdCache = comp.id; return comp.id; }
+    }
+  } catch { /* cae al GUID configurado */ }
   const id = soloGuid(process.env.BC_COMPANY_ID);
-  if (!id) throw new Error("BC_COMPANY_ID no es un GUID válido");
+  if (!id) throw new Error("No se pudo resolver la compañía de BC");
+  companyIdCache = id;
   return id;
+}
+
+// Lista de compañías visibles para la app (diagnóstico).
+export async function bcCompanies(): Promise<{ id: string; name: string }[]> {
+  const token = await getToken();
+  const res = await fetch(`${customRoot("inventory")}/companies`, { headers: { Authorization: `Bearer ${token}`, Accept: "application/json" } });
+  if (!res.ok) throw new Error(`BC ${res.status}: ${(await res.text()).slice(0, 200)}`);
+  const data = await res.json();
+  return (data.value ?? []).map((c: any) => ({ id: c.id, name: c.name ?? c.displayName }));
 }
 
 async function getToken(): Promise<string> {
@@ -64,7 +91,8 @@ async function getToken(): Promise<string> {
 
 async function listAll(group: string, entity: string): Promise<any[]> {
   const token = await getToken();
-  let url: string | null = `${customRoot(group)}/companies(${companyId()})/${entity}`;
+  const cid = await getCompanyId();
+  let url: string | null = `${customRoot(group)}/companies(${cid})/${entity}`;
   const out: any[] = [];
   let guard = 0;
   while (url && guard++ < 50) {
@@ -116,7 +144,8 @@ export type BcVariante = { code: string; descripcion: string };
 export async function bcVariants(itemNo: string): Promise<BcVariante[]> {
   if (!itemNo) return [];
   const token = await getToken();
-  const url = `${stdRoot()}/companies(${companyId()})/itemVariants?$filter=itemNumber eq '${encodeURIComponent(itemNo)}'`;
+  const cid = await getCompanyId();
+  const url = `${stdRoot()}/companies(${cid})/itemVariants?$filter=itemNumber eq '${encodeURIComponent(itemNo)}'`;
   const res = await fetch(url, { headers: { Authorization: `Bearer ${token}`, Accept: "application/json" } });
   if (!res.ok) throw new Error(`BC ${res.status} en ${url}: ${(await res.text()).slice(0, 200)}`);
   const data = await res.json();
@@ -124,7 +153,9 @@ export async function bcVariants(itemNo: string): Promise<BcVariante[]> {
 }
 
 export async function bcHealth() {
-  const out: any = { itemsRoot: customRoot("inventory"), obrasRoot: customRoot("project"), companyId: soloGuid(process.env.BC_COMPANY_ID) };
+  const out: any = { configCompanyId: soloGuid(process.env.BC_COMPANY_ID) };
+  try { out.companies = await bcCompanies(); } catch (e: any) { out.companiesError = String(e?.message ?? e); }
+  try { out.companyIdUsado = await getCompanyId(); } catch (e: any) { out.companyError = String(e?.message ?? e); }
   try { out.items = (await bcItems()).length; out.ok = true; } catch (e: any) { out.itemsError = String(e?.message ?? e); out.ok = false; }
   try { out.obras = (await bcObras()).length; } catch (e: any) { out.obrasError = String(e?.message ?? e); }
   return out;
