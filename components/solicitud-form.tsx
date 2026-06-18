@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Badge, Button, Card, Field, Input, Select, Textarea, useToast } from "@/components/ui";
+import { Button, Card, Field, Select, Textarea, useToast } from "@/components/ui";
 import { IconTrash } from "@/components/icons";
 import { Combobox } from "@/components/combobox";
 import { useStore, type NewPedidoInput } from "@/lib/store";
@@ -9,6 +9,9 @@ import { num } from "@/lib/helpers";
 import type { Almacen, Articulo, Obra, Pedido, TipoSolicitud } from "@/lib/types";
 
 interface DraftLine { key: string; articuloId: string; almacen: string; cantidad: string; }
+
+// Personas que pueden solicitar material (rol Ingeniería).
+const SOLICITANTES = ["Laura Ureña", "Loana", "Michael Thames", "Roger Solano"];
 
 export interface SolicitudInicial {
   tipoSolicitud: TipoSolicitud;
@@ -38,7 +41,6 @@ export function SolicitudForm({
   const [bcArt, setBcArt] = useState<Articulo[] | null>(null);
   const [bcObras, setBcObras] = useState<Obra[] | null>(null);
   const [bcAlm, setBcAlm] = useState<Almacen[] | null>(null);
-  const [fuente, setFuente] = useState<"cargando" | "bc" | "ejemplo">("cargando");
 
   useEffect(() => {
     let cancel = false;
@@ -54,22 +56,24 @@ export function SolicitudForm({
         const obrasBc: Obra[] = ro.ok ? ((await ro.json()).obras ?? []) : [];
         const almBc: Almacen[] = ra.ok ? ((await ra.json()).almacenes ?? []) : [];
         if (cancel) return;
-        if (items.length) { setBcArt(items); setFuente("bc"); } else setFuente("ejemplo");
+        if (items.length) setBcArt(items);
         if (obrasBc.length) setBcObras(obrasBc);
         if (almBc.length) setBcAlm(almBc);
-      } catch { if (!cancel) setFuente("ejemplo"); }
+      } catch { /* sin BC, usa catálogo de respaldo */ }
     })();
     return () => { cancel = true; };
   }, []);
 
   const catArticulos = bcArt ?? articulos;
   const catObras = bcObras ?? obras;
-  const catAlmacenes = bcAlm ?? almacenes;
+  void bcAlm; void almacenes; // almacén ya no se pide al solicitar
 
   const [tipo, setTipo] = useState<TipoSolicitud>(inicial?.tipoSolicitud ?? "material");
   const [obraId, setObraId] = useState("");
   const [maquinaId, setMaquinaId] = useState("");
-  const [solicitante, setSolicitante] = useState(inicial?.solicitante ?? "Laura Jiménez");
+  const [solicitante, setSolicitante] = useState(inicial?.solicitante ?? SOLICITANTES[0]);
+  const opcionesSolicitante = inicial?.solicitante && !SOLICITANTES.includes(inicial.solicitante)
+    ? [inicial.solicitante, ...SOLICITANTES] : SOLICITANTES;
   const [prioridad, setPrioridad] = useState<Pedido["prioridad"]>(inicial?.prioridad ?? "normal");
   const [notas, setNotas] = useState(inicial?.notas ?? "");
   const [lineas, setLineas] = useState<DraftLine[]>(
@@ -96,7 +100,6 @@ export function SolicitudForm({
 
   const [qaArticuloId, setQaArticuloId] = useState("");
   const [qaQuery, setQaQuery] = useState("");
-  const [qaAlmacen, setQaAlmacen] = useState("");
   const [qaCantidad, setQaCantidad] = useState("");
   const [qaOpen, setQaOpen] = useState(false);
   const cantRef = useRef<HTMLInputElement>(null);
@@ -108,21 +111,21 @@ export function SolicitudForm({
   }, [catalogo, q]);
 
   function elegir(a: Articulo) {
-    setQaArticuloId(a.id); setQaQuery(`${a.code} — ${a.descripcion}`); setQaAlmacen(a.almacenDefault || ""); setQaOpen(false);
+    setQaArticuloId(a.id); setQaQuery(`${a.code} — ${a.descripcion}`); setQaOpen(false);
     setTimeout(() => cantRef.current?.focus(), 0);
   }
   const qaArticulo = catArticulos.find((a) => a.id === qaArticuloId);
   const puedeAgregar = !!qaArticuloId && Number(qaCantidad) > 0;
   function agregar() {
     if (!puedeAgregar) return;
-    setLineas((ls) => [{ key: Math.random().toString(36).slice(2), articuloId: qaArticuloId, almacen: qaAlmacen || qaArticulo?.almacenDefault || "", cantidad: qaCantidad }, ...ls]);
-    setQaArticuloId(""); setQaQuery(""); setQaAlmacen(""); setQaCantidad(""); setQaOpen(false);
+    setLineas((ls) => [{ key: Math.random().toString(36).slice(2), articuloId: qaArticuloId, almacen: "", cantidad: qaCantidad }, ...ls]);
+    setQaArticuloId(""); setQaQuery(""); setQaCantidad(""); setQaOpen(false);
   }
   function removeLine(key: string) { setLineas((ls) => ls.filter((l) => l.key !== key)); }
   function cambiarTipo(t: TipoSolicitud) {
     if (t === tipo) return;
     setTipo(t); setLineas([]); setObraId(""); setMaquinaId("");
-    setQaArticuloId(""); setQaQuery(""); setQaAlmacen(""); setQaCantidad("");
+    setQaArticuloId(""); setQaQuery(""); setQaCantidad("");
   }
 
   const destinoOk = tipo === "material" ? !!obraId : !!maquinaId;
@@ -180,22 +183,23 @@ export function SolicitudForm({
               <Combobox items={maquinas} value={maquinaId} onChange={(k) => setMaquinaId(k)} getKey={(m) => m.id} getLabel={(m) => `${m.no} — ${m.nombre}`} placeholder="Buscar máquina…" />
             </Field>
           )}
-          <Field label="Solicitante"><Input value={solicitante} onChange={(e) => setSolicitante(e.target.value)} /></Field>
+          <Field label="Solicitante">
+            <Select value={solicitante} onChange={(e) => setSolicitante(e.target.value)}>
+              {opcionesSolicitante.map((n) => <option key={n} value={n}>{n}</option>)}
+            </Select>
+          </Field>
           <Field label="Prioridad">
             <Select value={prioridad} onChange={(e) => setPrioridad(e.target.value as Pedido["prioridad"])}>
               <option value="normal">Normal</option><option value="alta">Alta</option><option value="urgente">Urgente</option>
             </Select>
           </Field>
-          <Field label="Notas (opcional)"><Textarea value={notas} onChange={(e) => setNotas(e.target.value)} placeholder="Indicaciones para proveeduría…" /></Field>
+          <Field label="Observaciones (opcional)"><Textarea value={notas} onChange={(e) => setNotas(e.target.value)} placeholder="Indicaciones para proveeduría…" /></Field>
         </div>
       </Card>
 
       <Card className="mt-4">
-        <div className="row row--between" style={{ marginBottom: 4 }}>
-          <h3 className="ds-subtitle">{tipo === "material" ? "Materiales" : "Repuestos"}</h3>
-          {fuente === "bc" ? <Badge tone="green">Catálogo: Business Central</Badge> : fuente === "ejemplo" ? <Badge tone="gray">Catálogo de ejemplo</Badge> : <span className="ds-muted ds-body-sm">Cargando catálogo…</span>}
-        </div>
-        <p className="ds-muted ds-body-sm" style={{ marginBottom: 16 }}>Buscá el {tipo === "material" ? "material" : "repuesto"}, elegí almacén y cantidad, y agregalo. Se van sumando a la lista.</p>
+        <h3 className="ds-subtitle">{tipo === "material" ? "Materiales" : "Repuestos"}</h3>
+        <p className="ds-muted ds-body-sm" style={{ marginBottom: 16 }}>Buscá el {tipo === "material" ? "material" : "repuesto"} y la cantidad, y agregalo. Se van sumando a la lista.</p>
 
         <div className="qa-row">
           <div className="qa-field">
@@ -217,10 +221,6 @@ export function SolicitudForm({
             </div>
           </div>
           <div className="qa-field">
-            <label>Almacén</label>
-            <Combobox items={catAlmacenes} value={qaAlmacen} onChange={(k) => setQaAlmacen(k)} getKey={(a) => a.codigo} getLabel={(a) => (a.nombre ? `${a.codigo} — ${a.nombre}` : a.codigo)} placeholder="Buscar almacén…" />
-          </div>
-          <div className="qa-field">
             <label>Cantidad{qaArticulo ? ` (${qaArticulo.unidad})` : ""}</label>
             <input ref={cantRef} className="ds-form-field__input" type="number" min={0} value={qaCantidad} placeholder="0"
               onChange={(e) => setQaCantidad(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") agregar(); }} />
@@ -230,16 +230,15 @@ export function SolicitudForm({
 
         <div className="ds-table-wrap mt-4" style={{ boxShadow: "none", border: "1.5px solid var(--ds-color-gray-100)" }}>
           <table className="ds-table">
-            <thead><tr><th style={{ minWidth: 280 }}>{tipo === "material" ? "Artículo" : "Repuesto"}</th><th>Unidad</th><th>Almacén</th><th className="ds-num">Cantidad</th><th></th></tr></thead>
+            <thead><tr><th style={{ minWidth: 280 }}>{tipo === "material" ? "Artículo" : "Repuesto"}</th><th>Unidad</th><th className="ds-num">Cantidad</th><th></th></tr></thead>
             <tbody>
-              {lineas.length === 0 && (<tr><td colSpan={5}><div className="empty" style={{ padding: "28px 0" }}>Todavía no agregaste {tipo === "material" ? "materiales" : "repuestos"}.</div></td></tr>)}
+              {lineas.length === 0 && (<tr><td colSpan={4}><div className="empty" style={{ padding: "28px 0" }}>Todavía no agregaste {tipo === "material" ? "materiales" : "repuestos"}.</div></td></tr>)}
               {lineas.map((l) => {
                 const a = catArticulos.find((x) => x.id === l.articuloId);
                 return (
                   <tr key={l.key}>
                     <td><span className="ds-strong">{a?.code}</span> <span className="ds-muted">— {a?.descripcion}</span></td>
                     <td className="ds-muted">{a?.unidad ?? "—"}</td>
-                    <td className="ds-muted">{l.almacen}</td>
                     <td className="ds-num ds-strong">{num.format(Number(l.cantidad))}</td>
                     <td><button className="icon-btn" onClick={() => removeLine(l.key)} aria-label="Quitar"><IconTrash /></button></td>
                   </tr>
