@@ -8,7 +8,8 @@ import { useStore, type NewPedidoInput } from "@/lib/store";
 import { num } from "@/lib/helpers";
 import type { Almacen, Articulo, Obra, Pedido, TipoSolicitud } from "@/lib/types";
 
-interface DraftLine { key: string; articuloId: string; obraCodigo: string; obraNombre: string; cantidad: string; }
+interface DraftLine { key: string; articuloId: string; obraCodigo: string; obraNombre: string; variantCode: string; variantNombre: string; cantidad: string; }
+type Variante = { code: string; descripcion: string };
 
 // Personas que pueden solicitar material (rol Ingeniería).
 const SOLICITANTES = ["Laura Ureña", "Loana", "Michael Thames", "Roger Solano"];
@@ -21,7 +22,7 @@ export interface SolicitudInicial {
   prioridad: Pedido["prioridad"];
   notas?: string;
   // En material, `almacen` de cada línea guarda el código de obra de esa línea.
-  lineas: { articuloId: string; almacen: string; cantidad: number }[];
+  lineas: { articuloId: string; almacen: string; cantidad: number; variantCode?: string }[];
 }
 
 export function SolicitudForm({
@@ -83,6 +84,8 @@ export function SolicitudForm({
       articuloId: l.articuloId,
       obraCodigo: l.almacen, // en material, almacen = código de obra
       obraNombre: "",
+      variantCode: l.variantCode ?? "",
+      variantNombre: "",
       cantidad: String(l.cantidad),
     }))
   );
@@ -106,6 +109,8 @@ export function SolicitudForm({
   const [qaObraId, setQaObraId] = useState("");
   const [qaCantidad, setQaCantidad] = useState("");
   const [qaOpen, setQaOpen] = useState(false);
+  const [qaVariantes, setQaVariantes] = useState<Variante[]>([]);
+  const [qaVariante, setQaVariante] = useState("");
   const cantRef = useRef<HTMLInputElement>(null);
 
   const q = qaQuery.trim().toLowerCase();
@@ -116,28 +121,40 @@ export function SolicitudForm({
 
   function elegir(a: Articulo) {
     setQaArticuloId(a.id); setQaQuery(`${a.code} — ${a.descripcion}`); setQaOpen(false);
+    setQaVariantes([]); setQaVariante("");
+    // buscar variantes del item (si la API/permiso lo permite)
+    fetch(`/api/bc/variants?item=${encodeURIComponent(a.code)}`)
+      .then((r) => (r.ok ? r.json() : { variantes: [] }))
+      .then((d) => setQaVariantes(d.variantes ?? []))
+      .catch(() => setQaVariantes([]));
     setTimeout(() => cantRef.current?.focus(), 0);
   }
   const qaArticulo = catArticulos.find((a) => a.id === qaArticuloId);
-  const puedeAgregar = !!qaArticuloId && Number(qaCantidad) > 0 && (tipo === "repuesto" || !!qaObraId);
+  const variantePendiente = qaVariantes.length > 0 && !qaVariante;
+  const puedeAgregar = !!qaArticuloId && Number(qaCantidad) > 0 && (tipo === "repuesto" || !!qaObraId) && !variantePendiente;
 
   function agregar() {
     if (!puedeAgregar) return;
     const obra = catObras.find((o) => o.id === qaObraId);
+    const variante = qaVariantes.find((v) => v.code === qaVariante);
     setLineas((ls) => [{
       key: Math.random().toString(36).slice(2),
       articuloId: qaArticuloId,
       obraCodigo: tipo === "material" ? (obra?.codigo ?? "") : "",
       obraNombre: tipo === "material" ? (obra?.nombre ?? "") : "",
+      variantCode: qaVariante,
+      variantNombre: variante?.descripcion ?? "",
       cantidad: qaCantidad,
     }, ...ls]);
     setQaArticuloId(""); setQaQuery(""); setQaObraId(""); setQaCantidad(""); setQaOpen(false);
+    setQaVariantes([]); setQaVariante("");
   }
   function removeLine(key: string) { setLineas((ls) => ls.filter((l) => l.key !== key)); }
   function cambiarTipo(t: TipoSolicitud) {
     if (t === tipo) return;
     setTipo(t); setLineas([]); setMaquinaId("");
     setQaArticuloId(""); setQaQuery(""); setQaObraId(""); setQaCantidad("");
+    setQaVariantes([]); setQaVariante("");
   }
 
   const destinoOk = tipo === "material" ? true : !!maquinaId;
@@ -169,7 +186,7 @@ export function SolicitudForm({
         notas: notas.trim() || undefined,
         lineas: lineas.map((l) => {
           const a = catArticulos.find((x) => x.id === l.articuloId)!;
-          return { articuloId: a.id, descripcion: a.descripcion, cantidad: Number(l.cantidad), unidad: a.unidad, almacen: tipo === "material" ? l.obraCodigo : "" };
+          return { articuloId: a.id, descripcion: a.descripcion, cantidad: Number(l.cantidad), unidad: a.unidad, almacen: tipo === "material" ? l.obraCodigo : "", variantCode: l.variantCode || undefined };
         }),
       });
     } catch (e: any) {
@@ -218,7 +235,7 @@ export function SolicitudForm({
           Buscá el {esMaterial ? "material, elegí la obra" : "repuesto"} y la cantidad, y agregalo. Se van sumando a la lista.
         </p>
 
-        <div className={esMaterial ? "qa-row qa-row--obra" : "qa-row"}>
+        <div className="qa-row" style={{ gridTemplateColumns: ["1fr", qaVariantes.length ? "190px" : null, esMaterial ? "230px" : null, "110px", "auto"].filter(Boolean).join(" ") }}>
           <div className="qa-field">
             <label>{esMaterial ? "Material" : "Repuesto"}</label>
             <div className="combo">
@@ -237,6 +254,12 @@ export function SolicitudForm({
               )}
             </div>
           </div>
+          {qaVariantes.length > 0 && (
+            <div className="qa-field">
+              <label>Variante</label>
+              <Combobox items={qaVariantes} value={qaVariante} onChange={(k) => setQaVariante(k)} getKey={(v) => v.code} getLabel={(v) => `${v.code} — ${v.descripcion}`} placeholder="Elegí variante…" />
+            </div>
+          )}
           {esMaterial && (
             <div className="qa-field">
               <label>Obra</label>
@@ -266,7 +289,7 @@ export function SolicitudForm({
                 const a = catArticulos.find((x) => x.id === l.articuloId);
                 return (
                   <tr key={l.key}>
-                    <td><span className="ds-strong">{a?.code}</span> <span className="ds-muted">— {a?.descripcion}</span></td>
+                    <td><span className="ds-strong">{a?.code}</span> <span className="ds-muted">— {a?.descripcion}</span>{l.variantCode ? <span className="ds-body-sm ds-muted"> · var. {l.variantCode}{l.variantNombre ? ` (${l.variantNombre})` : ""}</span> : ""}</td>
                     {esMaterial && <td className="ds-muted">{l.obraCodigo}{l.obraNombre ? ` — ${l.obraNombre}` : ""}</td>}
                     <td className="ds-muted">{a?.unidad ?? "—"}</td>
                     <td className="ds-num ds-strong">{num.format(Number(l.cantidad))}</td>

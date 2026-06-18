@@ -146,7 +146,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
           tipoSolicitud: input.tipoSolicitud, obra: input.obraCodigo, obraNombre: input.obraNombre,
           maquinaNo: input.maquinaNo, solicitante: input.solicitante, prioridad: input.prioridad,
           notas: input.notas, usuario: persona, rol: rolActual,
-          lineas: input.lineas.map((l) => ({ itemNo: l.articuloId, descripcion: l.descripcion, cantidad: l.cantidad, unidad: l.unidad, almacen: l.almacen })),
+          lineas: input.lineas.map((l) => ({ itemNo: l.articuloId, descripcion: l.descripcion, cantidad: l.cantidad, unidad: l.unidad, almacen: l.almacen, variantCode: l.variantCode })),
         });
         const p = await api.getPedido(String(idPedidoCompra));
         await refreshFromApi();
@@ -175,7 +175,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
           tipoSolicitud: input.tipoSolicitud, obra: input.obraCodigo, obraNombre: input.obraNombre,
           maquinaNo: input.maquinaNo, solicitante: input.solicitante, prioridad: input.prioridad,
           notas: input.notas, usuario: persona, rol: rolActual,
-          lineas: input.lineas.map((l) => ({ itemNo: l.articuloId, descripcion: l.descripcion, cantidad: l.cantidad, unidad: l.unidad, almacen: l.almacen })),
+          lineas: input.lineas.map((l) => ({ itemNo: l.articuloId, descripcion: l.descripcion, cantidad: l.cantidad, unidad: l.unidad, almacen: l.almacen, variantCode: l.variantCode })),
         });
         await refreshFromApi();
         return;

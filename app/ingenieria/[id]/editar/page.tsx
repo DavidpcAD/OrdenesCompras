@@ -38,7 +38,7 @@ export default function EditarSolicitudPage() {
     solicitante: pedido.solicitante,
     prioridad: pedido.prioridad,
     notas: pedido.notas,
-    lineas: pedido.lineas.map((l) => ({ articuloId: l.articuloId, almacen: l.almacen, cantidad: l.cantidad })),
+    lineas: pedido.lineas.map((l) => ({ articuloId: l.articuloId, almacen: l.almacen, cantidad: l.cantidad, variantCode: l.variantCode })),
   };
 
   return (

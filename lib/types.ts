@@ -71,6 +71,7 @@ export interface PedidoLinea {
   cantidad: number;
   unidad: string;
   almacen: string;
+  variantCode?: string;     // variante del item (si aplica)
   cantidadOrdenada: number; // cuánto de esta línea ya pasó a una orden
   notas?: string;
 }

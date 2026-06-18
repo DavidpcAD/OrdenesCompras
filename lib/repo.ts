@@ -99,7 +99,7 @@ function mapPedido(p: any, lineas: any[]): Pedido {
     lineas: lineas.map((l): PedidoLinea => ({
       id: String(l.idPedidoCompraDet), articuloId: l.itemNo ?? "", descripcion: l.descripcion ?? "",
       cantidad: Number(l.quantitySolicitado ?? 0), unidad: l.unitOfMeasureCode ?? "",
-      almacen: l.locationCode ?? "", cantidadOrdenada: Number(l.quantityOrdenado ?? 0), notas: l.notaCreador ?? undefined,
+      almacen: l.locationCode ?? "", variantCode: l.variantCode ?? undefined, cantidadOrdenada: Number(l.quantityOrdenado ?? 0), notas: l.notaCreador ?? undefined,
     })),
   };
 }
@@ -107,7 +107,7 @@ function mapPedido(p: any, lineas: any[]): Pedido {
 export interface NewPedidoDB {
   tipoSolicitud: string; obra?: string; obraNombre?: string; maquinaNo?: string;
   solicitante: string; prioridad: string; notas?: string; usuario: string; rol: Role;
-  lineas: { itemNo: string; descripcion: string; cantidad: number; unidad: string; almacen: string }[];
+  lineas: { itemNo: string; descripcion: string; cantidad: number; unidad: string; almacen: string; variantCode?: string }[];
 }
 
 export async function createPedido(input: NewPedidoDB): Promise<number> {
@@ -144,12 +144,13 @@ export async function createPedido(input: NewPedidoDB): Promise<number> {
         .input("lineNum", sql.Int, line)
         .input("descripcion", sql.NVarChar(250), l.descripcion)
         .input("itemNo", sql.NVarChar(50), l.itemNo)
+        .input("variantCode", sql.NVarChar(20), l.variantCode ?? null)
         .input("unitOfMeasureCode", sql.NVarChar(20), l.unidad)
         .input("locationCode", sql.NVarChar(20), l.almacen)
         .input("quantitySolicitado", sql.Decimal(18, 4), l.cantidad)
         .input("creadoPor", sql.NVarChar(100), input.usuario)
-        .query(`INSERT dbo.PedidoCompraDet (idPedidoCompra,lineNum,descripcion,itemNo,unitOfMeasureCode,locationCode,quantitySolicitado,quantityOrdenado,fechaCreacion,creadoPor)
-                VALUES (@idPedidoCompra,@lineNum,@descripcion,@itemNo,@unitOfMeasureCode,@locationCode,@quantitySolicitado,0,getdate(),@creadoPor)`);
+        .query(`INSERT dbo.PedidoCompraDet (idPedidoCompra,lineNum,descripcion,itemNo,variantCode,unitOfMeasureCode,locationCode,quantitySolicitado,quantityOrdenado,fechaCreacion,creadoPor)
+                VALUES (@idPedidoCompra,@lineNum,@descripcion,@itemNo,@variantCode,@unitOfMeasureCode,@locationCode,@quantitySolicitado,0,getdate(),@creadoPor)`);
       line += 10000;
     }
     await logMov(tx, { entidad: "pedido", idEntidad: idPedido, documentoNo: numero, tipoMovimiento: "creado", estadoNuevo: "borrador", usuario: input.usuario, rol: input.rol });
@@ -200,12 +201,13 @@ export async function updatePedido(input: EditPedidoDB): Promise<void> {
         .input("lineNum", sql.Int, line)
         .input("descripcion", sql.NVarChar(250), l.descripcion)
         .input("itemNo", sql.NVarChar(50), l.itemNo)
+        .input("variantCode", sql.NVarChar(20), l.variantCode ?? null)
         .input("unitOfMeasureCode", sql.NVarChar(20), l.unidad)
         .input("locationCode", sql.NVarChar(20), l.almacen)
         .input("quantitySolicitado", sql.Decimal(18, 4), l.cantidad)
         .input("creadoPor", sql.NVarChar(100), input.usuario)
-        .query(`INSERT dbo.PedidoCompraDet (idPedidoCompra,lineNum,descripcion,itemNo,unitOfMeasureCode,locationCode,quantitySolicitado,quantityOrdenado,fechaCreacion,creadoPor)
-                VALUES (@idPedidoCompra,@lineNum,@descripcion,@itemNo,@unitOfMeasureCode,@locationCode,@quantitySolicitado,0,getdate(),@creadoPor)`);
+        .query(`INSERT dbo.PedidoCompraDet (idPedidoCompra,lineNum,descripcion,itemNo,variantCode,unitOfMeasureCode,locationCode,quantitySolicitado,quantityOrdenado,fechaCreacion,creadoPor)
+                VALUES (@idPedidoCompra,@lineNum,@descripcion,@itemNo,@variantCode,@unitOfMeasureCode,@locationCode,@quantitySolicitado,0,getdate(),@creadoPor)`);
       line += 10000;
     }
     await logMov(tx, { entidad: "pedido", idEntidad: input.id, documentoNo: row.pedidoNo, tipoMovimiento: "editado", usuario: input.usuario, rol: input.rol });
