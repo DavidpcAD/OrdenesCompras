@@ -62,9 +62,17 @@ async function bcFetch(path: string): Promise<any> {
   return res.json();
 }
 
+// Extrae un GUID limpio de un string (tolera basura pegada, p.ej. "...acffalse").
+function soloGuid(v?: string): string | null {
+  const m = (v ?? "").match(/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}/);
+  return m ? m[0] : null;
+}
+
 async function getCompanyId(): Promise<string> {
   if (companyIdCache) return companyIdCache;
-  if (process.env.BC_COMPANY_ID) { companyIdCache = process.env.BC_COMPANY_ID; return companyIdCache; }
+  const limpio = soloGuid(process.env.BC_COMPANY_ID);
+  if (limpio) { companyIdCache = limpio; return companyIdCache; }
+  if (process.env.BC_COMPANY_ID) { companyIdCache = process.env.BC_COMPANY_ID.trim(); return companyIdCache; }
   const data = await bcFetch(`/companies`);
   const nombre = process.env.BC_COMPANY;
   const lista: any[] = data.value ?? [];
