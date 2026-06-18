@@ -48,10 +48,13 @@ export default function PedidoDetallePage() {
                 </Button>
               </>
             )}
-            {pedido.estado === "aprobado" && (
+            {pedido.estado === "aprobado" && !ordenado && (
               <Button variant="outline" onClick={async () => { await setPedidoEstado(pedido.id, "borrador"); toast("Pedido reabierto como borrador"); }}>
                 Volver a borrador
               </Button>
+            )}
+            {pedido.estado === "aprobado" && ordenado && (
+              <span className="ds-muted ds-label" style={{ alignSelf: "center" }}>Proveeduría ya generó orden de compra · no editable</span>
             )}
           </div>
         </div>

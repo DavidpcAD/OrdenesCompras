@@ -85,18 +85,19 @@ export default function SeguimientoPage() {
             <table className="ds-table">
               <thead>
                 <tr>
-                  <th>Proyecto</th><th>Pedido</th><th>Artículo</th>
+                  <th>Proyecto</th><th>Almacén</th><th>Pedido</th><th>Artículo</th>
                   <th className="ds-num">Solicitado</th><th className="ds-num">Recibido</th><th className="ds-num">Por recibir</th>
                   <th>Comentario</th>
                 </tr>
               </thead>
               <tbody>
                 {filtradas.length === 0 && (
-                  <tr><td colSpan={7}><div className="empty">No hay líneas para mostrar.</div></td></tr>
+                  <tr><td colSpan={8}><div className="empty">No hay líneas para mostrar.</div></td></tr>
                 )}
                 {visibles.map((f) => (
                   <tr key={f.key} className="is-clickable" onClick={() => router.push(`/ingenieria/${f.pedidoId}`)}>
                     <td>{f.proyecto}</td>
+                    <td className="ds-muted">{f.almacen}</td>
                     <td><span className="row gap-2" style={{ alignItems: "center" }}>
                       {f.tipo === "repuesto" ? <Badge tone="yellow">Rep.</Badge> : <Badge tone="green">Mat.</Badge>}
                       <span className="ds-body-sm ds-strong">{f.pedidoNumero}</span>
