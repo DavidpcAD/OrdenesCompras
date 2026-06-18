@@ -5,6 +5,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { AppShell } from "@/components/shell";
 import { Badge, Button, Card, Field, Input, Select, Textarea, useToast } from "@/components/ui";
 import { IconTrash } from "@/components/icons";
+import { Combobox } from "@/components/combobox";
 import { useStore } from "@/lib/store";
 import { num } from "@/lib/helpers";
 import type { Almacen, Articulo, Obra, Pedido, TipoSolicitud } from "@/lib/types";
@@ -82,7 +83,7 @@ export default function NuevaSolicitudPage() {
     const base = q
       ? catalogo.filter((a) => a.code.toLowerCase().includes(q) || a.descripcion.toLowerCase().includes(q))
       : catalogo;
-    return base.slice(0, 8);
+    return base.slice(0, 50);
   }, [catalogo, q]);
 
   function elegir(a: Articulo) {
@@ -186,17 +187,25 @@ export default function NuevaSolicitudPage() {
           <div className="grid-2">
             {tipo === "material" ? (
               <Field label="Obra destino">
-                <Select value={obraId} onChange={(e) => setObraId(e.target.value)}>
-                  <option value="">Seleccionar obra…</option>
-                  {catObras.map((o) => <option key={o.id} value={o.id}>{o.codigo} — {o.nombre}</option>)}
-                </Select>
+                <Combobox
+                  items={catObras}
+                  value={obraId}
+                  onChange={(k) => setObraId(k)}
+                  getKey={(o) => o.id}
+                  getLabel={(o) => `${o.codigo} — ${o.nombre}`}
+                  placeholder="Buscar obra por código o nombre…"
+                />
               </Field>
             ) : (
               <Field label="Máquina destino">
-                <Select value={maquinaId} onChange={(e) => setMaquinaId(e.target.value)}>
-                  <option value="">Seleccionar máquina…</option>
-                  {maquinas.map((m) => <option key={m.id} value={m.id}>{m.no} — {m.nombre}</option>)}
-                </Select>
+                <Combobox
+                  items={maquinas}
+                  value={maquinaId}
+                  onChange={(k) => setMaquinaId(k)}
+                  getKey={(m) => m.id}
+                  getLabel={(m) => `${m.no} — ${m.nombre}`}
+                  placeholder="Buscar máquina…"
+                />
               </Field>
             )}
             <Field label="Solicitante">
