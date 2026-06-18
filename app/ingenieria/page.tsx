@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { AppShell } from "@/components/shell";
 import { Badge, Button, Card, Tile } from "@/components/ui";
 import { useStore } from "@/lib/store";
@@ -14,6 +14,13 @@ export default function IngenieriaPage() {
   const { pedidos } = useStore();
   const router = useRouter();
   const [filtro, setFiltro] = useState<Filtro>("todas");
+  const listaRef = useRef<HTMLDivElement>(null);
+
+  function seleccionar(f: Filtro) {
+    setFiltro(f);
+    // bajar a la lista para que se vea de inmediato lo filtrado
+    setTimeout(() => listaRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
+  }
 
   const material = pedidos.filter((p) => p.tipoSolicitud === "material").length;
   const repuesto = pedidos.filter((p) => p.tipoSolicitud === "repuesto").length;
@@ -44,13 +51,13 @@ export default function IngenieriaPage() {
         </div>
 
         <div className="tiles mt-2">
-          <Tile value={pedidos.length} label="Solicitudes totales" onClick={() => setFiltro("todas")} active={filtro === "todas"} />
-          <Tile value={material} label="De material (obra)" accent="var(--ds-color-green-100)" onClick={() => setFiltro("material")} active={filtro === "material"} />
-          <Tile value={repuesto} label="De repuesto (máquina)" accent="var(--ds-color-yellow)" onClick={() => setFiltro("repuesto")} active={filtro === "repuesto"} />
-          <Tile value={aprobados} label="Aprobadas" accent="var(--ds-color-green-200)" onClick={() => setFiltro("aprobado")} active={filtro === "aprobado"} />
+          <Tile value={pedidos.length} label="Solicitudes totales" onClick={() => seleccionar("todas")} active={filtro === "todas"} />
+          <Tile value={material} label="De material (obra)" accent="var(--ds-color-green-100)" onClick={() => seleccionar("material")} active={filtro === "material"} />
+          <Tile value={repuesto} label="De repuesto (máquina)" accent="var(--ds-color-yellow)" onClick={() => seleccionar("repuesto")} active={filtro === "repuesto"} />
+          <Tile value={aprobados} label="Aprobadas" accent="var(--ds-color-green-200)" onClick={() => seleccionar("aprobado")} active={filtro === "aprobado"} />
         </div>
 
-        <div className="row row--between mt-6" style={{ marginBottom: 12, alignItems: "baseline" }}>
+        <div ref={listaRef} className="row row--between mt-6" style={{ marginBottom: 12, alignItems: "baseline", scrollMarginTop: 80 }}>
           <span className="ds-label ds-muted">{etiquetaFiltro[filtro]} · {visibles.length}</span>
           {filtro !== "todas" && <button className="link-btn" onClick={() => setFiltro("todas")}>Ver todas</button>}
         </div>
