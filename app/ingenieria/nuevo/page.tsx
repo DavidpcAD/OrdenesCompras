@@ -1,13 +1,13 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { AppShell } from "@/components/shell";
-import { Button, Card, Field, Input, Select, Textarea, useToast } from "@/components/ui";
+import { Badge, Button, Card, Field, Input, Select, Textarea, useToast } from "@/components/ui";
 import { IconTrash } from "@/components/icons";
 import { useStore } from "@/lib/store";
 import { num } from "@/lib/helpers";
-import type { Pedido, TipoSolicitud } from "@/lib/types";
+import type { Almacen, Articulo, Obra, Pedido, TipoSolicitud } from "@/lib/types";
 
 interface DraftLine {
   key: string;
@@ -21,6 +21,40 @@ export default function NuevaSolicitudPage() {
   const router = useRouter();
   const toast = useToast();
 
+  // ---- catálogo desde Business Central (con respaldo al de ejemplo) ----
+  const [bcArt, setBcArt] = useState<Articulo[] | null>(null);
+  const [bcObras, setBcObras] = useState<Obra[] | null>(null);
+  const [bcAlm, setBcAlm] = useState<Almacen[] | null>(null);
+  const [fuente, setFuente] = useState<"cargando" | "bc" | "ejemplo">("cargando");
+
+  useEffect(() => {
+    let cancel = false;
+    (async () => {
+      try {
+        const ri = await fetch("/api/bc/items");
+        if (!ri.ok) throw new Error("bc");
+        const items: Articulo[] = ((await ri.json()).items ?? []).map((i: any) => ({
+          id: i.id, code: i.code, descripcion: i.descripcion, unidad: i.unidad || "UND",
+          almacenDefault: "", precioReferencia: 0, tipo: "inventario" as const,
+        }));
+        const [ro, ra] = await Promise.all([fetch("/api/bc/obras"), fetch("/api/bc/almacenes")]);
+        const obrasBc: Obra[] = ro.ok ? ((await ro.json()).obras ?? []) : [];
+        const almBc: Almacen[] = ra.ok ? ((await ra.json()).almacenes ?? []) : [];
+        if (cancel) return;
+        if (items.length) { setBcArt(items); setFuente("bc"); } else setFuente("ejemplo");
+        if (obrasBc.length) setBcObras(obrasBc);
+        if (almBc.length) setBcAlm(almBc);
+      } catch {
+        if (!cancel) setFuente("ejemplo");
+      }
+    })();
+    return () => { cancel = true; };
+  }, []);
+
+  const catArticulos = bcArt ?? articulos;
+  const catObras = bcObras ?? obras;
+  const catAlmacenes = bcAlm ?? almacenes;
+
   const [tipo, setTipo] = useState<TipoSolicitud>("material");
   const [obraId, setObraId] = useState("");
   const [maquinaId, setMaquinaId] = useState("");
@@ -31,8 +65,8 @@ export default function NuevaSolicitudPage() {
 
   // catálogo filtrado: repuestos (R..) vs materiales
   const catalogo = useMemo(
-    () => articulos.filter((a) => (tipo === "repuesto" ? a.code.startsWith("R") : !a.code.startsWith("R"))),
-    [articulos, tipo]
+    () => catArticulos.filter((a) => (tipo === "repuesto" ? a.code.startsWith("R") : !a.code.startsWith("R"))),
+    [catArticulos, tipo]
   );
 
   // ---- alta rápida ----
@@ -51,7 +85,7 @@ export default function NuevaSolicitudPage() {
     return base.slice(0, 8);
   }, [catalogo, q]);
 
-  function elegir(a: (typeof articulos)[number]) {
+  function elegir(a: Articulo) {
     setQaArticuloId(a.id);
     setQaQuery(`${a.code} — ${a.descripcion}`);
     setQaAlmacen(a.almacenDefault || "");
@@ -59,7 +93,7 @@ export default function NuevaSolicitudPage() {
     setTimeout(() => cantRef.current?.focus(), 0);
   }
 
-  const qaArticulo = articulos.find((a) => a.id === qaArticuloId);
+  const qaArticulo = catArticulos.find((a) => a.id === qaArticuloId);
   const puedeAgregar = !!qaArticuloId && Number(qaCantidad) > 0;
 
   function agregar() {
@@ -90,7 +124,7 @@ export default function NuevaSolicitudPage() {
       toast(`Indicá ${tipo === "material" ? "la obra" : "la máquina"} y al menos un ${tipo === "material" ? "material" : "repuesto"}.`, "error");
       return;
     }
-    const obra = obras.find((o) => o.id === obraId);
+    const obra = catObras.find((o) => o.id === obraId);
     const maquina = maquinas.find((m) => m.id === maquinaId);
     setGuardando(true);
     try {
@@ -104,7 +138,7 @@ export default function NuevaSolicitudPage() {
         prioridad,
         notas: notas.trim() || undefined,
         lineas: lineas.map((l) => {
-          const a = articulos.find((x) => x.id === l.articuloId)!;
+          const a = catArticulos.find((x) => x.id === l.articuloId)!;
           return {
             articuloId: a.id, descripcion: a.descripcion, cantidad: Number(l.cantidad),
             unidad: a.unidad, almacen: l.almacen || a.almacenDefault,
@@ -154,7 +188,7 @@ export default function NuevaSolicitudPage() {
               <Field label="Obra destino">
                 <Select value={obraId} onChange={(e) => setObraId(e.target.value)}>
                   <option value="">Seleccionar obra…</option>
-                  {obras.map((o) => <option key={o.id} value={o.id}>{o.codigo} — {o.nombre}</option>)}
+                  {catObras.map((o) => <option key={o.id} value={o.id}>{o.codigo} — {o.nombre}</option>)}
                 </Select>
               </Field>
             ) : (
@@ -182,7 +216,12 @@ export default function NuevaSolicitudPage() {
         </Card>
 
         <Card className="mt-4">
-          <h3 className="ds-subtitle" style={{ marginBottom: 4 }}>{tipo === "material" ? "Materiales" : "Repuestos"}</h3>
+          <div className="row row--between" style={{ marginBottom: 4 }}>
+            <h3 className="ds-subtitle">{tipo === "material" ? "Materiales" : "Repuestos"}</h3>
+            {fuente === "bc" ? <Badge tone="green">Catálogo: Business Central</Badge>
+              : fuente === "ejemplo" ? <Badge tone="gray">Catálogo de ejemplo</Badge>
+              : <span className="ds-muted ds-body-sm">Cargando catálogo…</span>}
+          </div>
           <p className="ds-muted ds-body-sm" style={{ marginBottom: 16 }}>
             Buscá el {tipo === "material" ? "material" : "repuesto"}, elegí almacén y cantidad, y agregalo. Se van sumando a la lista.
           </p>
@@ -216,7 +255,7 @@ export default function NuevaSolicitudPage() {
               <label>Almacén</label>
               <select className="ds-form-field__select" value={qaAlmacen} onChange={(e) => setQaAlmacen(e.target.value)}>
                 {!qaAlmacen && <option value="">—</option>}
-                {almacenes.map((al) => <option key={al.codigo} value={al.codigo}>{al.codigo}</option>)}
+                {catAlmacenes.map((al) => <option key={al.codigo} value={al.codigo}>{al.codigo}</option>)}
               </select>
             </div>
             <div className="qa-field">
@@ -240,7 +279,7 @@ export default function NuevaSolicitudPage() {
                   <tr><td colSpan={5}><div className="empty" style={{ padding: "28px 0" }}>Todavía no agregaste {tipo === "material" ? "materiales" : "repuestos"}.</div></td></tr>
                 )}
                 {lineas.map((l) => {
-                  const a = articulos.find((x) => x.id === l.articuloId);
+                  const a = catArticulos.find((x) => x.id === l.articuloId);
                   return (
                     <tr key={l.key}>
                       <td><span className="ds-strong">{a?.code}</span> <span className="ds-muted">— {a?.descripcion}</span></td>
