@@ -5,13 +5,13 @@ import { AppShell } from "@/components/shell";
 import { Badge, Button, Card, useToast } from "@/components/ui";
 import { Timeline } from "@/components/timeline";
 import { useStore } from "@/lib/store";
-import { destinoLabel, formatDate, num, pedidoBadge, pedidoLineaPendiente } from "@/lib/helpers";
+import { destinoLabel, formatDate, num, pedidoBadge, recibidoDeLineaPedido } from "@/lib/helpers";
 
 export default function PedidoDetallePage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
   const toast = useToast();
-  const { pedidos, setPedidoEstado, deletePedido } = useStore();
+  const { pedidos, ordenes, setPedidoEstado, deletePedido } = useStore();
 
   const pedido = pedidos.find((p) => p.id === id);
   if (!pedido) {
@@ -66,20 +66,22 @@ export default function PedidoDetallePage() {
               <thead>
                 <tr>
                   <th>Artículo</th><th>Almacén</th><th className="ds-num">Solicitado</th>
-                  <th className="ds-num">En orden</th><th className="ds-num">Pendiente</th>
+                  <th className="ds-num">En orden</th><th className="ds-num">Recibido</th><th className="ds-num">Por recibir</th>
                 </tr>
               </thead>
               <tbody>
                 {pedido.lineas.map((l) => {
-                  const pend = pedidoLineaPendiente(l);
+                  const recibido = recibidoDeLineaPedido(ordenes, l.id);
+                  const porRecibir = Math.max(0, l.cantidad - recibido);
                   return (
                     <tr key={l.id}>
                       <td>{l.descripcion}</td>
                       <td className="ds-muted">{l.almacen}</td>
                       <td className="ds-num">{num.format(l.cantidad)} {l.unidad}</td>
                       <td className="ds-num">{num.format(l.cantidadOrdenada)}</td>
+                      <td className="ds-num ds-strong">{num.format(recibido)}</td>
                       <td className="ds-num">
-                        {pend > 0 ? <span className="ds-pending-text">{num.format(pend)}</span> : <span className="ds-muted">0</span>}
+                        {porRecibir > 0 ? <span className="ds-pending-text">{num.format(porRecibir)}</span> : <span className="ds-muted">0</span>}
                       </td>
                     </tr>
                   );

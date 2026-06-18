@@ -62,6 +62,18 @@ export function pedidoTieneSaldo(p: Pedido): boolean {
   return p.lineas.some((l) => pedidoLineaPendiente(l) > 0);
 }
 
+// Cuánto de una línea de pedido ya LLEGÓ (recibido en bodega), rastreando las
+// órdenes en las que entró esa línea (enlace N:M por OrdenLinea.pedidoLineaId).
+export function recibidoDeLineaPedido(ordenes: Orden[], pedidoLineaId: string): number {
+  let total = 0;
+  for (const o of ordenes) {
+    for (const l of o.lineas) {
+      if (l.pedidoLineaId === pedidoLineaId) total += l.cantidadRecibida;
+    }
+  }
+  return total;
+}
+
 // ---- líneas de orden ----
 export function ordenLineaPendiente(l: OrdenLinea): number {
   return Math.max(0, l.cantidad - l.cantidadRecibida);
