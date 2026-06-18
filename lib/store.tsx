@@ -9,7 +9,7 @@ import * as seed from "./seed";
 import { nextNumero, nowISO, ordenEstaCompleta, PERSONA_POR_ROL, todayISO } from "./helpers";
 import { api, USE_API } from "./api";
 
-interface NewPedidoInput {
+export interface NewPedidoInput {
   tipoSolicitud: TipoSolicitud;
   obraCodigo?: string;
   obraNombre?: string;
@@ -54,6 +54,7 @@ interface StoreShape {
   movimientos: Movimiento[];
 
   addPedido: (input: NewPedidoInput) => Promise<Pedido>;
+  editPedido: (id: string, input: NewPedidoInput) => Promise<void>;
   updatePedido: (p: Pedido) => void;
   setPedidoEstado: (id: string, estado: Pedido["estado"]) => Promise<void>;
   deletePedido: (id: string) => Promise<void>;
@@ -166,6 +167,27 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         return { ...d, pedidos: [created, ...d.pedidos], movimientos: [mov, ...d.movimientos] };
       });
       return created;
+    };
+
+    const editPedido: StoreShape["editPedido"] = async (id, input) => {
+      if (USE_API) {
+        await api.putPedido(id, {
+          tipoSolicitud: input.tipoSolicitud, obra: input.obraCodigo, obraNombre: input.obraNombre,
+          maquinaNo: input.maquinaNo, solicitante: input.solicitante, prioridad: input.prioridad,
+          notas: input.notas, usuario: persona, rol: rolActual,
+          lineas: input.lineas.map((l) => ({ itemNo: l.articuloId, descripcion: l.descripcion, cantidad: l.cantidad, unidad: l.unidad, almacen: l.almacen })),
+        });
+        await refreshFromApi();
+        return;
+      }
+      setData((d) => ({
+        ...d,
+        pedidos: d.pedidos.map((x) => (x.id === id ? {
+          ...x, tipoSolicitud: input.tipoSolicitud, obraCodigo: input.obraCodigo, obraNombre: input.obraNombre,
+          maquinaNo: input.maquinaNo, maquinaNombre: input.maquinaNombre, prioridad: input.prioridad, notas: input.notas,
+          lineas: input.lineas.map((l) => ({ ...l, id: uid(), cantidadOrdenada: 0 })),
+        } : x)),
+      }));
     };
 
     const updatePedido: StoreShape["updatePedido"] = (p) =>
@@ -309,7 +331,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       proveedores: seed.proveedores, articulos: seed.articulos, obras: seed.obras,
       maquinas: seed.maquinas, almacenes: seed.almacenes,
       pedidos: data.pedidos, ordenes: data.ordenes, recepciones: data.recepciones, movimientos: data.movimientos,
-      addPedido, updatePedido, setPedidoEstado, deletePedido,
+      addPedido, editPedido, updatePedido, setPedidoEstado, deletePedido,
       createOrden, setOrdenEstado, registrarRecepcion, reset,
       borrador, setBorrador,
     };

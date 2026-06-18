@@ -161,6 +161,61 @@ export async function createPedido(input: NewPedidoDB): Promise<number> {
   }
 }
 
+export interface EditPedidoDB extends NewPedidoDB { id: number; }
+
+export async function updatePedido(input: EditPedidoDB): Promise<void> {
+  const pool = await getPool();
+  const tx = new sql.Transaction(pool);
+  await tx.begin();
+  try {
+    // Solo se puede editar si NO tiene nada ordenado por proveeduría.
+    const chk = await new sql.Request(tx).input("id", sql.Int, input.id).query(
+      `SELECT p.pedidoNo,
+              (SELECT ISNULL(SUM(quantityOrdenado),0) FROM dbo.PedidoCompraDet WHERE idPedidoCompra=p.idPedidoCompra) AS ordenado
+       FROM dbo.PedidoCompra p WHERE p.idPedidoCompra=@id AND p.esEliminada=0`
+    );
+    const row = chk.recordset[0];
+    if (!row) throw new Error("Pedido no encontrado");
+    if (Number(row.ordenado) > 0) throw new Error("El pedido ya tiene orden de compra; no se puede editar");
+
+    await new sql.Request(tx)
+      .input("id", sql.Int, input.id)
+      .input("tipoSolicitud", sql.NVarChar(15), input.tipoSolicitud)
+      .input("obra", sql.NVarChar(50), input.obra ?? null)
+      .input("maquinaNo", sql.NVarChar(20), input.maquinaNo ?? null)
+      .input("proyecto", sql.NVarChar(150), input.obraNombre ?? null)
+      .input("prioridad", sql.NVarChar(20), input.prioridad)
+      .input("notaCreador", sql.NVarChar(500), input.notas ?? null)
+      .input("modificadoPor", sql.NVarChar(100), input.usuario)
+      .query(`UPDATE dbo.PedidoCompra SET tipoSolicitud=@tipoSolicitud, obra=@obra, maquinaNo=@maquinaNo,
+              proyecto=@proyecto, prioridad=@prioridad, notaCreador=@notaCreador,
+              fechaModificacion=getdate(), modificadoPor=@modificadoPor WHERE idPedidoCompra=@id`);
+
+    // Reemplazar líneas (seguro: no hay órdenes que las referencien).
+    await new sql.Request(tx).input("id", sql.Int, input.id).query("DELETE FROM dbo.PedidoCompraDet WHERE idPedidoCompra=@id");
+    let line = 10000;
+    for (const l of input.lineas) {
+      await new sql.Request(tx)
+        .input("idPedidoCompra", sql.Int, input.id)
+        .input("lineNum", sql.Int, line)
+        .input("descripcion", sql.NVarChar(250), l.descripcion)
+        .input("itemNo", sql.NVarChar(50), l.itemNo)
+        .input("unitOfMeasureCode", sql.NVarChar(20), l.unidad)
+        .input("locationCode", sql.NVarChar(20), l.almacen)
+        .input("quantitySolicitado", sql.Decimal(18, 4), l.cantidad)
+        .input("creadoPor", sql.NVarChar(100), input.usuario)
+        .query(`INSERT dbo.PedidoCompraDet (idPedidoCompra,lineNum,descripcion,itemNo,unitOfMeasureCode,locationCode,quantitySolicitado,quantityOrdenado,fechaCreacion,creadoPor)
+                VALUES (@idPedidoCompra,@lineNum,@descripcion,@itemNo,@unitOfMeasureCode,@locationCode,@quantitySolicitado,0,getdate(),@creadoPor)`);
+      line += 10000;
+    }
+    await logMov(tx, { entidad: "pedido", idEntidad: input.id, documentoNo: row.pedidoNo, tipoMovimiento: "editado", usuario: input.usuario, rol: input.rol });
+    await tx.commit();
+  } catch (e) {
+    await tx.rollback();
+    throw e;
+  }
+}
+
 export async function setPedidoEstado(id: number, estado: string, usuario: string, rol: Role) {
   const pool = await getPool();
   const prev = await pool.request().input("id", sql.Int, id).query("SELECT idEstado, pedidoNo FROM dbo.PedidoCompra WHERE idPedidoCompra=@id");

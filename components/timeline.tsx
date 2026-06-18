@@ -22,6 +22,7 @@ const estadoLabel = (c?: string) => (c ? (ESTADO_LABEL[c] ?? c) : undefined);
 const LABEL: Record<string, string> = {
   creado: "Creado",
   reabierto: "Reabierto",
+  editado: "Editado",
   aprobado: "Aprobado",
   en_orden: "Pasó a orden de compra",
   cerrado: "Cerrado",
