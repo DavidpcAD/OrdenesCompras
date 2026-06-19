@@ -174,8 +174,21 @@ export async function bcHealth() {
   try {
     const tok = await getToken();
     const p = decodeJwt(tok) ?? {};
-    out.diag.token = { appid: p.appid, tid: p.tid, aud: p.aud, roles: p.roles, app_displayname: p.app_displayname, idtyp: p.idtyp };
+    out.diag.token = { appid: p.appid, tid: p.tid, aud: p.aud, ver: p.ver, iss: p.iss, roles: p.roles, app_displayname: p.app_displayname, idtyp: p.idtyp };
+    // Probe crudo: capturar el motivo REAL del 401 (headers de BC)
+    const t = process.env.BC_TENANT_ID;
+    const url = `https://api.businesscentral.dynamics.com/v2.0/${t}/Sandbox/api/adelante/inventory/v1.0/companies`;
+    const r = await fetch(url, { headers: { Authorization: `Bearer ${tok}`, Accept: "application/json" } });
+    out.diag.probe = {
+      status: r.status,
+      wwwAuthenticate: r.headers.get("www-authenticate"),
+      msDiagnostics: r.headers.get("ms-diagnostics"),
+      requestId: r.headers.get("request-id") ?? r.headers.get("x-ms-request-id"),
+    };
   } catch (e: any) { out.diag.tokenError = String(e?.message ?? e); }
+  try {
+    out.diag.outboundIp = (await (await fetch("https://api.ipify.org")).text()).trim();
+  } catch (e: any) { out.diag.ipError = String(e?.message ?? e); }
   try { out.companies = await bcCompanies(); } catch (e: any) { out.companiesError = String(e?.message ?? e); }
   try { out.companyIdUsado = await getCompanyId(); } catch (e: any) { out.companyError = String(e?.message ?? e); }
   try { out.items = (await bcItems()).length; out.ok = true; } catch (e: any) { out.itemsError = String(e?.message ?? e); out.ok = false; }
