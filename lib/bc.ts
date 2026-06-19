@@ -175,16 +175,32 @@ export async function bcHealth() {
     const tok = await getToken();
     const p = decodeJwt(tok) ?? {};
     out.diag.token = { appid: p.appid, tid: p.tid, aud: p.aud, ver: p.ver, iss: p.iss, roles: p.roles, app_displayname: p.app_displayname, idtyp: p.idtyp };
-    // Probe crudo: capturar el motivo REAL del 401 (headers de BC)
+    // Probes discriminantes con el MISMO token, contra /companies de cada API.
+    // - standard  : si 401 => BC no reconoce la app en el entorno (registro/consent/entorno).
+    // - automation: confirma reconocimiento de la app a nivel automation.
+    // - custom    : si standard OK pero este 401 => permiso del API 'adelante' o extensión no publicada.
     const t = process.env.BC_TENANT_ID;
-    const url = `https://api.businesscentral.dynamics.com/v2.0/${t}/Sandbox/api/adelante/inventory/v1.0/companies`;
-    const r = await fetch(url, { headers: { Authorization: `Bearer ${tok}`, Accept: "application/json" } });
-    out.diag.probe = {
-      status: r.status,
-      wwwAuthenticate: r.headers.get("www-authenticate"),
-      msDiagnostics: r.headers.get("ms-diagnostics"),
-      requestId: r.headers.get("request-id") ?? r.headers.get("x-ms-request-id"),
+    const envName = (process.env.BC_ENVIRONMENT ?? "Sandbox");
+    const base = `https://api.businesscentral.dynamics.com/v2.0/${t}/${envName}`;
+    const probe = async (label: string, url: string) => {
+      try {
+        const r = await fetch(url, { headers: { Authorization: `Bearer ${tok}`, Accept: "application/json" } });
+        let bodyMsg: string | null = null;
+        if (!r.ok) { try { bodyMsg = (await r.text()).slice(0, 200); } catch { /* noop */ } }
+        return {
+          label, status: r.status, ok: r.ok,
+          wwwAuthenticate: r.headers.get("www-authenticate"),
+          msDiagnostics: r.headers.get("ms-diagnostics"),
+          requestId: r.headers.get("request-id") ?? r.headers.get("x-ms-request-id"),
+          body: bodyMsg,
+        };
+      } catch (e: any) { return { label, error: String(e?.message ?? e) }; }
     };
+    out.diag.probes = await Promise.all([
+      probe("standard", `${base}/api/v2.0/companies`),
+      probe("automation", `${base}/api/microsoft/automation/v2.0/companies`),
+      probe("custom-adelante", `${base}/api/adelante/inventory/v1.0/companies`),
+    ]);
   } catch (e: any) { out.diag.tokenError = String(e?.message ?? e); }
   try {
     out.diag.outboundIp = (await (await fetch("https://api.ipify.org")).text()).trim();
