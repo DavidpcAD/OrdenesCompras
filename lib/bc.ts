@@ -152,8 +152,30 @@ export async function bcVariants(itemNo: string): Promise<BcVariante[]> {
   return (data.value ?? []).map((v: any) => ({ code: v.code ?? "", descripcion: v.description ?? v.code ?? "" }));
 }
 
+function decodeJwt(token: string): any {
+  try {
+    const part = token.split(".")[1];
+    const b64 = part.replace(/-/g, "+").replace(/_/g, "/");
+    const pad = b64 + "=".repeat((4 - (b64.length % 4)) % 4);
+    return JSON.parse(Buffer.from(pad, "base64").toString("utf8"));
+  } catch { return null; }
+}
+
 export async function bcHealth() {
   const out: any = { configCompanyId: soloGuid(process.env.BC_COMPANY_ID) };
+  // --- DIAGNÓSTICO: qué credenciales ve el worker en runtime ---
+  out.diag = {
+    envClientId: process.env.BC_CLIENT_ID ?? null,
+    envTenant: process.env.BC_TENANT_ID ?? null,
+    envSecretLen: (process.env.BC_CLIENT_SECRET ?? "").length,
+    envBaseUrl: process.env.BC_BASE_URL ?? null,
+    authority: `https://login.microsoftonline.com/${process.env.BC_TENANT_ID}/oauth2/v2.0/token`,
+  };
+  try {
+    const tok = await getToken();
+    const p = decodeJwt(tok) ?? {};
+    out.diag.token = { appid: p.appid, tid: p.tid, aud: p.aud, roles: p.roles, app_displayname: p.app_displayname, idtyp: p.idtyp };
+  } catch (e: any) { out.diag.tokenError = String(e?.message ?? e); }
   try { out.companies = await bcCompanies(); } catch (e: any) { out.companiesError = String(e?.message ?? e); }
   try { out.companyIdUsado = await getCompanyId(); } catch (e: any) { out.companyError = String(e?.message ?? e); }
   try { out.items = (await bcItems()).length; out.ok = true; } catch (e: any) { out.itemsError = String(e?.message ?? e); out.ok = false; }
