@@ -13,6 +13,7 @@ export default function SeguimientoPage() {
   const router = useRouter();
 
   const [proyecto, setProyecto] = useState(""); // "" = todos
+  const [obra, setObra] = useState(""); // "" = todas
   const [busqueda, setBusqueda] = useState("");
   const PAGINA = 100;
   const [limite, setLimite] = useState(PAGINA);
@@ -45,10 +46,21 @@ export default function SeguimientoPage() {
     return [{ key: "", label: "Todos los proyectos" }, ...set.map((p) => ({ key: p, label: p }))];
   }, [filas]);
 
+  const obrasItems = useMemo(() => {
+    const set = Array.from(new Set(filas.map((f) => f.almacen).filter(Boolean))).sort();
+    return [{ key: "", label: "Todas las obras" }, ...set.map((o) => ({ key: o, label: o }))];
+  }, [filas]);
+
   const q = busqueda.trim().toLowerCase();
   const filtradas = filas
     .filter((f) => !proyecto || f.proyecto === proyecto)
-    .filter((f) => !q || f.articulo.toLowerCase().includes(q) || f.pedidoNumero.toLowerCase().includes(q) || f.comentario.toLowerCase().includes(q));
+    .filter((f) => !obra || f.almacen === obra)
+    .filter((f) => !q
+      || f.articulo.toLowerCase().includes(q)
+      || f.pedidoNumero.toLowerCase().includes(q)
+      || f.comentario.toLowerCase().includes(q)
+      || f.almacen.toLowerCase().includes(q)
+      || f.proyecto.toLowerCase().includes(q));
   const visibles = filtradas.slice(0, limite);
 
   return (
@@ -73,19 +85,30 @@ export default function SeguimientoPage() {
               placeholder="Buscar / elegir proyecto…"
             />
           </div>
-          <input className="ds-form-field__input" style={{ maxWidth: 300, borderRadius: 12, padding: "8px 14px" }}
-            placeholder="Buscar artículo, pedido o comentario…" value={busqueda}
+          <div className="qa-field" style={{ minWidth: 240, flex: "0 1 300px" }}>
+            <label style={{ fontSize: "var(--ds-font-size-body-sm)", color: "var(--ds-color-gray-500)", fontWeight: 600 }}>Obra</label>
+            <Combobox
+              items={obrasItems}
+              value={obra}
+              onChange={(k) => { setObra(k); setLimite(PAGINA); }}
+              getKey={(o) => o.key}
+              getLabel={(o) => o.label}
+              placeholder="Buscar / elegir obra…"
+            />
+          </div>
+          <input className="ds-form-field__input" style={{ maxWidth: 320, borderRadius: 12, padding: "8px 14px" }}
+            placeholder="Buscar todo: artículo, pedido, comentario, obra, proyecto…" value={busqueda}
             onChange={(e) => { setBusqueda(e.target.value); setLimite(PAGINA); }} />
         </div>
 
-        <div className="ds-label ds-muted mt-4" style={{ marginBottom: 10 }}>{filtradas.length} línea(s){proyecto ? ` · ${proyecto}` : ""}</div>
+        <div className="ds-label ds-muted mt-4" style={{ marginBottom: 10 }}>{filtradas.length} línea(s){proyecto ? ` · ${proyecto}` : ""}{obra ? ` · obra ${obra}` : ""}</div>
 
         <Card style={{ padding: 0, overflow: "hidden" }}>
           <div className="ds-table-wrap" style={{ boxShadow: "none" }}>
             <table className="ds-table">
               <thead>
                 <tr>
-                  <th>Proyecto</th><th>Almacén</th><th>Pedido</th><th>Artículo</th>
+                  <th>Proyecto</th><th>Obra</th><th>Pedido</th><th>Artículo</th>
                   <th className="ds-num">Solicitado</th><th className="ds-num">Recibido</th><th className="ds-num">Por recibir</th>
                   <th>Comentario</th>
                 </tr>

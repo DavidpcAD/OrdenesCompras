@@ -1,11 +1,11 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import * as XLSX from "xlsx";
 import { Button, Card, Field, Select, Textarea, useToast } from "@/components/ui";
 import { IconTrash } from "@/components/icons";
 import { Combobox } from "@/components/combobox";
 import { useStore, type NewPedidoInput } from "@/lib/store";
-import { num } from "@/lib/helpers";
 import type { Almacen, Articulo, Obra, Pedido, TipoSolicitud } from "@/lib/types";
 
 interface DraftLine { key: string; articuloId: string; obraCodigo: string; obraNombre: string; variantCode: string; variantNombre: string; cantidad: string; }
@@ -13,6 +13,18 @@ type Variante = { code: string; descripcion: string };
 
 // Personas que pueden solicitar material (rol Ingeniería).
 const SOLICITANTES = ["Laura Ureña", "Loana", "Michael Thames", "Roger Solano"];
+
+// ---- Plantillas (guardadas localmente por ahora) ----
+type PlantillaLinea = { code: string; cantidad: number; obraCodigo: string };
+type Plantilla = { id: string; nombre: string; lineas: PlantillaLinea[] };
+const PLANTILLAS_KEY = "oc_plantillas_material";
+function leerPlantillas(): Plantilla[] {
+  try { return JSON.parse(localStorage.getItem(PLANTILLAS_KEY) || "[]"); } catch { return []; }
+}
+function guardarPlantillas(ps: Plantilla[]) {
+  try { localStorage.setItem(PLANTILLAS_KEY, JSON.stringify(ps)); } catch { /* noop */ }
+}
+const normTxt = (v: unknown) => String(v ?? "").trim().toUpperCase();
 
 export interface SolicitudInicial {
   tipoSolicitud: TipoSolicitud;
@@ -112,6 +124,12 @@ export function SolicitudForm({
   const [qaVariantes, setQaVariantes] = useState<Variante[]>([]);
   const [qaVariante, setQaVariante] = useState("");
   const cantRef = useRef<HTMLInputElement>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  // ---- plantillas ----
+  const [plantillas, setPlantillas] = useState<Plantilla[]>([]);
+  const [nombrePlantilla, setNombrePlantilla] = useState("");
+  useEffect(() => { setPlantillas(leerPlantillas()); }, []);
 
   const q = qaQuery.trim().toLowerCase();
   const sugerencias = useMemo(() => {
@@ -150,6 +168,104 @@ export function SolicitudForm({
     setQaVariantes([]); setQaVariante("");
   }
   function removeLine(key: string) { setLineas((ls) => ls.filter((l) => l.key !== key)); }
+  function setLineCantidad(key: string, val: string) {
+    setLineas((ls) => ls.map((l) => (l.key === key ? { ...l, cantidad: val } : l)));
+  }
+  function setLineObra(key: string, obraId: string) {
+    const o = catObras.find((x) => x.id === obraId);
+    setLineas((ls) => ls.map((l) => (l.key === key ? { ...l, obraCodigo: o?.codigo ?? "", obraNombre: o?.nombre ?? "" } : l)));
+  }
+
+  // ---- Importar Excel: detecta columnas por contenido (código BC, cantidad, obra) ----
+  function lineasDesde(items: { code: string; cantidad: number; obraCodigo: string }[]): { nuevas: DraftLine[]; sinMatch: number } {
+    const porCodigo = new Map(catArticulos.map((a) => [normTxt(a.code), a]));
+    let sinMatch = 0;
+    const nuevas: DraftLine[] = [];
+    for (const it of items) {
+      const a = porCodigo.get(normTxt(it.code));
+      if (!a) { sinMatch++; continue; }
+      const o = catObras.find((x) => normTxt(x.codigo) === normTxt(it.obraCodigo));
+      nuevas.push({
+        key: Math.random().toString(36).slice(2),
+        articuloId: a.id,
+        obraCodigo: o?.codigo ?? "",
+        obraNombre: o?.nombre ?? "",
+        variantCode: "", variantNombre: "",
+        cantidad: it.cantidad > 0 ? String(it.cantidad) : "",
+      });
+    }
+    return { nuevas, sinMatch };
+  }
+
+  async function importarExcel(file: File) {
+    try {
+      const buf = await file.arrayBuffer();
+      const wb = XLSX.read(buf, { type: "array" });
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      const aoa: any[][] = XLSX.utils.sheet_to_json(ws, { header: 1, defval: "" });
+      if (!aoa.length) { toast("El Excel está vacío.", "error"); return; }
+      const codeSet = new Set(catArticulos.map((a) => normTxt(a.code)));
+      const obraSet = new Set(catObras.map((o) => normTxt(o.codigo)));
+      const nCols = Math.max(...aoa.map((r) => r.length));
+      const count = (pred: (v: any) => boolean) =>
+        Array.from({ length: nCols }, (_, c) => aoa.reduce((n, r) => n + (pred(r[c]) ? 1 : 0), 0));
+      // columna de código = la que más valores hace match con el catálogo BC
+      const codeHits = count((v) => codeSet.has(normTxt(v)));
+      const codeCol = codeHits.indexOf(Math.max(...codeHits));
+      if (codeHits[codeCol] === 0) { toast("No encontré ninguna columna con códigos de material de BC.", "error"); return; }
+      // columna de obra = la que más match con códigos de obra (puede no existir)
+      const obraHits = count((v) => obraSet.has(normTxt(v)));
+      const obraCol = obraHits[obraHits.indexOf(Math.max(...obraHits))] > 0 ? obraHits.indexOf(Math.max(...obraHits)) : -1;
+      // columna de cantidad = la más numérica, distinta de código/obra
+      const numHits = count((v) => v !== "" && !isNaN(Number(v)) && Number(v) > 0).map((n, c) => (c === codeCol || c === obraCol ? -1 : n));
+      const cantCol = Math.max(...numHits) > 0 ? numHits.indexOf(Math.max(...numHits)) : -1;
+      const items = aoa
+        .filter((r) => codeSet.has(normTxt(r[codeCol])))
+        .map((r) => ({
+          code: String(r[codeCol]),
+          cantidad: cantCol >= 0 ? Number(r[cantCol]) || 0 : 0,
+          obraCodigo: obraCol >= 0 ? String(r[obraCol]) : "",
+        }));
+      const { nuevas, sinMatch } = lineasDesde(items);
+      if (!nuevas.length) { toast("Ninguna fila coincidió con el catálogo de BC.", "error"); return; }
+      setLineas((ls) => [...nuevas, ...ls]);
+      toast(`Se cargaron ${nuevas.length} línea(s)${sinMatch ? ` · ${sinMatch} sin coincidencia (omitidas)` : ""}. Revisá la obra de cada línea.`, "success");
+    } catch (e: any) {
+      toast(`No pude leer el Excel: ${String(e?.message ?? e)}`, "error");
+    } finally {
+      if (fileRef.current) fileRef.current.value = "";
+    }
+  }
+
+  // ---- Plantillas ----
+  function guardarComoPlantilla() {
+    const nombre = nombrePlantilla.trim();
+    if (!nombre) { toast("Poné un nombre para la plantilla.", "error"); return; }
+    if (!lineas.length) { toast("No hay líneas para guardar.", "error"); return; }
+    const pl: Plantilla = {
+      id: Math.random().toString(36).slice(2),
+      nombre,
+      lineas: lineas.map((l) => {
+        const a = catArticulos.find((x) => x.id === l.articuloId);
+        return { code: a?.code ?? "", cantidad: Number(l.cantidad) || 0, obraCodigo: l.obraCodigo };
+      }).filter((x) => x.code),
+    };
+    const ps = [pl, ...plantillas.filter((p) => p.nombre !== nombre)];
+    setPlantillas(ps); guardarPlantillas(ps); setNombrePlantilla("");
+    toast(`Plantilla "${nombre}" guardada.`, "success");
+  }
+  function cargarPlantilla(id: string) {
+    const pl = plantillas.find((p) => p.id === id);
+    if (!pl) return;
+    const { nuevas, sinMatch } = lineasDesde(pl.lineas);
+    if (!nuevas.length) { toast("Esa plantilla no coincide con el catálogo actual.", "error"); return; }
+    setLineas((ls) => [...nuevas, ...ls]);
+    toast(`Plantilla "${pl.nombre}" cargada (${nuevas.length} línea/s${sinMatch ? `, ${sinMatch} omitida/s` : ""}).`, "success");
+  }
+  function borrarPlantilla(id: string) {
+    const ps = plantillas.filter((p) => p.id !== id);
+    setPlantillas(ps); guardarPlantillas(ps);
+  }
   function cambiarTipo(t: TipoSolicitud) {
     if (t === tipo) return;
     setTipo(t); setLineas([]); setMaquinaId("");
@@ -158,12 +274,17 @@ export function SolicitudForm({
   }
 
   const destinoOk = tipo === "material" ? true : !!maquinaId;
-  const puedeGuardar = destinoOk && !!solicitante && lineas.length > 0;
+  const lineasOk = tipo === "repuesto" ? lineas.every((l) => Number(l.cantidad) > 0)
+    : lineas.every((l) => Number(l.cantidad) > 0 && !!l.obraCodigo);
+  const lineasSinObra = tipo === "material" ? lineas.filter((l) => !l.obraCodigo).length : 0;
+  const puedeGuardar = destinoOk && !!solicitante && lineas.length > 0 && lineasOk;
   const [guardando, setGuardando] = useState(false);
 
   async function onGuardar() {
     if (!puedeGuardar) {
-      toast(tipo === "repuesto" ? "Indicá la máquina y al menos un repuesto." : "Agregá al menos un material (con su obra).", "error");
+      if (tipo === "material" && lineasSinObra > 0) toast(`Faltan ${lineasSinObra} línea(s) sin obra. Asignales la obra antes de guardar.`, "error");
+      else if (tipo === "material" && lineas.some((l) => !(Number(l.cantidad) > 0))) toast("Hay líneas con cantidad en 0.", "error");
+      else toast(tipo === "repuesto" ? "Indicá la máquina y al menos un repuesto." : "Agregá al menos un material (con su obra).", "error");
       return;
     }
     const maquina = maquinas.find((m) => m.id === maquinaId);
@@ -235,6 +356,46 @@ export function SolicitudForm({
           Buscá el {esMaterial ? "material, elegí la obra" : "repuesto"} y la cantidad, y agregalo. Se van sumando a la lista.
         </p>
 
+        {esMaterial && (
+          <div className="row wrap gap-3" style={{ marginBottom: 16, alignItems: "flex-end", justifyContent: "space-between" }}>
+            <div className="row gap-2" style={{ alignItems: "flex-end" }}>
+              <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" style={{ display: "none" }}
+                onChange={(e) => { const f = e.target.files?.[0]; if (f) importarExcel(f); }} />
+              <Button variant="outline" onClick={() => fileRef.current?.click()}>Importar Excel</Button>
+              {plantillas.length > 0 && (
+                <div className="qa-field" style={{ minWidth: 220 }}>
+                  <label>Cargar plantilla</label>
+                  <Select defaultValue="" onChange={(e) => { if (e.target.value) { cargarPlantilla(e.target.value); e.target.value = ""; } }}>
+                    <option value="">Elegí una plantilla…</option>
+                    {plantillas.map((p) => <option key={p.id} value={p.id}>{p.nombre} ({p.lineas.length})</option>)}
+                  </Select>
+                </div>
+              )}
+            </div>
+            {lineas.length > 0 && (
+              <div className="row gap-2" style={{ alignItems: "flex-end" }}>
+                <div className="qa-field" style={{ minWidth: 200 }}>
+                  <label>Guardar líneas como plantilla</label>
+                  <input className="ds-form-field__input" placeholder="Nombre de la plantilla…" value={nombrePlantilla}
+                    onChange={(e) => setNombrePlantilla(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") guardarComoPlantilla(); }} />
+                </div>
+                <Button variant="outline" onClick={guardarComoPlantilla}>Guardar plantilla</Button>
+              </div>
+            )}
+          </div>
+        )}
+        {esMaterial && plantillas.length > 0 && (
+          <div className="row wrap gap-2" style={{ marginBottom: 16 }}>
+            {plantillas.map((p) => (
+              <span key={p.id} className="ds-badge" style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                {p.nombre}
+                <button type="button" className="icon-btn" style={{ width: 18, height: 18 }} title="Borrar plantilla"
+                  onClick={() => borrarPlantilla(p.id)}>×</button>
+              </span>
+            ))}
+          </div>
+        )}
+
         <div className="qa-row" style={{ gridTemplateColumns: ["1fr", qaVariantes.length ? "190px" : null, esMaterial ? "230px" : null, "110px", "auto"].filter(Boolean).join(" ") }}>
           <div className="qa-field">
             <label>{esMaterial ? "Material" : "Repuesto"}</label>
@@ -287,12 +448,23 @@ export function SolicitudForm({
               {lineas.length === 0 && (<tr><td colSpan={esMaterial ? 5 : 4}><div className="empty" style={{ padding: "28px 0" }}>Todavía no agregaste {esMaterial ? "materiales" : "repuestos"}.</div></td></tr>)}
               {lineas.map((l) => {
                 const a = catArticulos.find((x) => x.id === l.articuloId);
+                const obraId = catObras.find((o) => o.codigo === l.obraCodigo)?.id ?? "";
                 return (
                   <tr key={l.key}>
                     <td><span className="ds-strong">{a?.code}</span> <span className="ds-muted">— {a?.descripcion}</span>{l.variantCode ? <span className="ds-body-sm ds-muted"> · var. {l.variantCode}{l.variantNombre ? ` (${l.variantNombre})` : ""}</span> : ""}</td>
-                    {esMaterial && <td className="ds-muted">{l.obraCodigo}{l.obraNombre ? ` — ${l.obraNombre}` : ""}</td>}
+                    {esMaterial && (
+                      <td style={{ minWidth: 220 }}>
+                        <div style={!l.obraCodigo ? { outline: "1.5px solid var(--ds-color-red, #c96c6c)", borderRadius: 12 } : undefined}>
+                          <Combobox items={catObras} value={obraId} onChange={(k) => setLineObra(l.key, k)} getKey={(o) => o.id} getLabel={(o) => `${o.codigo} — ${o.nombre}`} placeholder="Asigná la obra…" />
+                        </div>
+                      </td>
+                    )}
                     <td className="ds-muted">{a?.unidad ?? "—"}</td>
-                    <td className="ds-num ds-strong">{num.format(Number(l.cantidad))}</td>
+                    <td className="ds-num">
+                      <input className="ds-form-field__input" type="number" min={0} value={l.cantidad}
+                        onChange={(e) => setLineCantidad(l.key, e.target.value)}
+                        style={{ width: 90, textAlign: "right", padding: "6px 10px" }} />
+                    </td>
                     <td><button className="icon-btn" onClick={() => removeLine(l.key)} aria-label="Quitar"><IconTrash /></button></td>
                   </tr>
                 );
