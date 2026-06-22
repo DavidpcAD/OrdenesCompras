@@ -265,8 +265,9 @@ export async function bcHealth() {
       probe("standard", `${base}/api/v2.0/companies`),
       probe("automation", `${base}/api/microsoft/automation/v2.0/companies`),
       probe("custom-adelante", `${base}/api/adelante/inventory/v1.0/companies`),
-      probe("std-itemVariants(customCid)", `${base}/api/v2.0/companies(${cidGuid})/itemVariants?$top=1`),
       probe("std-itemVariants(stdCid)", `${base}/api/v2.0/companies(${stdCid})/itemVariants?$top=1`),
+      probe("std-items-scoped(stdCid)", `${base}/api/v2.0/companies(${stdCid})/items?$top=1`),
+      probe("std-customers-scoped(stdCid)", `${base}/api/v2.0/companies(${stdCid})/customers?$top=1`),
     ]);
   } catch (e: any) { out.diag.tokenError = String(e?.message ?? e); }
   try {
