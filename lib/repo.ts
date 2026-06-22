@@ -480,3 +480,65 @@ export async function listMovimientos(entidad: string, idEntidad: number) {
     detalle: m.detalle ?? undefined, usuario: m.usuario, rol: m.rol as Role, fecha: m.fecha?.toISOString?.() ?? "",
   }));
 }
+
+/* ============================================================================
+   Plantillas de solicitud (dbo.PlantillaSolicitud). Compartidas; el front
+   filtra por creadoPor. Las líneas se guardan como JSON (code+cantidad+obra).
+   ============================================================================ */
+
+export type PlantillaLineaDB = { code: string; cantidad: number; obraCodigo: string };
+export type Plantilla = { id: number; nombre: string; creadoPor: string; lineas: PlantillaLineaDB[]; fechaCreacion: string };
+
+function parseLineas(json: string): PlantillaLineaDB[] {
+  try {
+    const arr = JSON.parse(json);
+    return Array.isArray(arr) ? arr : [];
+  } catch { return []; }
+}
+
+export async function listPlantillas(): Promise<Plantilla[]> {
+  const pool = await getPool();
+  const r = await pool.request().query(
+    "SELECT idPlantillaSolicitud, nombre, creadoPor, lineasJson, fechaCreacion FROM dbo.PlantillaSolicitud WHERE esEliminada = 0 ORDER BY nombre"
+  );
+  return r.recordset.map((row) => ({
+    id: row.idPlantillaSolicitud,
+    nombre: row.nombre,
+    creadoPor: row.creadoPor,
+    lineas: parseLineas(row.lineasJson),
+    fechaCreacion: row.fechaCreacion?.toISOString?.() ?? "",
+  }));
+}
+
+export async function createPlantilla(input: { nombre: string; creadoPor: string; lineas: PlantillaLineaDB[] }): Promise<number> {
+  const pool = await getPool();
+  const lineasJson = JSON.stringify(input.lineas ?? []);
+  // upsert por (nombre, creadoPor): si el mismo usuario reusa el nombre, se actualiza.
+  const ex = await pool.request()
+    .input("nombre", sql.NVarChar(100), input.nombre)
+    .input("creadoPor", sql.NVarChar(100), input.creadoPor)
+    .query("SELECT idPlantillaSolicitud FROM dbo.PlantillaSolicitud WHERE nombre=@nombre AND creadoPor=@creadoPor AND esEliminada=0");
+  if (ex.recordset.length) {
+    const id = ex.recordset[0].idPlantillaSolicitud as number;
+    await pool.request()
+      .input("id", sql.Int, id)
+      .input("lineasJson", sql.NVarChar(sql.MAX), lineasJson)
+      .input("modificadoPor", sql.NVarChar(100), input.creadoPor)
+      .query("UPDATE dbo.PlantillaSolicitud SET lineasJson=@lineasJson, fechaModificacion=SYSUTCDATETIME(), modificadoPor=@modificadoPor WHERE idPlantillaSolicitud=@id");
+    return id;
+  }
+  const ins = await pool.request()
+    .input("nombre", sql.NVarChar(100), input.nombre)
+    .input("creadoPor", sql.NVarChar(100), input.creadoPor)
+    .input("lineasJson", sql.NVarChar(sql.MAX), lineasJson)
+    .query("INSERT dbo.PlantillaSolicitud (nombre, creadoPor, lineasJson, esEliminada, fechaCreacion) OUTPUT INSERTED.idPlantillaSolicitud VALUES (@nombre,@creadoPor,@lineasJson,0,SYSUTCDATETIME())");
+  return ins.recordset[0].idPlantillaSolicitud as number;
+}
+
+export async function deletePlantilla(id: number, usuario: string): Promise<void> {
+  const pool = await getPool();
+  await pool.request()
+    .input("id", sql.Int, id)
+    .input("modificadoPor", sql.NVarChar(100), usuario || null)
+    .query("UPDATE dbo.PlantillaSolicitud SET esEliminada=1, fechaModificacion=SYSUTCDATETIME(), modificadoPor=@modificadoPor WHERE idPlantillaSolicitud=@id");
+}

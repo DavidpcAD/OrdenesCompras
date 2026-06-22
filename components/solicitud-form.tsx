@@ -14,16 +14,9 @@ type Variante = { code: string; descripcion: string };
 // Personas que pueden solicitar material (rol Ingeniería).
 const SOLICITANTES = ["Laura Ureña", "Loana", "Michael Thames", "Roger Solano"];
 
-// ---- Plantillas (guardadas localmente por ahora) ----
+// ---- Plantillas (persistidas en SQL: dbo.PlantillaSolicitud) ----
 type PlantillaLinea = { code: string; cantidad: number; obraCodigo: string };
-type Plantilla = { id: string; nombre: string; lineas: PlantillaLinea[] };
-const PLANTILLAS_KEY = "oc_plantillas_material";
-function leerPlantillas(): Plantilla[] {
-  try { return JSON.parse(localStorage.getItem(PLANTILLAS_KEY) || "[]"); } catch { return []; }
-}
-function guardarPlantillas(ps: Plantilla[]) {
-  try { localStorage.setItem(PLANTILLAS_KEY, JSON.stringify(ps)); } catch { /* noop */ }
-}
+type Plantilla = { id: number; nombre: string; creadoPor: string; lineas: PlantillaLinea[] };
 const normTxt = (v: unknown) => String(v ?? "").trim().toUpperCase();
 
 export interface SolicitudInicial {
@@ -126,10 +119,21 @@ export function SolicitudForm({
   const cantRef = useRef<HTMLInputElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
-  // ---- plantillas ----
+  // ---- plantillas (SQL) ----
   const [plantillas, setPlantillas] = useState<Plantilla[]>([]);
   const [nombrePlantilla, setNombrePlantilla] = useState("");
-  useEffect(() => { setPlantillas(leerPlantillas()); }, []);
+  const [filtroPlantilla, setFiltroPlantilla] = useState<string>(""); // "" = todas; o creadoPor
+  async function recargarPlantillas() {
+    try {
+      const r = await fetch("/api/plantillas");
+      if (!r.ok) return;
+      const data = await r.json();
+      setPlantillas((data.plantillas ?? []) as Plantilla[]);
+    } catch { /* sin DB, queda vacío */ }
+  }
+  useEffect(() => { recargarPlantillas(); }, []);
+  // por defecto, cada quien ve las suyas
+  useEffect(() => { if (solicitante && filtroPlantilla === "") setFiltroPlantilla(solicitante); }, [solicitante]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const q = qaQuery.trim().toLowerCase();
   const sugerencias = useMemo(() => {
@@ -237,35 +241,52 @@ export function SolicitudForm({
     }
   }
 
-  // ---- Plantillas ----
-  function guardarComoPlantilla() {
+  // ---- Plantillas (SQL) ----
+  async function guardarComoPlantilla() {
     const nombre = nombrePlantilla.trim();
     if (!nombre) { toast("Poné un nombre para la plantilla.", "error"); return; }
     if (!lineas.length) { toast("No hay líneas para guardar.", "error"); return; }
-    const pl: Plantilla = {
-      id: Math.random().toString(36).slice(2),
-      nombre,
-      lineas: lineas.map((l) => {
-        const a = catArticulos.find((x) => x.id === l.articuloId);
-        return { code: a?.code ?? "", cantidad: Number(l.cantidad) || 0, obraCodigo: l.obraCodigo };
-      }).filter((x) => x.code),
-    };
-    const ps = [pl, ...plantillas.filter((p) => p.nombre !== nombre)];
-    setPlantillas(ps); guardarPlantillas(ps); setNombrePlantilla("");
-    toast(`Plantilla "${nombre}" guardada.`, "success");
+    const lineasPl: PlantillaLinea[] = lineas.map((l) => {
+      const a = catArticulos.find((x) => x.id === l.articuloId);
+      return { code: a?.code ?? "", cantidad: Number(l.cantidad) || 0, obraCodigo: l.obraCodigo };
+    }).filter((x) => x.code);
+    try {
+      const r = await fetch("/api/plantillas", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ nombre, creadoPor: solicitante, lineas: lineasPl }),
+      });
+      if (!r.ok) throw new Error((await r.json().catch(() => ({})))?.error || "No se pudo guardar");
+      setNombrePlantilla("");
+      await recargarPlantillas();
+      toast(`Plantilla "${nombre}" guardada.`, "success");
+    } catch (e: any) {
+      toast(`No se pudo guardar la plantilla: ${String(e?.message ?? e)}`, "error");
+    }
   }
   function cargarPlantilla(id: string) {
-    const pl = plantillas.find((p) => p.id === id);
+    const pl = plantillas.find((p) => String(p.id) === String(id));
     if (!pl) return;
     const { nuevas, sinMatch } = lineasDesde(pl.lineas);
     if (!nuevas.length) { toast("Esa plantilla no coincide con el catálogo actual.", "error"); return; }
     setLineas((ls) => [...nuevas, ...ls]);
     toast(`Plantilla "${pl.nombre}" cargada (${nuevas.length} línea/s${sinMatch ? `, ${sinMatch} omitida/s` : ""}).`, "success");
   }
-  function borrarPlantilla(id: string) {
-    const ps = plantillas.filter((p) => p.id !== id);
-    setPlantillas(ps); guardarPlantillas(ps);
+  async function borrarPlantilla(id: number) {
+    try {
+      const r = await fetch(`/api/plantillas/${id}?usuario=${encodeURIComponent(solicitante)}`, { method: "DELETE" });
+      if (!r.ok) throw new Error("No se pudo borrar");
+      await recargarPlantillas();
+    } catch (e: any) {
+      toast(`No se pudo borrar la plantilla: ${String(e?.message ?? e)}`, "error");
+    }
   }
+  const plantillasVisibles = filtroPlantilla && filtroPlantilla !== "*"
+    ? plantillas.filter((p) => p.creadoPor === filtroPlantilla)
+    : plantillas;
+  const creadoresPlantillas = useMemo(
+    () => Array.from(new Set(plantillas.map((p) => p.creadoPor).filter(Boolean))).sort(),
+    [plantillas]
+  );
   function cambiarTipo(t: TipoSolicitud) {
     if (t === tipo) return;
     setTipo(t); setLineas([]); setMaquinaId("");
@@ -363,13 +384,22 @@ export function SolicitudForm({
                 onChange={(e) => { const f = e.target.files?.[0]; if (f) importarExcel(f); }} />
               <Button variant="outline" onClick={() => fileRef.current?.click()}>Importar Excel</Button>
               {plantillas.length > 0 && (
-                <div className="qa-field" style={{ minWidth: 220 }}>
-                  <label>Cargar plantilla</label>
-                  <Select defaultValue="" onChange={(e) => { if (e.target.value) { cargarPlantilla(e.target.value); e.target.value = ""; } }}>
-                    <option value="">Elegí una plantilla…</option>
-                    {plantillas.map((p) => <option key={p.id} value={p.id}>{p.nombre} ({p.lineas.length})</option>)}
-                  </Select>
-                </div>
+                <>
+                  <div className="qa-field" style={{ minWidth: 170 }}>
+                    <label>Plantillas de</label>
+                    <Select value={filtroPlantilla} onChange={(e) => setFiltroPlantilla(e.target.value)}>
+                      <option value="*">Todas</option>
+                      {creadoresPlantillas.map((c) => <option key={c} value={c}>{c === solicitante ? `Mías (${c})` : c}</option>)}
+                    </Select>
+                  </div>
+                  <div className="qa-field" style={{ minWidth: 220 }}>
+                    <label>Cargar plantilla</label>
+                    <Select defaultValue="" onChange={(e) => { if (e.target.value) { cargarPlantilla(e.target.value); e.target.value = ""; } }}>
+                      <option value="">{plantillasVisibles.length ? "Elegí una plantilla…" : "Sin plantillas para este filtro"}</option>
+                      {plantillasVisibles.map((p) => <option key={p.id} value={p.id}>{p.nombre} ({p.lineas.length})</option>)}
+                    </Select>
+                  </div>
+                </>
               )}
             </div>
             {lineas.length > 0 && (
@@ -384,13 +414,18 @@ export function SolicitudForm({
             )}
           </div>
         )}
-        {esMaterial && plantillas.length > 0 && (
+        {esMaterial && plantillasVisibles.length > 0 && (
           <div className="row wrap gap-2" style={{ marginBottom: 16 }}>
-            {plantillas.map((p) => (
+            {plantillasVisibles.map((p) => (
               <span key={p.id} className="ds-badge" style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-                {p.nombre}
-                <button type="button" className="icon-btn" style={{ width: 18, height: 18 }} title="Borrar plantilla"
-                  onClick={() => borrarPlantilla(p.id)}>×</button>
+                <button type="button" className="linklike" style={{ background: "none", border: "none", cursor: "pointer", padding: 0, font: "inherit", color: "inherit" }}
+                  title="Cargar esta plantilla" onClick={() => cargarPlantilla(String(p.id))}>
+                  {p.nombre} <small className="ds-muted">· {p.creadoPor}</small>
+                </button>
+                {p.creadoPor === solicitante && (
+                  <button type="button" className="icon-btn" style={{ width: 18, height: 18 }} title="Borrar plantilla"
+                    onClick={() => borrarPlantilla(p.id)}>×</button>
+                )}
               </span>
             ))}
           </div>
