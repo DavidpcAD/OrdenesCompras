@@ -94,6 +94,44 @@ export default function ArmarOrdenPage() {
     }
   }
 
+  // Crea el Pedido en BC (proveedor + materiales) y abre BC para la vista previa/registro nativos.
+  async function crearEnBc() {
+    if (!puedeCrear) { toast("Seleccioná un proveedor.", "error"); return; }
+    const p = proveedores.find((x) => x.id === proveedorId);
+    const vendorNo = p?.code;
+    if (!vendorNo) { toast("El proveedor no tiene código de BC.", "error"); return; }
+    const lineasBc = rows
+      .filter((r) => r.articuloId && Number(r.cantidad) > 0)
+      .map((r) => ({ itemNo: r.articuloId, cantidad: Number(r.cantidad), precio: Number(r.precio) || 0, descripcion: r.descripcion }));
+    if (!lineasBc.length) { toast("No hay líneas de material para enviar a BC.", "error"); return; }
+    setGuardando(true);
+    try {
+      const res = await fetch("/api/bc/ordenes", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ vendorNo, currencyCode: currency, lineas: lineasBc }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || "No se pudo crear el pedido en BC");
+      // registramos también la orden local para el seguimiento de la app
+      try {
+        const ls: Omit<OrdenLinea, "id" | "cantidadRecibida" | "cantidadFacturada">[] = rows.map((r) => ({
+          tipo: "articulo", articuloId: r.articuloId, pedidoLineaId: r.pedidoLineaId, pedidoNumero: r.pedidoNumero,
+          descripcion: r.descripcion, cantidad: Number(r.cantidad), unidad: r.unidad, almacen: r.almacen,
+          precioUnitario: Number(r.precio), ivaPct: Number(r.iva) || 0, descuentoPct: Number(r.descuento) || 0,
+          proyecto: r.proyecto || undefined, taskNo: r.tarea || undefined,
+        }));
+        await createOrden({ proveedorId, currencyCode: currency, lineas: ls });
+      } catch { /* el pedido ya está en BC; el registro local es secundario */ }
+      setBorrador([]);
+      toast(`Pedido ${data.number} creado en BC. Abriendo para vista previa…`, "success");
+      if (data.deepLink) window.open(data.deepLink, "_blank");
+      router.push("/proveeduria/ordenes");
+    } catch (e: any) {
+      toast(String(e?.message ?? e), "error");
+      setGuardando(false);
+    }
+  }
+
   return (
     <AppShell role="proveeduria">
       <main className="page page--wide" style={{ paddingBottom: 120 }}>
@@ -203,7 +241,8 @@ export default function ArmarOrdenPage() {
           <span className="ds-muted">{rows.length} línea(s) · {pedidosDistintos.length} pedido(s) · <span className="ds-strong">{money(total, currency)}</span></span>
           <div className="row gap-3">
             <Button variant="outline" onClick={() => crear(false)} disabled={!puedeCrear || guardando}>Guardar como abierta</Button>
-            <Button onClick={() => crear(true)} disabled={!puedeCrear || guardando}>{guardando ? "Guardando…" : "Enviar a aprobación"}</Button>
+            <Button variant="outline" onClick={() => crear(true)} disabled={!puedeCrear || guardando}>Enviar a aprobación</Button>
+            <Button onClick={crearEnBc} disabled={!puedeCrear || guardando}>{guardando ? "Creando…" : "Crear en BC (vista previa)"}</Button>
           </div>
         </div>
       </div>

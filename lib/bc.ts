@@ -152,6 +152,43 @@ export async function bcVariants(itemNo: string): Promise<BcVariante[]> {
   return (data.value ?? []).map((v: any) => ({ code: v.code ?? "", descripcion: v.description ?? v.code ?? "" }));
 }
 
+// ---- Escritura: crear Pedido de compra (Purchase Order) por la API ESTÁNDAR ----
+export type NuevaLineaBc = { itemNo: string; cantidad: number; precio?: number; descripcion?: string };
+
+export async function bcCrearPedido(input: { vendorNo: string; currencyCode?: string; lineas: NuevaLineaBc[] }): Promise<{ number: string; id: string }> {
+  if (!input?.vendorNo) throw new Error("Falta el proveedor (vendorNo).");
+  const lineas = (input.lineas ?? []).filter((l) => l.itemNo && l.cantidad > 0);
+  if (!lineas.length) throw new Error("No hay líneas de material válidas para el pedido.");
+  const token = await getToken();
+  const cid = await getCompanyId();
+  const headers = { Authorization: `Bearer ${token}`, "Content-Type": "application/json", Accept: "application/json" };
+
+  // 1) Encabezado: proveedor (+ moneda si no es CRC).
+  const headerBody: Record<string, unknown> = { vendorNumber: input.vendorNo };
+  const cur = (input.currencyCode ?? "").toUpperCase();
+  if (cur && cur !== "CRC") headerBody.currencyCode = cur;
+  const resH = await fetch(`${stdRoot()}/companies(${cid})/purchaseOrders`, { method: "POST", headers, body: JSON.stringify(headerBody) });
+  if (!resH.ok) throw new Error(`BC ${resH.status} al crear el pedido: ${(await resH.text()).slice(0, 300)}`);
+  const po: any = await resH.json();
+
+  // 2) Líneas: una por material (tipo Artículo).
+  for (const l of lineas) {
+    const lineBody: Record<string, unknown> = { lineType: "Item", lineObjectNumber: l.itemNo, quantity: l.cantidad };
+    if (l.precio && l.precio > 0) lineBody.directUnitCost = l.precio;
+    const resL = await fetch(`${stdRoot()}/companies(${cid})/purchaseOrders(${po.id})/purchaseOrderLines`, { method: "POST", headers, body: JSON.stringify(lineBody) });
+    if (!resL.ok) throw new Error(`BC ${resL.status} al agregar la línea ${l.itemNo}: ${(await resL.text()).slice(0, 250)}`);
+  }
+  return { number: po.number ?? "", id: po.id ?? "" };
+}
+
+// Deep link al Pedido recién creado, en la lista de Pedidos de compra de BC.
+export function bcDeepLinkPedido(numero: string): string {
+  const { tenant, environment } = tenantYEntorno();
+  const company = process.env.BC_COMPANY || "ADELANTE_DESARROLLOS_NUEVA";
+  const filtro = encodeURIComponent(`'No.' IS '${numero}'`);
+  return `https://businesscentral.dynamics.com/${tenant}/${environment}?company=${encodeURIComponent(company)}&page=9307&filter=${filtro}`;
+}
+
 function decodeJwt(token: string): any {
   try {
     const part = token.split(".")[1];
