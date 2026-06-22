@@ -147,7 +147,9 @@ export async function bcVariants(itemNo: string): Promise<BcVariante[]> {
   const cid = await getCompanyId();
   const url = `${stdRoot()}/companies(${cid})/itemVariants?$filter=itemNumber eq '${encodeURIComponent(itemNo)}'`;
   const res = await fetch(url, { headers: { Authorization: `Bearer ${token}`, Accept: "application/json" } });
-  if (!res.ok) throw new Error(`BC ${res.status} en ${url}: ${(await res.text()).slice(0, 200)}`);
+  // Las variantes son opcionales: si BC no las deja leer, degradamos a "sin variantes"
+  // en vez de tumbar el formulario.
+  if (!res.ok) return [];
   const data = await res.json();
   return (data.value ?? []).map((v: any) => ({ code: v.code ?? "", descripcion: v.description ?? v.code ?? "" }));
 }
@@ -233,10 +235,12 @@ export async function bcHealth() {
         };
       } catch (e: any) { return { label, error: String(e?.message ?? e) }; }
     };
+    const cidGuid = soloGuid(process.env.BC_COMPANY_ID);
     out.diag.probes = await Promise.all([
       probe("standard", `${base}/api/v2.0/companies`),
       probe("automation", `${base}/api/microsoft/automation/v2.0/companies`),
       probe("custom-adelante", `${base}/api/adelante/inventory/v1.0/companies`),
+      probe("std-itemVariants", `${base}/api/v2.0/companies(${cidGuid})/itemVariants?$top=1`),
     ]);
   } catch (e: any) { out.diag.tokenError = String(e?.message ?? e); }
   try {
