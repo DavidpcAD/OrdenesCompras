@@ -30,8 +30,10 @@ export default function ProveeduriaMaterialesPage() {
   const router = useRouter();
   const toast = useToast();
 
+  // Proveeduría ve toda línea pendiente de ordenar (saldo > 0) de cualquier pedido
+  // que no esté cerrado — incluye borrador, aprobado y en orden.
   const pedidosConSaldo = useMemo(
-    () => pedidos.filter((p) => p.estado === "aprobado" && p.lineas.some((l) => pedidoLineaPendiente(l) > 0)),
+    () => pedidos.filter((p) => p.estado !== "cerrado" && p.lineas.some((l) => pedidoLineaPendiente(l) > 0)),
     [pedidos]
   );
 
