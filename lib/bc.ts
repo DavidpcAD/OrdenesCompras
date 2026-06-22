@@ -62,6 +62,25 @@ async function getCompanyId(): Promise<string> {
   return id;
 }
 
+// El systemId de compañía para la API ESTÁNDAR (v2.0) puede diferir del que
+// devuelve la API custom de Adelante. Resolvemos por nombre contra /companies estándar.
+let stdCompanyIdCache: string | null = null;
+async function getStdCompanyId(): Promise<string> {
+  if (stdCompanyIdCache) return stdCompanyIdCache;
+  const nombre = process.env.BC_COMPANY || "ADELANTE_DESARROLLOS_NUEVA";
+  try {
+    const token = await getToken();
+    const res = await fetch(`${stdRoot()}/companies`, { headers: { Authorization: `Bearer ${token}`, Accept: "application/json" } });
+    if (res.ok) {
+      const data = await res.json();
+      const lista: any[] = data.value ?? [];
+      const comp = lista.find((c) => c.name === nombre || c.displayName === nombre) ?? lista[0];
+      if (comp?.id) { stdCompanyIdCache = comp.id; return comp.id; }
+    }
+  } catch { /* cae al id de la API custom */ }
+  return getCompanyId();
+}
+
 // Lista de compañías visibles para la app (diagnóstico).
 export async function bcCompanies(): Promise<{ id: string; name: string }[]> {
   const token = await getToken();
@@ -144,7 +163,7 @@ export type BcVariante = { code: string; descripcion: string };
 export async function bcVariants(itemNo: string): Promise<BcVariante[]> {
   if (!itemNo) return [];
   const token = await getToken();
-  const cid = await getCompanyId();
+  const cid = await getStdCompanyId();
   const url = `${stdRoot()}/companies(${cid})/itemVariants?$filter=itemNumber eq '${encodeURIComponent(itemNo)}'`;
   const res = await fetch(url, { headers: { Authorization: `Bearer ${token}`, Accept: "application/json" } });
   // Las variantes son opcionales: si BC no las deja leer, degradamos a "sin variantes"
@@ -236,11 +255,18 @@ export async function bcHealth() {
       } catch (e: any) { return { label, error: String(e?.message ?? e) }; }
     };
     const cidGuid = soloGuid(process.env.BC_COMPANY_ID);
+    // Compañías que ve la API ESTÁNDAR (su systemId puede diferir del de la custom).
+    try {
+      const rc = await fetch(`${base}/api/v2.0/companies`, { headers: { Authorization: `Bearer ${tok}`, Accept: "application/json" } });
+      if (rc.ok) out.diag.stdCompanies = ((await rc.json()).value ?? []).map((c: any) => ({ id: c.id, name: c.name }));
+    } catch { /* noop */ }
+    const stdCid = out.diag.stdCompanies?.[0]?.id ?? cidGuid;
     out.diag.probes = await Promise.all([
       probe("standard", `${base}/api/v2.0/companies`),
       probe("automation", `${base}/api/microsoft/automation/v2.0/companies`),
       probe("custom-adelante", `${base}/api/adelante/inventory/v1.0/companies`),
-      probe("std-itemVariants", `${base}/api/v2.0/companies(${cidGuid})/itemVariants?$top=1`),
+      probe("std-itemVariants(customCid)", `${base}/api/v2.0/companies(${cidGuid})/itemVariants?$top=1`),
+      probe("std-itemVariants(stdCid)", `${base}/api/v2.0/companies(${stdCid})/itemVariants?$top=1`),
     ]);
   } catch (e: any) { out.diag.tokenError = String(e?.message ?? e); }
   try {
