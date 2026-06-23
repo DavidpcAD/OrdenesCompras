@@ -116,6 +116,7 @@ export function SolicitudForm({
   const [qaOpen, setQaOpen] = useState(false);
   const [qaVariantes, setQaVariantes] = useState<Variante[]>([]);
   const [qaVariante, setQaVariante] = useState("");
+  const [qaVariantesError, setQaVariantesError] = useState(false);
   const cantRef = useRef<HTMLInputElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -143,12 +144,12 @@ export function SolicitudForm({
 
   function elegir(a: Articulo) {
     setQaArticuloId(a.id); setQaQuery(`${a.code} — ${a.descripcion}`); setQaOpen(false);
-    setQaVariantes([]); setQaVariante("");
+    setQaVariantes([]); setQaVariante(""); setQaVariantesError(false);
     // buscar variantes del item (si la API/permiso lo permite)
     fetch(`/api/bc/variants?item=${encodeURIComponent(a.code)}`)
-      .then((r) => (r.ok ? r.json() : { variantes: [] }))
-      .then((d) => setQaVariantes(d.variantes ?? []))
-      .catch(() => setQaVariantes([]));
+      .then((r) => (r.ok ? r.json() : { variantes: [], disponible: false }))
+      .then((d) => { setQaVariantes(d.variantes ?? []); setQaVariantesError(d.disponible === false); })
+      .catch(() => { setQaVariantes([]); setQaVariantesError(true); });
     setTimeout(() => cantRef.current?.focus(), 0);
   }
   const qaArticulo = catArticulos.find((a) => a.id === qaArticuloId);
@@ -169,7 +170,7 @@ export function SolicitudForm({
       cantidad: qaCantidad,
     }, ...ls]);
     setQaArticuloId(""); setQaQuery(""); setQaObraId(""); setQaCantidad(""); setQaOpen(false);
-    setQaVariantes([]); setQaVariante("");
+    setQaVariantes([]); setQaVariante(""); setQaVariantesError(false);
   }
   function removeLine(key: string) { setLineas((ls) => ls.filter((l) => l.key !== key)); }
   function setLineCantidad(key: string, val: string) {
@@ -291,7 +292,7 @@ export function SolicitudForm({
     if (t === tipo) return;
     setTipo(t); setLineas([]); setMaquinaId("");
     setQaArticuloId(""); setQaQuery(""); setQaObraId(""); setQaCantidad("");
-    setQaVariantes([]); setQaVariante("");
+    setQaVariantes([]); setQaVariante(""); setQaVariantesError(false);
   }
 
   const destinoOk = tipo === "material" ? true : !!maquinaId;
@@ -469,6 +470,11 @@ export function SolicitudForm({
           </div>
           <Button onClick={agregar} disabled={!puedeAgregar}>+ Agregar</Button>
         </div>
+        {qaArticuloId && qaVariantesError && (
+          <p className="ds-body-sm" style={{ color: "var(--ds-color-red, #c96c6c)", marginTop: 8 }}>
+            No se pudieron cargar las variantes de este material. Si requiere variante, el pedido podría fallar en Business Central — avisá a proveeduría antes de continuar.
+          </p>
+        )}
 
         <div className="ds-table-wrap mt-4" style={{ boxShadow: "none", border: "1.5px solid var(--ds-color-gray-100)" }}>
           <table className="ds-table">

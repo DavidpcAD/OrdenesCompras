@@ -48,7 +48,7 @@ async function getCompanyId(): Promise<string> {
   const nombre = process.env.BC_COMPANY || "ADELANTE_DESARROLLOS_NUEVA";
   try {
     const token = await getToken();
-    const res = await fetch(`${customRoot("inventory")}/companies`, { headers: { Authorization: `Bearer ${token}`, Accept: "application/json" } });
+    const res = await fetch(`${customRoot("inventory")}/companies`, { cache: "no-store", headers: { Authorization: `Bearer ${token}`, Accept: "application/json" } });
     if (res.ok) {
       const data = await res.json();
       const lista: any[] = data.value ?? [];
@@ -70,7 +70,7 @@ async function getStdCompanyId(): Promise<string> {
   const nombre = process.env.BC_COMPANY || "ADELANTE_DESARROLLOS_NUEVA";
   try {
     const token = await getToken();
-    const res = await fetch(`${stdRoot()}/companies`, { headers: { Authorization: `Bearer ${token}`, Accept: "application/json" } });
+    const res = await fetch(`${stdRoot()}/companies`, { cache: "no-store", headers: { Authorization: `Bearer ${token}`, Accept: "application/json" } });
     if (res.ok) {
       const data = await res.json();
       const lista: any[] = data.value ?? [];
@@ -84,7 +84,7 @@ async function getStdCompanyId(): Promise<string> {
 // Lista de compañías visibles para la app (diagnóstico).
 export async function bcCompanies(): Promise<{ id: string; name: string }[]> {
   const token = await getToken();
-  const res = await fetch(`${customRoot("inventory")}/companies`, { headers: { Authorization: `Bearer ${token}`, Accept: "application/json" } });
+  const res = await fetch(`${customRoot("inventory")}/companies`, { cache: "no-store", headers: { Authorization: `Bearer ${token}`, Accept: "application/json" } });
   if (!res.ok) throw new Error(`BC ${res.status}: ${(await res.text()).slice(0, 200)}`);
   const data = await res.json();
   return (data.value ?? []).map((c: any) => ({ id: c.id, name: c.name ?? c.displayName }));
@@ -115,7 +115,7 @@ async function listAll(group: string, entity: string): Promise<any[]> {
   const out: any[] = [];
   let guard = 0;
   while (url && guard++ < 50) {
-    const res = await fetch(url, { headers: { Authorization: `Bearer ${token}`, Accept: "application/json" } });
+    const res = await fetch(url, { cache: "no-store", headers: { Authorization: `Bearer ${token}`, Accept: "application/json" } });
     if (!res.ok) throw new Error(`BC ${res.status} en ${url}: ${(await res.text()).slice(0, 250)}`);
     const data: any = await res.json();
     out.push(...(data.value ?? []));
@@ -159,18 +159,54 @@ export async function bcAlmacenes(): Promise<BcAlmacen[]> {
 
 export type BcVariante = { code: string; descripcion: string };
 
-// Variantes de un item, por la API CUSTOM de Adelante (puerta que la app SÍ puede usar).
-// Endpoint: api/adelante/inventory/v1.0/companies(cid)/itemVariants (page 50128).
-// Mientras la extensión no esté publicada, degrada a "sin variantes" sin tumbar el form.
-export async function bcVariants(itemNo: string): Promise<BcVariante[]> {
-  if (!itemNo) return [];
+// Resultado de cargar variantes. `disponible=false` significa que NO se pudo
+// consultar el catálogo de variantes (p.ej. la app no tiene permiso sobre la
+// tabla Item Variant 5401, o la API no está publicada): en ese caso el form
+// NO debe asumir "no tiene variantes", porque el item podría tener variante
+// obligatoria y el pedido fallaría en BC.
+export type BcVariantsResult = { variantes: BcVariante[]; disponible: boolean };
+
+function mapVariantes(rows: any[]): BcVariante[] {
+  return (rows ?? []).map((v: any) => ({
+    code: v.code ?? v.Code ?? "",
+    descripcion: v.description ?? v.Description ?? v.code ?? "",
+  }));
+}
+
+// Variantes de un item. Intenta primero la API CUSTOM de Adelante
+// (api/adelante/inventory/v1.0/.../itemVariants, page 50128) y, si esa falla,
+// cae a la API ESTÁNDAR v2.0 (.../itemVariants). Solo se considera "no tiene
+// variantes" cuando alguna de las dos responde OK con lista vacía. Si ambas
+// fallan (401/permiso/no publicada), devuelve disponible=false.
+export async function bcVariantsEx(itemNo: string): Promise<BcVariantsResult> {
+  if (!itemNo) return { variantes: [], disponible: true };
   const token = await getToken();
-  const cid = await getCompanyId();
-  const url = `${customRoot("inventory")}/companies(${cid})/itemVariants?$filter=itemNumber eq '${encodeURIComponent(itemNo)}'`;
-  const res = await fetch(url, { headers: { Authorization: `Bearer ${token}`, Accept: "application/json" } });
-  if (!res.ok) return [];
-  const data = await res.json();
-  return (data.value ?? []).map((v: any) => ({ code: v.code ?? v.Code ?? "", descripcion: v.description ?? v.Description ?? v.code ?? "" }));
+  const filtro = `$filter=itemNumber eq '${encodeURIComponent(itemNo)}'`;
+
+  // 1) API custom de Adelante.
+  try {
+    const cid = await getCompanyId();
+    const res = await fetch(`${customRoot("inventory")}/companies(${cid})/itemVariants?${filtro}`, {
+      headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
+    });
+    if (res.ok) return { variantes: mapVariantes((await res.json()).value), disponible: true };
+  } catch { /* intenta la estándar */ }
+
+  // 2) Fallback: API estándar v2.0.
+  try {
+    const stdCid = await getStdCompanyId();
+    const res = await fetch(`${stdRoot()}/companies(${stdCid})/itemVariants?${filtro}`, {
+      headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
+    });
+    if (res.ok) return { variantes: mapVariantes((await res.json()).value), disponible: true };
+  } catch { /* ambas fallaron */ }
+
+  return { variantes: [], disponible: false };
+}
+
+// Compatibilidad: versión que solo devuelve la lista (sin el flag).
+export async function bcVariants(itemNo: string): Promise<BcVariante[]> {
+  return (await bcVariantsEx(itemNo)).variantes;
 }
 
 // ---- Escritura: crear Pedido de compra (Purchase Order) por la API ESTÁNDAR ----
@@ -242,7 +278,7 @@ export async function bcHealth() {
     const base = `https://api.businesscentral.dynamics.com/v2.0/${t}/${envName}`;
     const probe = async (label: string, url: string) => {
       try {
-        const r = await fetch(url, { headers: { Authorization: `Bearer ${tok}`, Accept: "application/json" } });
+        const r = await fetch(url, { cache: "no-store", headers: { Authorization: `Bearer ${tok}`, Accept: "application/json" } });
         let bodyMsg: string | null = null;
         if (!r.ok) { try { bodyMsg = (await r.text()).slice(0, 200); } catch { /* noop */ } }
         return {
@@ -257,7 +293,7 @@ export async function bcHealth() {
     const cidGuid = soloGuid(process.env.BC_COMPANY_ID);
     // Compañías que ve la API ESTÁNDAR (su systemId puede diferir del de la custom).
     try {
-      const rc = await fetch(`${base}/api/v2.0/companies`, { headers: { Authorization: `Bearer ${tok}`, Accept: "application/json" } });
+      const rc = await fetch(`${base}/api/v2.0/companies`, { cache: "no-store", headers: { Authorization: `Bearer ${tok}`, Accept: "application/json" } });
       if (rc.ok) out.diag.stdCompanies = ((await rc.json()).value ?? []).map((c: any) => ({ id: c.id, name: c.name }));
     } catch { /* noop */ }
     const stdCid = out.diag.stdCompanies?.[0]?.id ?? cidGuid;
