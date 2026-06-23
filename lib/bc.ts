@@ -159,18 +159,18 @@ export async function bcAlmacenes(): Promise<BcAlmacen[]> {
 
 export type BcVariante = { code: string; descripcion: string };
 
-// Variantes de un item, por la API ESTÁNDAR (requiere acceso completo, como digitación).
+// Variantes de un item, por la API CUSTOM de Adelante (puerta que la app SÍ puede usar).
+// Endpoint: api/adelante/inventory/v1.0/companies(cid)/itemVariants (page 50128).
+// Mientras la extensión no esté publicada, degrada a "sin variantes" sin tumbar el form.
 export async function bcVariants(itemNo: string): Promise<BcVariante[]> {
   if (!itemNo) return [];
   const token = await getToken();
-  const cid = await getStdCompanyId();
-  const url = `${stdRoot()}/companies(${cid})/itemVariants?$filter=itemNumber eq '${encodeURIComponent(itemNo)}'`;
+  const cid = await getCompanyId();
+  const url = `${customRoot("inventory")}/companies(${cid})/itemVariants?$filter=itemNumber eq '${encodeURIComponent(itemNo)}'`;
   const res = await fetch(url, { headers: { Authorization: `Bearer ${token}`, Accept: "application/json" } });
-  // Las variantes son opcionales: si BC no las deja leer, degradamos a "sin variantes"
-  // en vez de tumbar el formulario.
   if (!res.ok) return [];
   const data = await res.json();
-  return (data.value ?? []).map((v: any) => ({ code: v.code ?? "", descripcion: v.description ?? v.code ?? "" }));
+  return (data.value ?? []).map((v: any) => ({ code: v.code ?? v.Code ?? "", descripcion: v.description ?? v.Description ?? v.code ?? "" }));
 }
 
 // ---- Escritura: crear Pedido de compra (Purchase Order) por la API ESTÁNDAR ----
@@ -265,9 +265,8 @@ export async function bcHealth() {
       probe("standard", `${base}/api/v2.0/companies`),
       probe("automation", `${base}/api/microsoft/automation/v2.0/companies`),
       probe("custom-adelante", `${base}/api/adelante/inventory/v1.0/companies`),
+      probe("custom-itemVariants", `${base}/api/adelante/inventory/v1.0/companies(${cidGuid})/itemVariants?$top=1`),
       probe("std-itemVariants(stdCid)", `${base}/api/v2.0/companies(${stdCid})/itemVariants?$top=1`),
-      probe("std-items-scoped(stdCid)", `${base}/api/v2.0/companies(${stdCid})/items?$top=1`),
-      probe("std-customers-scoped(stdCid)", `${base}/api/v2.0/companies(${stdCid})/customers?$top=1`),
     ]);
   } catch (e: any) { out.diag.tokenError = String(e?.message ?? e); }
   try {
