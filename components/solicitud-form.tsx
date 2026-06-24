@@ -41,7 +41,7 @@ export function SolicitudForm({
   textoBoton: string;
   onCancelar: () => void;
 }) {
-  const { articulos, obras, maquinas, almacenes } = useStore();
+  const { articulos, obras, maquinas, almacenes, usuario } = useStore();
   const toast = useToast();
 
   const [bcArt, setBcArt] = useState<Articulo[] | null>(null);
@@ -78,9 +78,8 @@ export function SolicitudForm({
 
   const [tipo, setTipo] = useState<TipoSolicitud>(inicial?.tipoSolicitud ?? "material");
   const [maquinaId, setMaquinaId] = useState("");
-  const [solicitante, setSolicitante] = useState(inicial?.solicitante ?? SOLICITANTES[0]);
-  const opcionesSolicitante = inicial?.solicitante && !SOLICITANTES.includes(inicial.solicitante)
-    ? [inicial.solicitante, ...SOLICITANTES] : SOLICITANTES;
+  // El solicitante es el usuario que hizo login (no se elige a mano).
+  const solicitante = inicial?.solicitante ?? usuario ?? SOLICITANTES[0];
   const [prioridad, setPrioridad] = useState<Pedido["prioridad"]>(inicial?.prioridad ?? "normal");
   const [notas, setNotas] = useState(inicial?.notas ?? "");
   const [lineas, setLineas] = useState<DraftLine[]>(
@@ -169,7 +168,8 @@ export function SolicitudForm({
       variantNombre: variante?.descripcion ?? "",
       cantidad: qaCantidad,
     }, ...ls]);
-    setQaArticuloId(""); setQaQuery(""); setQaObraId(""); setQaCantidad(""); setQaOpen(false);
+    // Dejamos qaObraId puesto: la siguiente línea hereda por defecto la última obra agregada.
+    setQaArticuloId(""); setQaQuery(""); setQaCantidad(""); setQaOpen(false);
     setQaVariantes([]); setQaVariante(""); setQaVariantesError(false);
   }
   function removeLine(key: string) { setLineas((ls) => ls.filter((l) => l.key !== key)); }
@@ -358,11 +358,6 @@ export function SolicitudForm({
               <Combobox items={maquinas} value={maquinaId} onChange={(k) => setMaquinaId(k)} getKey={(m) => m.id} getLabel={(m) => `${m.no} — ${m.nombre}`} placeholder="Buscar máquina…" />
             </Field>
           )}
-          <Field label="Solicitante">
-            <Select value={solicitante} onChange={(e) => setSolicitante(e.target.value)}>
-              {opcionesSolicitante.map((n) => <option key={n} value={n}>{n}</option>)}
-            </Select>
-          </Field>
           <Field label="Prioridad">
             <Select value={prioridad} onChange={(e) => setPrioridad(e.target.value as Pedido["prioridad"])}>
               <option value="normal">Normal</option><option value="alta">Alta</option><option value="urgente">Urgente</option>

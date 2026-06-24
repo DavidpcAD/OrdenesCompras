@@ -6,12 +6,20 @@ import { useRef, useState } from "react";
 import { AppShell } from "@/components/shell";
 import { Badge, Button, Card, Tile } from "@/components/ui";
 import { useStore } from "@/lib/store";
-import { destinoLabel, formatDate, pedidoBadge } from "@/lib/helpers";
+import { destinoLabel, formatDate, pedidoBadge, recibidoDeLineaPedido } from "@/lib/helpers";
 
 type Filtro = "todas" | "material" | "repuesto" | "aprobado";
 
 export default function IngenieriaPage() {
-  const { pedidos } = useStore();
+  const { pedidos, ordenes } = useStore();
+
+  // % entregado del pedido = lo recibido (en órdenes) / lo solicitado.
+  function entregadoPct(p: typeof pedidos[number]): number {
+    const total = p.lineas.reduce((s, l) => s + l.cantidad, 0);
+    if (total <= 0) return 0;
+    const rec = p.lineas.reduce((s, l) => s + recibidoDeLineaPedido(ordenes, l.id), 0);
+    return Math.round(Math.min(100, (rec / total) * 100));
+  }
   const router = useRouter();
   const [filtro, setFiltro] = useState<Filtro>("todas");
   const [colF, setColF] = useState<Record<string, string>>({});
@@ -31,7 +39,7 @@ export default function IngenieriaPage() {
   const repuesto = pedidos.filter((p) => p.tipoSolicitud === "repuesto").length;
   const aprobados = pedidos.filter((p) => p.estado === "aprobado").length;
 
-  const COLS = ["num", "tipo", "destino", "solicitante", "fecha", "lineas", "prioridad", "estado"];
+  const COLS = ["num", "tipo", "destino", "solicitante", "fecha", "lineas", "prioridad", "estado", "entregado"];
   const prioLabel = (p: typeof pedidos[number]) => p.prioridad === "urgente" ? "Urgente" : p.prioridad === "alta" ? "Alta" : "Normal";
   const cellText = (p: typeof pedidos[number], k: string): string => {
     switch (k) {
@@ -43,6 +51,7 @@ export default function IngenieriaPage() {
       case "lineas": return String(p.lineas.length);
       case "prioridad": return prioLabel(p);
       case "estado": return pedidoBadge(p.estado).label;
+      case "entregado": return `${entregadoPct(p)}%`;
       default: return "";
     }
   };
@@ -92,7 +101,7 @@ export default function IngenieriaPage() {
               <thead>
                 <tr>
                   <th>N.º</th><th>Tipo</th><th>Destino</th><th>Solicitante</th><th>Fecha</th>
-                  <th className="ds-num">Líneas</th><th>Prioridad</th><th>Estado</th><th></th>
+                  <th className="ds-num">Líneas</th><th>Prioridad</th><th>Estado</th><th>Entregado</th><th></th>
                 </tr>
                 <tr>
                   {COLS.map((k) => (
@@ -106,7 +115,7 @@ export default function IngenieriaPage() {
               </thead>
               <tbody>
                 {filtradas.length === 0 && (
-                  <tr><td colSpan={9}><div className="empty">{pedidos.length === 0 ? "Aún no hay solicitudes. Creá la primera." : "Ninguna solicitud coincide con los filtros."}</div></td></tr>
+                  <tr><td colSpan={10}><div className="empty">{pedidos.length === 0 ? "Aún no hay solicitudes. Creá la primera." : "Ninguna solicitud coincide con los filtros."}</div></td></tr>
                 )}
                 {visibles.map((p) => {
                   const b = pedidoBadge(p.estado);
@@ -124,6 +133,19 @@ export default function IngenieriaPage() {
                           : <Badge tone="gray">Normal</Badge>}
                       </td>
                       <td><Badge tone={b.tone}>{b.label}</Badge></td>
+                      <td>
+                        {(() => {
+                          const pct = entregadoPct(p);
+                          return (
+                            <div className="row gap-2" style={{ alignItems: "center", minWidth: 96 }}>
+                              <div style={{ flex: 1, minWidth: 48, height: 6, borderRadius: 4, background: "var(--ds-color-gray-100)", overflow: "hidden" }}>
+                                <div style={{ width: `${pct}%`, height: "100%", background: pct >= 100 ? "var(--ds-color-green-200)" : "var(--ds-color-green-100)" }} />
+                              </div>
+                              <span className="ds-body-sm ds-muted" style={{ minWidth: 30, textAlign: "right" }}>{pct}%</span>
+                            </div>
+                          );
+                        })()}
+                      </td>
                       <td className="ds-num">›</td>
                     </tr>
                   );
