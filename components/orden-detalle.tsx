@@ -50,7 +50,11 @@ export function OrdenDetalle({
             {orden.lineas.every((l) => !l.pedidoNumero) && <span className="ds-muted ds-body-sm">—</span>}
           </div>
         </div>
-        {acciones && <div className="row gap-3">{acciones}</div>}
+        <div className="row gap-3">
+          <button className="link-btn" title="Imprimir / Guardar PDF para el proveedor"
+            onClick={() => router.push(`/proveeduria/ordenes/${orden.id}/imprimir`)}>🖨️ Imprimir</button>
+          {acciones}
+        </div>
       </div>
 
       <Card style={{ padding: 0, overflow: "hidden" }}>
