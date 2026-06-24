@@ -16,24 +16,24 @@ const ROLE_META: Record<Role, { label: string; persona: string; home: string; na
     ],
   },
   proveeduria: {
-    label: "Proveeduría", persona: "Angie", home: "/proveeduria", color: "var(--ds-color-yellow)",
+    label: "Proveeduría", persona: "Angie", home: "/proveeduria/ordenes", color: "var(--ds-color-yellow)",
     nav: [
-      { href: "/proveeduria", label: "Líneas por ordenar" },
       { href: "/proveeduria/ordenes", label: "Órdenes creadas" },
+      { href: "/proveeduria", label: "Líneas por ordenar" },
     ],
   },
   aprobacion: {
-    label: "Aprobación", persona: "Luis Roberto", home: "/aprobacion", color: "var(--ds-color-green-200)",
+    label: "Aprobación", persona: "Luis Roberto", home: "/aprobacion/todas", color: "var(--ds-color-green-200)",
     nav: [
-      { href: "/aprobacion", label: "Por aprobar" },
       { href: "/aprobacion/todas", label: "Todas las órdenes" },
+      { href: "/aprobacion", label: "Por aprobar" },
     ],
   },
   facturacion: {
-    label: "Bodega", persona: "Kattya", home: "/facturacion", color: "var(--ds-color-red-100)",
+    label: "Bodega", persona: "Kattya", home: "/facturacion/todas", color: "var(--ds-color-red-100)",
     nav: [
-      { href: "/facturacion", label: "Por recibir" },
       { href: "/facturacion/todas", label: "Todas las órdenes" },
+      { href: "/facturacion", label: "Por recibir" },
       { href: "/facturacion/archivo", label: "Archivo / recepciones" },
     ],
   },

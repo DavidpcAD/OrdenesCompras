@@ -115,7 +115,9 @@ async function listAll(group: string, entity: string): Promise<any[]> {
   const out: any[] = [];
   let guard = 0;
   while (url && guard++ < 50) {
-    const res = await fetch(url, { cache: "no-store", headers: { Authorization: `Bearer ${token}`, Accept: "application/json" } });
+    // Datos maestros (items, obras): se cachean 5 min para acelerar la carga
+    // (no como health/variants, que van siempre frescos con no-store).
+    const res = await fetch(url, { next: { revalidate: 300 }, headers: { Authorization: `Bearer ${token}`, Accept: "application/json" } });
     if (!res.ok) throw new Error(`BC ${res.status} en ${url}: ${(await res.text()).slice(0, 250)}`);
     const data: any = await res.json();
     out.push(...(data.value ?? []));

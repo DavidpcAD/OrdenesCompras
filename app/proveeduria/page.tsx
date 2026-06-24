@@ -63,6 +63,8 @@ export default function ProveeduriaMaterialesPage() {
   const [filtro, setFiltro] = useState<string>("all");
   const [busqueda, setBusqueda] = useState("");
   const [previewId, setPreviewId] = useState<string | null>(null);
+  // Filtros por columna estilo Excel (Pedido, Artículo, Almacén)
+  const [colF, setColF] = useState({ pedido: "", articulo: "", almacen: "" });
 
   const setRow = (id: string, patch: Partial<Row>) =>
     setRows((rs) => rs.map((r) => (r.pedidoLineaId === id ? { ...r, ...patch } : r)));
@@ -70,7 +72,17 @@ export default function ProveeduriaMaterialesPage() {
   const q = busqueda.trim().toLowerCase();
   const visibles = rows
     .filter((r) => filtro === "all" || r.pedidoId === filtro)
-    .filter((r) => !q || r.descripcion.toLowerCase().includes(q) || r.pedidoNumero.toLowerCase().includes(q));
+    .filter((r) => !q || r.descripcion.toLowerCase().includes(q) || r.pedidoNumero.toLowerCase().includes(q))
+    .filter((r) => !colF.pedido || r.pedidoNumero.toLowerCase().includes(colF.pedido.toLowerCase()))
+    .filter((r) => !colF.articulo || r.descripcion.toLowerCase().includes(colF.articulo.toLowerCase()))
+    .filter((r) => !colF.almacen || (r.almacen ?? "").toLowerCase().includes(colF.almacen.toLowerCase()));
+
+  // Seleccionar todas las líneas VISIBLES (respeta filtros de columna)
+  const visiblesIds = visibles.map((r) => r.pedidoLineaId);
+  const allVisibleSel = visibles.length > 0 && visibles.every((r) => r.incluir);
+  const someVisibleSel = visibles.some((r) => r.incluir);
+  const toggleAllVisible = (check: boolean) =>
+    setRows((rs) => rs.map((r) => (visiblesIds.includes(r.pedidoLineaId) ? { ...r, incluir: check } : r)));
 
   const incluidas = rows.filter((r) => r.incluir && Number(r.cantidad) > 0);
   const seleccionPorPedido = (pid: string) => rows.filter((r) => r.pedidoId === pid && r.incluir).length;
@@ -149,10 +161,25 @@ export default function ProveeduriaMaterialesPage() {
               <table className="ds-table">
                 <thead>
                   <tr>
-                    <th style={{ width: 36 }}></th>
+                    <th style={{ width: 36 }}>
+                      <input type="checkbox" title="Seleccionar todas las líneas visibles" aria-label="Seleccionar todas"
+                        checked={allVisibleSel}
+                        ref={(el) => { if (el) el.indeterminate = someVisibleSel && !allVisibleSel; }}
+                        onChange={(e) => toggleAllVisible(e.target.checked)} />
+                    </th>
                     <th>Pedido</th><th>Artículo</th><th>Almacén</th>
                     <th className="ds-num">Pend.</th><th className="ds-num">A ordenar</th>
                     <th className="ds-num">Precio</th><th className="ds-num">IVA%</th><th className="ds-num">Importe</th>
+                  </tr>
+                  <tr>
+                    <th style={{ padding: "4px 8px" }}></th>
+                    {([["pedido", "Pedido"], ["articulo", "Artículo"], ["almacen", "Almacén"]] as const).map(([k]) => (
+                      <th key={k} style={{ padding: "4px 8px", fontWeight: 400 }}>
+                        <input value={colF[k]} placeholder="Filtrar…" onChange={(e) => setColF((f) => ({ ...f, [k]: e.target.value }))}
+                          style={{ width: "100%", boxSizing: "border-box", borderRadius: 8, padding: "4px 8px", fontSize: 12, font: "inherit", border: "1.5px solid var(--ds-color-gray-100)", background: "#fff" }} />
+                      </th>
+                    ))}
+                    <th colSpan={5} style={{ padding: "4px 8px" }}></th>
                   </tr>
                 </thead>
                 <tbody>

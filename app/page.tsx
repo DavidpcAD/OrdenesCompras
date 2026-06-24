@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useState, type ReactNode } from "react";
 import { useStore } from "@/lib/store";
 import { Button } from "@/components/ui";
+import { ROLE_META } from "@/components/shell";
 import { IconBox, IconCheck, IconReceipt, IconWrench } from "@/components/icons";
 import type { Role } from "@/lib/types";
 
@@ -22,7 +23,7 @@ export default function LoginPage() {
   function entrar() {
     if (!selected) return;
     setRole(selected);
-    router.push(`/${selected}`);
+    router.push(ROLE_META[selected].home);
   }
 
   return (

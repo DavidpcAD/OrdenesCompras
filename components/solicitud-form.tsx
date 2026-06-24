@@ -379,56 +379,61 @@ export function SolicitudForm({
         </p>
 
         {esMaterial && (
-          <div className="row wrap gap-3" style={{ marginBottom: 16, alignItems: "flex-end", justifyContent: "space-between" }}>
-            <div className="row gap-2" style={{ alignItems: "flex-end" }}>
-              <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" style={{ display: "none" }}
-                onChange={(e) => { const f = e.target.files?.[0]; if (f) importarExcel(f); }} />
-              <Button variant="outline" onClick={() => fileRef.current?.click()}>Importar Excel</Button>
-              {plantillas.length > 0 && (
-                <>
-                  <div className="qa-field" style={{ minWidth: 170 }}>
-                    <label>Plantillas de</label>
+          <div style={{ marginBottom: 16, padding: 14, borderRadius: 14, border: "1.5px solid var(--ds-color-gray-100)", background: "color-mix(in srgb, var(--ds-color-green-100) 7%, #fff)" }}>
+            <div className="row row--between wrap gap-3" style={{ alignItems: "flex-end" }}>
+              <div className="row wrap gap-2" style={{ alignItems: "flex-end" }}>
+                <div className="qa-field" style={{ minWidth: 250 }}>
+                  <label>📋 Cargar plantilla</label>
+                  <Select value="" onChange={(e) => { if (e.target.value) cargarPlantilla(e.target.value); }}>
+                    <option value="">{plantillasVisibles.length ? "Elegí una plantilla…" : "Aún no hay plantillas guardadas"}</option>
+                    {plantillasVisibles.map((p) => <option key={p.id} value={p.id}>{p.nombre} · {p.lineas.length} ítem(s) · {p.creadoPor}</option>)}
+                  </Select>
+                </div>
+                {plantillas.length > 0 && (
+                  <div className="qa-field" style={{ minWidth: 150 }}>
+                    <label>Mostrar</label>
                     <Select value={filtroPlantilla} onChange={(e) => setFiltroPlantilla(e.target.value)}>
                       <option value="*">Todas</option>
                       {creadoresPlantillas.map((c) => <option key={c} value={c}>{c === solicitante ? `Mías (${c})` : c}</option>)}
                     </Select>
                   </div>
-                  <div className="qa-field" style={{ minWidth: 220 }}>
-                    <label>Cargar plantilla</label>
-                    <Select defaultValue="" onChange={(e) => { if (e.target.value) { cargarPlantilla(e.target.value); e.target.value = ""; } }}>
-                      <option value="">{plantillasVisibles.length ? "Elegí una plantilla…" : "Sin plantillas para este filtro"}</option>
-                      {plantillasVisibles.map((p) => <option key={p.id} value={p.id}>{p.nombre} ({p.lineas.length})</option>)}
-                    </Select>
+                )}
+                <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" style={{ display: "none" }}
+                  onChange={(e) => { const f = e.target.files?.[0]; if (f) importarExcel(f); }} />
+                <Button variant="outline" onClick={() => fileRef.current?.click()}>Importar Excel</Button>
+              </div>
+              {lineas.length > 0 && (
+                <div className="row gap-2" style={{ alignItems: "flex-end" }}>
+                  <div className="qa-field" style={{ minWidth: 200 }}>
+                    <label>Guardar estas líneas como plantilla</label>
+                    <input className="ds-form-field__input" placeholder="Nombre de la plantilla…" value={nombrePlantilla}
+                      onChange={(e) => setNombrePlantilla(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") guardarComoPlantilla(); }} />
                   </div>
-                </>
+                  <Button variant="outline" onClick={guardarComoPlantilla}>Guardar</Button>
+                </div>
               )}
             </div>
-            {lineas.length > 0 && (
-              <div className="row gap-2" style={{ alignItems: "flex-end" }}>
-                <div className="qa-field" style={{ minWidth: 200 }}>
-                  <label>Guardar líneas como plantilla</label>
-                  <input className="ds-form-field__input" placeholder="Nombre de la plantilla…" value={nombrePlantilla}
-                    onChange={(e) => setNombrePlantilla(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") guardarComoPlantilla(); }} />
-                </div>
-                <Button variant="outline" onClick={guardarComoPlantilla}>Guardar plantilla</Button>
+            {plantillasVisibles.length > 0 ? (
+              <div className="row wrap gap-2" style={{ marginTop: 12 }}>
+                <span className="ds-body-sm ds-muted" style={{ alignSelf: "center" }}>Rápidas:</span>
+                {plantillasVisibles.map((p) => (
+                  <span key={p.id} className="ds-badge" style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                    <button type="button" className="linklike" style={{ background: "none", border: "none", cursor: "pointer", padding: 0, font: "inherit", color: "inherit" }}
+                      title="Cargar esta plantilla" onClick={() => cargarPlantilla(String(p.id))}>
+                      {p.nombre} <small className="ds-muted">· {p.lineas.length}</small>
+                    </button>
+                    {p.creadoPor === solicitante && (
+                      <button type="button" className="icon-btn" style={{ width: 18, height: 18 }} title="Borrar plantilla"
+                        onClick={() => borrarPlantilla(p.id)}>×</button>
+                    )}
+                  </span>
+                ))}
               </div>
+            ) : (
+              <p className="ds-body-sm ds-muted" style={{ marginTop: 10, marginBottom: 0 }}>
+                Todavía no hay plantillas. Agregá materiales abajo y guardalos como plantilla para reutilizarlos después.
+              </p>
             )}
-          </div>
-        )}
-        {esMaterial && plantillasVisibles.length > 0 && (
-          <div className="row wrap gap-2" style={{ marginBottom: 16 }}>
-            {plantillasVisibles.map((p) => (
-              <span key={p.id} className="ds-badge" style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-                <button type="button" className="linklike" style={{ background: "none", border: "none", cursor: "pointer", padding: 0, font: "inherit", color: "inherit" }}
-                  title="Cargar esta plantilla" onClick={() => cargarPlantilla(String(p.id))}>
-                  {p.nombre} <small className="ds-muted">· {p.creadoPor}</small>
-                </button>
-                {p.creadoPor === solicitante && (
-                  <button type="button" className="icon-btn" style={{ width: 18, height: 18 }} title="Borrar plantilla"
-                    onClick={() => borrarPlantilla(p.id)}>×</button>
-                )}
-              </span>
-            ))}
           </div>
         )}
 
