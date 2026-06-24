@@ -1,4 +1,4 @@
-name: Deploy a app-adelante-dev
+name: Deploy a app-ordenescompra
 
 on:
   push:
@@ -13,7 +13,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "22"
           cache: "npm"
 
       - run: npm ci
@@ -30,6 +30,6 @@ jobs:
       - name: Deploy a Azure App Service
         uses: azure/webapps-deploy@v3
         with:
-          app-name: app-adelante-dev
+          app-name: app-ordenescompra
           publish-profile: ${{ secrets.AZURE_PUBLISH_PROFILE_DEV }}
           package: .
