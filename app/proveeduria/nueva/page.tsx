@@ -32,6 +32,16 @@ export default function ArmarOrdenPage() {
   const [currency, setCurrency] = useState("");
   const [flete, setFlete] = useState("");
 
+  // Proveedores en vivo desde Business Central (fallback al catálogo si BC falla).
+  const [bcProv, setBcProv] = useState<typeof proveedores | null>(null);
+  useEffect(() => {
+    fetch("/api/bc/vendors")
+      .then((r) => (r.ok ? r.json() : { proveedores: [] }))
+      .then((d) => { if (Array.isArray(d.proveedores) && d.proveedores.length) setBcProv(d.proveedores); })
+      .catch(() => { /* sin BC, usa catálogo de respaldo */ });
+  }, []);
+  const catProv = bcProv ?? proveedores;
+
   const [rows, setRows] = useState<Row[]>(() =>
     borrador.map((b) => {
       let info = { pedidoNumero: "", articuloId: "", descripcion: "", unidad: "", almacen: "", proyecto: "" };
@@ -63,7 +73,7 @@ export default function ArmarOrdenPage() {
 
   function elegirProveedor(id: string) {
     setProveedorId(id);
-    const p = proveedores.find((x) => x.id === id);
+    const p = catProv.find((x) => x.id === id);
     if (p) setCurrency(p.currencyCode ?? "");
   }
 
@@ -97,7 +107,7 @@ export default function ArmarOrdenPage() {
   // Crea el Pedido en BC (proveedor + materiales) y abre BC para la vista previa/registro nativos.
   async function crearEnBc() {
     if (!puedeCrear) { toast("Seleccioná un proveedor.", "error"); return; }
-    const p = proveedores.find((x) => x.id === proveedorId);
+    const p = catProv.find((x) => x.id === proveedorId);
     const vendorNo = p?.code;
     if (!vendorNo) { toast("El proveedor no tiene código de BC.", "error"); return; }
     const lineasBc = rows
@@ -149,7 +159,7 @@ export default function ArmarOrdenPage() {
             <Field label="Proveedor" help="Hereda términos y moneda">
               <Select value={proveedorId} onChange={(e) => elegirProveedor(e.target.value)}>
                 <option value="">Seleccionar proveedor…</option>
-                {proveedores.map((p) => <option key={p.id} value={p.id}>{p.code} — {p.nombre}</option>)}
+                {catProv.map((p) => <option key={p.id} value={p.id}>{p.code} — {p.nombre}</option>)}
               </Select>
             </Field>
             <Field label="Moneda">

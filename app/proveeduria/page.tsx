@@ -63,19 +63,34 @@ export default function ProveeduriaMaterialesPage() {
   const [filtro, setFiltro] = useState<string>("all");
   const [busqueda, setBusqueda] = useState("");
   const [previewId, setPreviewId] = useState<string | null>(null);
-  // Filtros por columna estilo Excel (Pedido, Artículo, Almacén)
-  const [colF, setColF] = useState({ pedido: "", articulo: "", almacen: "" });
+  // Filtros por columna estilo Excel (una caja por columna)
+  const [colF, setColF] = useState<Record<string, string>>({});
+  const setCol = (k: string, v: string) => setColF((f) => ({ ...f, [k]: v }));
 
   const setRow = (id: string, patch: Partial<Row>) =>
     setRows((rs) => rs.map((r) => (r.pedidoLineaId === id ? { ...r, ...patch } : r)));
 
+  // Texto filtrable/buscable por columna (sirve para el filtro por columna y la búsqueda global)
+  const cellText = (r: Row, k: string): string => {
+    switch (k) {
+      case "pedido": return r.pedidoNumero;
+      case "articulo": return r.descripcion;
+      case "almacen": return r.almacen ?? "";
+      case "pend": return `${r.pendiente} ${r.unidad}`;
+      case "aordenar": return r.cantidad;
+      case "precio": return r.precio;
+      case "iva": return r.iva;
+      case "importe": return String(Number(r.cantidad) * Number(r.precio));
+      default: return "";
+    }
+  };
+  const COLS = ["pedido", "articulo", "almacen", "pend", "aordenar", "precio", "iva", "importe"];
+
   const q = busqueda.trim().toLowerCase();
   const visibles = rows
     .filter((r) => filtro === "all" || r.pedidoId === filtro)
-    .filter((r) => !q || r.descripcion.toLowerCase().includes(q) || r.pedidoNumero.toLowerCase().includes(q))
-    .filter((r) => !colF.pedido || r.pedidoNumero.toLowerCase().includes(colF.pedido.toLowerCase()))
-    .filter((r) => !colF.articulo || r.descripcion.toLowerCase().includes(colF.articulo.toLowerCase()))
-    .filter((r) => !colF.almacen || (r.almacen ?? "").toLowerCase().includes(colF.almacen.toLowerCase()));
+    .filter((r) => !q || COLS.some((k) => cellText(r, k).toLowerCase().includes(q)))
+    .filter((r) => COLS.every((k) => { const v = (colF[k] ?? "").trim().toLowerCase(); return !v || cellText(r, k).toLowerCase().includes(v); }));
 
   // Seleccionar todas las líneas VISIBLES (respeta filtros de columna)
   const visiblesIds = visibles.map((r) => r.pedidoLineaId);
@@ -173,13 +188,12 @@ export default function ProveeduriaMaterialesPage() {
                   </tr>
                   <tr>
                     <th style={{ padding: "4px 8px" }}></th>
-                    {([["pedido", "Pedido"], ["articulo", "Artículo"], ["almacen", "Almacén"]] as const).map(([k]) => (
-                      <th key={k} style={{ padding: "4px 8px", fontWeight: 400 }}>
-                        <input value={colF[k]} placeholder="Filtrar…" onChange={(e) => setColF((f) => ({ ...f, [k]: e.target.value }))}
-                          style={{ width: "100%", boxSizing: "border-box", borderRadius: 8, padding: "4px 8px", fontSize: 12, font: "inherit", border: "1.5px solid var(--ds-color-gray-100)", background: "#fff" }} />
+                    {COLS.map((k, i) => (
+                      <th key={k} style={{ padding: "4px 6px", fontWeight: 400 }}>
+                        <input value={colF[k] ?? ""} placeholder="Filtrar…" onChange={(e) => setCol(k, e.target.value)}
+                          style={{ width: "100%", boxSizing: "border-box", borderRadius: 8, padding: "4px 8px", fontSize: 12, font: "inherit", border: "1.5px solid var(--ds-color-gray-100)", background: "#fff", textAlign: i >= 3 ? "right" : "left" }} />
                       </th>
                     ))}
-                    <th colSpan={5} style={{ padding: "4px 8px" }}></th>
                   </tr>
                 </thead>
                 <tbody>

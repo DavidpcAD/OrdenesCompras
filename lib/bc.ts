@@ -159,6 +159,34 @@ export async function bcAlmacenes(): Promise<BcAlmacen[]> {
   return [];
 }
 
+export type BcVendor = { id: string; code: string; nombre: string; currencyCode: string };
+
+// Proveedores (vendors) de BC por la API ESTÁNDAR v2.0 (la app tiene FULL ACCESS).
+// Se cachean 5 min como dato maestro. code = number del proveedor (lo que va como vendorNo).
+export async function bcVendors(): Promise<BcVendor[]> {
+  const token = await getToken();
+  const cid = await getStdCompanyId();
+  let url: string | null = `${stdRoot()}/companies(${cid})/vendors?$select=id,number,displayName,currencyCode&$top=5000`;
+  const out: any[] = [];
+  let guard = 0;
+  while (url && guard++ < 50) {
+    const res = await fetch(url, { next: { revalidate: 300 }, headers: { Authorization: `Bearer ${token}`, Accept: "application/json" } });
+    if (!res.ok) throw new Error(`BC ${res.status} en vendors: ${(await res.text()).slice(0, 200)}`);
+    const data: any = await res.json();
+    out.push(...(data.value ?? []));
+    url = data["@odata.nextLink"] ?? null;
+  }
+  return out
+    .filter((v) => !(v.blocked && v.blocked !== "_x0020_" && v.blocked !== " "))
+    .map((v) => ({
+      id: v.id ?? v.number ?? "",
+      code: v.number ?? "",
+      nombre: v.displayName ?? v.number ?? "",
+      currencyCode: v.currencyCode ?? "",
+    }))
+    .filter((v) => v.code);
+}
+
 export type BcVariante = { code: string; descripcion: string };
 
 // Resultado de cargar variantes. `disponible=false` significa que NO se pudo
