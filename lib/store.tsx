@@ -23,6 +23,8 @@ export interface NewPedidoInput {
 
 interface NewOrdenInput {
   proveedorId: string;
+  proveedorNo?: string;        // código BC (PROV-…) — se guarda en SQL (col 20 chars)
+  proveedorNombre?: string;
   currencyCode: string;
   fechaRecepEsperada?: string;
   lineas: Omit<OrdenLinea, "id" | "cantidadRecibida" | "cantidadFacturada">[];
@@ -233,7 +235,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       if (USE_API) {
         const p = prov(input.proveedorId);
         const { idOrdenCompra } = await api.createOrden({
-          proveedorNo: p?.code ?? input.proveedorId, proveedorNombre: p?.nombre, currencyCode: input.currencyCode,
+          proveedorNo: input.proveedorNo ?? p?.code ?? input.proveedorId, proveedorNombre: input.proveedorNombre ?? p?.nombre, currencyCode: input.currencyCode,
           usuario: persona, rol: rolActual,
           lineas: input.lineas.map((l) => ({
             tipoLinea: l.tipo, itemNo: l.articuloId, idPedidoCompraDet: l.pedidoLineaId ? Number(l.pedidoLineaId) : undefined,

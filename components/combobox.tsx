@@ -28,9 +28,10 @@ export function Combobox<T>({
 
   const sel = items.find((i) => getKey(i) === value) ?? null;
   const q = query.trim().toLowerCase();
+  // No mostramos opciones hasta que el usuario escriba algo.
   const filtered = useMemo(() => {
-    const base = q ? items.filter((i) => (getSearch ? getSearch(i) : getLabel(i)).toLowerCase().includes(q)) : items;
-    return base.slice(0, max);
+    if (!q) return [];
+    return items.filter((i) => (getSearch ? getSearch(i) : getLabel(i)).toLowerCase().includes(q)).slice(0, max);
   }, [items, q, max]);
 
   return (
@@ -45,7 +46,8 @@ export function Combobox<T>({
       />
       {open && (
         <div className="combo__menu">
-          {filtered.length === 0 && <div className="combo__empty">Sin coincidencias.</div>}
+          {!q && <div className="combo__empty">Escribí para buscar…</div>}
+          {q && filtered.length === 0 && <div className="combo__empty">Sin coincidencias.</div>}
           {filtered.map((i) => (
             <button
               key={getKey(i)}

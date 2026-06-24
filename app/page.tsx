@@ -51,7 +51,7 @@ export default function LoginPage() {
           <div className="ds-form-field">
             <label className="ds-form-field__label">Usuario</label>
             <input className="ds-form-field__input" value={username} autoFocus autoCapitalize="off" autoCorrect="off"
-              placeholder="ej. luisroberto" onChange={(e) => setUsername(e.target.value)}
+              placeholder="username" onChange={(e) => setUsername(e.target.value)}
               onKeyDown={(e) => { if (e.key === "Enter") document.getElementById("pw")?.focus(); }} />
           </div>
           <div className="ds-form-field">

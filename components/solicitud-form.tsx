@@ -138,8 +138,8 @@ export function SolicitudForm({
 
   const q = qaQuery.trim().toLowerCase();
   const sugerencias = useMemo(() => {
-    const base = q ? catalogo.filter((a) => a.code.toLowerCase().includes(q) || a.descripcion.toLowerCase().includes(q)) : catalogo;
-    return base.slice(0, 50);
+    if (!q) return [];
+    return catalogo.filter((a) => a.code.toLowerCase().includes(q) || a.descripcion.toLowerCase().includes(q)).slice(0, 50);
   }, [catalogo, q]);
 
   function elegir(a: Articulo) {
@@ -446,7 +446,8 @@ export function SolicitudForm({
                 onFocus={() => setQaOpen(true)} onBlur={() => setTimeout(() => setQaOpen(false), 150)} />
               {qaOpen && (
                 <div className="combo__menu">
-                  {sugerencias.length === 0 && <div className="combo__empty">Sin coincidencias.</div>}
+                  {!q && <div className="combo__empty">Escribí para buscar…</div>}
+                  {q && sugerencias.length === 0 && <div className="combo__empty">Sin coincidencias.</div>}
                   {sugerencias.map((a) => (
                     <button key={a.id} type="button" className="combo__item" onMouseDown={(e) => { e.preventDefault(); elegir(a); }}>
                       <strong>{a.code}</strong> — {a.descripcion} <small>· {a.unidad}</small>

@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { AppShell } from "@/components/shell";
 import { Badge, Button, Card, Field, Input, Select, useToast } from "@/components/ui";
+import { Combobox } from "@/components/combobox";
 import { useStore } from "@/lib/store";
 import { money, ultimoPrecioProveedor } from "@/lib/helpers";
 import type { OrdenLinea } from "@/lib/types";
@@ -24,7 +25,7 @@ interface Row {
 }
 
 export default function ArmarOrdenPage() {
-  const { pedidos, proveedores, obras, ordenes, borrador, createOrden, setOrdenEstado, setBorrador } = useStore();
+  const { pedidos, proveedores, ordenes, borrador, createOrden, setOrdenEstado, setBorrador } = useStore();
   const router = useRouter();
   const toast = useToast();
 
@@ -41,13 +42,14 @@ export default function ArmarOrdenPage() {
       .catch(() => { /* sin BC, usa catálogo de respaldo */ });
   }, []);
   const catProv = bcProv ?? proveedores;
+  const provSel = catProv.find((x) => x.id === proveedorId);
 
   const [rows, setRows] = useState<Row[]>(() =>
     borrador.map((b) => {
       let info = { pedidoNumero: "", articuloId: "", descripcion: "", unidad: "", almacen: "", proyecto: "" };
       for (const p of pedidos) {
         const l = p.lineas.find((x) => x.id === b.pedidoLineaId);
-        if (l) { info = { pedidoNumero: p.numero, articuloId: l.articuloId, descripcion: l.descripcion, unidad: l.unidad, almacen: l.almacen, proyecto: p.obraCodigo ?? "" }; break; }
+        if (l) { info = { pedidoNumero: p.numero, articuloId: l.articuloId, descripcion: l.descripcion, unidad: l.unidad, almacen: l.almacen, proyecto: l.almacen || p.obraCodigo || "" }; break; }
       }
       return {
         pedidoLineaId: b.pedidoLineaId, ...info,
@@ -93,7 +95,7 @@ export default function ArmarOrdenPage() {
       ls.push({ tipo: "cargo", descripcion: "FLETE / TRANSPORTE", cantidad: 1, unidad: "UND",
         almacen: rows[0].almacen, precioUnitario: fleteNum, ivaPct: 13 });
     }
-    const orden = await createOrden({ proveedorId, currencyCode: currency, lineas: ls });
+    const orden = await createOrden({ proveedorId, proveedorNo: provSel?.code, proveedorNombre: provSel?.nombre, currencyCode: currency, lineas: ls });
     if (enviarAprobacion) await setOrdenEstado(orden.id, "pendiente_aprobacion");
     setBorrador([]);
     toast(`Orden ${orden.numero} ${enviarAprobacion ? "enviada a aprobación" : "guardada como abierta"}`, "success");
@@ -130,7 +132,7 @@ export default function ArmarOrdenPage() {
           precioUnitario: Number(r.precio), ivaPct: Number(r.iva) || 0, descuentoPct: Number(r.descuento) || 0,
           proyecto: r.proyecto || undefined, taskNo: r.tarea || undefined,
         }));
-        await createOrden({ proveedorId, currencyCode: currency, lineas: ls });
+        await createOrden({ proveedorId, proveedorNo: provSel?.code, proveedorNombre: provSel?.nombre, currencyCode: currency, lineas: ls });
       } catch { /* el pedido ya está en BC; el registro local es secundario */ }
       setBorrador([]);
       toast(`Pedido ${data.number} creado en BC. Abriendo para vista previa…`, "success");
@@ -157,10 +159,9 @@ export default function ArmarOrdenPage() {
           <h3 className="ds-subtitle" style={{ marginBottom: 16 }}>Datos de la orden</h3>
           <div className="grid-3">
             <Field label="Proveedor" help="Hereda términos y moneda">
-              <Select value={proveedorId} onChange={(e) => elegirProveedor(e.target.value)}>
-                <option value="">Seleccionar proveedor…</option>
-                {catProv.map((p) => <option key={p.id} value={p.id}>{p.code} — {p.nombre}</option>)}
-              </Select>
+              <Combobox items={catProv} value={proveedorId} onChange={(k) => elegirProveedor(k)}
+                getKey={(p) => p.id} getLabel={(p) => `${p.code} — ${p.nombre}`}
+                getSearch={(p) => `${p.code} ${p.nombre}`} placeholder="Buscar proveedor…" />
             </Field>
             <Field label="Moneda">
               <Select value={currency} onChange={(e) => setCurrency(e.target.value)}>
@@ -183,9 +184,9 @@ export default function ArmarOrdenPage() {
             <table className="ds-table">
               <thead>
                 <tr>
-                  <th>Pedido</th><th>Artículo</th><th>Almacén</th>
+                  <th>Pedido</th><th>Artículo</th><th>Obra</th>
                   <th className="ds-num">Cantidad</th><th className="ds-num">Precio</th><th className="ds-num">Desc%</th><th className="ds-num">IVA%</th>
-                  <th>Proyecto</th><th>Tarea</th><th className="ds-num">Importe</th>
+                  <th className="ds-num">Importe</th>
                 </tr>
               </thead>
               <tbody>
@@ -208,14 +209,6 @@ export default function ArmarOrdenPage() {
                     </td>
                     <td className="ds-num"><input className="ds-cell-input" type="number" min={0} max={100} value={r.descuento} style={{ width: 64 }} onChange={(e) => setRow(r.pedidoLineaId, { descuento: e.target.value })} /></td>
                     <td className="ds-num"><input className="ds-cell-input" type="number" min={0} value={r.iva} style={{ width: 64 }} onChange={(e) => setRow(r.pedidoLineaId, { iva: e.target.value })} /></td>
-                    <td>
-                      <select className="ds-form-field__select" style={{ borderRadius: 8, padding: "6px 10px", minWidth: 130, fontSize: 13 }}
-                        value={r.proyecto} onChange={(e) => setRow(r.pedidoLineaId, { proyecto: e.target.value })}>
-                        <option value="">—</option>
-                        {obras.map((o) => <option key={o.id} value={o.codigo}>{o.codigo}</option>)}
-                      </select>
-                    </td>
-                    <td><input className="ds-cell-input" value={r.tarea} placeholder="1.1" style={{ width: 64, textAlign: "left" }} onChange={(e) => setRow(r.pedidoLineaId, { tarea: e.target.value })} /></td>
                     <td className="ds-num ds-strong">
                       {money(calcImporte(r) || 0, currency)}
                       {fleteShare(r) > 0 && <div className="ds-body-sm ds-muted" style={{ fontWeight: 400 }}>+ flete {money(fleteShare(r), currency)}</div>}
@@ -225,7 +218,7 @@ export default function ArmarOrdenPage() {
               </tbody>
               {fleteNum > 0 && (
                 <tfoot>
-                  <tr><td colSpan={10} className="ds-body-sm ds-muted" style={{ padding: "10px 16px", borderTop: "1.5px solid var(--ds-color-gray-100)" }}>
+                  <tr><td colSpan={8} className="ds-body-sm ds-muted" style={{ padding: "10px 16px", borderTop: "1.5px solid var(--ds-color-gray-100)" }}>
                     El flete de {money(fleteNum, currency)} se reparte proporcional al importe de cada línea (mostrado como “+ flete”).
                   </td></tr>
                 </tfoot>
