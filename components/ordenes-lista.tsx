@@ -22,26 +22,33 @@ export function OrdenesLista({
   const router = useRouter();
   const prov = (id: string) => proveedores.find((p) => p.id === id);
 
-  const [busqueda, setBusqueda] = useState("");
+  const [colF, setColF] = useState<Record<string, string>>({});
+  const setCol = (k: string, v: string) => setColF((f) => ({ ...f, [k]: v }));
   const PAGINA = 50;
   const [limite, setLimite] = useState(PAGINA);
 
-  const q = busqueda.trim().toLowerCase();
-  const filtradas = ordenes.filter((o) =>
-    !q
-    || o.numero.toLowerCase().includes(q)
-    || (prov(o.proveedorId)?.nombre ?? "").toLowerCase().includes(q)
-    || o.lineas.some((l) => l.pedidoNumero?.toLowerCase().includes(q))
-  );
+  const COLS = ["num", "prov", "solic", "fecha", "total", "recibido", "estado"];
+  const cellText = (o: Orden, k: string): string => {
+    switch (k) {
+      case "num": return o.numero;
+      case "prov": return prov(o.proveedorId)?.nombre ?? "";
+      case "solic": return [...new Set(o.lineas.filter((l) => l.pedidoNumero).map((l) => l.pedidoNumero!))].join(" ");
+      case "fecha": return formatDate(o.fecha);
+      case "total": return money(ordenSubtotal(o), o.currencyCode);
+      case "recibido": return `${ordenRecibidoPct(o)}%`;
+      case "estado": return ordenBadge(o.estado).label;
+      default: return "";
+    }
+  };
+
+  const filtradas = ordenes
+    .filter((o) => COLS.every((k) => { const v = (colF[k] ?? "").trim().toLowerCase(); return !v || cellText(o, k).toLowerCase().includes(v); }));
   const visibles = filtradas.slice(0, limite);
 
   return (
     <>
       <div className="row row--between wrap gap-3" style={{ marginBottom: 12, alignItems: "center" }}>
         <span className="ds-label ds-muted">{filtradas.length} orden(es)</span>
-        <input className="ds-form-field__input" style={{ maxWidth: 280, borderRadius: 12, padding: "8px 14px" }}
-          placeholder="Buscar por N.º, proveedor o solicitud…" value={busqueda}
-          onChange={(e) => { setBusqueda(e.target.value); setLimite(PAGINA); }} />
       </div>
 
       <Card style={{ padding: 0, overflow: "hidden" }}>
@@ -49,9 +56,18 @@ export function OrdenesLista({
           <table className="ds-table">
             <thead>
               <tr><th>N.º</th><th>Proveedor</th><th>Solicitudes</th><th>Fecha</th><th className="ds-num">Total</th><th>Recibido</th><th>Estado</th><th></th></tr>
+              <tr>
+                {COLS.map((k) => (
+                  <th key={k} style={{ padding: "4px 6px", fontWeight: 400 }}>
+                    <input value={colF[k] ?? ""} placeholder="Filtrar…" onChange={(e) => { setCol(k, e.target.value); setLimite(PAGINA); }}
+                      style={{ width: "100%", boxSizing: "border-box", borderRadius: 8, padding: "4px 8px", fontSize: 12, font: "inherit", border: "1.5px solid var(--ds-color-gray-100)", background: "#fff", textAlign: k === "total" ? "right" : "left" }} />
+                  </th>
+                ))}
+                <th></th>
+              </tr>
             </thead>
             <tbody>
-              {filtradas.length === 0 && <tr><td colSpan={8}><div className="empty">{q ? "No se encontró ninguna orden con esa búsqueda." : vacio}</div></td></tr>}
+              {filtradas.length === 0 && <tr><td colSpan={8}><div className="empty">{ordenes.length ? "Ninguna orden coincide con los filtros." : vacio}</div></td></tr>}
               {visibles.map((o) => {
                 const b = ordenBadge(o.estado);
                 const peds = [...new Set(o.lineas.filter((l) => l.pedidoNumero).map((l) => l.pedidoNumero!))];

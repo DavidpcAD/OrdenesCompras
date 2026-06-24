@@ -1,29 +1,35 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState, type ReactNode } from "react";
+import { useState } from "react";
 import { useStore } from "@/lib/store";
 import { Button } from "@/components/ui";
 import { ROLE_META } from "@/components/shell";
-import { IconBox, IconCheck, IconReceipt, IconWrench } from "@/components/icons";
-import type { Role } from "@/lib/types";
-
-const ROLES: { id: Role; title: string; persona: string; desc: string; icon: ReactNode; bg: string }[] = [
-  { id: "ingenieria", title: "Ingeniería", persona: "Laura", desc: "Solicitar material o repuestos para obras y máquinas", icon: <IconWrench />, bg: "color-mix(in srgb, var(--ds-color-green-100) 22%, #fff)" },
-  { id: "proveeduria", title: "Proveeduría", persona: "Angie", desc: "Armar órdenes de compra al proveedor desde las solicitudes", icon: <IconBox />, bg: "color-mix(in srgb, var(--ds-color-yellow) 28%, #fff)" },
-  { id: "aprobacion", title: "Aprobación", persona: "Luis Roberto", desc: "Aprobar o rechazar las órdenes antes de enviarlas al proveedor", icon: <IconCheck />, bg: "color-mix(in srgb, var(--ds-color-green-200) 24%, #fff)" },
-  { id: "facturacion", title: "Bodega", persona: "Kattya", desc: "Recibir material y registrar la factura en inventario", icon: <IconReceipt />, bg: "color-mix(in srgb, var(--ds-color-red-100) 22%, #fff)" },
-];
 
 export default function LoginPage() {
-  const { setRole } = useStore();
+  const { setRole, setUsuario } = useStore();
   const router = useRouter();
-  const [selected, setSelected] = useState<Role | null>(null);
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+  const [cargando, setCargando] = useState(false);
 
-  function entrar() {
-    if (!selected) return;
-    setRole(selected);
-    router.push(ROLE_META[selected].home);
+  async function entrar() {
+    if (!username.trim() || !password) { setError("Ingresá usuario y contraseña."); return; }
+    setError(""); setCargando(true);
+    try {
+      const r = await fetch("/api/login", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username: username.trim(), password }),
+      });
+      const data = await r.json();
+      if (!r.ok) { setError(data?.error || "No se pudo iniciar sesión."); setCargando(false); return; }
+      setRole(data.role);
+      setUsuario(data.nombre || username.trim());
+      router.push(ROLE_META[data.role as keyof typeof ROLE_META]?.home ?? `/${data.role}`);
+    } catch (e: any) {
+      setError(String(e?.message ?? e)); setCargando(false);
+    }
   }
 
   return (
@@ -38,32 +44,34 @@ export default function LoginPage() {
         </div>
 
         <p className="ds-muted ds-label mt-4" style={{ marginBottom: 12 }}>
-          Seleccioná tu módulo para continuar
+          Iniciá sesión con tu usuario
         </p>
 
-        <div className="role-grid">
-          {ROLES.map((r) => (
-            <button
-              key={r.id}
-              className={`role-option ${selected === r.id ? "is-selected" : ""}`}
-              onClick={() => setSelected(r.id)}
-              type="button"
-            >
-              <span className="role-option__icon" style={{ background: r.bg }}>{r.icon}</span>
-              <span className="col" style={{ gap: 2 }}>
-                <span className="role-option__title">{r.title} · <span style={{ color: "var(--ds-color-gray-400)", fontWeight: 400 }}>{r.persona}</span></span>
-                <span className="role-option__desc">{r.desc}</span>
-              </span>
-            </button>
-          ))}
+        <div className="col gap-3">
+          <div className="ds-form-field">
+            <label className="ds-form-field__label">Usuario</label>
+            <input className="ds-form-field__input" value={username} autoFocus autoCapitalize="off" autoCorrect="off"
+              placeholder="ej. luisroberto" onChange={(e) => setUsername(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") document.getElementById("pw")?.focus(); }} />
+          </div>
+          <div className="ds-form-field">
+            <label className="ds-form-field__label">Contraseña</label>
+            <input id="pw" className="ds-form-field__input" type="password" value={password}
+              placeholder="••••••••" onChange={(e) => setPassword(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") entrar(); }} />
+          </div>
         </div>
 
-        <Button block className="mt-6" onClick={entrar} disabled={!selected}>
-          Entrar como {selected ? ROLES.find((r) => r.id === selected)!.persona : "…"}
+        {error && (
+          <p className="ds-body-sm" style={{ color: "var(--ds-color-red, #c96c6c)", marginTop: 12 }}>{error}</p>
+        )}
+
+        <Button block className="mt-6" onClick={entrar} disabled={cargando}>
+          {cargando ? "Entrando…" : "Entrar"}
         </Button>
 
         <p className="ds-body-sm ds-muted mt-4" style={{ textAlign: "center" }}>
-          Conectado a Business Central · espejo en SQL
+          Tu rol define a qué módulo entrás · Conectado a Business Central + SQL
         </p>
       </div>
     </div>

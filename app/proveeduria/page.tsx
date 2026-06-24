@@ -61,7 +61,6 @@ export default function ProveeduriaMaterialesPage() {
   if (baseKey !== lastKey) { setRows(baseRows); setLastKey(baseKey); }
 
   const [filtro, setFiltro] = useState<string>("all");
-  const [busqueda, setBusqueda] = useState("");
   const [previewId, setPreviewId] = useState<string | null>(null);
   // Filtros por columna estilo Excel (una caja por columna)
   const [colF, setColF] = useState<Record<string, string>>({});
@@ -86,10 +85,8 @@ export default function ProveeduriaMaterialesPage() {
   };
   const COLS = ["pedido", "articulo", "almacen", "pend", "aordenar", "precio", "iva", "importe"];
 
-  const q = busqueda.trim().toLowerCase();
   const visibles = rows
     .filter((r) => filtro === "all" || r.pedidoId === filtro)
-    .filter((r) => !q || COLS.some((k) => cellText(r, k).toLowerCase().includes(q)))
     .filter((r) => COLS.every((k) => { const v = (colF[k] ?? "").trim().toLowerCase(); return !v || cellText(r, k).toLowerCase().includes(v); }));
 
   // Seleccionar todas las líneas VISIBLES (respeta filtros de columna)
@@ -169,8 +166,6 @@ export default function ProveeduriaMaterialesPage() {
           <Card className="md-detail" style={{ padding: 0, overflow: "hidden" }}>
             <div className="row row--between" style={{ padding: "14px 16px", borderBottom: "1.5px solid var(--ds-color-gray-100)" }}>
               <span className="ds-label ds-muted">{visibles.length} línea(s){filtro !== "all" ? " del pedido" : ""}</span>
-              <input className="ds-form-field__input" style={{ maxWidth: 240, borderRadius: 12, padding: "8px 14px" }}
-                placeholder="Buscar material…" value={busqueda} onChange={(e) => setBusqueda(e.target.value)} />
             </div>
             <div className="ds-table-wrap" style={{ boxShadow: "none" }}>
               <table className="ds-table">

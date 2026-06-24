@@ -41,6 +41,8 @@ interface RegistrarRecepcionInput {
 interface StoreShape {
   role: Role | null;
   setRole: (r: Role | null) => void;
+  usuario: string | null;
+  setUsuario: (u: string | null) => void;
   cargando: boolean;
 
   proveedores: Proveedor[];
@@ -91,6 +93,7 @@ function freshData(): Persisted {
 
 export function StoreProvider({ children }: { children: React.ReactNode }) {
   const [role, setRole] = useState<Role | null>(null);
+  const [usuario, setUsuario] = useState<string | null>(null);
   const [data, setData] = useState<Persisted>(() => freshData());
   const [borrador, setBorrador] = useState<StoreShape["borrador"]>([]);
   const [hydrated, setHydrated] = useState(false);
@@ -100,6 +103,8 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const r = localStorage.getItem("adelante_oc_role") as Role | null;
     if (r) setRole(r);
+    const u = localStorage.getItem("adelante_oc_usuario");
+    if (u) setUsuario(u);
     if (USE_API) {
       api.bootstrap()
         .then((b) => setData({ pedidos: b.pedidos, ordenes: b.ordenes, recepciones: b.recepciones, movimientos: b.movimientos }))
@@ -124,7 +129,9 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     if (!hydrated) return;
     if (role) localStorage.setItem("adelante_oc_role", role);
     else localStorage.removeItem("adelante_oc_role");
-  }, [role, hydrated]);
+    if (usuario) localStorage.setItem("adelante_oc_usuario", usuario);
+    else localStorage.removeItem("adelante_oc_usuario");
+  }, [role, usuario, hydrated]);
 
   async function refreshFromApi() {
     const b = await api.bootstrap();
@@ -133,7 +140,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
 
   const api2 = useMemo<StoreShape>(() => {
     const uid = () => Math.random().toString(36).slice(2, 9);
-    const persona = role ? PERSONA_POR_ROL[role] : "Sistema";
+    const persona = usuario ?? (role ? PERSONA_POR_ROL[role] : "Sistema");
     const rolActual: Role = role ?? "ingenieria";
     const mkMov = (m: Omit<Movimiento, "id" | "usuario" | "rol" | "fecha">): Movimiento =>
       ({ id: uid(), usuario: persona, rol: rolActual, fecha: nowISO(), ...m });
@@ -327,7 +334,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     const reset: StoreShape["reset"] = () => setData(freshData());
 
     return {
-      role, setRole, cargando,
+      role, setRole, usuario, setUsuario, cargando,
       proveedores: seed.proveedores, articulos: seed.articulos, obras: seed.obras,
       maquinas: seed.maquinas, almacenes: seed.almacenes,
       pedidos: data.pedidos, ordenes: data.ordenes, recepciones: data.recepciones, movimientos: data.movimientos,
@@ -335,7 +342,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       createOrden, setOrdenEstado, registrarRecepcion, reset,
       borrador, setBorrador,
     };
-  }, [role, data, borrador, cargando]);
+  }, [role, usuario, data, borrador, cargando]);
 
   return <StoreCtx.Provider value={api2}>{children}</StoreCtx.Provider>;
 }

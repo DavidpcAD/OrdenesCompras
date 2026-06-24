@@ -40,7 +40,7 @@ const ROLE_META: Record<Role, { label: string; persona: string; home: string; na
 };
 
 export function AppShell({ role, children }: { role: Role; children: React.ReactNode }) {
-  const { role: current, setRole } = useStore();
+  const { role: current, setRole, usuario, setUsuario } = useStore();
   const router = useRouter();
   const pathname = usePathname();
 
@@ -78,11 +78,11 @@ export function AppShell({ role, children }: { role: Role; children: React.React
         )}
         <div className="topbar__spacer" />
         <div className="topbar__user">
-          <span className="ds-badge" style={{ background: meta.color, color: "#000" }}>{meta.label} · {meta.persona}</span>
-          <button className="link-btn" onClick={() => { setRole(null); router.replace("/"); }}>
-            Cambiar rol
+          <span className="ds-badge" style={{ background: meta.color, color: "#000" }}>{meta.label} · {usuario ?? meta.persona}</span>
+          <button className="link-btn" onClick={() => { setRole(null); setUsuario(null); router.replace("/"); }}>
+            Salir
           </button>
-          <span className="topbar__avatar">{meta.persona.slice(0, 2).toUpperCase()}</span>
+          <span className="topbar__avatar">{(usuario ?? meta.persona).slice(0, 2).toUpperCase()}</span>
         </div>
       </header>
       {children}

@@ -4,7 +4,6 @@ import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AppShell } from "@/components/shell";
 import { Badge, Button, Card } from "@/components/ui";
-import { Combobox } from "@/components/combobox";
 import { useStore } from "@/lib/store";
 import { destinoLabel, num, recibidoDeLineaPedido } from "@/lib/helpers";
 
@@ -12,9 +11,8 @@ export default function SeguimientoPage() {
   const { pedidos, ordenes } = useStore();
   const router = useRouter();
 
-  const [proyecto, setProyecto] = useState(""); // "" = todos
-  const [obra, setObra] = useState(""); // "" = todas
-  const [busqueda, setBusqueda] = useState("");
+  const [colF, setColF] = useState<Record<string, string>>({});
+  const setCol = (k: string, v: string) => setColF((f) => ({ ...f, [k]: v }));
   const PAGINA = 100;
   const [limite, setLimite] = useState(PAGINA);
 
@@ -41,26 +39,21 @@ export default function SeguimientoPage() {
     );
   }, [pedidos, ordenes]);
 
-  const proyectosItems = useMemo(() => {
-    const set = Array.from(new Set(filas.map((f) => f.proyecto))).sort();
-    return [{ key: "", label: "Todos los proyectos" }, ...set.map((p) => ({ key: p, label: p }))];
-  }, [filas]);
-
-  const obrasItems = useMemo(() => {
-    const set = Array.from(new Set(filas.map((f) => f.almacen).filter(Boolean))).sort();
-    return [{ key: "", label: "Todas las obras" }, ...set.map((o) => ({ key: o, label: o }))];
-  }, [filas]);
-
-  const q = busqueda.trim().toLowerCase();
-  const filtradas = filas
-    .filter((f) => !proyecto || f.proyecto === proyecto)
-    .filter((f) => !obra || f.almacen === obra)
-    .filter((f) => !q
-      || f.articulo.toLowerCase().includes(q)
-      || f.pedidoNumero.toLowerCase().includes(q)
-      || f.comentario.toLowerCase().includes(q)
-      || f.almacen.toLowerCase().includes(q)
-      || f.proyecto.toLowerCase().includes(q));
+  const COLS = ["proyecto", "obra", "pedido", "articulo", "solicitado", "recibido", "porrecibir", "comentario"];
+  const cellText = (f: typeof filas[number], k: string): string => {
+    switch (k) {
+      case "proyecto": return f.proyecto;
+      case "obra": return f.almacen ?? "";
+      case "pedido": return f.pedidoNumero;
+      case "articulo": return f.articulo;
+      case "solicitado": return `${f.solicitado} ${f.unidad}`;
+      case "recibido": return String(f.recibido);
+      case "porrecibir": return String(f.pendiente);
+      case "comentario": return f.comentario ?? "";
+      default: return "";
+    }
+  };
+  const filtradas = filas.filter((f) => COLS.every((k) => { const v = (colF[k] ?? "").trim().toLowerCase(); return !v || cellText(f, k).toLowerCase().includes(v); }));
   const visibles = filtradas.slice(0, limite);
 
   return (
@@ -73,35 +66,7 @@ export default function SeguimientoPage() {
           </div>
         </div>
 
-        <div className="row row--between wrap gap-3 mt-2" style={{ alignItems: "flex-end" }}>
-          <div className="qa-field" style={{ minWidth: 280, flex: "0 1 360px" }}>
-            <label style={{ fontSize: "var(--ds-font-size-body-sm)", color: "var(--ds-color-gray-500)", fontWeight: 600 }}>Proyecto</label>
-            <Combobox
-              items={proyectosItems}
-              value={proyecto}
-              onChange={(k) => { setProyecto(k); setLimite(PAGINA); }}
-              getKey={(p) => p.key}
-              getLabel={(p) => p.label}
-              placeholder="Buscar / elegir proyecto…"
-            />
-          </div>
-          <div className="qa-field" style={{ minWidth: 240, flex: "0 1 300px" }}>
-            <label style={{ fontSize: "var(--ds-font-size-body-sm)", color: "var(--ds-color-gray-500)", fontWeight: 600 }}>Obra</label>
-            <Combobox
-              items={obrasItems}
-              value={obra}
-              onChange={(k) => { setObra(k); setLimite(PAGINA); }}
-              getKey={(o) => o.key}
-              getLabel={(o) => o.label}
-              placeholder="Buscar / elegir obra…"
-            />
-          </div>
-          <input className="ds-form-field__input" style={{ maxWidth: 320, borderRadius: 12, padding: "8px 14px" }}
-            placeholder="Buscar todo: artículo, pedido, comentario, obra, proyecto…" value={busqueda}
-            onChange={(e) => { setBusqueda(e.target.value); setLimite(PAGINA); }} />
-        </div>
-
-        <div className="ds-label ds-muted mt-4" style={{ marginBottom: 10 }}>{filtradas.length} línea(s){proyecto ? ` · ${proyecto}` : ""}{obra ? ` · obra ${obra}` : ""}</div>
+        <div className="ds-label ds-muted mt-4" style={{ marginBottom: 10 }}>{filtradas.length} línea(s)</div>
 
         <Card style={{ padding: 0, overflow: "hidden" }}>
           <div className="ds-table-wrap" style={{ boxShadow: "none" }}>
@@ -111,6 +76,14 @@ export default function SeguimientoPage() {
                   <th>Proyecto</th><th>Obra</th><th>Pedido</th><th>Artículo</th>
                   <th className="ds-num">Solicitado</th><th className="ds-num">Recibido</th><th className="ds-num">Por recibir</th>
                   <th>Comentario</th>
+                </tr>
+                <tr>
+                  {COLS.map((k) => (
+                    <th key={k} style={{ padding: "4px 6px", fontWeight: 400 }}>
+                      <input value={colF[k] ?? ""} placeholder="Filtrar…" onChange={(e) => { setCol(k, e.target.value); setLimite(PAGINA); }}
+                        style={{ width: "100%", boxSizing: "border-box", borderRadius: 8, padding: "4px 8px", fontSize: 12, font: "inherit", border: "1.5px solid var(--ds-color-gray-100)", background: "#fff", textAlign: ["solicitado", "recibido", "porrecibir"].includes(k) ? "right" : "left" }} />
+                    </th>
+                  ))}
                 </tr>
               </thead>
               <tbody>
