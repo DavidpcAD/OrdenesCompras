@@ -30,7 +30,7 @@ export function Combobox<T>({
   const q = query.trim().toLowerCase();
   // No mostramos opciones hasta que el usuario escriba algo.
   const filtered = useMemo(() => {
-    if (!q) return [];
+    if (!q) return items.length <= max ? items : [];
     return items.filter((i) => (getSearch ? getSearch(i) : getLabel(i)).toLowerCase().includes(q)).slice(0, max);
   }, [items, q, max]);
 
@@ -46,7 +46,7 @@ export function Combobox<T>({
       />
       {open && (
         <div className="combo__menu">
-          {!q && <div className="combo__empty">Escribí para buscar…</div>}
+          {!q && filtered.length === 0 && <div className="combo__empty">Escribí para buscar…</div>}
           {q && filtered.length === 0 && <div className="combo__empty">Sin coincidencias.</div>}
           {filtered.map((i) => (
             <button
