@@ -41,7 +41,7 @@ export function OrdenDetalle({
             <h1 className="ds-heading">{orden.numero}</h1>
             <Badge tone={b.tone}>{b.label}</Badge>
           </div>
-          <p className="ds-muted">{prov?.code} · {prov?.nombre} · emitida {formatDate(orden.fecha)} · recibido {ordenRecibidoPct(orden)}%</p>
+          <p className="ds-muted">{prov?.code} · {prov?.nombre} · emitida {formatDate(orden.fecha)} · recibido {ordenRecibidoPct(orden)}%{orden.bcNumber ? ` · BC ${orden.bcNumber}` : ""}</p>
           <div className="row gap-2 wrap mt-2">
             <span className="ds-muted ds-body-sm">Solicitudes origen:</span>
             {[...new Set(orden.lineas.filter((l) => l.pedidoNumero).map((l) => l.pedidoNumero!))].map((n) => (
@@ -53,6 +53,10 @@ export function OrdenDetalle({
         <div className="row gap-3">
           <button className="link-btn" title="Imprimir / Guardar PDF para el proveedor"
             onClick={() => router.push(`/proveeduria/ordenes/${orden.id}/imprimir`)}>🖨️ Imprimir</button>
+          {orden.bcDeepLink && (
+            <button className="link-btn" title="Abrir el Pedido en Business Central (editar · vista previa de registro · registrar)"
+              onClick={() => window.open(orden.bcDeepLink!, "_blank")}>↗ Abrir en BC</button>
+          )}
           {acciones}
         </div>
       </div>

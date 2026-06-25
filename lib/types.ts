@@ -128,6 +128,8 @@ export interface Orden {
   estado: OrdenEstado;
   versionesArchivadas: number;
   lineas: OrdenLinea[];
+  bcNumber?: string;        // Nº del Pedido de compra en Business Central (CP-…)
+  bcDeepLink?: string;      // link directo al Pedido en BC (editar / registrar / vista previa)
 }
 
 // ============================ RECEPCIÓN / FACTURA (Bodega · Kattya) =========

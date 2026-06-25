@@ -27,6 +27,8 @@ interface NewOrdenInput {
   proveedorNombre?: string;
   currencyCode: string;
   fechaRecepEsperada?: string;
+  bcNumber?: string;           // Nº del Pedido creado en BC (si se envió a aprobación con BC)
+  bcDeepLink?: string;         // link directo al Pedido en BC
   lineas: Omit<OrdenLinea, "id" | "cantidadRecibida" | "cantidadFacturada">[];
 }
 
@@ -255,6 +257,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
           id: uid(), numero, proveedorId: input.proveedorId, fecha: todayISO(),
           fechaRecepEsperada: input.fechaRecepEsperada, currencyCode: input.currencyCode,
           estado: "abierto", versionesArchivadas: 0, lineas,
+          bcNumber: input.bcNumber, bcDeepLink: input.bcDeepLink,
         };
         const pedidos = d.pedidos.map((p) => {
           let touched = false;

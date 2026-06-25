@@ -20,6 +20,7 @@ const ROLE_META: Record<Role, { label: string; persona: string; home: string; na
     nav: [
       { href: "/proveeduria/ordenes", label: "Órdenes creadas" },
       { href: "/proveeduria", label: "Líneas por ordenar" },
+      { href: "/proveeduria/pedidas", label: "Líneas pedidas" },
     ],
   },
   aprobacion: {

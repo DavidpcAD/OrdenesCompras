@@ -60,13 +60,34 @@ export default function ArmarOrdenPage() {
 
   useEffect(() => { if (borrador.length === 0) router.replace("/proveeduria"); }, [borrador, router]);
 
+  // Último precio FACTURADO por BC (item + proveedor). Cae al historial local si BC no responde.
+  const [bcPrices, setBcPrices] = useState<Record<string, number | null>>({});
+  useEffect(() => {
+    const code = provSel?.code;
+    if (!code) { setBcPrices({}); return; }
+    const items = [...new Set(rows.map((r) => r.articuloId).filter(Boolean))];
+    let cancel = false;
+    Promise.all(items.map(async (it) => {
+      try {
+        const r = await fetch(`/api/bc/lastprice?item=${encodeURIComponent(it)}&vendor=${encodeURIComponent(code)}`);
+        const d = await r.json();
+        return [it, typeof d.precio === "number" ? d.precio : null] as const;
+      } catch { return [it, null] as const; }
+    })).then((pairs) => { if (!cancel) setBcPrices(Object.fromEntries(pairs)); });
+    return () => { cancel = true; };
+  }, [proveedorId]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const setRow = (id: string, patch: Partial<Row>) =>
     setRows((rs) => rs.map((r) => (r.pedidoLineaId === id ? { ...r, ...patch } : r)));
 
   const calcImporte = (r: Row) => Number(r.cantidad) * Number(r.precio) * (1 - (Number(r.descuento) || 0) / 100);
   const subtotal = rows.reduce((s, r) => s + calcImporte(r), 0);
   const fleteShare = (r: Row) => (subtotal > 0 && (Number(flete) || 0) > 0 ? (Number(flete) || 0) * calcImporte(r) / subtotal : 0);
-  const lastPrice = (r: Row) => (proveedorId ? ultimoPrecioProveedor(ordenes, r.articuloId, proveedorId) : null);
+  const lastPrice = (r: Row) => {
+    const bc = bcPrices[r.articuloId];
+    if (typeof bc === "number") return bc;
+    return proveedorId ? ultimoPrecioProveedor(ordenes, r.articuloId, proveedorId) : null;
+  };
   const ivaTotal = rows.reduce((s, r) => s + calcImporte(r) * ((Number(r.iva) || 0) / 100), 0);
   const fleteNum = Number(flete) || 0;
   const total = subtotal + fleteNum + ivaTotal;
@@ -81,7 +102,8 @@ export default function ArmarOrdenPage() {
 
   const [guardando, setGuardando] = useState(false);
 
-  async function crear(enviarAprobacion: boolean) {
+  // "Guardar como abierta": solo registra la orden local como borrador/abierta.
+  async function crear(aprobar: boolean) {
     if (!puedeCrear) { toast("Seleccioná un proveedor.", "error"); return; }
     setGuardando(true);
     try {
@@ -96,9 +118,9 @@ export default function ArmarOrdenPage() {
         almacen: rows[0].almacen, precioUnitario: fleteNum, ivaPct: 13 });
     }
     const orden = await createOrden({ proveedorId, proveedorNo: provSel?.code, proveedorNombre: provSel?.nombre, currencyCode: currency, lineas: ls });
-    if (enviarAprobacion) await setOrdenEstado(orden.id, "pendiente_aprobacion");
+    if (aprobar) await setOrdenEstado(orden.id, "pendiente_aprobacion");
     setBorrador([]);
-    toast(`Orden ${orden.numero} ${enviarAprobacion ? "enviada a aprobación" : "guardada como abierta"}`, "success");
+    toast(`Orden ${orden.numero} ${aprobar ? "enviada a aprobación" : "guardada como abierta"}`, "success");
     router.push(`/proveeduria/ordenes/${orden.id}`);
     } catch (e: any) {
       toast(String(e?.message ?? e), "error");
@@ -106,38 +128,43 @@ export default function ArmarOrdenPage() {
     }
   }
 
-  // Crea el Pedido en BC (proveedor + materiales) y abre BC para la vista previa/registro nativos.
-  async function crearEnBc() {
+  // "Enviar a aprobación" (Angie): crea el Pedido en BC con estas líneas y deja la
+  // orden local en estado pendiente de aprobación. En modo mock (sin BC) sigue
+  // solo en local para no bloquear el flujo. (La vista previa/registro es de Bodega.)
+  async function enviarAprobacion() {
     if (!puedeCrear) { toast("Seleccioná un proveedor.", "error"); return; }
-    const p = catProv.find((x) => x.id === proveedorId);
-    const vendorNo = p?.code;
-    if (!vendorNo) { toast("El proveedor no tiene código de BC.", "error"); return; }
-    const lineasBc = rows
-      .filter((r) => r.articuloId && Number(r.cantidad) > 0)
-      .map((r) => ({ itemNo: r.articuloId, cantidad: Number(r.cantidad), precio: Number(r.precio) || 0, descripcion: r.descripcion }));
-    if (!lineasBc.length) { toast("No hay líneas de material para enviar a BC.", "error"); return; }
     setGuardando(true);
     try {
-      const res = await fetch("/api/bc/ordenes", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ vendorNo, currencyCode: currency, lineas: lineasBc }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data?.error || "No se pudo crear el pedido en BC");
-      // registramos también la orden local para el seguimiento de la app
-      try {
-        const ls: Omit<OrdenLinea, "id" | "cantidadRecibida" | "cantidadFacturada">[] = rows.map((r) => ({
-          tipo: "articulo", articuloId: r.articuloId, pedidoLineaId: r.pedidoLineaId, pedidoNumero: r.pedidoNumero,
-          descripcion: r.descripcion, cantidad: Number(r.cantidad), unidad: r.unidad, almacen: r.almacen,
-          precioUnitario: Number(r.precio), ivaPct: Number(r.iva) || 0, descuentoPct: Number(r.descuento) || 0,
-          proyecto: r.proyecto || undefined, taskNo: r.tarea || undefined,
-        }));
-        await createOrden({ proveedorId, proveedorNo: provSel?.code, proveedorNombre: provSel?.nombre, currencyCode: currency, lineas: ls });
-      } catch { /* el pedido ya está en BC; el registro local es secundario */ }
+      const lineasBc = rows
+        .filter((r) => r.articuloId && Number(r.cantidad) > 0)
+        .map((r) => ({ itemNo: r.articuloId, cantidad: Number(r.cantidad), precio: Number(r.precio) || 0, descripcion: r.descripcion }));
+      let bcNumber = "";
+      let bcDeepLink = "";
+      if (provSel?.code && lineasBc.length) {
+        try {
+          const res = await fetch("/api/bc/ordenes", {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ vendorNo: provSel.code, currencyCode: currency, lineas: lineasBc }),
+          });
+          const data = await res.json().catch(() => ({}));
+          if (res.ok) { bcNumber = data.number || ""; bcDeepLink = data.deepLink || ""; }
+        } catch { /* BC no disponible (mock): seguimos solo local */ }
+      }
+      const ls: Omit<OrdenLinea, "id" | "cantidadRecibida" | "cantidadFacturada">[] = rows.map((r) => ({
+        tipo: "articulo", articuloId: r.articuloId, pedidoLineaId: r.pedidoLineaId, pedidoNumero: r.pedidoNumero,
+        descripcion: r.descripcion, cantidad: Number(r.cantidad), unidad: r.unidad, almacen: r.almacen,
+        precioUnitario: Number(r.precio), ivaPct: Number(r.iva) || 0, descuentoPct: Number(r.descuento) || 0,
+        proyecto: r.proyecto || undefined, taskNo: r.tarea || undefined,
+      }));
+      if (fleteNum > 0) {
+        ls.push({ tipo: "cargo", descripcion: "FLETE / TRANSPORTE", cantidad: 1, unidad: "UND",
+          almacen: rows[0].almacen, precioUnitario: fleteNum, ivaPct: 13 });
+      }
+      const orden = await createOrden({ proveedorId, proveedorNo: provSel?.code, proveedorNombre: provSel?.nombre, currencyCode: currency, bcNumber: bcNumber || undefined, bcDeepLink: bcDeepLink || undefined, lineas: ls });
+      await setOrdenEstado(orden.id, "pendiente_aprobacion");
       setBorrador([]);
-      toast(`Pedido ${data.number} creado en BC. Abriendo para vista previa…`, "success");
-      if (data.deepLink) window.open(data.deepLink, "_blank");
-      router.push("/proveeduria/ordenes");
+      toast(`Orden ${bcNumber || orden.numero} enviada a aprobación${bcNumber ? " · creada en BC" : ""}`, "success");
+      router.push(`/proveeduria/ordenes/${orden.id}`);
     } catch (e: any) {
       toast(String(e?.message ?? e), "error");
       setGuardando(false);
@@ -244,8 +271,7 @@ export default function ArmarOrdenPage() {
           <span className="ds-muted">{rows.length} línea(s) · {pedidosDistintos.length} pedido(s) · <span className="ds-strong">{money(total, currency)}</span></span>
           <div className="row gap-3">
             <Button variant="outline" onClick={() => crear(false)} disabled={!puedeCrear || guardando}>Guardar como abierta</Button>
-            <Button variant="outline" onClick={() => crear(true)} disabled={!puedeCrear || guardando}>Enviar a aprobación</Button>
-            <Button onClick={crearEnBc} disabled={!puedeCrear || guardando}>{guardando ? "Creando…" : "Crear en BC (vista previa)"}</Button>
+            <Button onClick={enviarAprobacion} disabled={!puedeCrear || guardando}>{guardando ? "Enviando…" : "Enviar a aprobación"}</Button>
           </div>
         </div>
       </div>

@@ -33,7 +33,7 @@ export default function ProvOrdenDetallePage() {
         </>
       )}
       {orden.estado === "lanzado" && (
-        <Button variant="outline" onClick={() => act("abierto", "Orden reabierta para edición")}>Volver a abrir</Button>
+        <Button variant="outline" onClick={() => { act("abierto", "Orden reabierta para edición"); if (orden.bcDeepLink) window.open(orden.bcDeepLink, "_blank"); }}>Volver a abrir</Button>
       )}
     </>
   );

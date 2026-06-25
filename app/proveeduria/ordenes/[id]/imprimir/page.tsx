@@ -206,10 +206,6 @@ export default function ImprimirOrdenPage() {
           </table>
         </div>
 
-        <div className="po-firmas">
-          <div className="f">Elaborado por (Proveeduría)</div>
-          <div className="f">Autorizado por</div>
-        </div>
       </div>
     </div>
   );

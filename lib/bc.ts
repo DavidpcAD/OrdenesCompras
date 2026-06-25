@@ -187,6 +187,38 @@ export async function bcVendors(): Promise<BcVendor[]> {
     .filter((v) => v.code);
 }
 
+// Último precio con que se FACTURÓ un item a un proveedor, leído de las facturas
+// de compra registradas en BC (API estándar v2.0). Revisa las facturas más
+// recientes del proveedor y devuelve el precio de la línea de ese item.
+// Devuelve null si no hay historial o si BC no responde (la UI cae al historial local).
+export async function bcUltimoPrecioFacturado(itemNo: string, vendorNo: string): Promise<number | null> {
+  if (!itemNo || !vendorNo) return null;
+  try {
+    const token = await getToken();
+    const cid = await getStdCompanyId();
+    const filtro = `$filter=${encodeURIComponent(`vendorNumber eq '${vendorNo}'`)}`;
+    const url =
+      `${stdRoot()}/companies(${cid})/purchaseInvoices?${filtro}` +
+      `&$orderby=invoiceDate desc&$top=20` +
+      `&$expand=purchaseInvoiceLines($select=lineType,lineObjectNumber,directUnitCost,unitCost)`;
+    const res = await fetch(url, { cache: "no-store", headers: { Authorization: `Bearer ${token}`, Accept: "application/json" } });
+    if (!res.ok) return null;
+    const data: any = await res.json();
+    for (const inv of (data.value ?? [])) {
+      for (const l of (inv.purchaseInvoiceLines ?? [])) {
+        if ((l.lineObjectNumber ?? "") === itemNo) {
+          const precio = (typeof l.directUnitCost === "number" && l.directUnitCost > 0) ? l.directUnitCost
+            : (typeof l.unitCost === "number" && l.unitCost > 0) ? l.unitCost : null;
+          if (precio != null) return precio;
+        }
+      }
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 export type BcVariante = { code: string; descripcion: string };
 
 // Resultado de cargar variantes. `disponible=false` significa que NO se pudo
@@ -262,6 +294,10 @@ export async function bcCrearPedido(input: { vendorNo: string; currencyCode?: st
   for (const l of lineas) {
     const lineBody: Record<string, unknown> = { lineType: "Item", lineObjectNumber: l.itemNo, quantity: l.cantidad };
     if (l.precio && l.precio > 0) lineBody.directUnitCost = l.precio;
+    // Almacén de recepción fijo (p.ej. ALM-GRAL): aunque Ingeniería pida para una
+    // obra, el material entra siempre al almacén general. Configurable por env.
+    const loc = process.env.BC_RECEPCION_LOCATION;
+    if (loc) lineBody.locationCode = loc;
     const resL = await fetch(`${stdRoot()}/companies(${cid})/purchaseOrders(${po.id})/purchaseOrderLines`, { method: "POST", headers, body: JSON.stringify(lineBody) });
     if (!resL.ok) throw new Error(`BC ${resL.status} al agregar la línea ${l.itemNo}: ${(await resL.text()).slice(0, 250)}`);
   }
