@@ -30,6 +30,7 @@ export function OrdenDetalle({
   const b = ordenBadge(orden.estado);
   const recs = recepciones.filter((r) => r.ordenId === orden.id);
   const subtotal = orden.lineas.filter((l) => l.tipo === "articulo").reduce((s, l) => s + ordenLineaImporte(l), 0);
+  const iva = orden.lineas.filter((l) => l.tipo === "articulo").reduce((s, l) => s + ordenLineaImporte(l) * ((l.ivaPct || 0) / 100), 0);
   const flete = orden.lineas.filter((l) => l.tipo === "cargo").reduce((s, l) => s + l.cantidad * l.precioUnitario, 0);
 
   return (
@@ -69,7 +70,8 @@ export function OrdenDetalle({
         <div className="totals" style={{ minWidth: 320 }}>
           <div className="totals__row"><span>Subtotal artículos</span><span>{money(subtotal, orden.currencyCode)}</span></div>
           <div className="totals__row"><span>Flete</span><span>{money(flete, orden.currencyCode)}</span></div>
-          <div className="totals__row totals__row--grand" style={{ gridColumn: "1 / -1" }}><span>Total orden</span><span>{money(subtotal + flete, orden.currencyCode)}</span></div>
+          <div className="totals__row"><span>IVA</span><span>{money(iva, orden.currencyCode)}</span></div>
+          <div className="totals__row totals__row--grand" style={{ gridColumn: "1 / -1" }}><span>Total orden</span><span>{money(subtotal + flete + iva, orden.currencyCode)}</span></div>
         </div>
       </div>
 
