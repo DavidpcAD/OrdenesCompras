@@ -140,6 +140,7 @@ export default function ArmarOrdenPage() {
         .map((r) => ({ itemNo: r.articuloId, cantidad: Number(r.cantidad), precio: Number(r.precio) || 0, descripcion: r.descripcion }));
       let bcNumber = "";
       let bcDeepLink = "";
+      let omitidas: string[] = [];
       if (provSel?.code && lineasBc.length) {
         try {
           const res = await fetch("/api/bc/ordenes", {
@@ -147,7 +148,7 @@ export default function ArmarOrdenPage() {
             body: JSON.stringify({ vendorNo: provSel.code, currencyCode: currency, lineas: lineasBc }),
           });
           const data = await res.json().catch(() => ({}));
-          if (res.ok) { bcNumber = data.number || ""; bcDeepLink = data.deepLink || ""; }
+          if (res.ok) { bcNumber = data.number || ""; bcDeepLink = data.deepLink || ""; omitidas = Array.isArray(data.omitidas) ? data.omitidas : []; }
         } catch { /* BC no disponible (mock): seguimos solo local */ }
       }
       const ls: Omit<OrdenLinea, "id" | "cantidadRecibida" | "cantidadFacturada">[] = rows.map((r) => ({
@@ -163,7 +164,11 @@ export default function ArmarOrdenPage() {
       const orden = await createOrden({ proveedorId, proveedorNo: provSel?.code, proveedorNombre: provSel?.nombre, currencyCode: currency, bcNumber: bcNumber || undefined, bcDeepLink: bcDeepLink || undefined, lineas: ls });
       await setOrdenEstado(orden.id, "pendiente_aprobacion");
       setBorrador([]);
-      toast(`Orden ${bcNumber || orden.numero} enviada a aprobación${bcNumber ? " · creada en BC" : ""}`, "success");
+      if (omitidas.length) {
+        toast(`Orden ${bcNumber || orden.numero} enviada a aprobación. En BC se omitieron ${omitidas.length} línea(s) por item inexistente: ${omitidas.join(", ")}`, "success");
+      } else {
+        toast(`Orden ${bcNumber || orden.numero} enviada a aprobación${bcNumber ? " · creada en BC" : ""}`, "success");
+      }
       router.push(`/proveeduria/ordenes/${orden.id}`);
     } catch (e: any) {
       toast(String(e?.message ?? e), "error");

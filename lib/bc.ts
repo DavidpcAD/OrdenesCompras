@@ -274,7 +274,7 @@ export async function bcVariants(itemNo: string): Promise<BcVariante[]> {
 // ---- Escritura: crear Pedido de compra (Purchase Order) por la API ESTÁNDAR ----
 export type NuevaLineaBc = { itemNo: string; cantidad: number; precio?: number; descripcion?: string };
 
-export async function bcCrearPedido(input: { vendorNo: string; currencyCode?: string; lineas: NuevaLineaBc[] }): Promise<{ number: string; id: string }> {
+export async function bcCrearPedido(input: { vendorNo: string; currencyCode?: string; lineas: NuevaLineaBc[] }): Promise<{ number: string; id: string; omitidas: string[] }> {
   if (!input?.vendorNo) throw new Error("Falta el proveedor (vendorNo).");
   const lineas = (input.lineas ?? []).filter((l) => l.itemNo && l.cantidad > 0);
   if (!lineas.length) throw new Error("No hay líneas de material válidas para el pedido.");
@@ -290,7 +290,10 @@ export async function bcCrearPedido(input: { vendorNo: string; currencyCode?: st
   if (!resH.ok) throw new Error(`BC ${resH.status} al crear el pedido: ${(await resH.text()).slice(0, 300)}`);
   const po: any = await resH.json();
 
-  // 2) Líneas: una por material (tipo Artículo).
+  // 2) Líneas: una por material (tipo Artículo). Si una línea falla (p.ej. el item
+  // no existe en BC — típico con data de prueba), la OMITIMOS y seguimos, en vez de
+  // tumbar todo el pedido. Devolvemos las omitidas para avisar.
+  const omitidas: string[] = [];
   for (const l of lineas) {
     const lineBody: Record<string, unknown> = { lineType: "Item", lineObjectNumber: l.itemNo, quantity: l.cantidad };
     if (l.precio && l.precio > 0) lineBody.directUnitCost = l.precio;
@@ -299,9 +302,9 @@ export async function bcCrearPedido(input: { vendorNo: string; currencyCode?: st
     const loc = process.env.BC_RECEPCION_LOCATION;
     if (loc) lineBody.locationCode = loc;
     const resL = await fetch(`${stdRoot()}/companies(${cid})/purchaseOrders(${po.id})/purchaseOrderLines`, { method: "POST", headers, body: JSON.stringify(lineBody) });
-    if (!resL.ok) throw new Error(`BC ${resL.status} al agregar la línea ${l.itemNo}: ${(await resL.text()).slice(0, 250)}`);
+    if (!resL.ok) omitidas.push(l.itemNo);
   }
-  return { number: po.number ?? "", id: po.id ?? "" };
+  return { number: po.number ?? "", id: po.id ?? "", omitidas };
 }
 
 // Deep link al Pedido recién creado, en la lista de Pedidos de compra de BC.
