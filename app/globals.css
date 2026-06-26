@@ -419,3 +419,30 @@ h1, h2, h3, h4, p { margin: 0; }
   .topbar__nav { display: none; }
   .page { padding: var(--ds-space-6) var(--ds-space-4) 64px; }
 }
+
+/* ---- Plantillas: tarjetas y filtro mini ---- */
+.tpl-cards { display: flex; flex-wrap: wrap; gap: 8px; }
+.tpl-card {
+  position: relative;
+  display: inline-flex; flex-direction: column; gap: 2px;
+  padding: 8px 30px 8px 12px; min-width: 120px;
+  border-radius: 10px; border: 1.5px solid var(--ds-color-gray-100); background: #fff;
+  cursor: pointer; transition: border-color .12s, background .12s, transform .06s, box-shadow .12s;
+}
+.tpl-card:hover {
+  border-color: var(--ds-color-green-100);
+  background: color-mix(in srgb, var(--ds-color-green-100) 9%, #fff);
+  box-shadow: 0 1px 4px rgba(0,0,0,.06);
+}
+.tpl-card:active { transform: translateY(1px); }
+.tpl-card__name { font-weight: 600; font-size: 13px; color: #1a1a1a; line-height: 1.2; }
+.tpl-card__meta { font-size: 11px; color: #8a8f98; }
+.tpl-card__del {
+  position: absolute; top: 5px; right: 5px; width: 19px; height: 19px;
+  border: none; background: transparent; color: #b6b9bf; border-radius: 6px;
+  cursor: pointer; line-height: 1; font-size: 15px; display: grid; place-items: center;
+}
+.tpl-card__del:hover { background: color-mix(in srgb, var(--ds-color-red-100, #e74c3c) 16%, #fff); color: #c0392b; }
+.seg-mini { display: inline-flex; border: 1.5px solid var(--ds-color-gray-100); border-radius: 8px; overflow: hidden; }
+.seg-mini button { border: none; background: #fff; padding: 4px 12px; font-size: 12px; cursor: pointer; color: #8a8f98; }
+.seg-mini button.is-active { background: var(--ds-color-green-100); color: #1a1a1a; font-weight: 600; }

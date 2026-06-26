@@ -408,55 +408,44 @@ export function SolicitudForm({
                 <Button variant="outline" onClick={() => fileRef.current?.click()}>⬆ Importar Excel</Button>
               </div>
             </div>
-            {/* Cuerpo: cargar / guardar plantilla */}
+            {/* Cuerpo: plantillas guardadas (tarjetas) + guardar */}
             <div style={{ padding: 14 }}>
-              <div className="row wrap gap-3" style={{ alignItems: "flex-end" }}>
-                <div className="qa-field" style={{ flex: "1 1 240px", minWidth: 220 }}>
-                  <label>Cargar plantilla guardada</label>
-                  <Select value="" onChange={(e) => { if (e.target.value) cargarPlantilla(e.target.value); }}>
-                    <option value="">{plantillasVisibles.length ? "Elegí una plantilla…" : "Aún no hay plantillas guardadas"}</option>
-                    {plantillasVisibles.map((p) => <option key={p.id} value={p.id}>{p.nombre} · {p.lineas.length} ítem(s) · {p.creadoPor}</option>)}
-                  </Select>
-                </div>
-                {plantillas.length > 0 && (
-                  <div className="qa-field" style={{ minWidth: 140 }}>
-                    <label>Mostrar</label>
-                    <Select value={filtroPlantilla} onChange={(e) => setFiltroPlantilla(e.target.value)}>
-                      <option value="*">Todas</option>
-                      {creadoresPlantillas.map((c) => <option key={c} value={c}>{c === solicitante ? `Mías (${c})` : c}</option>)}
-                    </Select>
-                  </div>
-                )}
-                {lineas.length > 0 && (
-                  <div className="row gap-2" style={{ alignItems: "flex-end", flex: "1 1 240px" }}>
-                    <div className="qa-field" style={{ flex: 1, minWidth: 160 }}>
-                      <label>Guardar estas líneas como plantilla</label>
-                      <input className="ds-form-field__input" placeholder="Nombre de la plantilla…" value={nombrePlantilla}
-                        onChange={(e) => setNombrePlantilla(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") guardarComoPlantilla(); }} />
+              <div className="row row--between wrap gap-3" style={{ alignItems: "center", marginBottom: 12 }}>
+                <div className="row gap-2" style={{ alignItems: "center" }}>
+                  <span className="ds-body-sm ds-strong">Plantillas guardadas</span>
+                  {creadoresPlantillas.length > 1 && (
+                    <div className="seg-mini">
+                      <button type="button" className={filtroPlantilla === solicitante ? "is-active" : ""} onClick={() => setFiltroPlantilla(solicitante)}>Mías</button>
+                      <button type="button" className={filtroPlantilla === "*" ? "is-active" : ""} onClick={() => setFiltroPlantilla("*")}>Todas</button>
                     </div>
+                  )}
+                </div>
+                {lineas.length > 0 && (
+                  <div className="row gap-2" style={{ alignItems: "center" }}>
+                    <input className="ds-form-field__input" style={{ maxWidth: 210, height: 38 }} placeholder="Guardar estas líneas como plantilla…" value={nombrePlantilla}
+                      onChange={(e) => setNombrePlantilla(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") guardarComoPlantilla(); }} />
                     <Button variant="outline" onClick={guardarComoPlantilla}>Guardar</Button>
                   </div>
                 )}
               </div>
               {plantillasVisibles.length > 0 ? (
-                <div className="row wrap gap-2" style={{ marginTop: 14 }}>
-                  <span className="ds-body-sm ds-muted" style={{ alignSelf: "center" }}>Rápidas:</span>
+                <div className="tpl-cards">
                   {plantillasVisibles.map((p) => (
-                    <span key={p.id} className="ds-badge" style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-                      <button type="button" className="linklike" style={{ background: "none", border: "none", cursor: "pointer", padding: 0, font: "inherit", color: "inherit" }}
-                        title="Cargar esta plantilla" onClick={() => cargarPlantilla(String(p.id))}>
-                        {p.nombre} <small className="ds-muted">· {p.lineas.length}</small>
-                      </button>
+                    <div key={p.id} className="tpl-card" role="button" tabIndex={0} title={`Cargar "${p.nombre}"`}
+                      onClick={() => cargarPlantilla(String(p.id))}
+                      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); cargarPlantilla(String(p.id)); } }}>
+                      <span className="tpl-card__name">{p.nombre}</span>
+                      <span className="tpl-card__meta">{p.lineas.length} ítem(s){filtroPlantilla === "*" && p.creadoPor ? ` · ${p.creadoPor}` : ""}</span>
                       {p.creadoPor === solicitante && (
-                        <button type="button" className="icon-btn" style={{ width: 18, height: 18 }} title="Borrar plantilla"
-                          onClick={() => borrarPlantilla(p.id)}>×</button>
+                        <button type="button" className="tpl-card__del" title="Borrar plantilla"
+                          onClick={(e) => { e.stopPropagation(); borrarPlantilla(p.id); }}>×</button>
                       )}
-                    </span>
+                    </div>
                   ))}
                 </div>
               ) : (
-                <p className="ds-body-sm ds-muted" style={{ marginTop: 12, marginBottom: 0 }}>
-                  Descargá la plantilla Excel, llenala en tu compu y subila con Importar — o guardá las líneas de abajo como plantilla para reutilizarlas.
+                <p className="ds-body-sm ds-muted" style={{ margin: 0 }}>
+                  No hay plantillas guardadas todavía. Agregá materiales abajo y guardá la lista, o descargá el Excel para armarla en tu compu.
                 </p>
               )}
             </div>
