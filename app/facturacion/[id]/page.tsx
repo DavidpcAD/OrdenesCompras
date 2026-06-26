@@ -81,14 +81,34 @@ export default function RegistrarFacturaPage() {
       .filter((l) => Number(recibir[l.id] || 0) > 0)
       .map((l) => ({ ordenLineaId: l.id, cantidadRecibida: Number(recibir[l.id]) }));
     if (completaOrden && cargo) lineas.push({ ordenLineaId: cargo.id, cantidadRecibida: cargo.cantidad });
+    // Líneas para BC: cantidad recibida en esta factura por item (solo artículos).
+    const bcLineas = articulo
+      .filter((l) => Number(recibir[l.id] || 0) > 0 && l.articuloId)
+      .map((l) => ({ itemNo: l.articuloId as string, qty: Number(recibir[l.id]) }));
 
     setGuardando(true);
+    let aviso = "";
     try {
+      // Registrar (Recibir + Facturar) en BC con todos sus movimientos contables.
+      if (orden!.bcNumber && bcLineas.length) {
+        try {
+          const r = await fetch("/api/bc/registrar", {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ orderNo: orden!.bcNumber, vendorInvoiceNo: numeroFactura.trim(), lineas: bcLineas }),
+          });
+          const d = await r.json().catch(() => ({}));
+          if (r.ok) aviso = ` · registrada en BC (${d.postedNo ?? "OK"})`;
+          else aviso = ` · NO se pudo registrar en BC: ${d.error ?? r.status}`;
+        } catch (e: any) { aviso = ` · BC no disponible: ${String(e?.message ?? e)}`; }
+      } else if (!orden!.bcNumber) {
+        aviso = " · (la orden no tiene N.º de BC, no se registró en BC)";
+      }
       await registrarRecepcion({
         ordenId: orden!.id, numeroFactura: numeroFactura.trim(),
         fechaFactura, fechaRecepcion, fechaRegistro, total: totalFactura, lineas,
       });
-      toast(`Factura ${numeroFactura} registrada${completaOrden ? " — orden completada" : " (parcial)"}`, "success");
+      const falloBc = aviso.includes("NO se pudo") || aviso.includes("no disponible");
+      toast(`Factura ${numeroFactura} registrada${completaOrden ? " — orden completada" : " (parcial)"}${aviso}`, falloBc ? "info" : "success");
       router.push(`/facturacion`);
     } catch (e: any) {
       toast(String(e?.message ?? e), "error");

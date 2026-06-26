@@ -332,6 +332,29 @@ export async function bcReleasePedido(orderNo: string): Promise<string> {
   return d?.value ?? "Released";
 }
 
+// Registra (Recibir + Facturar) una factura parcial del pedido en BC con todos sus
+// movimientos contables, vía el web service custom AdelantePO_PostInvoice.
+// lines = cantidades recibidas en ESTA factura por item ({itemNo, qty}).
+export async function bcRegistrarFactura(
+  orderNo: string,
+  vendorInvoiceNo: string,
+  lines: { itemNo: string; qty: number }[],
+): Promise<string> {
+  if (!orderNo) throw new Error("Falta el número de pedido de BC.");
+  if (!vendorInvoiceNo) throw new Error("Falta el N.º de factura del proveedor.");
+  const token = await getToken();
+  const cid = await getStdCompanyId();
+  const url = `${odataRoot()}/AdelantePO_PostInvoice?company=${encodeURIComponent(cid)}`;
+  const res = await fetch(url, {
+    method: "POST", cache: "no-store",
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json", Accept: "application/json" },
+    body: JSON.stringify({ orderNo, vendorInvoiceNo, linesJson: JSON.stringify(lines) }),
+  });
+  if (!res.ok) throw new Error(`BC registrar ${res.status}: ${(await res.text()).slice(0, 250)}`);
+  const d: any = await res.json().catch(() => ({}));
+  return d?.value ?? "Registrado";
+}
+
 // Crea el Pedido en BC (queda Abierto) y lo LANZA enseguida -> "Lanzado".
 // Si el create funciona pero el release falla (p.ej. AdelantePO no publicado aún),
 // devuelve el pedido creado con released=false para que la UI avise sin romperse.
