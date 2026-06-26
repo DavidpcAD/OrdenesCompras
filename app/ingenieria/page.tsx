@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useRef, useState } from "react";
 import { AppShell } from "@/components/shell";
-import { Badge, Button, Card, Tile } from "@/components/ui";
+import { Badge, Button, Card, QtyRing, Tile } from "@/components/ui";
 import { useStore } from "@/lib/store";
 import { formatDate, pedidoBadge, recibidoDeLineaPedido } from "@/lib/helpers";
 
@@ -143,13 +143,12 @@ export default function IngenieriaPage() {
                       <td><Badge tone={b.tone}>{b.label}</Badge></td>
                       <td>
                         {(() => {
-                          const pct = entregadoPct(p);
+                          const total = p.lineas.reduce((s, l) => s + l.cantidad, 0);
+                          const rec = p.lineas.reduce((s, l) => s + recibidoDeLineaPedido(ordenes, l.id), 0);
                           return (
-                            <div className="row gap-2" style={{ alignItems: "center", minWidth: 96 }}>
-                              <div style={{ flex: 1, minWidth: 48, height: 6, borderRadius: 4, background: "var(--ds-color-gray-100)", overflow: "hidden" }}>
-                                <div style={{ width: `${pct}%`, height: "100%", background: pct >= 100 ? "var(--ds-color-green-200)" : "var(--ds-color-green-100)" }} />
-                              </div>
-                              <span className="ds-body-sm ds-muted" style={{ minWidth: 30, textAlign: "right" }}>{pct}%</span>
+                            <div className="row gap-3" style={{ alignItems: "center" }}>
+                              <QtyRing recibida={rec} total={total} />
+                              <span className="ds-body-sm ds-muted">{entregadoPct(p)}%</span>
                             </div>
                           );
                         })()}
