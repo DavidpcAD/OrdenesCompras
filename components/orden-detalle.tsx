@@ -2,7 +2,7 @@
 
 import { Fragment, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Badge, Card } from "@/components/ui";
+import { Badge, Card, useToast } from "@/components/ui";
 import { OrderLinesTable } from "@/components/order-lines";
 import { Timeline } from "@/components/timeline";
 import { useStore } from "@/lib/store";
@@ -24,7 +24,29 @@ export function OrdenDetalle({
 }) {
   const { proveedores, recepciones } = useStore();
   const router = useRouter();
+  const toast = useToast();
   const [verFactura, setVerFactura] = useState<string | null>(null);
+  const [relanzando, setRelanzando] = useState(false);
+
+  // Reintenta el Release en BC de un pedido YA creado (no duplica). Útil cuando el
+  // binding S2S del Sandbox parpadeó justo al aprobar y quedó en "Abierto".
+  async function reintentarLanzar() {
+    if (!orden.bcNumber) return;
+    setRelanzando(true);
+    try {
+      const r = await fetch("/api/bc/release", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ orderNo: orden.bcNumber }),
+      });
+      const d = await r.json().catch(() => ({}));
+      if (r.ok) toast(`BC ${orden.bcNumber}: ${d.status ?? "lanzado"}`, "success");
+      else toast(`No se pudo lanzar en BC: ${d.error ?? r.status}`, "error");
+    } catch (e: any) {
+      toast(`No se pudo lanzar en BC: ${String(e?.message ?? e)}`, "error");
+    } finally {
+      setRelanzando(false);
+    }
+  }
 
   const prov = proveedores.find((p) => p.id === orden.proveedorId);
   const b = ordenBadge(orden.estado);
@@ -57,6 +79,10 @@ export function OrdenDetalle({
           {orden.bcDeepLink && (
             <button className="link-btn" title="Abrir el Pedido en Business Central (editar · vista previa de registro · registrar)"
               onClick={() => window.open(orden.bcDeepLink!, "_blank")}>↗ Abrir en BC</button>
+          )}
+          {orden.bcNumber && (
+            <button className="link-btn" disabled={relanzando} title="Reintentar el lanzamiento (Release) en BC del pedido ya creado"
+              onClick={reintentarLanzar}>{relanzando ? "Lanzando…" : "↻ Reintentar lanzar en BC"}</button>
           )}
           {acciones}
         </div>

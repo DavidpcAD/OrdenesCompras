@@ -38,7 +38,7 @@ export default function AprobacionOrdenDetallePage() {
         if (res.ok) {
           bcNumber = d.number || bcNumber;
           bcDeepLink = d.deepLink || bcDeepLink;
-          if (d.released === false) aviso = " · creada en BC como Abierto, no se pudo lanzar (publicá AdelantePO)";
+          if (d.released === false) aviso = ` · creada en BC (${bcNumber}) como Abierto, no se pudo lanzar: ${d.releaseError ?? "error desconocido"}. Usá "Reintentar lanzar en BC".`;
           else if (bcNumber) aviso = ` · creada y lanzada en BC (${bcNumber})`;
           if (Array.isArray(d.omitidas) && d.omitidas.length) aviso += `. Omitidas en BC: ${d.omitidas.join(", ")}`;
         } else {
