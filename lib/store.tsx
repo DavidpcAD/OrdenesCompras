@@ -66,7 +66,7 @@ interface StoreShape {
   deletePedido: (id: string) => Promise<void>;
 
   createOrden: (input: NewOrdenInput) => Promise<Orden>;
-  setOrdenEstado: (id: string, estado: Orden["estado"]) => Promise<void>;
+  setOrdenEstado: (id: string, estado: Orden["estado"], extra?: { bcNumber?: string; bcDeepLink?: string }) => Promise<void>;
 
   registrarRecepcion: (input: RegistrarRecepcionInput) => Promise<Recepcion>;
 
@@ -257,6 +257,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
           id: uid(), numero, proveedorId: input.proveedorId, fecha: todayISO(),
           fechaRecepEsperada: input.fechaRecepEsperada, currencyCode: input.currencyCode,
           estado: "abierto", versionesArchivadas: 0, lineas,
+          proveedorNo: input.proveedorNo, proveedorNombre: input.proveedorNombre,
           bcNumber: input.bcNumber, bcDeepLink: input.bcDeepLink,
         };
         const pedidos = d.pedidos.map((p) => {
@@ -278,7 +279,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     };
 
     // ---------------- SET ORDEN ESTADO ----------------
-    const setOrdenEstado: StoreShape["setOrdenEstado"] = async (id, estado) => {
+    const setOrdenEstado: StoreShape["setOrdenEstado"] = async (id, estado, extra) => {
       if (USE_API) {
         await api.patchOrdenEstado(id, { estado, usuario: persona, rol: rolActual });
         await refreshFromApi();
@@ -287,8 +288,8 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       setData((d) => {
         const prevo = d.ordenes.find((o) => o.id === id);
         const tipo = estado === "pendiente_aprobacion" ? "enviado_aprobacion" : estado === "lanzado" ? "aprobado_lanzado" : estado === "abierto" ? "reabierto" : estado === "completado" ? "completado" : estado;
-        const mov = mkMov({ entidad: "orden", idEntidad: id, documentoNo: prevo?.numero ?? "", tipoMovimiento: tipo, estadoAnterior: prevo?.estado, estadoNuevo: estado });
-        return { ...d, ordenes: d.ordenes.map((o) => (o.id === id ? { ...o, estado } : o)), movimientos: [mov, ...d.movimientos] };
+        const mov = mkMov({ entidad: "orden", idEntidad: id, documentoNo: prevo?.numero ?? "", tipoMovimiento: tipo, estadoAnterior: prevo?.estado, estadoNuevo: estado, detalle: extra?.bcNumber ? `BC ${extra.bcNumber}` : undefined });
+        return { ...d, ordenes: d.ordenes.map((o) => (o.id === id ? { ...o, estado, bcNumber: extra?.bcNumber ?? o.bcNumber, bcDeepLink: extra?.bcDeepLink ?? o.bcDeepLink } : o)), movimientos: [mov, ...d.movimientos] };
       });
     };
 

@@ -128,54 +128,6 @@ export default function ArmarOrdenPage() {
     }
   }
 
-  // "Enviar a aprobación" (Angie): crea el Pedido en BC con estas líneas y deja la
-  // orden local en estado pendiente de aprobación. En modo mock (sin BC) sigue
-  // solo en local para no bloquear el flujo. (La vista previa/registro es de Bodega.)
-  async function enviarAprobacion() {
-    if (!puedeCrear) { toast("Seleccioná un proveedor.", "error"); return; }
-    setGuardando(true);
-    try {
-      const lineasBc = rows
-        .filter((r) => r.articuloId && Number(r.cantidad) > 0)
-        .map((r) => ({ itemNo: r.articuloId, cantidad: Number(r.cantidad), precio: Number(r.precio) || 0, descripcion: r.descripcion }));
-      let bcNumber = "";
-      let bcDeepLink = "";
-      let omitidas: string[] = [];
-      if (provSel?.code && lineasBc.length) {
-        try {
-          const res = await fetch("/api/bc/ordenes", {
-            method: "POST", headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ vendorNo: provSel.code, currencyCode: currency, lineas: lineasBc }),
-          });
-          const data = await res.json().catch(() => ({}));
-          if (res.ok) { bcNumber = data.number || ""; bcDeepLink = data.deepLink || ""; omitidas = Array.isArray(data.omitidas) ? data.omitidas : []; }
-        } catch { /* BC no disponible (mock): seguimos solo local */ }
-      }
-      const ls: Omit<OrdenLinea, "id" | "cantidadRecibida" | "cantidadFacturada">[] = rows.map((r) => ({
-        tipo: "articulo", articuloId: r.articuloId, pedidoLineaId: r.pedidoLineaId, pedidoNumero: r.pedidoNumero,
-        descripcion: r.descripcion, cantidad: Number(r.cantidad), unidad: r.unidad, almacen: r.almacen,
-        precioUnitario: Number(r.precio), ivaPct: Number(r.iva) || 0, descuentoPct: Number(r.descuento) || 0,
-        proyecto: r.proyecto || undefined, taskNo: r.tarea || undefined,
-      }));
-      if (fleteNum > 0) {
-        ls.push({ tipo: "cargo", descripcion: "FLETE / TRANSPORTE", cantidad: 1, unidad: "UND",
-          almacen: rows[0].almacen, precioUnitario: fleteNum, ivaPct: 13 });
-      }
-      const orden = await createOrden({ proveedorId, proveedorNo: provSel?.code, proveedorNombre: provSel?.nombre, currencyCode: currency, bcNumber: bcNumber || undefined, bcDeepLink: bcDeepLink || undefined, lineas: ls });
-      await setOrdenEstado(orden.id, "pendiente_aprobacion");
-      setBorrador([]);
-      if (omitidas.length) {
-        toast(`Orden ${bcNumber || orden.numero} enviada a aprobación. En BC se omitieron ${omitidas.length} línea(s) por item inexistente: ${omitidas.join(", ")}`, "success");
-      } else {
-        toast(`Orden ${bcNumber || orden.numero} enviada a aprobación${bcNumber ? " · creada en BC" : ""}`, "success");
-      }
-      router.push(`/proveeduria/ordenes/${orden.id}`);
-    } catch (e: any) {
-      toast(String(e?.message ?? e), "error");
-      setGuardando(false);
-    }
-  }
-
   return (
     <AppShell role="proveeduria">
       <main className="page page--wide" style={{ paddingBottom: 120 }}>
@@ -276,7 +228,7 @@ export default function ArmarOrdenPage() {
           <span className="ds-muted">{rows.length} línea(s) · {pedidosDistintos.length} pedido(s) · <span className="ds-strong">{money(total, currency)}</span></span>
           <div className="row gap-3">
             <Button variant="outline" onClick={() => crear(false)} disabled={!puedeCrear || guardando}>Guardar como abierta</Button>
-            <Button onClick={enviarAprobacion} disabled={!puedeCrear || guardando}>{guardando ? "Enviando…" : "Enviar a aprobación"}</Button>
+            <Button onClick={() => crear(true)} disabled={!puedeCrear || guardando}>{guardando ? "Enviando…" : "Enviar a aprobación"}</Button>
           </div>
         </div>
       </div>

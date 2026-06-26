@@ -16,7 +16,39 @@ export default function AprobacionOrdenDetallePage() {
     return <AppShell role="aprobacion"><main className="page"><div className="empty">Orden no encontrada.</div></main></AppShell>;
   }
 
-  async function aprobar() { await setOrdenEstado(orden!.id, "lanzado"); toast(`${orden!.numero} aprobada y lanzada`, "success"); }
+  // Aprobar (Luis Roberto): recién aquí el pedido viaja a BC y entra directo como
+  // "Lanzado" (la app lo crea y lo libera en un paso vía /api/bc/lanzar). Si BC no
+  // está disponible o AdelantePO no está publicado, no se bloquea: la orden queda
+  // lanzada localmente y se avisa.
+  async function aprobar() {
+    const o = orden!;
+    const lineasBc = o.lineas
+      .filter((l) => l.tipo === "articulo" && l.articuloId && l.cantidad > 0)
+      .map((l) => ({ itemNo: l.articuloId!, cantidad: l.cantidad, precio: l.precioUnitario || 0, descripcion: l.descripcion }));
+    let bcNumber = o.bcNumber ?? "";
+    let bcDeepLink = o.bcDeepLink ?? "";
+    let aviso = "";
+    if (o.proveedorNo && lineasBc.length) {
+      try {
+        const res = await fetch("/api/bc/lanzar", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ vendorNo: o.proveedorNo, currencyCode: o.currencyCode, lineas: lineasBc }),
+        });
+        const d = await res.json().catch(() => ({}));
+        if (res.ok) {
+          bcNumber = d.number || bcNumber;
+          bcDeepLink = d.deepLink || bcDeepLink;
+          if (d.released === false) aviso = " · creada en BC como Abierto, no se pudo lanzar (publicá AdelantePO)";
+          else if (bcNumber) aviso = ` · creada y lanzada en BC (${bcNumber})`;
+          if (Array.isArray(d.omitidas) && d.omitidas.length) aviso += `. Omitidas en BC: ${d.omitidas.join(", ")}`;
+        } else {
+          aviso = ` · no se pudo crear en BC (${d.error ?? res.status})`;
+        }
+      } catch { aviso = " · BC no disponible, quedó lanzada solo localmente"; }
+    }
+    await setOrdenEstado(o.id, "lanzado", { bcNumber: bcNumber || undefined, bcDeepLink: bcDeepLink || undefined });
+    toast(`${bcNumber || o.numero} aprobada y lanzada${aviso}`, "success");
+  }
   async function rechazar() { await setOrdenEstado(orden!.id, "abierto"); toast(`${orden!.numero} devuelta a proveeduría`, "info"); }
 
   const acciones = orden.estado === "pendiente_aprobacion" ? (

@@ -307,6 +307,45 @@ export async function bcCrearPedido(input: { vendorNo: string; currencyCode?: st
   return { number: po.number ?? "", id: po.id ?? "", omitidas };
 }
 
+// Raíz OData V4 (para los web services de codeunit custom, p.ej. AdelantePO).
+function odataRoot(): string {
+  const { tenant, environment } = tenantYEntorno();
+  return `https://api.businesscentral.dynamics.com/v2.0/${tenant}/${environment}/ODataV4`;
+}
+
+// Lanza (Release) un Pedido de compra en BC -> estado "Lanzado".
+// La API estándar v2.0 NO puede liberar un pedido; se hace por el web service
+// del codeunit custom "Adelante PO Actions" (publicado como "AdelantePO").
+// Procedimiento esperado: AdelantePO_ReleaseOrder(orderNo) -> Text (status).
+export async function bcReleasePedido(orderNo: string): Promise<string> {
+  if (!orderNo) throw new Error("Falta el número de pedido para lanzar.");
+  const token = await getToken();
+  const cid = await getStdCompanyId();
+  const url = `${odataRoot()}/AdelantePO_ReleaseOrder?company=${encodeURIComponent(cid)}`;
+  const res = await fetch(url, {
+    method: "POST", cache: "no-store",
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json", Accept: "application/json" },
+    body: JSON.stringify({ orderNo }),
+  });
+  if (!res.ok) throw new Error(`BC release ${res.status}: ${(await res.text()).slice(0, 250)}`);
+  const d: any = await res.json().catch(() => ({}));
+  return d?.value ?? "Released";
+}
+
+// Crea el Pedido en BC (queda Abierto) y lo LANZA enseguida -> "Lanzado".
+// Si el create funciona pero el release falla (p.ej. AdelantePO no publicado aún),
+// devuelve el pedido creado con released=false para que la UI avise sin romperse.
+export async function bcCrearYLanzarPedido(input: { vendorNo: string; currencyCode?: string; lineas: NuevaLineaBc[] }):
+  Promise<{ number: string; id: string; omitidas: string[]; released: boolean; releaseError?: string }> {
+  const { number, id, omitidas } = await bcCrearPedido(input);
+  try {
+    await bcReleasePedido(number);
+    return { number, id, omitidas, released: true };
+  } catch (e: any) {
+    return { number, id, omitidas, released: false, releaseError: String(e?.message ?? e) };
+  }
+}
+
 // Deep link al Pedido recién creado, en la lista de Pedidos de compra de BC.
 export function bcDeepLinkPedido(numero: string): string {
   const { tenant, environment } = tenantYEntorno();

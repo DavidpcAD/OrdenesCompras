@@ -122,6 +122,8 @@ export interface Orden {
   id: string;
   numero: string;           // CP-000862
   proveedorId: string;
+  proveedorNo?: string;     // código BC del proveedor (PROV-…) para crear el pedido en BC al aprobar
+  proveedorNombre?: string;
   fecha: string;            // ISO emisión
   fechaRecepEsperada?: string;
   currencyCode: string;     // "" = CRC, "USD"
