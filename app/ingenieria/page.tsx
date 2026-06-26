@@ -6,7 +6,7 @@ import { useRef, useState } from "react";
 import { AppShell } from "@/components/shell";
 import { Badge, Button, Card, Tile } from "@/components/ui";
 import { useStore } from "@/lib/store";
-import { destinoLabel, formatDate, pedidoBadge, recibidoDeLineaPedido } from "@/lib/helpers";
+import { formatDate, pedidoBadge, recibidoDeLineaPedido } from "@/lib/helpers";
 
 type Filtro = "todas" | "material" | "repuesto" | "aprobado";
 
@@ -39,13 +39,17 @@ export default function IngenieriaPage() {
   const repuesto = pedidos.filter((p) => p.tipoSolicitud === "repuesto").length;
   const aprobados = pedidos.filter((p) => p.estado === "aprobado").length;
 
-  const COLS = ["num", "tipo", "destino", "solicitante", "fecha", "lineas", "prioridad", "estado", "entregado"];
+  const COLS = ["num", "tipo", "destino", "comentario", "solicitante", "fecha", "lineas", "prioridad", "estado", "entregado"];
   const prioLabel = (p: typeof pedidos[number]) => p.prioridad === "urgente" ? "Urgente" : p.prioridad === "alta" ? "Alta" : "Normal";
+  // Código y nombre del destino (obra o máquina) de un pedido.
+  const destCodigo = (p: typeof pedidos[number]) => (p.tipoSolicitud === "repuesto" ? p.maquinaNo : p.obraCodigo) ?? "—";
+  const destNombre = (p: typeof pedidos[number]) => (p.tipoSolicitud === "repuesto" ? p.maquinaNombre : p.obraNombre) ?? "";
   const cellText = (p: typeof pedidos[number], k: string): string => {
     switch (k) {
       case "num": return p.numero;
       case "tipo": return p.tipoSolicitud === "repuesto" ? "Repuesto" : "Material";
-      case "destino": return destinoLabel(p);
+      case "destino": return `${destCodigo(p)} ${destNombre(p)}`.trim();
+      case "comentario": return p.notas ?? "";
       case "solicitante": return p.solicitante;
       case "fecha": return formatDate(p.fecha);
       case "lineas": return String(p.lineas.length);
@@ -100,7 +104,7 @@ export default function IngenieriaPage() {
             <table className="ds-table">
               <thead>
                 <tr>
-                  <th>N.º</th><th>Tipo</th><th>Destino</th><th>Solicitante</th><th>Fecha</th>
+                  <th>N.º</th><th>Tipo</th><th>Destino</th><th>Comentario</th><th>Solicitante</th><th>Fecha</th>
                   <th className="ds-num">Líneas</th><th>Prioridad</th><th>Estado</th><th>Entregado</th><th></th>
                 </tr>
                 <tr>
@@ -115,7 +119,7 @@ export default function IngenieriaPage() {
               </thead>
               <tbody>
                 {filtradas.length === 0 && (
-                  <tr><td colSpan={10}><div className="empty">{pedidos.length === 0 ? "Aún no hay solicitudes. Creá la primera." : "Ninguna solicitud coincide con los filtros."}</div></td></tr>
+                  <tr><td colSpan={11}><div className="empty">{pedidos.length === 0 ? "Aún no hay solicitudes. Creá la primera." : "Ninguna solicitud coincide con los filtros."}</div></td></tr>
                 )}
                 {visibles.map((p) => {
                   const b = pedidoBadge(p.estado);
@@ -123,7 +127,11 @@ export default function IngenieriaPage() {
                     <tr key={p.id} className="is-clickable" onClick={() => router.push(`/ingenieria/${p.id}`)}>
                       <td className="ds-strong">{p.numero}</td>
                       <td>{p.tipoSolicitud === "repuesto" ? <Badge tone="yellow">Repuesto</Badge> : <Badge tone="green">Material</Badge>}</td>
-                      <td>{destinoLabel(p)}</td>
+                      <td>
+                        <div className="ds-strong ds-body-sm">{destCodigo(p)}</div>
+                        {destNombre(p) && <div className="ds-muted ds-body-sm ds-truncate" style={{ maxWidth: 160 }} title={destNombre(p)}>{destNombre(p)}</div>}
+                      </td>
+                      <td><div className="ds-body-sm ds-muted ds-truncate" style={{ maxWidth: 200 }} title={p.notas ?? ""}>{p.notas ? p.notas : "—"}</div></td>
                       <td>{p.solicitante}</td>
                       <td>{formatDate(p.fecha)}</td>
                       <td className="ds-num">{p.lineas.length}</td>
