@@ -242,6 +242,29 @@ export function SolicitudForm({
     }
   }
 
+  // Descargar una plantilla en Excel: hoja "Solicitud" con las columnas que el
+  // importador entiende (Código / Obra / Cantidad) — precargada con las líneas
+  // actuales si las hay — más una hoja "Catálogo BC" para buscar códigos. Se edita
+  // en local (agregar filas) y se vuelve a subir con "Importar Excel".
+  function descargarExcel() {
+    const filas = lineas.length
+      ? lineas.map((l) => {
+          const a = catArticulos.find((x) => x.id === l.articuloId);
+          return { Codigo: a?.code ?? "", Descripcion: a?.descripcion ?? "", Obra: l.obraCodigo ?? "", Cantidad: Number(l.cantidad) || 0 };
+        })
+      : [{ Codigo: catArticulos[0]?.code ?? "", Descripcion: "(ejemplo — podés borrar esta fila)", Obra: catObras[0]?.codigo ?? "", Cantidad: 1 }];
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.json_to_sheet(filas, { header: ["Codigo", "Descripcion", "Obra", "Cantidad"] });
+    ws["!cols"] = [{ wch: 16 }, { wch: 48 }, { wch: 14 }, { wch: 10 }];
+    XLSX.utils.book_append_sheet(wb, ws, "Solicitud");
+    const cat = catArticulos.map((a) => ({ Codigo: a.code, Descripcion: a.descripcion, Unidad: a.unidad }));
+    const wsCat = XLSX.utils.json_to_sheet(cat, { header: ["Codigo", "Descripcion", "Unidad"] });
+    wsCat["!cols"] = [{ wch: 16 }, { wch: 52 }, { wch: 10 }];
+    XLSX.utils.book_append_sheet(wb, wsCat, "Catalogo BC");
+    XLSX.writeFile(wb, `plantilla-solicitud-${new Date().toISOString().slice(0, 10)}.xlsx`);
+    toast(lineas.length ? "Plantilla descargada con tus líneas actuales." : "Plantilla en blanco descargada. Llenala y subila con Importar Excel.", "success");
+  }
+
   // ---- Plantillas (SQL) ----
   async function guardarComoPlantilla() {
     const nombre = nombrePlantilla.trim();
@@ -374,18 +397,29 @@ export function SolicitudForm({
         </p>
 
         {esMaterial && (
-          <div style={{ marginBottom: 16, padding: 14, borderRadius: 14, border: "1.5px solid var(--ds-color-gray-100)", background: "color-mix(in srgb, var(--ds-color-green-100) 7%, #fff)" }}>
-            <div className="row row--between wrap gap-3" style={{ alignItems: "flex-end" }}>
-              <div className="row wrap gap-2" style={{ alignItems: "flex-end" }}>
-                <div className="qa-field" style={{ minWidth: 250 }}>
-                  <label>📋 Cargar plantilla</label>
+          <div style={{ marginBottom: 16, borderRadius: 14, border: "1.5px solid var(--ds-color-gray-100)", background: "color-mix(in srgb, var(--ds-color-green-100) 6%, #fff)", overflow: "hidden" }}>
+            {/* Encabezado: título + acciones de Excel */}
+            <div className="row row--between wrap gap-2" style={{ alignItems: "center", padding: "10px 14px", borderBottom: "1.5px solid var(--ds-color-gray-100)", background: "color-mix(in srgb, var(--ds-color-green-100) 10%, #fff)" }}>
+              <span className="ds-strong ds-body-sm">📋 Plantillas y Excel</span>
+              <div className="row gap-2" style={{ alignItems: "center" }}>
+                <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" style={{ display: "none" }}
+                  onChange={(e) => { const f = e.target.files?.[0]; if (f) importarExcel(f); }} />
+                <Button variant="outline" onClick={descargarExcel}>⬇ Descargar Excel</Button>
+                <Button variant="outline" onClick={() => fileRef.current?.click()}>⬆ Importar Excel</Button>
+              </div>
+            </div>
+            {/* Cuerpo: cargar / guardar plantilla */}
+            <div style={{ padding: 14 }}>
+              <div className="row wrap gap-3" style={{ alignItems: "flex-end" }}>
+                <div className="qa-field" style={{ flex: "1 1 240px", minWidth: 220 }}>
+                  <label>Cargar plantilla guardada</label>
                   <Select value="" onChange={(e) => { if (e.target.value) cargarPlantilla(e.target.value); }}>
                     <option value="">{plantillasVisibles.length ? "Elegí una plantilla…" : "Aún no hay plantillas guardadas"}</option>
                     {plantillasVisibles.map((p) => <option key={p.id} value={p.id}>{p.nombre} · {p.lineas.length} ítem(s) · {p.creadoPor}</option>)}
                   </Select>
                 </div>
                 {plantillas.length > 0 && (
-                  <div className="qa-field" style={{ minWidth: 150 }}>
+                  <div className="qa-field" style={{ minWidth: 140 }}>
                     <label>Mostrar</label>
                     <Select value={filtroPlantilla} onChange={(e) => setFiltroPlantilla(e.target.value)}>
                       <option value="*">Todas</option>
@@ -393,42 +427,39 @@ export function SolicitudForm({
                     </Select>
                   </div>
                 )}
-                <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" style={{ display: "none" }}
-                  onChange={(e) => { const f = e.target.files?.[0]; if (f) importarExcel(f); }} />
-                <Button variant="outline" onClick={() => fileRef.current?.click()}>Importar Excel</Button>
-              </div>
-              {lineas.length > 0 && (
-                <div className="row gap-2" style={{ alignItems: "flex-end" }}>
-                  <div className="qa-field" style={{ minWidth: 200 }}>
-                    <label>Guardar estas líneas como plantilla</label>
-                    <input className="ds-form-field__input" placeholder="Nombre de la plantilla…" value={nombrePlantilla}
-                      onChange={(e) => setNombrePlantilla(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") guardarComoPlantilla(); }} />
+                {lineas.length > 0 && (
+                  <div className="row gap-2" style={{ alignItems: "flex-end", flex: "1 1 240px" }}>
+                    <div className="qa-field" style={{ flex: 1, minWidth: 160 }}>
+                      <label>Guardar estas líneas como plantilla</label>
+                      <input className="ds-form-field__input" placeholder="Nombre de la plantilla…" value={nombrePlantilla}
+                        onChange={(e) => setNombrePlantilla(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") guardarComoPlantilla(); }} />
+                    </div>
+                    <Button variant="outline" onClick={guardarComoPlantilla}>Guardar</Button>
                   </div>
-                  <Button variant="outline" onClick={guardarComoPlantilla}>Guardar</Button>
+                )}
+              </div>
+              {plantillasVisibles.length > 0 ? (
+                <div className="row wrap gap-2" style={{ marginTop: 14 }}>
+                  <span className="ds-body-sm ds-muted" style={{ alignSelf: "center" }}>Rápidas:</span>
+                  {plantillasVisibles.map((p) => (
+                    <span key={p.id} className="ds-badge" style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                      <button type="button" className="linklike" style={{ background: "none", border: "none", cursor: "pointer", padding: 0, font: "inherit", color: "inherit" }}
+                        title="Cargar esta plantilla" onClick={() => cargarPlantilla(String(p.id))}>
+                        {p.nombre} <small className="ds-muted">· {p.lineas.length}</small>
+                      </button>
+                      {p.creadoPor === solicitante && (
+                        <button type="button" className="icon-btn" style={{ width: 18, height: 18 }} title="Borrar plantilla"
+                          onClick={() => borrarPlantilla(p.id)}>×</button>
+                      )}
+                    </span>
+                  ))}
                 </div>
+              ) : (
+                <p className="ds-body-sm ds-muted" style={{ marginTop: 12, marginBottom: 0 }}>
+                  Descargá la plantilla Excel, llenala en tu compu y subila con Importar — o guardá las líneas de abajo como plantilla para reutilizarlas.
+                </p>
               )}
             </div>
-            {plantillasVisibles.length > 0 ? (
-              <div className="row wrap gap-2" style={{ marginTop: 12 }}>
-                <span className="ds-body-sm ds-muted" style={{ alignSelf: "center" }}>Rápidas:</span>
-                {plantillasVisibles.map((p) => (
-                  <span key={p.id} className="ds-badge" style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-                    <button type="button" className="linklike" style={{ background: "none", border: "none", cursor: "pointer", padding: 0, font: "inherit", color: "inherit" }}
-                      title="Cargar esta plantilla" onClick={() => cargarPlantilla(String(p.id))}>
-                      {p.nombre} <small className="ds-muted">· {p.lineas.length}</small>
-                    </button>
-                    {p.creadoPor === solicitante && (
-                      <button type="button" className="icon-btn" style={{ width: 18, height: 18 }} title="Borrar plantilla"
-                        onClick={() => borrarPlantilla(p.id)}>×</button>
-                    )}
-                  </span>
-                ))}
-              </div>
-            ) : (
-              <p className="ds-body-sm ds-muted" style={{ marginTop: 10, marginBottom: 0 }}>
-                Todavía no hay plantillas. Agregá materiales abajo y guardalos como plantilla para reutilizarlos después.
-              </p>
-            )}
           </div>
         )}
 
