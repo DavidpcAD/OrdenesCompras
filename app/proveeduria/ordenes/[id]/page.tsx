@@ -1,6 +1,6 @@
 "use client";
 
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { AppShell } from "@/components/shell";
 import { Button, useToast } from "@/components/ui";
 import { OrdenDetalle } from "@/components/orden-detalle";
@@ -8,6 +8,7 @@ import { useStore } from "@/lib/store";
 
 export default function ProvOrdenDetallePage() {
   const { id } = useParams<{ id: string }>();
+  const router = useRouter();
   const toast = useToast();
   const { ordenes, setOrdenEstado } = useStore();
 
@@ -24,7 +25,10 @@ export default function ProvOrdenDetallePage() {
   const acciones = (
     <>
       {orden.estado === "abierto" && (
-        <Button onClick={() => act("pendiente_aprobacion", `${orden.numero} enviada a aprobación`)}>Enviar a aprobación</Button>
+        <>
+          <Button variant="outline" onClick={() => router.push(`/proveeduria/ordenes/${orden.id}/editar`)}>Editar</Button>
+          <Button onClick={() => act("pendiente_aprobacion", `${orden.numero} enviada a aprobación`)}>Enviar a aprobación</Button>
+        </>
       )}
       {orden.estado === "pendiente_aprobacion" && (
         <>

@@ -38,6 +38,9 @@ export default function PedidoDetallePage() {
             <p className="ds-muted">{destinoLabel(pedido)} · {pedido.solicitante} · {formatDate(pedido.fecha)}</p>
           </div>
           <div className="row gap-3">
+            <Button variant="outline" title="Crear una solicitud nueva con las mismas líneas" onClick={() => router.push(`/ingenieria/copiar/${pedido.id}`)}>
+              ⧉ Copiar
+            </Button>
             {pedido.estado === "borrador" && (
               <>
                 <Button variant="outline" onClick={async () => { await deletePedido(pedido.id); toast("Pedido eliminado"); router.push("/ingenieria"); }}>

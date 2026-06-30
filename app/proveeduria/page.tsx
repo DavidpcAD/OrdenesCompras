@@ -6,7 +6,7 @@ import { AppShell } from "@/components/shell";
 import { Badge, Button, Card, Modal, useToast } from "@/components/ui";
 import { IconEye } from "@/components/icons";
 import { useStore } from "@/lib/store";
-import { destinoLabel, money, num, pedidoLineaPendiente } from "@/lib/helpers";
+import { destinoLabel, destinoCodigo, money, num, pedidoLineaPendiente } from "@/lib/helpers";
 
 interface Row {
   pedidoId: string;
@@ -61,6 +61,7 @@ export default function ProveeduriaMaterialesPage() {
   if (baseKey !== lastKey) { setRows(baseRows); setLastKey(baseKey); }
 
   const [filtro, setFiltro] = useState<string>("all");
+  const [pedFiltro, setPedFiltro] = useState("");
   const [previewId, setPreviewId] = useState<string | null>(null);
   // Filtros por columna estilo Excel (una caja por columna)
   const [colF, setColF] = useState<Record<string, string>>({});
@@ -114,6 +115,19 @@ export default function ProveeduriaMaterialesPage() {
     router.push("/proveeduria/nueva");
   }
 
+  // Convertir TODO un pedido (sus líneas pendientes) en una orden de compra.
+  function convertirPedido(p: typeof pedidos[number]) {
+    const lineas = p.lineas
+      .filter((l) => pedidoLineaPendiente(l) > 0)
+      .map((l) => {
+        const a = articulos.find((x) => x.id === l.articuloId);
+        return { pedidoLineaId: l.id, cantidad: pedidoLineaPendiente(l), precio: a?.precioReferencia ?? 0, iva: 13 };
+      });
+    if (!lineas.length) { toast("Este pedido no tiene líneas pendientes por ordenar.", "error"); return; }
+    setBorrador(lineas);
+    router.push("/proveeduria/nueva");
+  }
+
   const preview = previewId ? pedidos.find((p) => p.id === previewId) : null;
 
   return (
@@ -134,7 +148,9 @@ export default function ProveeduriaMaterialesPage() {
         ) : (
         <div className="md-layout mt-2">
           {/* pedidos */}
-          <div className="md-list">
+          <div className="md-list" style={{ maxHeight: "calc(100vh - 210px)", overflowY: "auto", paddingRight: 4 }}>
+            <input value={pedFiltro} onChange={(e) => setPedFiltro(e.target.value)} placeholder="Filtrar pedido u obra…"
+              style={{ width: "100%", boxSizing: "border-box", marginBottom: 8, borderRadius: 8, padding: "7px 10px", fontSize: 13, font: "inherit", border: "1.5px solid var(--ds-color-gray-100)", background: "#fff", position: "sticky", top: 0, zIndex: 1 }} />
             <button className={`md-item ${filtro === "all" ? "is-active" : ""}`} onClick={() => setFiltro("all")}>
               <div className="md-item__top">
                 <span className="ds-strong">Todos los pedidos</span>
@@ -142,7 +158,9 @@ export default function ProveeduriaMaterialesPage() {
               </div>
               <span className="ds-body-sm ds-muted">Ver todas las líneas pendientes</span>
             </button>
-            {pedidosConSaldo.map((p) => {
+            {pedidosConSaldo
+              .filter((p) => { const q = pedFiltro.trim().toLowerCase(); return !q || p.numero.toLowerCase().includes(q) || destinoCodigo(p).toLowerCase().includes(q) || destinoLabel(p).toLowerCase().includes(q); })
+              .map((p) => {
               const n = p.lineas.filter((l) => pedidoLineaPendiente(l) > 0).length;
               const sel = seleccionPorPedido(p.id);
               return (
@@ -155,7 +173,7 @@ export default function ProveeduriaMaterialesPage() {
                     </span>
                   </div>
                   <span className="ds-body-sm ds-muted ds-truncate" style={{ maxWidth: 200 }}>
-                    {p.tipoSolicitud === "repuesto" ? "Repuesto · " : "Material · "}{destinoLabel(p)}
+                    {p.tipoSolicitud === "repuesto" ? "Repuesto · " : "Material · "}<span className="ds-strong">{destinoCodigo(p)}</span> {destinoLabel(p)}
                   </span>
                 </div>
               );
@@ -177,7 +195,7 @@ export default function ProveeduriaMaterialesPage() {
                         ref={(el) => { if (el) el.indeterminate = someVisibleSel && !allVisibleSel; }}
                         onChange={(e) => toggleAllVisible(e.target.checked)} />
                     </th>
-                    <th>Pedido</th><th>Artículo</th><th>Almacén</th>
+                    <th>Pedido</th><th>Artículo</th><th>Obra</th>
                     <th className="ds-num">Pend.</th><th className="ds-num">A ordenar</th>
                     <th className="ds-num">Precio</th><th className="ds-num">IVA%</th><th className="ds-num">Importe</th>
                   </tr>
@@ -259,7 +277,7 @@ export default function ProveeduriaMaterialesPage() {
           </div>
           <div className="ds-table-wrap" style={{ boxShadow: "none", border: "1.5px solid var(--ds-color-gray-100)" }}>
             <table className="ds-table">
-              <thead><tr><th>Artículo</th><th>Almacén</th><th className="ds-num">Solicitado</th><th className="ds-num">Pendiente</th></tr></thead>
+              <thead><tr><th>Artículo</th><th>Obra</th><th className="ds-num">Solicitado</th><th className="ds-num">Pendiente</th></tr></thead>
               <tbody>
                 {preview.lineas.map((l) => (
                   <tr key={l.id}>
@@ -274,6 +292,7 @@ export default function ProveeduriaMaterialesPage() {
           </div>
           <div className="row gap-3 mt-4" style={{ justifyContent: "flex-end" }}>
             <Button variant="outline" onClick={() => { setFiltro(preview.id); setPreviewId(null); }}>Ver en la tabla</Button>
+            <Button onClick={() => { convertirPedido(preview); setPreviewId(null); }}>Convertir en orden de compra →</Button>
           </div>
         </Modal>
       )}

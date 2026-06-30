@@ -32,7 +32,7 @@ export default function AprobacionOrdenDetallePage() {
       try {
         const res = await fetch("/api/bc/lanzar", {
           method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ vendorNo: o.proveedorNo, currencyCode: o.currencyCode, lineas: lineasBc }),
+          body: JSON.stringify({ vendorNo: o.proveedorNo, currencyCode: o.currencyCode, locationCode: o.almacenRecepcion || "ALM-GRAL", lineas: lineasBc }),
         });
         const d = await res.json().catch(() => ({}));
         if (res.ok) {

@@ -29,6 +29,7 @@ interface NewOrdenInput {
   fechaRecepEsperada?: string;
   bcNumber?: string;           // Nº del Pedido creado en BC (si se envió a aprobación con BC)
   bcDeepLink?: string;         // link directo al Pedido en BC
+  almacenRecepcion?: string;   // almacén/ubicación de recepción en BC (default ALM-GRAL)
   lineas: Omit<OrdenLinea, "id" | "cantidadRecibida" | "cantidadFacturada">[];
 }
 
@@ -66,6 +67,7 @@ interface StoreShape {
   deletePedido: (id: string) => Promise<void>;
 
   createOrden: (input: NewOrdenInput) => Promise<Orden>;
+  updateOrden: (id: string, input: NewOrdenInput) => Promise<void>;
   setOrdenEstado: (id: string, estado: Orden["estado"], extra?: { bcNumber?: string; bcDeepLink?: string }) => Promise<void>;
 
   registrarRecepcion: (input: RegistrarRecepcionInput) => Promise<Recepcion>;
@@ -258,6 +260,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
           fechaRecepEsperada: input.fechaRecepEsperada, currencyCode: input.currencyCode,
           estado: "abierto", versionesArchivadas: 0, lineas,
           proveedorNo: input.proveedorNo, proveedorNombre: input.proveedorNombre,
+          almacenRecepcion: input.almacenRecepcion,
           bcNumber: input.bcNumber, bcDeepLink: input.bcDeepLink,
         };
         const pedidos = d.pedidos.map((p) => {
@@ -279,6 +282,21 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     };
 
     // ---------------- SET ORDEN ESTADO ----------------
+    // Editar una orden ABIERTA (aún no enviada/recibida): reemplaza líneas, proveedor,
+    // moneda y almacén. Solo mock/local (la orden todavía no viajó a BC).
+    const updateOrden: StoreShape["updateOrden"] = async (id, input) => {
+      setData((d) => {
+        const lineas: OrdenLinea[] = input.lineas.map((l) => ({ ...l, id: uid(), cantidadRecibida: 0, cantidadFacturada: 0 }));
+        const prevo = d.ordenes.find((o) => o.id === id);
+        const ordenes = d.ordenes.map((o) => (o.id === id ? {
+          ...o, proveedorId: input.proveedorId, proveedorNo: input.proveedorNo, proveedorNombre: input.proveedorNombre,
+          currencyCode: input.currencyCode, almacenRecepcion: input.almacenRecepcion ?? o.almacenRecepcion, lineas,
+        } : o));
+        const mov = mkMov({ entidad: "orden", idEntidad: id, documentoNo: prevo?.numero ?? "", tipoMovimiento: "editado", detalle: `${lineas.filter((l) => l.tipo === "articulo").length} línea(s)` });
+        return { ...d, ordenes, movimientos: [mov, ...d.movimientos] };
+      });
+    };
+
     const setOrdenEstado: StoreShape["setOrdenEstado"] = async (id, estado, extra) => {
       if (USE_API) {
         await api.patchOrdenEstado(id, { estado, usuario: persona, rol: rolActual });
@@ -345,7 +363,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       maquinas: seed.maquinas, almacenes: seed.almacenes,
       pedidos: data.pedidos, ordenes: data.ordenes, recepciones: data.recepciones, movimientos: data.movimientos,
       addPedido, editPedido, updatePedido, setPedidoEstado, deletePedido,
-      createOrden, setOrdenEstado, registrarRecepcion, reset,
+      createOrden, updateOrden, setOrdenEstado, registrarRecepcion, reset,
       borrador, setBorrador,
     };
   }, [role, usuario, data, borrador, cargando]);

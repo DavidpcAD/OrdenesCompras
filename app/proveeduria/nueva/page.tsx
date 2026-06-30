@@ -25,13 +25,14 @@ interface Row {
 }
 
 export default function ArmarOrdenPage() {
-  const { pedidos, proveedores, ordenes, borrador, createOrden, setOrdenEstado, setBorrador } = useStore();
+  const { pedidos, proveedores, ordenes, almacenes, borrador, createOrden, setOrdenEstado, setBorrador } = useStore();
   const router = useRouter();
   const toast = useToast();
 
   const [proveedorId, setProveedorId] = useState("");
   const [currency, setCurrency] = useState("");
   const [flete, setFlete] = useState("");
+  const [almacen, setAlmacen] = useState("ALM-GRAL");
 
   // Proveedores en vivo desde Business Central (fallback al catálogo si BC falla).
   const [bcProv, setBcProv] = useState<typeof proveedores | null>(null);
@@ -43,6 +44,18 @@ export default function ArmarOrdenPage() {
   }, []);
   const catProv = bcProv ?? proveedores;
   const provSel = catProv.find((x) => x.id === proveedorId);
+
+  // Catálogo de items de BC para agregar líneas manualmente a la orden.
+  const [itemsBc, setItemsBc] = useState<{ code: string; descripcion: string; unidad: string }[]>([]);
+  useEffect(() => {
+    fetch("/api/bc/items")
+      .then((r) => (r.ok ? r.json() : { items: [] }))
+      .then((d) => { if (Array.isArray(d.items)) setItemsBc(d.items.map((i: any) => ({ code: i.code, descripcion: i.descripcion, unidad: i.unidad || "UND" }))); })
+      .catch(() => { /* sin BC */ });
+  }, []);
+  const [qaCode, setQaCode] = useState("");
+  const [qaQty, setQaQty] = useState("");
+  const [qaPrecio, setQaPrecio] = useState("");
 
   const [rows, setRows] = useState<Row[]>(() =>
     borrador.map((b) => {
@@ -79,6 +92,17 @@ export default function ArmarOrdenPage() {
 
   const setRow = (id: string, patch: Partial<Row>) =>
     setRows((rs) => rs.map((r) => (r.pedidoLineaId === id ? { ...r, ...patch } : r)));
+  const removeRow = (id: string) => setRows((rs) => rs.filter((r) => r.pedidoLineaId !== id));
+  function agregarLinea() {
+    const it = itemsBc.find((x) => x.code === qaCode);
+    if (!it || !(Number(qaQty) > 0)) { toast("Elegí un artículo y una cantidad.", "error"); return; }
+    setRows((rs) => [...rs, {
+      pedidoNumero: "Manual", pedidoLineaId: `m-${Math.random().toString(36).slice(2, 9)}`,
+      articuloId: it.code, descripcion: it.descripcion, unidad: it.unidad, almacen: "",
+      cantidad: String(Number(qaQty)), precio: String(Number(qaPrecio) || 0), iva: "13", descuento: "0", proyecto: "", tarea: "",
+    }]);
+    setQaCode(""); setQaQty(""); setQaPrecio("");
+  }
 
   const calcImporte = (r: Row) => Number(r.cantidad) * Number(r.precio) * (1 - (Number(r.descuento) || 0) / 100);
   const subtotal = rows.reduce((s, r) => s + calcImporte(r), 0);
@@ -117,7 +141,7 @@ export default function ArmarOrdenPage() {
       ls.push({ tipo: "cargo", descripcion: "FLETE / TRANSPORTE", cantidad: 1, unidad: "UND",
         almacen: rows[0].almacen, precioUnitario: fleteNum, ivaPct: 13 });
     }
-    const orden = await createOrden({ proveedorId, proveedorNo: provSel?.code, proveedorNombre: provSel?.nombre, currencyCode: currency, lineas: ls });
+    const orden = await createOrden({ proveedorId, proveedorNo: provSel?.code, proveedorNombre: provSel?.nombre, currencyCode: currency, almacenRecepcion: almacen, lineas: ls });
     if (aprobar) await setOrdenEstado(orden.id, "pendiente_aprobacion");
     setBorrador([]);
     toast(`Orden ${orden.numero} ${aprobar ? "enviada a aprobación" : "guardada como abierta"}`, "success");
@@ -156,6 +180,11 @@ export default function ArmarOrdenPage() {
             <Field label="Flete / transporte" help="Opcional, se distribuye al facturar">
               <Input type="number" min={0} value={flete} onChange={(e) => setFlete(e.target.value)} placeholder="0" />
             </Field>
+            <Field label="Almacén de recepción" help="Dónde entra el material en BC (por defecto el General)">
+              <Select value={almacen} onChange={(e) => setAlmacen(e.target.value)}>
+                {almacenes.map((a) => <option key={a.codigo} value={a.codigo}>{a.codigo} — {a.nombre}</option>)}
+              </Select>
+            </Field>
           </div>
           <div className="row gap-2 wrap mt-4">
             <span className="ds-muted ds-label">Solicitudes en esta orden:</span>
@@ -164,13 +193,31 @@ export default function ArmarOrdenPage() {
         </Card>
 
         <Card className="mt-4" style={{ padding: 0, overflow: "hidden" }}>
+          {/* Agregar una línea manual (artículo del catálogo de BC que no venía en los pedidos) */}
+          <div className="row wrap gap-2" style={{ alignItems: "flex-end", padding: "12px 16px", borderBottom: "1.5px solid var(--ds-color-gray-100)", background: "color-mix(in srgb, var(--ds-color-green-100) 6%, #fff)" }}>
+            <div style={{ flex: "1 1 280px", minWidth: 220 }}>
+              <label className="ds-label ds-muted" style={{ display: "block", marginBottom: 4 }}>Agregar artículo</label>
+              <Combobox items={itemsBc} value={qaCode} onChange={(k) => setQaCode(k)}
+                getKey={(i) => i.code} getLabel={(i) => `${i.code} — ${i.descripcion}`} getSearch={(i) => `${i.code} ${i.descripcion}`}
+                placeholder="Buscar artículo del catálogo…" />
+            </div>
+            <div>
+              <label className="ds-label ds-muted" style={{ display: "block", marginBottom: 4 }}>Cantidad</label>
+              <Input type="number" min={0} value={qaQty} onChange={(e) => setQaQty(e.target.value)} placeholder="0" style={{ width: 90 }} />
+            </div>
+            <div>
+              <label className="ds-label ds-muted" style={{ display: "block", marginBottom: 4 }}>Precio</label>
+              <Input type="number" min={0} value={qaPrecio} onChange={(e) => setQaPrecio(e.target.value)} placeholder="0" style={{ width: 110 }} />
+            </div>
+            <Button variant="outline" onClick={agregarLinea} disabled={!qaCode || !(Number(qaQty) > 0)}>+ Agregar línea</Button>
+          </div>
           <div className="ds-table-wrap" style={{ boxShadow: "none" }}>
             <table className="ds-table">
               <thead>
                 <tr>
                   <th>Pedido</th><th>Artículo</th><th>Obra</th>
                   <th className="ds-num">Cantidad</th><th className="ds-num">Precio</th><th className="ds-num">Desc%</th><th className="ds-num">IVA%</th>
-                  <th className="ds-num">Importe</th>
+                  <th className="ds-num">Importe</th><th></th>
                 </tr>
               </thead>
               <tbody>
@@ -197,12 +244,13 @@ export default function ArmarOrdenPage() {
                       {money(calcImporte(r) || 0, currency)}
                       {fleteShare(r) > 0 && <div className="ds-body-sm ds-muted" style={{ fontWeight: 400 }}>+ flete {money(fleteShare(r), currency)}</div>}
                     </td>
+                    <td className="ds-num"><button type="button" className="icon-btn" title="Quitar línea" onClick={() => removeRow(r.pedidoLineaId)}>×</button></td>
                   </tr>
                 ))}
               </tbody>
               {fleteNum > 0 && (
                 <tfoot>
-                  <tr><td colSpan={8} className="ds-body-sm ds-muted" style={{ padding: "10px 16px", borderTop: "1.5px solid var(--ds-color-gray-100)" }}>
+                  <tr><td colSpan={9} className="ds-body-sm ds-muted" style={{ padding: "10px 16px", borderTop: "1.5px solid var(--ds-color-gray-100)" }}>
                     El flete de {money(fleteNum, currency)} se reparte proporcional al importe de cada línea (mostrado como “+ flete”).
                   </td></tr>
                 </tfoot>

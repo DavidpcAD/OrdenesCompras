@@ -274,7 +274,7 @@ export async function bcVariants(itemNo: string): Promise<BcVariante[]> {
 // ---- Escritura: crear Pedido de compra (Purchase Order) por la API ESTÁNDAR ----
 export type NuevaLineaBc = { itemNo: string; cantidad: number; precio?: number; descripcion?: string };
 
-export async function bcCrearPedido(input: { vendorNo: string; currencyCode?: string; lineas: NuevaLineaBc[] }): Promise<{ number: string; id: string; omitidas: string[] }> {
+export async function bcCrearPedido(input: { vendorNo: string; currencyCode?: string; locationCode?: string; lineas: NuevaLineaBc[] }): Promise<{ number: string; id: string; omitidas: string[] }> {
   if (!input?.vendorNo) throw new Error("Falta el proveedor (vendorNo).");
   const lineas = (input.lineas ?? []).filter((l) => l.itemNo && l.cantidad > 0);
   if (!lineas.length) throw new Error("No hay líneas de material válidas para el pedido.");
@@ -299,7 +299,7 @@ export async function bcCrearPedido(input: { vendorNo: string; currencyCode?: st
     if (l.precio && l.precio > 0) lineBody.directUnitCost = l.precio;
     // Almacén de recepción fijo (p.ej. ALM-GRAL): aunque Ingeniería pida para una
     // obra, el material entra siempre al almacén general. Configurable por env.
-    const loc = process.env.BC_RECEPCION_LOCATION;
+    const loc = input.locationCode || process.env.BC_RECEPCION_LOCATION;
     if (loc) lineBody.locationCode = loc;
     const resL = await fetch(`${stdRoot()}/companies(${cid})/purchaseOrders(${po.id})/purchaseOrderLines`, { method: "POST", headers, body: JSON.stringify(lineBody) });
     if (!resL.ok) omitidas.push(l.itemNo);
@@ -358,7 +358,7 @@ export async function bcRegistrarFactura(
 // Crea el Pedido en BC (queda Abierto) y lo LANZA enseguida -> "Lanzado".
 // Si el create funciona pero el release falla (p.ej. AdelantePO no publicado aún),
 // devuelve el pedido creado con released=false para que la UI avise sin romperse.
-export async function bcCrearYLanzarPedido(input: { vendorNo: string; currencyCode?: string; lineas: NuevaLineaBc[] }):
+export async function bcCrearYLanzarPedido(input: { vendorNo: string; currencyCode?: string; locationCode?: string; lineas: NuevaLineaBc[] }):
   Promise<{ number: string; id: string; omitidas: string[]; released: boolean; releaseError?: string }> {
   const { number, id, omitidas } = await bcCrearPedido(input);
   try {

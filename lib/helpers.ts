@@ -6,6 +6,12 @@ export function destinoLabel(p: Pedido): string {
     : `${p.obraNombre ?? p.obraCodigo ?? "Obra"}`;
 }
 
+// Código del destino (obra o máquina) — para mostrar el CÓDIGO de obra (VN-K.21),
+// no la descripción del proyecto.
+export function destinoCodigo(p: Pedido): string {
+  return (p.tipoSolicitud === "repuesto" ? p.maquinaNo : p.obraCodigo) ?? "—";
+}
+
 export const CRC = new Intl.NumberFormat("es-CR", {
   style: "currency",
   currency: "CRC",

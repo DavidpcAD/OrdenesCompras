@@ -124,6 +124,7 @@ export interface Orden {
   proveedorId: string;
   proveedorNo?: string;     // código BC del proveedor (PROV-…) para crear el pedido en BC al aprobar
   proveedorNombre?: string;
+  almacenRecepcion?: string; // almacén/ubicación de recepción en BC (default ALM-GRAL)
   fecha: string;            // ISO emisión
   fechaRecepEsperada?: string;
   currencyCode: string;     // "" = CRC, "USD"
