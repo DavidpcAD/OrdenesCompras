@@ -47,8 +47,7 @@ async function getCompanyId(): Promise<string> {
   if (companyIdCache) return companyIdCache;
   const nombre = process.env.BC_COMPANY || "ADELANTE_DESARROLLOS_NUEVA";
   try {
-    const token = await getToken();
-    const res = await fetch(`${customRoot("inventory")}/companies`, { cache: "no-store", headers: { Authorization: `Bearer ${token}`, Accept: "application/json" } });
+    const res = await bcFetch(`${customRoot("inventory")}/companies`, { cache: "no-store" });
     if (res.ok) {
       const data = await res.json();
       const lista: any[] = data.value ?? [];
@@ -69,8 +68,7 @@ async function getStdCompanyId(): Promise<string> {
   if (stdCompanyIdCache) return stdCompanyIdCache;
   const nombre = process.env.BC_COMPANY || "ADELANTE_DESARROLLOS_NUEVA";
   try {
-    const token = await getToken();
-    const res = await fetch(`${stdRoot()}/companies`, { cache: "no-store", headers: { Authorization: `Bearer ${token}`, Accept: "application/json" } });
+    const res = await bcFetch(`${stdRoot()}/companies`, { cache: "no-store" });
     if (res.ok) {
       const data = await res.json();
       const lista: any[] = data.value ?? [];
@@ -83,15 +81,14 @@ async function getStdCompanyId(): Promise<string> {
 
 // Lista de compañías visibles para la app (diagnóstico).
 export async function bcCompanies(): Promise<{ id: string; name: string }[]> {
-  const token = await getToken();
-  const res = await fetch(`${customRoot("inventory")}/companies`, { cache: "no-store", headers: { Authorization: `Bearer ${token}`, Accept: "application/json" } });
+  const res = await bcFetch(`${customRoot("inventory")}/companies`, { cache: "no-store" });
   if (!res.ok) throw new Error(`BC ${res.status}: ${(await res.text()).slice(0, 200)}`);
   const data = await res.json();
   return (data.value ?? []).map((c: any) => ({ id: c.id, name: c.name ?? c.displayName }));
 }
 
-async function getToken(): Promise<string> {
-  if (tokenCache && tokenCache.exp > Date.now() + 60_000) return tokenCache.token;
+async function getToken(force = false): Promise<string> {
+  if (!force && tokenCache && tokenCache.exp > Date.now() + 60_000) return tokenCache.token;
   const tenant = env("BC_TENANT_ID");
   const body = new URLSearchParams({
     client_id: env("BC_CLIENT_ID"),
@@ -108,16 +105,29 @@ async function getToken(): Promise<string> {
   return tokenCache.token;
 }
 
+// fetch contra BC con reintento ante 401: el Sandbox a veces resetea el binding
+// S2S y el token cacheado deja de ser aceptado. En ese caso pedimos un token
+// FRESCO y reintentamos una vez. Logueamos ms-diagnostics para ver el motivo real.
+async function bcFetch(url: string, init: RequestInit = {}): Promise<Response> {
+  const baseHeaders = { ...(init.headers as Record<string, string> | undefined), Accept: "application/json" };
+  const run = (token: string) => fetch(url, { ...init, headers: { ...baseHeaders, Authorization: `Bearer ${token}` } });
+  let res = await run(await getToken());
+  if (res.status === 401) {
+    console.warn(`BC 401 en ${url} — reintento con token fresco. ms-diagnostics=${res.headers.get("ms-diagnostics") ?? "n/a"}`);
+    res = await run(await getToken(true)); // fuerza token nuevo (binding pudo resetearse)
+    if (res.status === 401) console.error(`BC 401 persiste tras token fresco en ${url}. ms-diagnostics=${res.headers.get("ms-diagnostics") ?? "n/a"}`);
+  }
+  return res;
+}
+
 async function listAll(group: string, entity: string): Promise<any[]> {
-  const token = await getToken();
   const cid = await getCompanyId();
   let url: string | null = `${customRoot(group)}/companies(${cid})/${entity}`;
   const out: any[] = [];
   let guard = 0;
   while (url && guard++ < 50) {
-    // Datos maestros (items, obras): se cachean 5 min para acelerar la carga
-    // (no como health/variants, que van siempre frescos con no-store).
-    const res = await fetch(url, { next: { revalidate: 300 }, headers: { Authorization: `Bearer ${token}`, Accept: "application/json" } });
+    // Datos maestros (items, obras): se cachean 5 min para acelerar la carga.
+    const res = await bcFetch(url, { next: { revalidate: 300 } } as RequestInit);
     if (!res.ok) throw new Error(`BC ${res.status} en ${url}: ${(await res.text()).slice(0, 250)}`);
     const data: any = await res.json();
     out.push(...(data.value ?? []));
@@ -130,19 +140,27 @@ export type BcItem = { id: string; code: string; descripcion: string; unidad: st
 export type BcObra = { id: string; codigo: string; nombre: string };
 export type BcAlmacen = { codigo: string; nombre: string };
 
+let lastGoodItems: BcItem[] | null = null;
 export async function bcItems(): Promise<BcItem[]> {
-  const rows = await listAll("inventory", "items");
-  return rows
-    .filter((i) => !(i.Blocked ?? i.blocked))
-    .map((i) => {
-      const code = i.No ?? i.no ?? i.number ?? "";
-      return {
-        id: i.id ?? i.systemId ?? code,
-        code,
-        descripcion: i.Description ?? i.description ?? i.displayName ?? code,
-        unidad: i.BaseUnitOfMeasure ?? i.baseUnitOfMeasure ?? i.baseUnitOfMeasureCode ?? "UND",
-      };
-    });
+  try {
+    const rows = await listAll("inventory", "items");
+    const items = rows
+      .filter((i) => !(i.Blocked ?? i.blocked))
+      .map((i) => {
+        const code = i.No ?? i.no ?? i.number ?? "";
+        return {
+          id: i.id ?? i.systemId ?? code,
+          code,
+          descripcion: i.Description ?? i.description ?? i.displayName ?? code,
+          unidad: i.BaseUnitOfMeasure ?? i.baseUnitOfMeasure ?? i.baseUnitOfMeasureCode ?? "UND",
+        };
+      });
+    if (items.length) lastGoodItems = items; // guardamos el último catálogo bueno
+    return items;
+  } catch (e) {
+    if (lastGoodItems) { console.warn("BC items falló; sirviendo último catálogo bueno cacheado."); return lastGoodItems; }
+    throw e;
+  }
 }
 
 export async function bcObras(): Promise<BcObra[]> {
@@ -163,20 +181,21 @@ export type BcVendor = { id: string; code: string; nombre: string; currencyCode:
 
 // Proveedores (vendors) de BC por la API ESTÁNDAR v2.0 (la app tiene FULL ACCESS).
 // Se cachean 5 min como dato maestro. code = number del proveedor (lo que va como vendorNo).
+let lastGoodVendors: BcVendor[] | null = null;
 export async function bcVendors(): Promise<BcVendor[]> {
-  const token = await getToken();
+ try {
   const cid = await getStdCompanyId();
   let url: string | null = `${stdRoot()}/companies(${cid})/vendors?$select=id,number,displayName,currencyCode&$top=5000`;
   const out: any[] = [];
   let guard = 0;
   while (url && guard++ < 50) {
-    const res = await fetch(url, { next: { revalidate: 300 }, headers: { Authorization: `Bearer ${token}`, Accept: "application/json" } });
+    const res = await bcFetch(url, { next: { revalidate: 300 } } as RequestInit);
     if (!res.ok) throw new Error(`BC ${res.status} en vendors: ${(await res.text()).slice(0, 200)}`);
     const data: any = await res.json();
     out.push(...(data.value ?? []));
     url = data["@odata.nextLink"] ?? null;
   }
-  return out
+  const vendors = out
     .filter((v) => !(v.blocked && v.blocked !== "_x0020_" && v.blocked !== " "))
     .map((v) => ({
       id: v.id ?? v.number ?? "",
@@ -185,6 +204,12 @@ export async function bcVendors(): Promise<BcVendor[]> {
       currencyCode: v.currencyCode ?? "",
     }))
     .filter((v) => v.code);
+  if (vendors.length) lastGoodVendors = vendors;
+  return vendors;
+ } catch (e) {
+  if (lastGoodVendors) { console.warn("BC vendors falló; sirviendo último listado bueno cacheado."); return lastGoodVendors; }
+  throw e;
+ }
 }
 
 // Último precio con que se FACTURÓ un item a un proveedor, leído de las facturas
@@ -194,14 +219,13 @@ export async function bcVendors(): Promise<BcVendor[]> {
 export async function bcUltimoPrecioFacturado(itemNo: string, vendorNo: string): Promise<number | null> {
   if (!itemNo || !vendorNo) return null;
   try {
-    const token = await getToken();
     const cid = await getStdCompanyId();
     const filtro = `$filter=${encodeURIComponent(`vendorNumber eq '${vendorNo}'`)}`;
     const url =
       `${stdRoot()}/companies(${cid})/purchaseInvoices?${filtro}` +
       `&$orderby=invoiceDate desc&$top=20` +
       `&$expand=purchaseInvoiceLines($select=lineType,lineObjectNumber,directUnitCost,unitCost)`;
-    const res = await fetch(url, { cache: "no-store", headers: { Authorization: `Bearer ${token}`, Accept: "application/json" } });
+    const res = await bcFetch(url, { cache: "no-store" });
     if (!res.ok) return null;
     const data: any = await res.json();
     for (const inv of (data.value ?? [])) {
@@ -240,29 +264,29 @@ function mapVariantes(rows: any[]): BcVariante[] {
 // cae a la API ESTÁNDAR v2.0 (.../itemVariants). Solo se considera "no tiene
 // variantes" cuando alguna de las dos responde OK con lista vacía. Si ambas
 // fallan (401/permiso/no publicada), devuelve disponible=false.
+const lastGoodVariants = new Map<string, BcVariantsResult>();
 export async function bcVariantsEx(itemNo: string): Promise<BcVariantsResult> {
   if (!itemNo) return { variantes: [], disponible: true };
-  const token = await getToken();
   const filtro = `$filter=itemNumber eq '${encodeURIComponent(itemNo)}'`;
 
   // 1) API custom de Adelante.
   try {
     const cid = await getCompanyId();
-    const res = await fetch(`${customRoot("inventory")}/companies(${cid})/itemVariants?${filtro}`, {
-      headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
-    });
-    if (res.ok) return { variantes: mapVariantes((await res.json()).value), disponible: true };
+    const res = await bcFetch(`${customRoot("inventory")}/companies(${cid})/itemVariants?${filtro}`, { cache: "no-store" });
+    if (res.ok) { const r = { variantes: mapVariantes((await res.json()).value), disponible: true }; lastGoodVariants.set(itemNo, r); return r; }
   } catch { /* intenta la estándar */ }
 
   // 2) Fallback: API estándar v2.0.
   try {
     const stdCid = await getStdCompanyId();
-    const res = await fetch(`${stdRoot()}/companies(${stdCid})/itemVariants?${filtro}`, {
-      headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
-    });
-    if (res.ok) return { variantes: mapVariantes((await res.json()).value), disponible: true };
+    const res = await bcFetch(`${stdRoot()}/companies(${stdCid})/itemVariants?${filtro}`, { cache: "no-store" });
+    if (res.ok) { const r = { variantes: mapVariantes((await res.json()).value), disponible: true }; lastGoodVariants.set(itemNo, r); return r; }
   } catch { /* ambas fallaron */ }
 
+  // Ambas fallaron (binding parpadeó): si tenemos un resultado bueno previo de este
+  // item, lo servimos en vez de alarmar con disponible:false.
+  const cached = lastGoodVariants.get(itemNo);
+  if (cached) { console.warn(`BC variantes de ${itemNo} falló; sirviendo último resultado bueno cacheado.`); return cached; }
   return { variantes: [], disponible: false };
 }
 
@@ -278,15 +302,14 @@ export async function bcCrearPedido(input: { vendorNo: string; currencyCode?: st
   if (!input?.vendorNo) throw new Error("Falta el proveedor (vendorNo).");
   const lineas = (input.lineas ?? []).filter((l) => l.itemNo && l.cantidad > 0);
   if (!lineas.length) throw new Error("No hay líneas de material válidas para el pedido.");
-  const token = await getToken();
   const cid = await getCompanyId();
-  const headers = { Authorization: `Bearer ${token}`, "Content-Type": "application/json", Accept: "application/json" };
+  const jsonHeaders = { "Content-Type": "application/json" };
 
   // 1) Encabezado: proveedor (+ moneda si no es CRC).
   const headerBody: Record<string, unknown> = { vendorNumber: input.vendorNo };
   const cur = (input.currencyCode ?? "").toUpperCase();
   if (cur && cur !== "CRC") headerBody.currencyCode = cur;
-  const resH = await fetch(`${stdRoot()}/companies(${cid})/purchaseOrders`, { method: "POST", headers, body: JSON.stringify(headerBody) });
+  const resH = await bcFetch(`${stdRoot()}/companies(${cid})/purchaseOrders`, { method: "POST", headers: jsonHeaders, body: JSON.stringify(headerBody), cache: "no-store" });
   if (!resH.ok) throw new Error(`BC ${resH.status} al crear el pedido: ${(await resH.text()).slice(0, 300)}`);
   const po: any = await resH.json();
 
@@ -301,7 +324,7 @@ export async function bcCrearPedido(input: { vendorNo: string; currencyCode?: st
     // obra, el material entra siempre al almacén general. Configurable por env.
     const loc = input.locationCode || process.env.BC_RECEPCION_LOCATION;
     if (loc) lineBody.locationCode = loc;
-    const resL = await fetch(`${stdRoot()}/companies(${cid})/purchaseOrders(${po.id})/purchaseOrderLines`, { method: "POST", headers, body: JSON.stringify(lineBody) });
+    const resL = await bcFetch(`${stdRoot()}/companies(${cid})/purchaseOrders(${po.id})/purchaseOrderLines`, { method: "POST", headers: jsonHeaders, body: JSON.stringify(lineBody), cache: "no-store" });
     if (!resL.ok) omitidas.push(l.itemNo);
   }
   return { number: po.number ?? "", id: po.id ?? "", omitidas };
@@ -319,12 +342,11 @@ function odataRoot(): string {
 // Procedimiento esperado: AdelantePO_ReleaseOrder(orderNo) -> Text (status).
 export async function bcReleasePedido(orderNo: string): Promise<string> {
   if (!orderNo) throw new Error("Falta el número de pedido para lanzar.");
-  const token = await getToken();
   const cid = await getStdCompanyId();
   const url = `${odataRoot()}/AdelantePO_ReleaseOrder?company=${encodeURIComponent(cid)}`;
-  const res = await fetch(url, {
+  const res = await bcFetch(url, {
     method: "POST", cache: "no-store",
-    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json", Accept: "application/json" },
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ orderNo }),
   });
   if (!res.ok) throw new Error(`BC release ${res.status}: ${(await res.text()).slice(0, 250)}`);
@@ -342,12 +364,11 @@ export async function bcRegistrarFactura(
 ): Promise<string> {
   if (!orderNo) throw new Error("Falta el número de pedido de BC.");
   if (!vendorInvoiceNo) throw new Error("Falta el N.º de factura del proveedor.");
-  const token = await getToken();
   const cid = await getStdCompanyId();
   const url = `${odataRoot()}/AdelantePO_PostInvoice?company=${encodeURIComponent(cid)}`;
-  const res = await fetch(url, {
+  const res = await bcFetch(url, {
     method: "POST", cache: "no-store",
-    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json", Accept: "application/json" },
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ orderNo, vendorInvoiceNo, linesJson: JSON.stringify(lines) }),
   });
   if (!res.ok) throw new Error(`BC registrar ${res.status}: ${(await res.text()).slice(0, 250)}`);
