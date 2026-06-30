@@ -108,6 +108,7 @@ export interface Pedido {
   maquinaNo?: string;        // destino si repuesto
   maquinaNombre?: string;
   solicitante: string;       // Laura
+  loteRef?: string;          // lote/unidad de Planificación desde el que se armó (para enlazar)
   fecha: string;             // ISO
   estado: PedidoEstado;
   prioridad: "normal" | "alta" | "urgente";

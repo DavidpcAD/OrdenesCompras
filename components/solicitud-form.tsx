@@ -41,7 +41,7 @@ export function SolicitudForm({
   textoBoton: string;
   onCancelar: () => void;
 }) {
-  const { articulos, obras, maquinas, almacenes, usuario } = useStore();
+  const { articulos, obras, maquinas, almacenes, usuario, planContexto, setPlanContexto } = useStore();
   const toast = useToast();
 
   const [bcArt, setBcArt] = useState<Articulo[] | null>(null);
@@ -363,11 +363,13 @@ export function SolicitudForm({
         solicitante,
         prioridad,
         notas: notas.trim() || undefined,
+        loteRef: planContexto?.lote,
         lineas: lineas.map((l) => {
           const a = catArticulos.find((x) => x.id === l.articuloId)!;
           return { articuloId: a.id, descripcion: a.descripcion, cantidad: Number(l.cantidad), unidad: a.unidad, almacen: tipo === "material" ? l.obraCodigo : "", variantCode: l.variantCode || undefined };
         }),
       });
+      setPlanContexto(null);
     } catch (e: any) {
       toast(String(e?.message ?? e), "error");
       setGuardando(false);
@@ -378,6 +380,14 @@ export function SolicitudForm({
 
   return (
     <>
+      {planContexto && (
+        <Card className="mt-0" style={{ marginBottom: 12, background: "color-mix(in srgb, var(--ds-color-green-100) 12%, #fff)", borderColor: "var(--ds-color-green-200)" }}>
+          <div className="row row--between wrap gap-2" style={{ alignItems: "center" }}>
+            <span className="ds-body-sm"><span className="ds-strong">Armando pedido desde Planificación</span> · {planContexto.modelo} {planContexto.lote ? `· lote ${planContexto.lote}` : ""}</span>
+            <button type="button" className="link-btn" onClick={() => setPlanContexto(null)}>Quitar contexto</button>
+          </div>
+        </Card>
+      )}
       <Card>
         <div className="row gap-3" style={{ marginBottom: 20 }}>
           <button type="button" className={`role-option ${esMaterial ? "is-selected" : ""}`} style={{ flex: 1, padding: "12px 16px" }} onClick={() => cambiarTipo("material")}>

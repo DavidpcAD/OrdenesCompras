@@ -18,6 +18,7 @@ export interface NewPedidoInput {
   solicitante: string;
   prioridad: Pedido["prioridad"];
   notas?: string;
+  loteRef?: string;
   lineas: Omit<PedidoLinea, "id" | "cantidadOrdenada">[];
 }
 
@@ -86,6 +87,11 @@ interface StoreShape {
   addPlanFila: (fila: Omit<PlanFila, "id" | "valores">) => void;
   removePlanFila: (id: string) => void;
   setPlanCelda: (filaId: string, categoriaId: string, valor: string) => void;
+  cargarPlanificacion: (categorias: PlanCategoria[], filas: PlanFila[]) => void;
+
+  // Contexto transitorio: armar un pedido desde una unidad de Planificación
+  planContexto: { modelo: string; lote: string } | null;
+  setPlanContexto: (c: { modelo: string; lote: string } | null) => void;
 
   borrador: { pedidoLineaId: string; cantidad: number; precio: number; iva: number }[];
   setBorrador: (items: StoreShape["borrador"]) => void;
@@ -130,6 +136,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const [usuario, setUsuario] = useState<string | null>(null);
   const [data, setData] = useState<Persisted>(() => freshData());
   const [borrador, setBorrador] = useState<StoreShape["borrador"]>([]);
+  const [planContexto, setPlanContexto] = useState<StoreShape["planContexto"]>(null);
   const [hydrated, setHydrated] = useState(false);
   const [cargando, setCargando] = useState(USE_API);
 
@@ -203,7 +210,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
           obraCodigo: input.obraCodigo, obraNombre: input.obraNombre,
           maquinaNo: input.maquinaNo, maquinaNombre: input.maquinaNombre,
           solicitante: input.solicitante, fecha: todayISO(), estado: "borrador",
-          prioridad: input.prioridad, notas: input.notas,
+          prioridad: input.prioridad, notas: input.notas, loteRef: input.loteRef,
           lineas: input.lineas.map((l) => ({ ...l, id: uid(), cantidadOrdenada: 0 })),
         };
         const mov = mkMov({ entidad: "pedido", idEntidad: created.id, documentoNo: created.numero, tipoMovimiento: "creado", estadoNuevo: "borrador", detalle: `${created.lineas.length} línea(s)` });
@@ -423,6 +430,8 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       setData((d) => ({ ...d, planFilas: d.planFilas.filter((f) => f.id !== fid) }));
     const setPlanCelda: StoreShape["setPlanCelda"] = (fid, cid, valor) =>
       setData((d) => ({ ...d, planFilas: d.planFilas.map((f) => (f.id === fid ? { ...f, valores: { ...f.valores, [cid]: valor } } : f)) }));
+    const cargarPlanificacion: StoreShape["cargarPlanificacion"] = (categorias, filas) =>
+      setData((d) => ({ ...d, planCategorias: categorias, planFilas: filas }));
 
     const reset: StoreShape["reset"] = () => setData(freshData());
 
@@ -435,10 +444,11 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       createOrden, updateOrden, setOrdenEstado, registrarRecepcion, devolverPedido, reset,
       notificaciones: data.notificaciones, marcarNotifsLeidas,
       planCategorias: data.planCategorias, planFilas: data.planFilas,
-      addPlanCategoria, removePlanCategoria, addPlanFila, removePlanFila, setPlanCelda,
+      addPlanCategoria, removePlanCategoria, addPlanFila, removePlanFila, setPlanCelda, cargarPlanificacion,
+      planContexto, setPlanContexto,
       borrador, setBorrador,
     };
-  }, [role, usuario, data, borrador, cargando]);
+  }, [role, usuario, data, borrador, planContexto, cargando]);
 
   return <StoreCtx.Provider value={api2}>{children}</StoreCtx.Provider>;
 }
