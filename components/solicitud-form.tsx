@@ -123,6 +123,9 @@ export function SolicitudForm({
   const [plantillas, setPlantillas] = useState<Plantilla[]>([]);
   const [nombrePlantilla, setNombrePlantilla] = useState("");
   const [filtroPlantilla, setFiltroPlantilla] = useState<string>(""); // "" = todas; o creadoPor
+  const [buscarPlantilla, setBuscarPlantilla] = useState("");
+  const [plantillaCargada, setPlantillaCargada] = useState<string>("");
+  const [obraTodas, setObraTodas] = useState("");
   async function recargarPlantillas() {
     try {
       const r = await fetch("/api/plantillas");
@@ -292,8 +295,17 @@ export function SolicitudForm({
     if (!pl) return;
     const { nuevas, sinMatch } = lineasDesde(pl.lineas);
     if (!nuevas.length) { toast("Esa plantilla no coincide con el catálogo actual.", "error"); return; }
-    setLineas((ls) => [...nuevas, ...ls]);
-    toast(`Plantilla "${pl.nombre}" cargada (${nuevas.length} línea/s${sinMatch ? `, ${sinMatch} omitida/s` : ""}).`, "success");
+    // REEMPLAZA las líneas (no suma): al elegir otra plantilla, cambia la actual.
+    setLineas(nuevas);
+    setPlantillaCargada(id);
+    toast(`Plantilla "${pl.nombre}" cargada (${nuevas.length} línea/s${sinMatch ? `, ${sinMatch} omitida/s` : ""}). Reemplaza las líneas anteriores.`, "success");
+  }
+  // Cambiar la obra de TODAS las líneas de una vez (tras cargar plantilla o copiar).
+  function obraMasiva(obraId: string) {
+    const o = catObras.find((x) => x.id === obraId);
+    if (!o) return;
+    setLineas((ls) => ls.map((l) => ({ ...l, obraCodigo: o.codigo, obraNombre: o.nombre })));
+    toast(`Obra ${o.codigo} aplicada a las ${lineas.length} línea(s).`, "success");
   }
   async function borrarPlantilla(id: number) {
     try {
@@ -304,9 +316,10 @@ export function SolicitudForm({
       toast(`No se pudo borrar la plantilla: ${String(e?.message ?? e)}`, "error");
     }
   }
-  const plantillasVisibles = filtroPlantilla && filtroPlantilla !== "*"
+  const plantillasVisibles = (filtroPlantilla && filtroPlantilla !== "*"
     ? plantillas.filter((p) => p.creadoPor === filtroPlantilla)
-    : plantillas;
+    : plantillas
+  ).filter((p) => { const q = buscarPlantilla.trim().toLowerCase(); return !q || p.nombre.toLowerCase().includes(q); });
   const creadoresPlantillas = useMemo(
     () => Array.from(new Set(plantillas.map((p) => p.creadoPor).filter(Boolean))).sort(),
     [plantillas]
@@ -411,13 +424,17 @@ export function SolicitudForm({
             {/* Cuerpo: plantillas guardadas (tarjetas) + guardar */}
             <div style={{ padding: 14 }}>
               <div className="row row--between wrap gap-3" style={{ alignItems: "center", marginBottom: 12 }}>
-                <div className="row gap-2" style={{ alignItems: "center" }}>
+                <div className="row gap-2 wrap" style={{ alignItems: "center" }}>
                   <span className="ds-body-sm ds-strong">Plantillas guardadas</span>
                   {creadoresPlantillas.length > 1 && (
                     <div className="seg-mini">
                       <button type="button" className={filtroPlantilla === solicitante ? "is-active" : ""} onClick={() => setFiltroPlantilla(solicitante)}>Mías</button>
                       <button type="button" className={filtroPlantilla === "*" ? "is-active" : ""} onClick={() => setFiltroPlantilla("*")}>Todas</button>
                     </div>
+                  )}
+                  {plantillas.length > 4 && (
+                    <input className="ds-form-field__input" style={{ maxWidth: 180, height: 34 }} placeholder="Buscar plantilla…"
+                      value={buscarPlantilla} onChange={(e) => setBuscarPlantilla(e.target.value)} />
                   )}
                 </div>
                 {lineas.length > 0 && (
@@ -431,7 +448,7 @@ export function SolicitudForm({
               {plantillasVisibles.length > 0 ? (
                 <div className="tpl-cards">
                   {plantillasVisibles.map((p) => (
-                    <div key={p.id} className="tpl-card" role="button" tabIndex={0} title={`Cargar "${p.nombre}"`}
+                    <div key={p.id} className={`tpl-card ${plantillaCargada === String(p.id) ? "is-active" : ""}`} role="button" tabIndex={0} title={`Cargar "${p.nombre}" (reemplaza las líneas)`}
                       onClick={() => cargarPlantilla(String(p.id))}
                       onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); cargarPlantilla(String(p.id)); } }}>
                       <span className="tpl-card__name">{p.nombre}</span>
@@ -447,6 +464,15 @@ export function SolicitudForm({
                 <p className="ds-body-sm ds-muted" style={{ margin: 0 }}>
                   No hay plantillas guardadas todavía. Agregá materiales abajo y guardá la lista, o descargá el Excel para armarla en tu compu.
                 </p>
+              )}
+              {/* Cambiar la obra de TODAS las líneas de una vez */}
+              {esMaterial && lineas.length > 0 && (
+                <div className="row gap-2 wrap" style={{ alignItems: "flex-end", marginTop: 12, paddingTop: 12, borderTop: "1.5px dashed var(--ds-color-gray-100)" }}>
+                  <div style={{ minWidth: 240, flex: "1 1 240px" }}>
+                    <label className="ds-label ds-muted" style={{ display: "block", marginBottom: 4 }}>Obra para TODAS las líneas</label>
+                    <Combobox items={catObras} value={obraTodas} onChange={(k) => { setObraTodas(k); obraMasiva(k); }} getKey={(o) => o.id} getLabel={(o) => `${o.codigo} — ${o.nombre}`} placeholder="Elegí una obra y se aplica a todas…" />
+                  </div>
+                </div>
               )}
             </div>
           </div>

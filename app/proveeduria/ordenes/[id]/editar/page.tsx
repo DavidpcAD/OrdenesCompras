@@ -21,11 +21,14 @@ export default function EditarOrdenPage() {
 
   const [bcProv, setBcProv] = useState<typeof proveedores | null>(null);
   const [itemsBc, setItemsBc] = useState<{ code: string; descripcion: string; unidad: string }[]>([]);
+  const [bcAlm, setBcAlm] = useState<typeof almacenes | null>(null);
   useEffect(() => {
     fetch("/api/bc/vendors").then((r) => (r.ok ? r.json() : { proveedores: [] })).then((d) => { if (Array.isArray(d.proveedores) && d.proveedores.length) setBcProv(d.proveedores); }).catch(() => {});
     fetch("/api/bc/items").then((r) => (r.ok ? r.json() : { items: [] })).then((d) => { if (Array.isArray(d.items)) setItemsBc(d.items.map((i: any) => ({ code: i.code, descripcion: i.descripcion, unidad: i.unidad || "UND" }))); }).catch(() => {});
+    fetch("/api/bc/almacenes").then((r) => (r.ok ? r.json() : { almacenes: [] })).then((d) => { if (Array.isArray(d.almacenes) && d.almacenes.length) setBcAlm(d.almacenes); }).catch(() => {});
   }, []);
   const catProv = bcProv ?? proveedores;
+  const catAlm = bcAlm ?? almacenes;
 
   const cargo = orden?.lineas.find((l) => l.tipo === "cargo");
   const [proveedorId, setProveedorId] = useState(orden?.proveedorId ?? "");
@@ -110,7 +113,7 @@ export default function EditarOrdenPage() {
             </Field>
             <Field label="Almacén de recepción" help="Dónde entra el material en BC (por defecto el General)">
               <Select value={almacen} onChange={(e) => setAlmacen(e.target.value)}>
-                {almacenes.map((a) => <option key={a.codigo} value={a.codigo}>{a.codigo} — {a.nombre}</option>)}
+                {catAlm.map((a) => <option key={a.codigo} value={a.codigo}>{a.codigo} — {a.nombre}</option>)}
               </Select>
             </Field>
           </div>

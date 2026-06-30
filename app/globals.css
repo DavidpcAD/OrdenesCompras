@@ -435,6 +435,7 @@ h1, h2, h3, h4, p { margin: 0; }
   box-shadow: 0 1px 4px rgba(0,0,0,.06);
 }
 .tpl-card:active { transform: translateY(1px); }
+.tpl-card.is-active { border-color: var(--ds-color-green-200); background: color-mix(in srgb, var(--ds-color-green-100) 18%, #fff); box-shadow: 0 0 0 1.5px var(--ds-color-green-200) inset; }
 .tpl-card__name { font-weight: 600; font-size: 13px; color: #1a1a1a; line-height: 1.2; }
 .tpl-card__meta { font-size: 11px; color: #8a8f98; }
 .tpl-card__del {

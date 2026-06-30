@@ -47,12 +47,24 @@ export default function ArmarOrdenPage() {
 
   // Catálogo de items de BC para agregar líneas manualmente a la orden.
   const [itemsBc, setItemsBc] = useState<{ code: string; descripcion: string; unidad: string }[]>([]);
+  // Almacenes reales de BC (fallback al catálogo seed si BC no responde).
+  const [bcAlm, setBcAlm] = useState<typeof almacenes | null>(null);
   useEffect(() => {
     fetch("/api/bc/items")
       .then((r) => (r.ok ? r.json() : { items: [] }))
       .then((d) => { if (Array.isArray(d.items)) setItemsBc(d.items.map((i: any) => ({ code: i.code, descripcion: i.descripcion, unidad: i.unidad || "UND" }))); })
       .catch(() => { /* sin BC */ });
+    fetch("/api/bc/almacenes")
+      .then((r) => (r.ok ? r.json() : { almacenes: [] }))
+      .then((d) => {
+        if (Array.isArray(d.almacenes) && d.almacenes.length) {
+          setBcAlm(d.almacenes);
+          if (!d.almacenes.some((a: any) => a.codigo === "ALM-GRAL")) setAlmacen(d.almacenes[0].codigo);
+        }
+      })
+      .catch(() => { /* sin BC, usa seed */ });
   }, []);
+  const catAlm = bcAlm ?? almacenes;
   const [qaCode, setQaCode] = useState("");
   const [qaQty, setQaQty] = useState("");
   const [qaPrecio, setQaPrecio] = useState("");
@@ -182,7 +194,7 @@ export default function ArmarOrdenPage() {
             </Field>
             <Field label="Almacén de recepción" help="Dónde entra el material en BC (por defecto el General)">
               <Select value={almacen} onChange={(e) => setAlmacen(e.target.value)}>
-                {almacenes.map((a) => <option key={a.codigo} value={a.codigo}>{a.codigo} — {a.nombre}</option>)}
+                {catAlm.map((a) => <option key={a.codigo} value={a.codigo}>{a.codigo} — {a.nombre}</option>)}
               </Select>
             </Field>
           </div>

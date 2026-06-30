@@ -172,9 +172,21 @@ export async function bcObras(): Promise<BcObra[]> {
   }));
 }
 
-// No hay API personalizada de almacenes; el almacén ya no se pide al solicitar.
+// Almacenes/ubicaciones (tabla Location) por la API custom de Adelante
+// (api/adelante/inventory/v1.0/locations, page 50234). Se usan para elegir el
+// almacén de recepción al armar la orden. Cache de último bueno + fallback.
+let lastGoodAlmacenes: BcAlmacen[] | null = null;
 export async function bcAlmacenes(): Promise<BcAlmacen[]> {
-  return [];
+  try {
+    const rows = await listAll("inventory", "locations");
+    const alm = rows
+      .map((l) => ({ codigo: l.code ?? l.Code ?? "", nombre: l.name ?? l.Name ?? l.code ?? l.Code ?? "" }))
+      .filter((a) => a.codigo);
+    if (alm.length) lastGoodAlmacenes = alm;
+    return alm;
+  } catch {
+    return lastGoodAlmacenes ?? [];
+  }
 }
 
 export type BcVendor = { id: string; code: string; nombre: string; currencyCode: string };
