@@ -2,8 +2,8 @@
 
 import React, { createContext, useContext, useEffect, useMemo, useState } from "react";
 import type {
-  Almacen, Articulo, Maquina, Movimiento, Obra, Orden, OrdenLinea, Pedido, PedidoLinea,
-  Proveedor, Recepcion, RecepcionLinea, Role, TipoSolicitud,
+  Almacen, Articulo, Maquina, Movimiento, Notificacion, Obra, Orden, OrdenLinea, Pedido, PedidoLinea,
+  PlanCategoria, PlanFila, Proveedor, Recepcion, RecepcionLinea, Role, TipoSolicitud,
 } from "./types";
 import * as seed from "./seed";
 import { nextNumero, nowISO, ordenEstaCompleta, PERSONA_POR_ROL, todayISO } from "./helpers";
@@ -72,6 +72,21 @@ interface StoreShape {
 
   registrarRecepcion: (input: RegistrarRecepcionInput) => Promise<Recepcion>;
 
+  devolverPedido: (id: string, motivo: string) => Promise<void>;
+
+  // Notificaciones in-app
+  notificaciones: Notificacion[];
+  marcarNotifsLeidas: () => void;
+
+  // Planificación (Ingeniería)
+  planCategorias: PlanCategoria[];
+  planFilas: PlanFila[];
+  addPlanCategoria: (nombre: string) => void;
+  removePlanCategoria: (id: string) => void;
+  addPlanFila: (fila: Omit<PlanFila, "id" | "valores">) => void;
+  removePlanFila: (id: string) => void;
+  setPlanCelda: (filaId: string, categoriaId: string, valor: string) => void;
+
   borrador: { pedidoLineaId: string; cantidad: number; precio: number; iva: number }[];
   setBorrador: (items: StoreShape["borrador"]) => void;
 
@@ -86,10 +101,23 @@ interface Persisted {
   ordenes: Orden[];
   recepciones: Recepcion[];
   movimientos: Movimiento[];
+  notificaciones: Notificacion[];
+  planCategorias: PlanCategoria[];
+  planFilas: PlanFila[];
 }
+
+// Partidas de presupuesto iniciales (de la hoja "Programación" del Excel).
+const PLAN_CATEGORIAS_SEED: PlanCategoria[] = [
+  "MONOCOMANDO DUCHAS / BARANI", "LIVIANO", "CEMENTICIO", "REPELLOS", "granito",
+  "muebles", "color muebles", "color puertas", "azulejo cocina", "ceramica",
+  "pilas", "losa sanitaria", "zacate", "TAC",
+].map((n, i) => ({ id: `c${i + 1}`, nombre: n }));
 
 function freshData(): Persisted {
   return {
+    notificaciones: [],
+    planCategorias: structuredClone(PLAN_CATEGORIAS_SEED),
+    planFilas: [],
     pedidos: structuredClone(seed.pedidos),
     ordenes: structuredClone(seed.ordenes),
     recepciones: structuredClone(seed.recepciones),
@@ -113,13 +141,13 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     if (u) setUsuario(u);
     if (USE_API) {
       api.bootstrap()
-        .then((b) => setData({ pedidos: b.pedidos, ordenes: b.ordenes, recepciones: b.recepciones, movimientos: b.movimientos }))
+        .then((b) => setData((d) => ({ ...d, pedidos: b.pedidos, ordenes: b.ordenes, recepciones: b.recepciones, movimientos: b.movimientos })))
         .catch((e) => console.error("bootstrap", e))
         .finally(() => { setCargando(false); setHydrated(true); });
     } else {
       try {
         const raw = localStorage.getItem(LS_KEY);
-        if (raw) setData(JSON.parse(raw) as Persisted);
+        if (raw) setData({ ...freshData(), ...JSON.parse(raw) } as Persisted); // merge: rellena llaves nuevas
       } catch { /* ignore */ }
       setHydrated(true);
     }
@@ -141,7 +169,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
 
   async function refreshFromApi() {
     const b = await api.bootstrap();
-    setData({ pedidos: b.pedidos, ordenes: b.ordenes, recepciones: b.recepciones, movimientos: b.movimientos });
+    setData((d) => ({ ...d, pedidos: b.pedidos, ordenes: b.ordenes, recepciones: b.recepciones, movimientos: b.movimientos }));
   }
 
   const api2 = useMemo<StoreShape>(() => {
@@ -150,6 +178,8 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     const rolActual: Role = role ?? "ingenieria";
     const mkMov = (m: Omit<Movimiento, "id" | "usuario" | "rol" | "fecha">): Movimiento =>
       ({ id: uid(), usuario: persona, rol: rolActual, fecha: nowISO(), ...m });
+    const mkNotif = (tipo: Notificacion["tipo"], mensaje: string, href?: string, rol?: Role): Notificacion =>
+      ({ id: uid(), tipo, mensaje, fecha: nowISO(), leida: false, href, rol });
     const prov = (id: string) => seed.proveedores.find((p) => p.id === id);
 
     // ---------------- ADD PEDIDO ----------------
@@ -177,7 +207,8 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
           lineas: input.lineas.map((l) => ({ ...l, id: uid(), cantidadOrdenada: 0 })),
         };
         const mov = mkMov({ entidad: "pedido", idEntidad: created.id, documentoNo: created.numero, tipoMovimiento: "creado", estadoNuevo: "borrador", detalle: `${created.lineas.length} línea(s)` });
-        return { ...d, pedidos: [created, ...d.pedidos], movimientos: [mov, ...d.movimientos] };
+        const notif = mkNotif("pedido", `Nueva solicitud ${created.numero} de ${created.solicitante}`, `/proveeduria/solicitudes/${created.id}`, "proveeduria");
+        return { ...d, pedidos: [created, ...d.pedidos], movimientos: [mov, ...d.movimientos], notificaciones: [notif, ...d.notificaciones] };
       });
       return created;
     };
@@ -193,14 +224,19 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         await refreshFromApi();
         return;
       }
-      setData((d) => ({
-        ...d,
-        pedidos: d.pedidos.map((x) => (x.id === id ? {
-          ...x, tipoSolicitud: input.tipoSolicitud, obraCodigo: input.obraCodigo, obraNombre: input.obraNombre,
-          maquinaNo: input.maquinaNo, maquinaNombre: input.maquinaNombre, prioridad: input.prioridad, notas: input.notas,
-          lineas: input.lineas.map((l) => ({ ...l, id: uid(), cantidadOrdenada: 0 })),
-        } : x)),
-      }));
+      setData((d) => {
+        const prev = d.pedidos.find((x) => x.id === id);
+        const mov = mkMov({ entidad: "pedido", idEntidad: id, documentoNo: prev?.numero ?? "", tipoMovimiento: "editado", detalle: `Editado · ${input.lineas.length} línea(s)` });
+        return {
+          ...d,
+          pedidos: d.pedidos.map((x) => (x.id === id ? {
+            ...x, tipoSolicitud: input.tipoSolicitud, obraCodigo: input.obraCodigo, obraNombre: input.obraNombre,
+            maquinaNo: input.maquinaNo, maquinaNombre: input.maquinaNombre, prioridad: input.prioridad, notas: input.notas,
+            lineas: input.lineas.map((l) => ({ ...l, id: uid(), cantidadOrdenada: 0 })),
+          } : x)),
+          movimientos: [mov, ...d.movimientos],
+        };
+      });
     };
 
     const updatePedido: StoreShape["updatePedido"] = (p) =>
@@ -276,7 +312,8 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         });
         const peds = [...new Set(lineas.filter((l) => l.pedidoNumero).map((l) => l.pedidoNumero!))];
         const mov = mkMov({ entidad: "orden", idEntidad: created.id, documentoNo: created.numero, tipoMovimiento: "creado", estadoNuevo: "abierto", detalle: peds.length ? `Desde ${peds.join(", ")}` : undefined });
-        return { ...d, ordenes: [created, ...d.ordenes], pedidos, movimientos: [mov, ...d.movimientos] };
+        const notif = mkNotif("orden", `Orden de compra ${created.numero} creada`, `/proveeduria/ordenes/${created.id}`, "aprobacion");
+        return { ...d, ordenes: [created, ...d.ordenes], pedidos, movimientos: [mov, ...d.movimientos], notificaciones: [notif, ...d.notificaciones] };
       });
       return created;
     };
@@ -350,10 +387,42 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         });
         const movRec = mkMov({ entidad: "recepcion", idEntidad: created.id, documentoNo: input.numeroFactura, tipoMovimiento: "creado", detalle: `Factura ${input.numeroFactura}` });
         const movOrd = mkMov({ entidad: "orden", idEntidad: input.ordenId, documentoNo: orden.numero, tipoMovimiento: completada ? "recepcion_total" : "recepcion_parcial", estadoNuevo: completada ? "completado" : orden.estado, detalle: `Factura ${input.numeroFactura}` });
-        return { ...d, ordenes, recepciones: [created, ...d.recepciones], movimientos: [movOrd, movRec, ...d.movimientos] };
+        const notif = mkNotif("factura", `Factura ${input.numeroFactura} registrada en ${orden.numero}${completada ? " (orden completada)" : " (parcial)"}`, `/proveeduria/ordenes/${orden.id}`, "proveeduria");
+        return { ...d, ordenes, recepciones: [created, ...d.recepciones], movimientos: [movOrd, movRec, ...d.movimientos], notificaciones: [notif, ...d.notificaciones] };
       });
       return created;
     };
+
+    // ---------------- DEVOLVER PEDIDO AL INGENIERO ----------------
+    const devolverPedido: StoreShape["devolverPedido"] = async (id, motivo) => {
+      setData((d) => {
+        const prev = d.pedidos.find((p) => p.id === id);
+        const mov = mkMov({ entidad: "pedido", idEntidad: id, documentoNo: prev?.numero ?? "", tipoMovimiento: "devuelto", estadoAnterior: prev?.estado, estadoNuevo: "devuelto", detalle: motivo ? `Motivo: ${motivo}` : "Devuelto a Ingeniería" });
+        const notif = mkNotif("devuelto", `Tu solicitud ${prev?.numero ?? ""} fue devuelta${motivo ? `: ${motivo}` : ""}`, `/ingenieria/${id}`, "ingenieria");
+        return {
+          ...d,
+          pedidos: d.pedidos.map((p) => (p.id === id ? { ...p, estado: "devuelto" as Pedido["estado"], notas: motivo ? `↩ Devuelto: ${motivo}${p.notas ? ` · ${p.notas}` : ""}` : p.notas } : p)),
+          movimientos: [mov, ...d.movimientos],
+          notificaciones: [notif, ...d.notificaciones],
+        };
+      });
+    };
+
+    // ---------------- NOTIFICACIONES ----------------
+    const marcarNotifsLeidas: StoreShape["marcarNotifsLeidas"] = () =>
+      setData((d) => ({ ...d, notificaciones: d.notificaciones.map((n) => ({ ...n, leida: true })) }));
+
+    // ---------------- PLANIFICACIÓN ----------------
+    const addPlanCategoria: StoreShape["addPlanCategoria"] = (nombre) =>
+      setData((d) => (nombre.trim() ? { ...d, planCategorias: [...d.planCategorias, { id: uid(), nombre: nombre.trim() }] } : d));
+    const removePlanCategoria: StoreShape["removePlanCategoria"] = (cid) =>
+      setData((d) => ({ ...d, planCategorias: d.planCategorias.filter((c) => c.id !== cid), planFilas: d.planFilas.map((f) => { const v = { ...f.valores }; delete v[cid]; return { ...f, valores: v }; }) }));
+    const addPlanFila: StoreShape["addPlanFila"] = (fila) =>
+      setData((d) => ({ ...d, planFilas: [...d.planFilas, { id: uid(), modelo: fila.modelo, lote: fila.lote, responsable: fila.responsable, valores: {} }] }));
+    const removePlanFila: StoreShape["removePlanFila"] = (fid) =>
+      setData((d) => ({ ...d, planFilas: d.planFilas.filter((f) => f.id !== fid) }));
+    const setPlanCelda: StoreShape["setPlanCelda"] = (fid, cid, valor) =>
+      setData((d) => ({ ...d, planFilas: d.planFilas.map((f) => (f.id === fid ? { ...f, valores: { ...f.valores, [cid]: valor } } : f)) }));
 
     const reset: StoreShape["reset"] = () => setData(freshData());
 
@@ -363,7 +432,10 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       maquinas: seed.maquinas, almacenes: seed.almacenes,
       pedidos: data.pedidos, ordenes: data.ordenes, recepciones: data.recepciones, movimientos: data.movimientos,
       addPedido, editPedido, updatePedido, setPedidoEstado, deletePedido,
-      createOrden, updateOrden, setOrdenEstado, registrarRecepcion, reset,
+      createOrden, updateOrden, setOrdenEstado, registrarRecepcion, devolverPedido, reset,
+      notificaciones: data.notificaciones, marcarNotifsLeidas,
+      planCategorias: data.planCategorias, planFilas: data.planFilas,
+      addPlanCategoria, removePlanCategoria, addPlanFila, removePlanFila, setPlanCelda,
       borrador, setBorrador,
     };
   }, [role, usuario, data, borrador, cargando]);

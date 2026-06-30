@@ -41,7 +41,7 @@ export default function PedidoDetallePage() {
             <Button variant="outline" title="Crear una solicitud nueva con las mismas líneas" onClick={() => router.push(`/ingenieria/copiar/${pedido.id}`)}>
               ⧉ Copiar
             </Button>
-            {pedido.estado === "borrador" && (
+            {(pedido.estado === "borrador" || pedido.estado === "devuelto") && (
               <>
                 <Button variant="outline" onClick={async () => { await deletePedido(pedido.id); toast("Pedido eliminado"); router.push("/ingenieria"); }}>
                   Eliminar

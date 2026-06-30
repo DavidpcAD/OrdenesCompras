@@ -2,9 +2,10 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useStore } from "@/lib/store";
 import type { Role } from "@/lib/types";
+import { formatDate } from "@/lib/helpers";
 
 const ROLE_META: Record<Role, { label: string; persona: string; home: string; nav: { href: string; label: string }[]; color: string }> = {
   ingenieria: {
@@ -12,6 +13,7 @@ const ROLE_META: Record<Role, { label: string; persona: string; home: string; na
     nav: [
       { href: "/ingenieria", label: "Mis solicitudes" },
       { href: "/ingenieria/nuevo", label: "Nueva solicitud" },
+      { href: "/ingenieria/planificacion", label: "Planificación" },
       { href: "/ingenieria/seguimiento", label: "Seguimiento por proyecto" },
     ],
   },
@@ -19,6 +21,7 @@ const ROLE_META: Record<Role, { label: string; persona: string; home: string; na
     label: "Proveeduría", persona: "Angie", home: "/proveeduria/ordenes", color: "var(--ds-color-yellow)",
     nav: [
       { href: "/proveeduria/ordenes", label: "Órdenes creadas" },
+      { href: "/proveeduria/solicitudes", label: "Solicitudes" },
       { href: "/proveeduria", label: "Líneas por ordenar" },
       { href: "/proveeduria/pedidas", label: "Líneas pedidas" },
     ],
@@ -41,9 +44,18 @@ const ROLE_META: Record<Role, { label: string; persona: string; home: string; na
 };
 
 export function AppShell({ role, children }: { role: Role; children: React.ReactNode }) {
-  const { role: current, setRole, usuario, setUsuario } = useStore();
+  const { role: current, setRole, usuario, setUsuario, notificaciones, marcarNotifsLeidas } = useStore();
   const router = useRouter();
   const pathname = usePathname();
+  const [notifOpen, setNotifOpen] = useState(false);
+  // Notificaciones relevantes para este rol (o sin rol específico).
+  const notifsRol = notificaciones.filter((n) => !n.rol || n.rol === role);
+  const noLeidas = notifsRol.filter((n) => !n.leida).length;
+  function toggleNotif() {
+    const open = !notifOpen;
+    setNotifOpen(open);
+    if (open && noLeidas > 0) setTimeout(() => marcarNotifsLeidas(), 1200);
+  }
 
   // guard: si no hay rol o no coincide, mandar al login
   useEffect(() => {
@@ -79,6 +91,31 @@ export function AppShell({ role, children }: { role: Role; children: React.React
         )}
         <div className="topbar__spacer" />
         <div className="topbar__user">
+          {/* Campanita de notificaciones */}
+          <div style={{ position: "relative" }}>
+            <button className="notif-bell" title="Notificaciones" onClick={toggleNotif} aria-label="Notificaciones">
+              🔔{noLeidas > 0 && <span className="notif-bell__dot">{noLeidas > 9 ? "9+" : noLeidas}</span>}
+            </button>
+            {notifOpen && (
+              <>
+                <div className="notif-overlay" onClick={() => setNotifOpen(false)} />
+                <div className="notif-panel">
+                  <div className="notif-panel__head">Notificaciones</div>
+                  {notifsRol.length === 0 ? (
+                    <div className="notif-empty">Sin notificaciones.</div>
+                  ) : (
+                    notifsRol.slice(0, 30).map((n) => (
+                      <button key={n.id} className={`notif-item ${n.leida ? "" : "is-unread"}`}
+                        onClick={() => { setNotifOpen(false); if (n.href) router.push(n.href); }}>
+                        <span className="notif-item__msg">{n.mensaje}</span>
+                        <span className="notif-item__date">{formatDate(n.fecha)}</span>
+                      </button>
+                    ))
+                  )}
+                </div>
+              </>
+            )}
+          </div>
           <span className="ds-badge" style={{ background: meta.color, color: "#000" }}>{meta.label} · {usuario ?? meta.persona}</span>
           <button className="link-btn" onClick={() => { setRole(null); setUsuario(null); router.replace("/"); }}>
             Salir

@@ -17,7 +17,7 @@ export default function EditarSolicitudPage() {
     return <AppShell role="ingenieria"><main className="page"><div className="empty">Pedido no encontrado.</div></main></AppShell>;
   }
 
-  const editable = pedido.estado === "borrador" && pedido.lineas.every((l) => l.cantidadOrdenada === 0);
+  const editable = (pedido.estado === "borrador" || pedido.estado === "devuelto") && pedido.lineas.every((l) => l.cantidadOrdenada === 0);
   if (!editable) {
     return (
       <AppShell role="ingenieria">

@@ -129,6 +129,7 @@ export function pedidoBadge(estado: Pedido["estado"]): { label: string; tone: st
     case "aprobado": return { label: "Aprobado", tone: "green" };
     case "en_orden": return { label: "En orden", tone: "yellow" };
     case "cerrado": return { label: "Cerrado", tone: "gray" };
+    case "devuelto": return { label: "Devuelto", tone: "red" };
   }
 }
 

@@ -62,7 +62,30 @@ export interface Almacen {
 }
 
 // ============================ PEDIDO (Ingeniería · Laura) ===================
-export type PedidoEstado = "borrador" | "aprobado" | "en_orden" | "cerrado";
+export type PedidoEstado = "borrador" | "aprobado" | "en_orden" | "cerrado" | "devuelto";
+
+// ============================ NOTIFICACIONES (in-app) =======================
+export interface Notificacion {
+  id: string;
+  tipo: "pedido" | "orden" | "factura" | "devuelto";
+  mensaje: string;
+  fecha: string;       // ISO
+  leida: boolean;
+  rol?: Role;          // a qué rol le interesa (opcional)
+  href?: string;       // a dónde llevar al hacer click
+}
+
+// ============================ PLANIFICACIÓN (Ingeniería) =====================
+// Grilla tipo "Programación": filas = unidades, columnas = partidas (categorías
+// que el ingeniero crea), celdas = valor libre (fecha / estado / color / texto).
+export interface PlanCategoria { id: string; nombre: string; }
+export interface PlanFila {
+  id: string;
+  modelo: string;
+  lote: string;
+  responsable: string;
+  valores: Record<string, string>; // valores[categoriaId] = valor de la celda
+}
 
 export interface PedidoLinea {
   id: string;
