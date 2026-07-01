@@ -28,11 +28,12 @@ export function Combobox<T>({
 
   const sel = items.find((i) => getKey(i) === value) ?? null;
   const q = query.trim().toLowerCase();
-  // No mostramos opciones hasta que el usuario escriba algo.
-  const filtered = useMemo(() => {
-    if (!q) return items.length <= max ? items : [];
-    return items.filter((i) => (getSearch ? getSearch(i) : getLabel(i)).toLowerCase().includes(q)).slice(0, max);
-  }, [items, q, max]);
+  // Al abrir muestra TODAS las opciones (con scroll); al escribir, filtra.
+  const matched = useMemo(
+    () => (q ? items.filter((i) => (getSearch ? getSearch(i) : getLabel(i)).toLowerCase().includes(q)) : items),
+    [items, q] // eslint-disable-line react-hooks/exhaustive-deps
+  );
+  const filtered = matched.slice(0, max);
 
   return (
     <div className="combo">
@@ -46,8 +47,7 @@ export function Combobox<T>({
       />
       {open && (
         <div className="combo__menu">
-          {!q && filtered.length === 0 && <div className="combo__empty">Escribí para buscar…</div>}
-          {q && filtered.length === 0 && <div className="combo__empty">Sin coincidencias.</div>}
+          {filtered.length === 0 && <div className="combo__empty">{q ? "Sin coincidencias." : "No hay opciones."}</div>}
           {filtered.map((i) => (
             <button
               key={getKey(i)}
@@ -58,6 +58,7 @@ export function Combobox<T>({
               {getLabel(i)}
             </button>
           ))}
+          {matched.length > max && <div className="combo__more">Mostrando {max} de {matched.length} · escribí para filtrar</div>}
         </div>
       )}
     </div>
