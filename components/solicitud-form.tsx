@@ -110,7 +110,6 @@ export function SolicitudForm({
   // ---- alta rápida ----
   const [qaArticuloId, setQaArticuloId] = useState("");
   const [qaQuery, setQaQuery] = useState("");
-  const [qaObraId, setQaObraId] = useState("");
   const [qaCantidad, setQaCantidad] = useState("");
   const [qaOpen, setQaOpen] = useState(false);
   const [qaVariantes, setQaVariantes] = useState<Variante[]>([]);
@@ -156,11 +155,11 @@ export function SolicitudForm({
   }
   const qaArticulo = catArticulos.find((a) => a.id === qaArticuloId);
   const variantePendiente = qaVariantes.length > 0 && !qaVariante;
-  const puedeAgregar = !!qaArticuloId && Number(qaCantidad) > 0 && (tipo === "repuesto" || !!qaObraId) && !variantePendiente;
+  const puedeAgregar = !!qaArticuloId && Number(qaCantidad) > 0 && (tipo === "repuesto" || !!obraTodas) && !variantePendiente;
 
   function agregar() {
     if (!puedeAgregar) return;
-    const obra = catObras.find((o) => o.id === qaObraId);
+    const obra = catObras.find((o) => o.id === obraTodas);
     const variante = qaVariantes.find((v) => v.code === qaVariante);
     setLineas((ls) => [{
       key: Math.random().toString(36).slice(2),
@@ -327,7 +326,7 @@ export function SolicitudForm({
   function cambiarTipo(t: TipoSolicitud) {
     if (t === tipo) return;
     setTipo(t); setLineas([]); setMaquinaId("");
-    setQaArticuloId(""); setQaQuery(""); setQaObraId(""); setQaCantidad("");
+    setQaArticuloId(""); setQaQuery(""); setQaCantidad("");
     setQaVariantes([]); setQaVariante(""); setQaVariantesError(false);
   }
 
@@ -475,20 +474,23 @@ export function SolicitudForm({
                   No hay plantillas guardadas todavía. Agregá materiales abajo y guardá la lista, o descargá el Excel para armarla en tu compu.
                 </p>
               )}
-              {/* Cambiar la obra de TODAS las líneas de una vez */}
-              {esMaterial && lineas.length > 0 && (
-                <div className="row gap-2 wrap" style={{ alignItems: "flex-end", marginTop: 12, paddingTop: 12, borderTop: "1.5px dashed var(--ds-color-gray-100)" }}>
-                  <div style={{ minWidth: 240, flex: "1 1 240px" }}>
-                    <label className="ds-label ds-muted" style={{ display: "block", marginBottom: 4 }}>Obra para TODAS las líneas</label>
-                    <Combobox items={catObras} value={obraTodas} onChange={(k) => { setObraTodas(k); obraMasiva(k); }} getKey={(o) => o.id} getLabel={(o) => `${o.codigo} — ${o.nombre}`} placeholder="Elegí una obra y se aplica a todas…" />
-                  </div>
-                </div>
-              )}
             </div>
           </div>
         )}
 
-        <div className="qa-row" style={{ gridTemplateColumns: ["1fr", qaVariantes.length ? "190px" : null, esMaterial ? "230px" : null, "110px", "auto"].filter(Boolean).join(" ") }}>
+        <div className="qa-box">
+        {esMaterial && (
+          <div className="row row--between wrap gap-2" style={{ alignItems: "flex-end", marginBottom: 10 }}>
+            <div style={{ flex: "1 1 320px", minWidth: 240 }}>
+              <label className="ds-label ds-muted" style={{ display: "block", marginBottom: 4 }}>Obra (se aplica a lo que agregás)</label>
+              <Combobox items={catObras} value={obraTodas} onChange={(k) => setObraTodas(k)} getKey={(o) => o.id} getLabel={(o) => `${o.codigo} — ${o.nombre}`} placeholder="Buscá la obra…" />
+            </div>
+            {lineas.length > 0 && obraTodas && (
+              <button type="button" className="link-btn" onClick={() => obraMasiva(obraTodas)}>Aplicar a las {lineas.length} línea(s)</button>
+            )}
+          </div>
+        )}
+        <div className="qa-row" style={{ gridTemplateColumns: ["1fr", qaVariantes.length ? "190px" : null, "120px", "auto"].filter(Boolean).join(" ") }}>
           <div className="qa-field">
             <label>{esMaterial ? "Material" : "Repuesto"}</label>
             <div className="combo">
@@ -514,12 +516,6 @@ export function SolicitudForm({
               <Combobox items={qaVariantes} value={qaVariante} onChange={(k) => setQaVariante(k)} getKey={(v) => v.code} getLabel={(v) => `${v.code} — ${v.descripcion}`} placeholder="Elegí variante…" />
             </div>
           )}
-          {esMaterial && (
-            <div className="qa-field">
-              <label>Obra</label>
-              <Combobox items={catObras} value={qaObraId} onChange={(k) => setQaObraId(k)} getKey={(o) => o.id} getLabel={(o) => `${o.codigo} — ${o.nombre}`} placeholder="Buscar obra…" />
-            </div>
-          )}
           <div className="qa-field">
             <label>Cantidad{qaArticulo ? ` (${qaArticulo.unidad})` : ""}</label>
             <input ref={cantRef} className="ds-form-field__input" type="number" min={0} value={qaCantidad} placeholder="0"
@@ -532,6 +528,7 @@ export function SolicitudForm({
             No se pudieron cargar las variantes de este material. Si requiere variante, el pedido podría fallar en Business Central — avisá a proveeduría antes de continuar.
           </p>
         )}
+        </div>
 
         <div className="ds-table-wrap mt-4" style={{ boxShadow: "none", border: "1.5px solid var(--ds-color-gray-100)" }}>
           <table className="ds-table">
