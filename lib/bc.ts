@@ -136,7 +136,7 @@ async function listAll(group: string, entity: string): Promise<any[]> {
   return out;
 }
 
-export type BcItem = { id: string; code: string; descripcion: string; unidad: string };
+export type BcItem = { id: string; code: string; descripcion: string; unidad: string; lastDirectCost?: number; categoria?: string };
 export type BcObra = { id: string; codigo: string; nombre: string };
 export type BcAlmacen = { codigo: string; nombre: string };
 
@@ -144,23 +144,73 @@ let lastGoodItems: BcItem[] | null = null;
 export async function bcItems(): Promise<BcItem[]> {
   try {
     const rows = await listAll("inventory", "items");
-    const items = rows
+    let items: BcItem[] = rows
       .filter((i) => !(i.Blocked ?? i.blocked))
       .map((i) => {
         const code = i.No ?? i.no ?? i.number ?? "";
+        const costCustom = Number(i.LastDirectCost ?? i.lastDirectCost ?? i.UnitCost ?? i.unitCost ?? 0) || undefined;
+        const catCustom = (i.ItemCategoryCode ?? i.itemCategoryCode ?? "").toString().trim() || undefined;
         return {
           id: i.id ?? i.systemId ?? code,
           code,
           descripcion: i.Description ?? i.description ?? i.displayName ?? code,
           unidad: i.BaseUnitOfMeasure ?? i.baseUnitOfMeasure ?? i.baseUnitOfMeasureCode ?? "UND",
+          lastDirectCost: costCustom,
+          categoria: catCustom,
         };
       });
+    // Enriquecer con ÚLTIMO COSTO DIRECTO (precio de la última compra) y CATEGORÍA
+    // del ítem (= partida en Planificación) desde la API estándar v2.0.
+    const extra = await bcItemExtra();
+    if (extra.size) items = items.map((i) => { const e = extra.get(i.code); return { ...i, lastDirectCost: e?.cost ?? i.lastDirectCost, categoria: e?.categoria ?? i.categoria }; });
     if (items.length) lastGoodItems = items; // guardamos el último catálogo bueno
     return items;
   } catch (e) {
     if (lastGoodItems) { console.warn("BC items falló; sirviendo último catálogo bueno cacheado."); return lastGoodItems; }
     throw e;
   }
+}
+
+// Mapa itemNo -> { último costo directo, categoría } desde la API estándar v2.0.
+// Cacheado 5 min. Si falla, la UI cae al historial local / sin categoría.
+async function bcItemExtra(): Promise<Map<string, { cost?: number; categoria?: string }>> {
+  const map = new Map<string, { cost?: number; categoria?: string }>();
+  try {
+    const cid = await getStdCompanyId();
+    let url: string | null = `${stdRoot()}/companies(${cid})/items?$select=number,lastDirectCost,unitCost,itemCategoryCode&$top=5000`;
+    let guard = 0;
+    while (url && guard++ < 20) {
+      const res = await bcFetch(url, { next: { revalidate: 300 } } as RequestInit);
+      if (!res.ok) break;
+      const data: any = await res.json();
+      for (const it of (data.value ?? [])) {
+        const no = it.number ?? it.no ?? "";
+        if (!no) continue;
+        const cost = (typeof it.lastDirectCost === "number" && it.lastDirectCost > 0) ? it.lastDirectCost
+          : (typeof it.unitCost === "number" && it.unitCost > 0) ? it.unitCost : undefined;
+        const categoria = (it.itemCategoryCode ?? "").toString().trim() || undefined;
+        map.set(no, { cost, categoria });
+      }
+      url = data["@odata.nextLink"] ?? null;
+    }
+  } catch { /* sin datos extra */ }
+  return map;
+}
+
+// Último costo directo de UN item (precio de su última compra), API estándar v2.0.
+// Fallback cuando no hay precio facturado a un proveedor específico.
+export async function bcItemLastCost(itemNo: string): Promise<number | null> {
+  if (!itemNo) return null;
+  try {
+    const cid = await getStdCompanyId();
+    const url = `${stdRoot()}/companies(${cid})/items?$filter=${encodeURIComponent(`number eq '${itemNo}'`)}&$select=number,lastDirectCost,unitCost&$top=1`;
+    const res = await bcFetch(url, { next: { revalidate: 300 } } as RequestInit);
+    if (!res.ok) return null;
+    const it = ((await res.json())?.value ?? [])[0];
+    if (!it) return null;
+    return (typeof it.lastDirectCost === "number" && it.lastDirectCost > 0) ? it.lastDirectCost
+      : (typeof it.unitCost === "number" && it.unitCost > 0) ? it.unitCost : null;
+  } catch { return null; }
 }
 
 export async function bcObras(): Promise<BcObra[]> {

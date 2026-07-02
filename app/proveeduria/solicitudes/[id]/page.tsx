@@ -6,7 +6,7 @@ import { AppShell } from "@/components/shell";
 import { Badge, Button, Card, Modal, Textarea, useToast, QtyRing } from "@/components/ui";
 import { Timeline } from "@/components/timeline";
 import { useStore } from "@/lib/store";
-import { formatDate, num, pedidoBadge, pedidoLineaPendiente, recibidoDeLineaPedido, destinoCodigo, destinoLabel } from "@/lib/helpers";
+import { formatDate, num, pedidoBadge, pedidoLineaPendiente, recibidoDeLineaPedido, destinoCodigo, destinoLabel, tipoSolicitudBadge } from "@/lib/helpers";
 
 export default function ProveeduriaPedidoDetallePage() {
   const { id } = useParams<{ id: string }>();
@@ -21,6 +21,7 @@ export default function ProveeduriaPedidoDetallePage() {
     return <AppShell role="proveeduria"><main className="page"><div className="empty">Solicitud no encontrada.</div></main></AppShell>;
   }
   const b = pedidoBadge(pedido.estado);
+  const t = tipoSolicitudBadge(pedido.tipoSolicitud);
   const total = pedido.lineas.reduce((s, l) => s + l.cantidad, 0);
   const rec = pedido.lineas.reduce((s, l) => s + recibidoDeLineaPedido(ordenes, l.id), 0);
   const pct = total > 0 ? Math.round(Math.min(100, (rec / total) * 100)) : 0;
@@ -50,7 +51,7 @@ export default function ProveeduriaPedidoDetallePage() {
           <div className="page__title">
             <div className="row gap-3">
               <h1 className="ds-heading">{pedido.numero}</h1>
-              {pedido.tipoSolicitud === "repuesto" ? <Badge tone="yellow">Repuesto</Badge> : <Badge tone="green">Material</Badge>}
+              <Badge tone={t.tone}>{t.label}</Badge>
               <Badge tone={b.tone}>{b.label}</Badge>
             </div>
             <p className="ds-muted">{destinoCodigo(pedido)} · {destinoLabel(pedido)} · {pedido.solicitante} · {formatDate(pedido.fecha)}</p>

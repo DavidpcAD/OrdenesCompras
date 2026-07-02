@@ -1,78 +1,67 @@
 "use client";
 
-import { useRef, useState } from "react";
-import { useRouter } from "next/navigation";
-import * as XLSX from "xlsx";
+import Link from "next/link";
+import { useEffect, useMemo, useState } from "react";
 import { AppShell } from "@/components/shell";
-import { Badge, Button, Card, Input, useToast } from "@/components/ui";
+import { Button, Card, Input } from "@/components/ui";
 import { useStore } from "@/lib/store";
-import { pedidoBadge } from "@/lib/helpers";
-import type { PlanCategoria, PlanFila } from "@/lib/types";
+
+// Planificación = matriz OBRA × PARTIDA que se llena SOLA con las solicitudes de
+// material. Las columnas (partidas) salen de la CATEGORÍA del ítem en Business
+// Central. Cada celda resume cuántos ítems se pidieron y cuántos faltan por
+// comprar. No se importa Excel ni se llena a mano.
+const SIN_CAT = "Sin categoría";
 
 export default function PlanificacionPage() {
-  const { planCategorias, planFilas, pedidos, usuario, addPlanCategoria, removePlanCategoria, addPlanFila, removePlanFila, setPlanCelda, cargarPlanificacion, setPlanContexto } = useStore();
-  const router = useRouter();
-  const toast = useToast();
-  const fileRef = useRef<HTMLInputElement>(null);
-  const [nuevaCat, setNuevaCat] = useState("");
-  const [modelo, setModelo] = useState("");
-  const [lote, setLote] = useState("");
-  const [responsable, setResponsable] = useState(usuario ?? "");
+  const { pedidos } = useStore();
+  const [itemCat, setItemCat] = useState<Record<string, string>>({});
+  const [obraNombre, setObraNombre] = useState<Record<string, string>>({});
+  const [cargandoBc, setCargandoBc] = useState(true);
   const [buscar, setBuscar] = useState("");
 
-  function agregarFila() {
-    if (!modelo.trim() && !lote.trim()) { toast("Indicá al menos modelo o lote.", "error"); return; }
-    addPlanFila({ modelo: modelo.trim(), lote: lote.trim(), responsable: responsable.trim() });
-    setModelo(""); setLote("");
-  }
-  function agregarCat() { if (nuevaCat.trim()) { addPlanCategoria(nuevaCat.trim()); setNuevaCat(""); } }
+  useEffect(() => {
+    let cancel = false;
+    (async () => {
+      try {
+        const [ri, ro] = await Promise.all([fetch("/api/bc/items"), fetch("/api/bc/obras")]);
+        const items = ri.ok ? ((await ri.json()).items ?? []) : [];
+        const obras = ro.ok ? ((await ro.json()).obras ?? []) : [];
+        if (cancel) return;
+        setItemCat(Object.fromEntries(items.map((i: any) => [i.code, (i.categoria ?? "").trim()]).filter((x: any[]) => x[0])));
+        setObraNombre(Object.fromEntries(obras.map((o: any) => [o.codigo, o.nombre])));
+      } catch { /* sin BC: se muestran códigos y todo cae en "Sin categoría" */ }
+      finally { if (!cancel) setCargandoBc(false); }
+    })();
+    return () => { cancel = true; };
+  }, []);
 
-  // Importar la hoja "Programación" del Excel: detecta partidas (columnas) y unidades (filas).
-  async function importar(file: File) {
-    try {
-      const wb = XLSX.read(await file.arrayBuffer(), { type: "array", cellDates: true });
-      const ws = wb.Sheets["Programacion"] || wb.Sheets[wb.SheetNames[0]];
-      const aoa: any[][] = XLSX.utils.sheet_to_json(ws, { header: 1, defval: "", raw: false });
-      let hr = -1;
-      for (let i = 0; i < Math.min(aoa.length, 12); i++) if (aoa[i].some((c) => String(c).trim().toLowerCase() === "modelo")) { hr = i; break; }
-      if (hr < 0) { toast("No encontré la fila de encabezados (con 'modelo').", "error"); return; }
-      const headers = aoa[hr].map((c) => String(c).trim());
-      const grupos = hr > 0 ? aoa[hr - 1].map((c) => String(c).trim()) : [];
-      const ciModelo = headers.findIndex((h) => h.toLowerCase() === "modelo");
-      const ciCasa = headers.findIndex((h) => ["casa", "lote"].includes(h.toLowerCase()));
-      const ciResp = ciModelo + 1;
-      const partidas: { col: number; nombre: string }[] = [];
-      headers.forEach((h, i) => {
-        if (!h || i === ciModelo || i === ciCasa || i === ciResp || /^\d+$/.test(h)) return;
-        const g = grupos[i] ?? "";
-        partidas.push({ col: i, nombre: h.toLowerCase() === "color" && g ? `color (${g})` : h });
-      });
-      const categorias: PlanCategoria[] = partidas.map((p, idx) => ({ id: `c${idx + 1}`, nombre: p.nombre }));
-      const filas: PlanFila[] = [];
-      for (let i = hr + 1; i < aoa.length; i++) {
-        const r = aoa[i];
-        const md = String(r[ciModelo] ?? "").trim();
-        const lt = ciCasa >= 0 ? String(r[ciCasa] ?? "").trim() : "";
-        if (!md && !lt) continue;
-        const valores: Record<string, string> = {};
-        partidas.forEach((p, idx) => { const v = String(r[p.col] ?? "").trim(); if (v && v.toLowerCase() !== "n/a") valores[`c${idx + 1}`] = v; });
-        filas.push({ id: `f${i}-${Math.random().toString(36).slice(2, 6)}`, modelo: md, lote: lt, responsable: String(r[ciResp] ?? "").trim(), valores });
+  // Solo material (va a obra). Cada línea aporta a la celda [obra][partida].
+  type Celda = { items: number; pendientes: number; detalle: string[] };
+  const { obras, partidas, matriz } = useMemo(() => {
+    const m: Record<string, Record<string, Celda>> = {};
+    const setObras = new Set<string>();
+    const setPart = new Set<string>();
+    for (const p of pedidos) {
+      if (p.tipoSolicitud !== "material") continue;
+      for (const l of p.lineas) {
+        const obra = l.almacen || (p.obraCodigo && p.obraCodigo !== "(varias)" ? p.obraCodigo : "");
+        if (!obra) continue;
+        const cat = (itemCat[l.articuloId] || "").trim() || SIN_CAT;
+        setObras.add(obra); setPart.add(cat);
+        m[obra] ??= {};
+        m[obra][cat] ??= { items: 0, pendientes: 0, detalle: [] };
+        const c = m[obra][cat];
+        c.items += 1;
+        if (l.cantidad - l.cantidadOrdenada > 1e-9) c.pendientes += 1;
+        c.detalle.push(`${l.articuloId} · ${l.cantidad} ${l.unidad}${l.cantidadOrdenada > 0 ? ` (comprado ${l.cantidadOrdenada})` : ""}`);
       }
-      if (!categorias.length || !filas.length) { toast("No pude leer partidas/unidades de esa hoja.", "error"); return; }
-      cargarPlanificacion(categorias, filas);
-      toast(`Planificación importada: ${filas.length} unidades · ${categorias.length} partidas.`, "success");
-    } catch (e: any) {
-      toast(`No pude leer el Excel: ${String(e?.message ?? e)}`, "error");
-    } finally { if (fileRef.current) fileRef.current.value = ""; }
-  }
+    }
+    const obras = [...setObras].sort();
+    const partidas = [...setPart].sort((a, b) => (a === SIN_CAT ? 1 : b === SIN_CAT ? -1 : a.localeCompare(b)));
+    return { obras, partidas, matriz: m };
+  }, [pedidos, itemCat]);
 
-  function armarPedido(f: PlanFila) {
-    setPlanContexto({ modelo: f.modelo, lote: f.lote });
-    router.push("/ingenieria/nuevo");
-  }
-
-  const filasVis = planFilas.filter((f) => { const q = buscar.trim().toLowerCase(); return !q || f.modelo.toLowerCase().includes(q) || f.lote.toLowerCase().includes(q) || f.responsable.toLowerCase().includes(q); });
-  const pedidosDe = (lote: string) => (lote ? pedidos.filter((p) => p.loteRef === lote) : []);
+  const obrasVis = obras.filter((o) => { const q = buscar.trim().toLowerCase(); return !q || o.toLowerCase().includes(q) || (obraNombre[o] ?? "").toLowerCase().includes(q); });
 
   return (
     <AppShell role="ingenieria">
@@ -80,95 +69,65 @@ export default function PlanificacionPage() {
         <div className="page__head">
           <div className="page__title">
             <h1 className="ds-heading">Planificación</h1>
-            <p className="ds-muted">Programación por unidad y partida (como el Excel). Desde cada unidad armás el pedido de compra y ves qué se pidió, qué falta y qué se está pidiendo.</p>
+            <p className="ds-muted">Se llena sola con las solicitudes de material: filas = obra, columnas = partida (categoría del ítem en Business Central). Cada celda muestra cuántos ítems se pidieron y cuántos faltan por comprar.</p>
           </div>
-          <div className="row gap-2">
-            <input ref={fileRef} type="file" accept=".xlsx,.xls" style={{ display: "none" }} onChange={(e) => { const f = e.target.files?.[0]; if (f) importar(f); }} />
-            <Button variant="outline" onClick={() => fileRef.current?.click()}>⬆ Importar Excel</Button>
-          </div>
+          <Link href="/ingenieria/nuevo"><Button>+ Nueva solicitud</Button></Link>
         </div>
 
         <Card className="mt-2">
           <div className="row wrap gap-3" style={{ alignItems: "flex-end" }}>
             <div style={{ flex: "1 1 240px", minWidth: 200 }}>
-              <label className="ds-label ds-muted" style={{ display: "block", marginBottom: 4 }}>Nueva partida (columna)</label>
-              <Input value={nuevaCat} onChange={(e) => setNuevaCat(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") agregarCat(); }} placeholder="Ej. granito, repellos, puertas…" />
+              <label className="ds-label ds-muted" style={{ display: "block", marginBottom: 4 }}>Buscar obra</label>
+              <Input value={buscar} onChange={(e) => setBuscar(e.target.value)} placeholder="Código o nombre de obra…" />
             </div>
-            <Button variant="outline" onClick={agregarCat}>+ Partida</Button>
-            <div style={{ flex: "1 1 200px", minWidth: 180 }}>
-              <label className="ds-label ds-muted" style={{ display: "block", marginBottom: 4 }}>Buscar unidad</label>
-              <Input value={buscar} onChange={(e) => setBuscar(e.target.value)} placeholder="Modelo, lote o responsable…" />
-            </div>
-            <span className="ds-body-sm ds-muted" style={{ alignSelf: "center" }}>{planCategorias.length} partida(s) · {planFilas.length} unidad(es)</span>
+            <span className="ds-body-sm ds-muted" style={{ alignSelf: "center" }}>{obras.length} obra(s) · {partidas.length} partida(s)</span>
           </div>
         </Card>
 
         <Card className="mt-4" style={{ padding: 0, overflow: "hidden" }}>
           <div className="ds-table-wrap" style={{ boxShadow: "none", overflowX: "auto" }}>
-            <table className="ds-table" style={{ minWidth: 900 }}>
+            <table className="ds-table" style={{ minWidth: 720 }}>
               <thead>
                 <tr>
-                  <th style={{ minWidth: 140, position: "sticky", left: 0, background: "#fff", zIndex: 2 }}>Unidad</th>
-                  <th style={{ minWidth: 100 }}>Responsable</th>
-                  <th style={{ minWidth: 200 }}>Pedidos</th>
-                  {planCategorias.map((c) => (
-                    <th key={c.id} style={{ minWidth: 120 }}>
-                      <div className="row gap-2" style={{ alignItems: "center", justifyContent: "space-between" }}>
-                        <span className="ds-body-sm">{c.nombre}</span>
-                        <button type="button" className="tpl-card__del" style={{ position: "static" }} title="Quitar partida" onClick={() => removePlanCategoria(c.id)}>×</button>
-                      </div>
-                    </th>
-                  ))}
-                  <th></th>
+                  <th style={{ minWidth: 200, position: "sticky", left: 0, background: "#fff", zIndex: 2 }}>Obra</th>
+                  {partidas.map((c) => <th key={c} style={{ minWidth: 120 }} className="ds-num">{c}</th>)}
                 </tr>
               </thead>
               <tbody>
-                {filasVis.length === 0 && (
-                  <tr><td colSpan={planCategorias.length + 4}><div className="empty">{planFilas.length === 0 ? "Importá tu Excel o agregá unidades abajo." : "Ninguna unidad coincide con la búsqueda."}</div></td></tr>
+                {obrasVis.length === 0 && (
+                  <tr><td colSpan={partidas.length + 1}><div className="empty">{obras.length === 0 ? (cargandoBc ? "Cargando…" : "Todavía no hay solicitudes de material. Cuando se creen, la matriz se llena sola.") : "Ninguna obra coincide con la búsqueda."}</div></td></tr>
                 )}
-                {filasVis.map((f) => {
-                  const peds = pedidosDe(f.lote);
-                  return (
-                    <tr key={f.id}>
-                      <td style={{ position: "sticky", left: 0, background: "#fff", zIndex: 1 }}>
-                        <div className="ds-strong ds-body-sm">{f.modelo || "—"}</div>
-                        <div className="ds-muted ds-body-sm">{f.lote}</div>
-                      </td>
-                      <td className="ds-muted ds-body-sm">{f.responsable || "—"}</td>
-                      <td>
-                        <div className="row gap-2 wrap" style={{ alignItems: "center" }}>
-                          {peds.length === 0
-                            ? <span className="ds-body-sm ds-muted">Sin pedir</span>
-                            : peds.map((p) => { const b = pedidoBadge(p.estado); return <Badge key={p.id} tone={b.tone}>{p.numero}: {b.label}</Badge>; })}
-                          <button type="button" className="link-btn" title="Armar pedido de compra para esta unidad" onClick={() => armarPedido(f)}>+ Armar pedido</button>
-                        </div>
-                      </td>
-                      {planCategorias.map((c) => (
-                        <td key={c.id} style={{ padding: "4px 6px" }}>
-                          <input className="ds-cell-input" value={f.valores[c.id] ?? ""} placeholder="—" onChange={(e) => setPlanCelda(f.id, c.id, e.target.value)} style={{ width: "100%", minWidth: 100, boxSizing: "border-box" }} />
+                {obrasVis.map((o) => (
+                  <tr key={o}>
+                    <td style={{ position: "sticky", left: 0, background: "#fff", zIndex: 1 }}>
+                      <div className="ds-strong ds-body-sm">{o}</div>
+                      {obraNombre[o] && <div className="ds-muted ds-body-sm ds-truncate" style={{ maxWidth: 200 }} title={obraNombre[o]}>{obraNombre[o]}</div>}
+                    </td>
+                    {partidas.map((c) => {
+                      const cel = matriz[o]?.[c];
+                      if (!cel) return <td key={c} className="ds-num ds-muted">—</td>;
+                      const todoComprado = cel.pendientes === 0;
+                      return (
+                        <td key={c} className="ds-num" title={cel.detalle.join("\n")}>
+                          <div className="ds-strong" style={{ color: todoComprado ? "var(--ds-color-green-200)" : undefined }}>{cel.items} ítem(s)</div>
+                          {cel.pendientes > 0
+                            ? <div className="ds-body-sm ds-pending-text">faltan {cel.pendientes}</div>
+                            : <div className="ds-body-sm ds-muted">comprado</div>}
                         </td>
-                      ))}
-                      <td className="ds-num"><button type="button" className="icon-btn" title="Quitar unidad" onClick={() => removePlanFila(f.id)}>×</button></td>
-                    </tr>
-                  );
-                })}
+                      );
+                    })}
+                  </tr>
+                ))}
               </tbody>
-              <tfoot>
-                <tr>
-                  <td colSpan={3} style={{ padding: "8px 6px" }}>
-                    <div className="row gap-2 wrap">
-                      <input className="ds-cell-input" value={modelo} onChange={(e) => setModelo(e.target.value)} placeholder="Modelo…" style={{ width: 150 }} />
-                      <input className="ds-cell-input" value={lote} onChange={(e) => setLote(e.target.value)} placeholder="Lote…" style={{ width: 90 }} />
-                      <input className="ds-cell-input" value={responsable} onChange={(e) => setResponsable(e.target.value)} placeholder="Responsable…" style={{ width: 130 }} />
-                      <Button variant="outline" onClick={agregarFila}>+ Unidad</Button>
-                    </div>
-                  </td>
-                  <td colSpan={planCategorias.length + 1} className="ds-muted ds-body-sm" style={{ padding: "8px 6px" }}>Las celdas de partida se llenan después de agregar la unidad.</td>
-                </tr>
-              </tfoot>
             </table>
           </div>
         </Card>
+
+        {!cargandoBc && obras.length > 0 && partidas.length === 1 && partidas[0] === SIN_CAT && (
+          <p className="ds-body-sm ds-muted mt-4">
+            Todas las líneas cayeron en “{SIN_CAT}”. Para separar por partida, asigná la <span className="ds-strong">categoría de ítem</span> a los materiales en Business Central.
+          </p>
+        )}
       </main>
     </AppShell>
   );

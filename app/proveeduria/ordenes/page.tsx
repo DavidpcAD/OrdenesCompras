@@ -1,8 +1,9 @@
 "use client";
 
 import { useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { AppShell } from "@/components/shell";
-import { Tile } from "@/components/ui";
+import { Button, Tile } from "@/components/ui";
 import { OrdenesLista } from "@/components/ordenes-lista";
 import { useStore } from "@/lib/store";
 
@@ -10,6 +11,7 @@ type Filtro = "todas" | "abierto" | "lanzado" | "completado";
 
 export default function OrdenesPage() {
   const { ordenes } = useStore();
+  const router = useRouter();
   const [filtro, setFiltro] = useState<Filtro>("todas");
   const listaRef = useRef<HTMLDivElement>(null);
 
@@ -38,6 +40,7 @@ export default function OrdenesPage() {
             <h1 className="ds-heading">Órdenes de compra</h1>
             <p className="ds-muted">Órdenes enviadas a proveedores. Tocá un panel para filtrar. Quedan abiertas hasta recibir el 100% del material.</p>
           </div>
+          <Button onClick={() => router.push("/proveeduria/directa")}>+ Nueva orden directa</Button>
         </div>
 
         <div className="tiles mt-2">

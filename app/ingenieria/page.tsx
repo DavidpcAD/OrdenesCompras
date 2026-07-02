@@ -6,7 +6,7 @@ import { useRef, useState } from "react";
 import { AppShell } from "@/components/shell";
 import { Badge, Button, Card, QtyRing, Tile } from "@/components/ui";
 import { useStore } from "@/lib/store";
-import { formatDate, pedidoBadge, recibidoDeLineaPedido } from "@/lib/helpers";
+import { formatDate, pedidoBadge, pedidoCompraBadge, pedidoOrdenadoPct, recibidoDeLineaPedido, tipoSolicitudBadge } from "@/lib/helpers";
 
 type Filtro = "todas" | "material" | "repuesto" | "aprobado";
 
@@ -39,7 +39,7 @@ export default function IngenieriaPage() {
   const repuesto = pedidos.filter((p) => p.tipoSolicitud === "repuesto").length;
   const aprobados = pedidos.filter((p) => p.estado === "aprobado").length;
 
-  const COLS = ["num", "tipo", "destino", "comentario", "solicitante", "fecha", "lineas", "prioridad", "estado", "entregado"];
+  const COLS = ["num", "tipo", "destino", "comentario", "solicitante", "fecha", "lineas", "prioridad", "estado", "compra", "entregado"];
   const prioLabel = (p: typeof pedidos[number]) => p.prioridad === "urgente" ? "Urgente" : p.prioridad === "alta" ? "Alta" : "Normal";
   // Código y nombre del destino (obra o máquina) de un pedido.
   const destCodigo = (p: typeof pedidos[number]) => (p.tipoSolicitud === "repuesto" ? p.maquinaNo : p.obraCodigo) ?? "—";
@@ -47,7 +47,7 @@ export default function IngenieriaPage() {
   const cellText = (p: typeof pedidos[number], k: string): string => {
     switch (k) {
       case "num": return p.numero;
-      case "tipo": return p.tipoSolicitud === "repuesto" ? "Repuesto" : "Material";
+      case "tipo": return tipoSolicitudBadge(p.tipoSolicitud).label;
       case "destino": return `${destCodigo(p)} ${destNombre(p)}`.trim();
       case "comentario": return p.notas ?? "";
       case "solicitante": return p.solicitante;
@@ -55,6 +55,7 @@ export default function IngenieriaPage() {
       case "lineas": return String(p.lineas.length);
       case "prioridad": return prioLabel(p);
       case "estado": return pedidoBadge(p.estado).label;
+      case "compra": return pedidoCompraBadge(p).label;
       case "entregado": return `${entregadoPct(p)}%`;
       default: return "";
     }
@@ -105,7 +106,7 @@ export default function IngenieriaPage() {
               <thead>
                 <tr>
                   <th>N.º</th><th>Tipo</th><th>Destino</th><th>Comentario</th><th>Solicitante</th><th>Fecha</th>
-                  <th className="ds-num">Líneas</th><th>Prioridad</th><th>Estado</th><th>Entregado</th><th></th>
+                  <th className="ds-num">Líneas</th><th>Prioridad</th><th>Estado</th><th>Compra</th><th>Entregado</th><th></th>
                 </tr>
                 <tr>
                   {COLS.map((k) => (
@@ -119,14 +120,14 @@ export default function IngenieriaPage() {
               </thead>
               <tbody>
                 {filtradas.length === 0 && (
-                  <tr><td colSpan={11}><div className="empty">{pedidos.length === 0 ? "Aún no hay solicitudes. Creá la primera." : "Ninguna solicitud coincide con los filtros."}</div></td></tr>
+                  <tr><td colSpan={12}><div className="empty">{pedidos.length === 0 ? "Aún no hay solicitudes. Creá la primera." : "Ninguna solicitud coincide con los filtros."}</div></td></tr>
                 )}
                 {visibles.map((p) => {
                   const b = pedidoBadge(p.estado);
                   return (
                     <tr key={p.id} className="is-clickable" onClick={() => router.push(`/ingenieria/${p.id}`)}>
                       <td className="ds-strong">{p.numero}</td>
-                      <td>{p.tipoSolicitud === "repuesto" ? <Badge tone="yellow">Repuesto</Badge> : <Badge tone="green">Material</Badge>}</td>
+                      <td>{(() => { const t = tipoSolicitudBadge(p.tipoSolicitud); return <Badge tone={t.tone}>{t.label}</Badge>; })()}</td>
                       <td>
                         <div className="ds-strong ds-body-sm">{destCodigo(p)}</div>
                         {destNombre(p) && <div className="ds-muted ds-body-sm ds-truncate" style={{ maxWidth: 160 }} title={destNombre(p)}>{destNombre(p)}</div>}
@@ -141,6 +142,17 @@ export default function IngenieriaPage() {
                           : <Badge tone="gray">Normal</Badge>}
                       </td>
                       <td><Badge tone={b.tone}>{b.label}</Badge></td>
+                      <td>
+                        {(() => {
+                          const c = pedidoCompraBadge(p); const pct = pedidoOrdenadoPct(p);
+                          return (
+                            <div className="row gap-2" style={{ alignItems: "center" }}>
+                              <Badge tone={c.tone}>{c.label}</Badge>
+                              {pct > 0 && pct < 100 && <span className="ds-body-sm ds-muted">{pct}%</span>}
+                            </div>
+                          );
+                        })()}
+                      </td>
                       <td>
                         {(() => {
                           const total = p.lineas.reduce((s, l) => s + l.cantidad, 0);

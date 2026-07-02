@@ -46,13 +46,13 @@ export default function ArmarOrdenPage() {
   const provSel = catProv.find((x) => x.id === proveedorId);
 
   // Catálogo de items de BC para agregar líneas manualmente a la orden.
-  const [itemsBc, setItemsBc] = useState<{ code: string; descripcion: string; unidad: string }[]>([]);
+  const [itemsBc, setItemsBc] = useState<{ code: string; descripcion: string; unidad: string; precioUltimo?: number }[]>([]);
   // Almacenes reales de BC (fallback al catálogo seed si BC no responde).
   const [bcAlm, setBcAlm] = useState<typeof almacenes | null>(null);
   useEffect(() => {
     fetch("/api/bc/items")
       .then((r) => (r.ok ? r.json() : { items: [] }))
-      .then((d) => { if (Array.isArray(d.items)) setItemsBc(d.items.map((i: any) => ({ code: i.code, descripcion: i.descripcion, unidad: i.unidad || "UND" }))); })
+      .then((d) => { if (Array.isArray(d.items)) setItemsBc(d.items.map((i: any) => ({ code: i.code, descripcion: i.descripcion, unidad: i.unidad || "UND", precioUltimo: typeof i.lastDirectCost === "number" ? i.lastDirectCost : undefined }))); })
       .catch(() => { /* sin BC */ });
     fetch("/api/bc/almacenes")
       .then((r) => (r.ok ? r.json() : { almacenes: [] }))
@@ -74,7 +74,7 @@ export default function ArmarOrdenPage() {
       let info = { pedidoNumero: "", articuloId: "", descripcion: "", unidad: "", almacen: "", proyecto: "" };
       for (const p of pedidos) {
         const l = p.lineas.find((x) => x.id === b.pedidoLineaId);
-        if (l) { info = { pedidoNumero: p.numero, articuloId: l.articuloId, descripcion: l.descripcion, unidad: l.unidad, almacen: l.almacen, proyecto: l.almacen || p.obraCodigo || "" }; break; }
+        if (l) { info = { pedidoNumero: p.numero, articuloId: l.articuloId, descripcion: l.descripcion, unidad: l.unidad, almacen: l.almacen, proyecto: p.tipoSolicitud === "material" ? (l.almacen || p.obraCodigo || "") : "" }; break; }
       }
       return {
         pedidoLineaId: b.pedidoLineaId, ...info,
@@ -102,6 +102,17 @@ export default function ArmarOrdenPage() {
     return () => { cancel = true; };
   }, [proveedorId]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Prellenar el precio con el ÚLTIMO precio de compra (costo directo del item)
+  // en las líneas que vengan sin precio. No pisa lo que el comprador ya escribió.
+  useEffect(() => {
+    if (!itemsBc.length) return;
+    setRows((rs) => rs.map((r) => {
+      if (Number(r.precio) > 0) return r;
+      const it = itemsBc.find((x) => x.code === r.articuloId);
+      return it?.precioUltimo ? { ...r, precio: String(it.precioUltimo) } : r;
+    }));
+  }, [itemsBc]);
+
   const setRow = (id: string, patch: Partial<Row>) =>
     setRows((rs) => rs.map((r) => (r.pedidoLineaId === id ? { ...r, ...patch } : r)));
   const removeRow = (id: string) => setRows((rs) => rs.filter((r) => r.pedidoLineaId !== id));
@@ -122,6 +133,8 @@ export default function ArmarOrdenPage() {
   const lastPrice = (r: Row) => {
     const bc = bcPrices[r.articuloId];
     if (typeof bc === "number") return bc;
+    const it = itemsBc.find((x) => x.code === r.articuloId);
+    if (it?.precioUltimo) return it.precioUltimo;
     return proveedorId ? ultimoPrecioProveedor(ordenes, r.articuloId, proveedorId) : null;
   };
   const ivaTotal = rows.reduce((s, r) => s + calcImporte(r) * ((Number(r.iva) || 0) / 100), 0);

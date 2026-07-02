@@ -6,13 +6,13 @@ import { AppShell } from "@/components/shell";
 import { Badge, Button, Card, Modal, useToast } from "@/components/ui";
 import { IconEye } from "@/components/icons";
 import { useStore } from "@/lib/store";
-import { destinoLabel, destinoCodigo, money, num, pedidoLineaPendiente } from "@/lib/helpers";
+import { destinoLabel, destinoCodigo, money, num, pedidoLineaPendiente, solicitudResumen, tipoSolicitudBadge } from "@/lib/helpers";
 
 interface Row {
   pedidoId: string;
   pedidoNumero: string;
   destino: string;
-  tipo: "material" | "repuesto";
+  tipo: "material" | "repuesto" | "stock";
   pedidoLineaId: string;
   articuloId: string;
   descripcion: string;
@@ -30,10 +30,11 @@ export default function ProveeduriaMaterialesPage() {
   const router = useRouter();
   const toast = useToast();
 
-  // Proveeduría ve toda línea pendiente de ordenar (saldo > 0) de cualquier pedido
-  // que no esté cerrado — incluye borrador, aprobado y en orden.
+  // Proveeduría solo ve líneas de solicitudes ya ENVIADAS por Ingeniería
+  // (aprobado / en orden) con saldo por ordenar. Se excluyen borrador y devueltas
+  // (siguen en manos del solicitante) y las cerradas (sin saldo).
   const pedidosConSaldo = useMemo(
-    () => pedidos.filter((p) => p.estado !== "cerrado" && p.lineas.some((l) => pedidoLineaPendiente(l) > 0)),
+    () => pedidos.filter((p) => (p.estado === "aprobado" || p.estado === "en_orden") && p.lineas.some((l) => pedidoLineaPendiente(l) > 0)),
     [pedidos]
   );
 
@@ -159,7 +160,7 @@ export default function ProveeduriaMaterialesPage() {
               <span className="ds-body-sm ds-muted">Ver todas las líneas pendientes</span>
             </button>
             {pedidosConSaldo
-              .filter((p) => { const q = pedFiltro.trim().toLowerCase(); return !q || p.numero.toLowerCase().includes(q) || destinoCodigo(p).toLowerCase().includes(q) || destinoLabel(p).toLowerCase().includes(q); })
+              .filter((p) => { const q = pedFiltro.trim().toLowerCase(); if (!q) return true; const r = solicitudResumen(p); return [p.numero, destinoCodigo(p), r.principal, r.secundaria ?? "", p.notas ?? ""].some((t) => t.toLowerCase().includes(q)); })
               .map((p) => {
               const n = p.lineas.filter((l) => pedidoLineaPendiente(l) > 0).length;
               const sel = seleccionPorPedido(p.id);
@@ -172,9 +173,11 @@ export default function ProveeduriaMaterialesPage() {
                       <span className="icon-btn" title="Ver líneas" onClick={(e) => { e.stopPropagation(); setPreviewId(p.id); }}><IconEye /></span>
                     </span>
                   </div>
-                  <span className="ds-body-sm ds-muted ds-truncate" style={{ maxWidth: 200 }}>
-                    {p.tipoSolicitud === "repuesto" ? "Repuesto · " : "Material · "}<span className="ds-strong">{destinoCodigo(p)}</span> {destinoLabel(p)}
-                  </span>
+                  {(() => { const r = solicitudResumen(p); return (
+                    <span className="ds-body-sm ds-muted ds-truncate" style={{ maxWidth: 220 }} title={r.secundaria ? `${r.principal} · ${r.secundaria}` : r.principal}>
+                      {tipoSolicitudBadge(p.tipoSolicitud).label} · <span className="ds-strong">{r.principal}</span>{r.secundaria ? ` · ${r.secundaria}` : ""}
+                    </span>
+                  ); })()}
                 </div>
               );
             })}
@@ -270,9 +273,9 @@ export default function ProveeduriaMaterialesPage() {
 
       {/* popup: líneas de un pedido */}
       {preview && (
-        <Modal title={`${preview.numero} · ${destinoLabel(preview)}`} onClose={() => setPreviewId(null)}>
+        <Modal title={`${preview.numero} · ${solicitudResumen(preview).principal}`} onClose={() => setPreviewId(null)}>
           <div className="row gap-3" style={{ marginBottom: 12 }}>
-            {preview.tipoSolicitud === "repuesto" ? <Badge tone="yellow">Repuesto</Badge> : <Badge tone="green">Material</Badge>}
+            {(() => { const t = tipoSolicitudBadge(preview.tipoSolicitud); return <Badge tone={t.tone}>{t.label}</Badge>; })()}
             <span className="ds-muted ds-label">{preview.solicitante}</span>
           </div>
           <div className="ds-table-wrap" style={{ boxShadow: "none", border: "1.5px solid var(--ds-color-gray-100)" }}>

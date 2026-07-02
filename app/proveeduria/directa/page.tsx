@@ -1,56 +1,54 @@
 "use client";
 
-import { useParams, useRouter } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { AppShell } from "@/components/shell";
 import { Badge, Button, Card, Field, Input, Select, useToast } from "@/components/ui";
 import { Combobox } from "@/components/combobox";
 import { useStore } from "@/lib/store";
-import { money, ordenEsDirecta, ordenPedidos } from "@/lib/helpers";
+import { money } from "@/lib/helpers";
 import type { OrdenLinea } from "@/lib/types";
 
-interface Row { key: string; articuloId: string; descripcion: string; unidad: string; obra: string; cantidad: string; precio: string; iva: string; descuento: string; proyecto?: string; taskNo?: string; pedidoLineaId?: string; pedidoNumero?: string; }
+// Orden DIRECTA: compra armada por Proveeduría sin partir de una solicitud de
+// Ingeniería (material que no vino en ningún pedido). Todas las líneas son
+// manuales (pedidoNumero "Manual"); en la lista/detalle se marca como "Directa".
+interface Row { key: string; articuloId: string; descripcion: string; unidad: string; obra: string; cantidad: string; precio: string; iva: string; descuento: string; }
 const uid = () => Math.random().toString(36).slice(2, 9);
 
-export default function EditarOrdenPage() {
-  const { id } = useParams<{ id: string }>();
+export default function OrdenDirectaPage() {
+  const { proveedores, almacenes, createOrden, setOrdenEstado } = useStore();
   const router = useRouter();
   const toast = useToast();
-  const { ordenes, proveedores, almacenes, updateOrden } = useStore();
-  const orden = ordenes.find((o) => o.id === id);
 
+  const [proveedorId, setProveedorId] = useState("");
+  const [currency, setCurrency] = useState("");
+  const [flete, setFlete] = useState("");
+  const [almacen, setAlmacen] = useState("ALM-GRAL");
+
+  // Catálogos en vivo desde Business Central (con respaldo al catálogo seed).
   const [bcProv, setBcProv] = useState<typeof proveedores | null>(null);
   const [itemsBc, setItemsBc] = useState<{ code: string; descripcion: string; unidad: string; precioUltimo?: number }[]>([]);
   const [bcAlm, setBcAlm] = useState<typeof almacenes | null>(null);
   useEffect(() => {
     fetch("/api/bc/vendors").then((r) => (r.ok ? r.json() : { proveedores: [] })).then((d) => { if (Array.isArray(d.proveedores) && d.proveedores.length) setBcProv(d.proveedores); }).catch(() => {});
     fetch("/api/bc/items").then((r) => (r.ok ? r.json() : { items: [] })).then((d) => { if (Array.isArray(d.items)) setItemsBc(d.items.map((i: any) => ({ code: i.code, descripcion: i.descripcion, unidad: i.unidad || "UND", precioUltimo: typeof i.lastDirectCost === "number" ? i.lastDirectCost : undefined }))); }).catch(() => {});
-    fetch("/api/bc/almacenes").then((r) => (r.ok ? r.json() : { almacenes: [] })).then((d) => { if (Array.isArray(d.almacenes) && d.almacenes.length) setBcAlm(d.almacenes); }).catch(() => {});
+    fetch("/api/bc/almacenes").then((r) => (r.ok ? r.json() : { almacenes: [] })).then((d) => {
+      if (Array.isArray(d.almacenes) && d.almacenes.length) { setBcAlm(d.almacenes); if (!d.almacenes.some((a: any) => a.codigo === "ALM-GRAL")) setAlmacen(d.almacenes[0].codigo); }
+    }).catch(() => {});
   }, []);
   const catProv = bcProv ?? proveedores;
   const catAlm = bcAlm ?? almacenes;
+  const provSel = catProv.find((x) => x.id === proveedorId);
 
-  const cargo = orden?.lineas.find((l) => l.tipo === "cargo");
-  const [proveedorId, setProveedorId] = useState(orden?.proveedorId ?? "");
-  const [currency, setCurrency] = useState(orden?.currencyCode ?? "");
-  const [flete, setFlete] = useState(cargo ? String(cargo.precioUnitario) : "");
-  const [almacen, setAlmacen] = useState(orden?.almacenRecepcion ?? "ALM-GRAL");
-  const [rows, setRows] = useState<Row[]>(
-    (orden?.lineas ?? []).filter((l) => l.tipo === "articulo").map((l) => ({
-      key: l.id, articuloId: l.articuloId ?? "", descripcion: l.descripcion, unidad: l.unidad, obra: l.proyecto ?? l.almacen ?? "",
-      cantidad: String(l.cantidad), precio: String(l.precioUnitario), iva: String(l.ivaPct ?? 13), descuento: String(l.descuentoPct ?? 0),
-      proyecto: l.proyecto, taskNo: l.taskNo, pedidoLineaId: l.pedidoLineaId, pedidoNumero: l.pedidoNumero,
-    }))
-  );
+  const [rows, setRows] = useState<Row[]>([]);
   const [qaCode, setQaCode] = useState(""); const [qaQty, setQaQty] = useState(""); const [qaPrecio, setQaPrecio] = useState("");
 
-  const provSel = catProv.find((x) => x.id === proveedorId);
   const setRow = (k: string, patch: Partial<Row>) => setRows((rs) => rs.map((r) => (r.key === k ? { ...r, ...patch } : r)));
   const removeRow = (k: string) => setRows((rs) => rs.filter((r) => r.key !== k));
   function agregarLinea() {
     const it = itemsBc.find((x) => x.code === qaCode);
     if (!it || !(Number(qaQty) > 0)) { toast("Elegí un artículo y una cantidad.", "error"); return; }
-    setRows((rs) => [...rs, { key: `m-${uid()}`, articuloId: it.code, descripcion: it.descripcion, unidad: it.unidad, obra: "", cantidad: String(Number(qaQty)), precio: String(Number(qaPrecio) || it.precioUltimo || 0), iva: "13", descuento: "0", pedidoNumero: "Manual" }]);
+    setRows((rs) => [...rs, { key: `m-${uid()}`, articuloId: it.code, descripcion: it.descripcion, unidad: it.unidad, obra: "", cantidad: String(Number(qaQty)), precio: String(Number(qaPrecio) || it.precioUltimo || 0), iva: "13", descuento: "0" }]);
     setQaCode(""); setQaQty(""); setQaPrecio("");
   }
 
@@ -59,48 +57,41 @@ export default function EditarOrdenPage() {
   const ivaTotal = useMemo(() => rows.reduce((s, r) => s + calcImporte(r) * ((Number(r.iva) || 0) / 100), 0), [rows]);
   const fleteNum = Number(flete) || 0;
   const total = subtotal + fleteNum + ivaTotal;
+  const puedeCrear = !!proveedorId && rows.length > 0;
   const [guardando, setGuardando] = useState(false);
 
-  if (!orden) return <AppShell role="proveeduria"><main className="page"><div className="empty">Orden no encontrada.</div></main></AppShell>;
-  if (orden.estado !== "abierto") {
-    return <AppShell role="proveeduria"><main className="page">
-      <div className="back-link" onClick={() => router.push(`/proveeduria/ordenes/${id}`)}>‹ Volver a la orden</div>
-      <div className="empty" style={{ padding: "48px 16px" }}>Esta orden ya no se puede editar: solo se permite mientras está Abierta (sin enviar a aprobación).</div>
-    </main></AppShell>;
+  function elegirProveedor(id: string) {
+    setProveedorId(id);
+    const p = catProv.find((x) => x.id === id);
+    if (p) setCurrency(p.currencyCode ?? "");
   }
 
-  // Una orden nacida de una solicitud NO permite agregar artículos sueltos: sus
-  // líneas deben corresponder a lo pedido por Ingeniería. Para compras libres se
-  // usa una "orden directa". En las directas sí se muestra el buscador de artículos.
-  const esDirecta = ordenEsDirecta(orden);
-  const peds = ordenPedidos(orden);
-
-  async function guardar() {
-    if (!proveedorId) { toast("Seleccioná un proveedor.", "error"); return; }
-    if (rows.length === 0) { toast("La orden debe tener al menos una línea.", "error"); return; }
+  async function crear(aprobar: boolean) {
+    if (!puedeCrear) { toast("Seleccioná un proveedor y agregá al menos una línea.", "error"); return; }
     setGuardando(true);
     try {
       const ls: Omit<OrdenLinea, "id" | "cantidadRecibida" | "cantidadFacturada">[] = rows.map((r) => ({
-        tipo: "articulo", articuloId: r.articuloId, pedidoLineaId: r.pedidoLineaId, pedidoNumero: r.pedidoNumero,
+        tipo: "articulo", articuloId: r.articuloId, pedidoNumero: "Manual",
         descripcion: r.descripcion, cantidad: Number(r.cantidad), unidad: r.unidad, almacen: r.obra,
         precioUnitario: Number(r.precio), ivaPct: Number(r.iva) || 0, descuentoPct: Number(r.descuento) || 0,
-        proyecto: r.proyecto || r.obra || undefined, taskNo: r.taskNo,
+        proyecto: r.obra || undefined,
       }));
       if (fleteNum > 0) ls.push({ tipo: "cargo", descripcion: "FLETE / TRANSPORTE", cantidad: 1, unidad: "UND", almacen: rows[0]?.obra ?? "", precioUnitario: fleteNum, ivaPct: 13 });
-      await updateOrden(orden!.id, { proveedorId, proveedorNo: provSel?.code, proveedorNombre: provSel?.nombre, currencyCode: currency, almacenRecepcion: almacen, lineas: ls });
-      toast(`Orden ${orden!.numero} actualizada`, "success");
-      router.push(`/proveeduria/ordenes/${orden!.id}`);
+      const orden = await createOrden({ proveedorId, proveedorNo: provSel?.code, proveedorNombre: provSel?.nombre, currencyCode: currency, almacenRecepcion: almacen, lineas: ls });
+      if (aprobar) await setOrdenEstado(orden.id, "pendiente_aprobacion");
+      toast(`Orden directa ${orden.numero} ${aprobar ? "enviada a aprobación" : "guardada como abierta"}`, "success");
+      router.push(`/proveeduria/ordenes/${orden.id}`);
     } catch (e: any) { toast(String(e?.message ?? e), "error"); setGuardando(false); }
   }
 
   return (
     <AppShell role="proveeduria">
       <main className="page page--wide" style={{ paddingBottom: 120 }}>
-        <div className="back-link" onClick={() => router.push(`/proveeduria/ordenes/${id}`)}>‹ Volver a la orden</div>
+        <div className="back-link" onClick={() => router.push("/proveeduria/ordenes")}>‹ Volver a órdenes</div>
         <div className="page__head">
           <div className="page__title">
-            <div className="row gap-3"><h1 className="ds-heading">Editar {orden.numero}</h1><Badge tone="gray">Abierta</Badge></div>
-            <p className="ds-muted">Ajustá proveedor, almacén, líneas y precios. Solo se puede mientras la orden esté Abierta.</p>
+            <div className="row gap-3"><h1 className="ds-heading">Nueva orden directa</h1><Badge tone="yellow">Directa</Badge></div>
+            <p className="ds-muted">Compra que no viene de una solicitud de Ingeniería. Agregá los artículos del catálogo directamente.</p>
           </div>
         </div>
 
@@ -108,7 +99,7 @@ export default function EditarOrdenPage() {
           <h3 className="ds-subtitle" style={{ marginBottom: 16 }}>Datos de la orden</h3>
           <div className="grid-3">
             <Field label="Proveedor" help="Hereda términos y moneda">
-              <Combobox items={catProv} value={proveedorId} onChange={(k) => { setProveedorId(k); const p = catProv.find((x) => x.id === k); if (p) setCurrency(p.currencyCode ?? ""); }}
+              <Combobox items={catProv} value={proveedorId} onChange={(k) => elegirProveedor(k)}
                 getKey={(p) => p.id} getLabel={(p) => `${p.code} — ${p.nombre}`} getSearch={(p) => `${p.code} ${p.nombre}`} placeholder="Buscar proveedor…" />
             </Field>
             <Field label="Moneda">
@@ -126,30 +117,24 @@ export default function EditarOrdenPage() {
         </Card>
 
         <Card className="mt-4" style={{ padding: 0, overflow: "hidden" }}>
-          {esDirecta ? (
-            <div className="row wrap gap-2" style={{ alignItems: "flex-end", padding: "12px 16px", borderBottom: "1.5px solid var(--ds-color-gray-100)", background: "color-mix(in srgb, var(--ds-color-green-100) 6%, #fff)" }}>
-              <div style={{ flex: "1 1 280px", minWidth: 220 }}>
-                <label className="ds-label ds-muted" style={{ display: "block", marginBottom: 4 }}>Agregar artículo</label>
-                <Combobox items={itemsBc} value={qaCode} onChange={(k) => { setQaCode(k); const it = itemsBc.find((x) => x.code === k); if (it?.precioUltimo) setQaPrecio(String(it.precioUltimo)); }} getKey={(i) => i.code} getLabel={(i) => `${i.code} — ${i.descripcion}`} getSearch={(i) => `${i.code} ${i.descripcion}`} placeholder="Buscar artículo del catálogo…" />
-              </div>
-              <div><label className="ds-label ds-muted" style={{ display: "block", marginBottom: 4 }}>Cantidad</label><Input type="number" min={0} value={qaQty} onChange={(e) => setQaQty(e.target.value)} placeholder="0" style={{ width: 90 }} /></div>
-              <div><label className="ds-label ds-muted" style={{ display: "block", marginBottom: 4 }}>Precio</label><Input type="number" min={0} value={qaPrecio} onChange={(e) => setQaPrecio(e.target.value)} placeholder="0" style={{ width: 110 }} />{(() => { const it = itemsBc.find((x) => x.code === qaCode); return it?.precioUltimo ? <div className="ds-body-sm ds-muted" style={{ marginTop: 2 }}>últ. compra {money(it.precioUltimo, currency)}</div> : null; })()}</div>
-              <Button variant="outline" onClick={agregarLinea} disabled={!qaCode || !(Number(qaQty) > 0)}>+ Agregar línea</Button>
+          <div className="row wrap gap-2" style={{ alignItems: "flex-end", padding: "12px 16px", borderBottom: "1.5px solid var(--ds-color-gray-100)", background: "color-mix(in srgb, var(--ds-color-green-100) 6%, #fff)" }}>
+            <div style={{ flex: "1 1 280px", minWidth: 220 }}>
+              <label className="ds-label ds-muted" style={{ display: "block", marginBottom: 4 }}>Agregar artículo</label>
+              <Combobox items={itemsBc} value={qaCode} onChange={(k) => { setQaCode(k); const it = itemsBc.find((x) => x.code === k); if (it?.precioUltimo) setQaPrecio(String(it.precioUltimo)); }} getKey={(i) => i.code} getLabel={(i) => `${i.code} — ${i.descripcion}`} getSearch={(i) => `${i.code} ${i.descripcion}`} placeholder="Buscar artículo del catálogo…" />
             </div>
-          ) : (
-            <div className="ds-body-sm ds-muted" style={{ padding: "12px 16px", borderBottom: "1.5px solid var(--ds-color-gray-100)", background: "color-mix(in srgb, var(--ds-color-green-100) 6%, #fff)" }}>
-              Las líneas provienen de la solicitud ({peds.join(", ")}). Podés ajustar cantidad, precio, descuento o quitar líneas, pero no agregar artículos sueltos. Para compras libres usá una <span className="ds-strong">orden directa</span>.
-            </div>
-          )}
+            <div><label className="ds-label ds-muted" style={{ display: "block", marginBottom: 4 }}>Cantidad</label><Input type="number" min={0} value={qaQty} onChange={(e) => setQaQty(e.target.value)} placeholder="0" style={{ width: 90 }} /></div>
+            <div><label className="ds-label ds-muted" style={{ display: "block", marginBottom: 4 }}>Precio</label><Input type="number" min={0} value={qaPrecio} onChange={(e) => setQaPrecio(e.target.value)} placeholder="0" style={{ width: 110 }} />{(() => { const it = itemsBc.find((x) => x.code === qaCode); return it?.precioUltimo ? <div className="ds-body-sm ds-muted" style={{ marginTop: 2 }}>últ. compra {money(it.precioUltimo, currency)}</div> : null; })()}</div>
+            <Button variant="outline" onClick={agregarLinea} disabled={!qaCode || !(Number(qaQty) > 0)}>+ Agregar línea</Button>
+          </div>
           <div className="ds-table-wrap" style={{ boxShadow: "none" }}>
             <table className="ds-table">
               <thead><tr><th>Artículo</th><th>Obra</th><th className="ds-num">Cantidad</th><th className="ds-num">Precio</th><th className="ds-num">Desc%</th><th className="ds-num">IVA%</th><th className="ds-num">Importe</th><th></th></tr></thead>
               <tbody>
-                {rows.length === 0 && <tr><td colSpan={8}><div className="empty">Sin líneas. Agregá al menos una.</div></td></tr>}
+                {rows.length === 0 && <tr><td colSpan={8}><div className="empty">Sin líneas. Buscá un artículo del catálogo y agregalo.</div></td></tr>}
                 {rows.map((r) => (
                   <tr key={r.key}>
-                    <td><div className="ds-truncate" title={r.descripcion} style={{ maxWidth: 220 }}>{r.descripcion}</div>{r.pedidoNumero && <div className="ds-body-sm ds-muted">{r.pedidoNumero}</div>}</td>
-                    <td className="ds-muted ds-body-sm">{r.obra || "—"}</td>
+                    <td><div className="ds-truncate" title={r.descripcion} style={{ maxWidth: 220 }}>{r.descripcion}</div><div className="ds-body-sm ds-muted">{r.articuloId}</div></td>
+                    <td><input className="ds-cell-input" value={r.obra} placeholder="—" style={{ width: 92 }} onChange={(e) => setRow(r.key, { obra: e.target.value })} /></td>
                     <td className="ds-num"><input className="ds-cell-input" type="number" min={0} value={r.cantidad} style={{ width: 70 }} onChange={(e) => setRow(r.key, { cantidad: e.target.value })} /></td>
                     <td className="ds-num"><input className="ds-cell-input" type="number" min={0} value={r.precio} style={{ width: 92 }} onChange={(e) => setRow(r.key, { precio: e.target.value })} /></td>
                     <td className="ds-num"><input className="ds-cell-input" type="number" min={0} max={100} value={r.descuento} style={{ width: 60 }} onChange={(e) => setRow(r.key, { descuento: e.target.value })} /></td>
@@ -177,8 +162,8 @@ export default function EditarOrdenPage() {
         <div className="action-bar__inner">
           <span className="ds-muted">{rows.length} línea(s) · <span className="ds-strong">{money(total, currency)}</span></span>
           <div className="row gap-3">
-            <Button variant="outline" onClick={() => router.push(`/proveeduria/ordenes/${id}`)}>Cancelar</Button>
-            <Button onClick={guardar} disabled={guardando}>{guardando ? "Guardando…" : "Guardar cambios"}</Button>
+            <Button variant="outline" onClick={() => crear(false)} disabled={!puedeCrear || guardando}>Guardar como abierta</Button>
+            <Button onClick={() => crear(true)} disabled={!puedeCrear || guardando}>{guardando ? "Enviando…" : "Enviar a aprobación"}</Button>
           </div>
         </div>
       </div>

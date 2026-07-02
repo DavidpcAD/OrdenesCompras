@@ -6,7 +6,7 @@ import { Badge, Card, useToast } from "@/components/ui";
 import { OrderLinesTable } from "@/components/order-lines";
 import { Timeline } from "@/components/timeline";
 import { useStore } from "@/lib/store";
-import { money, num, formatDate, ordenBadge, ordenLineaImporte, ordenRecibidoPct } from "@/lib/helpers";
+import { money, num, formatDate, ordenBadge, ordenLineaImporte, ordenRecibidoPct, ordenPedidos, ordenEsDirecta } from "@/lib/helpers";
 import type { Orden } from "@/lib/types";
 
 // Vista de detalle de una orden, reutilizada por Proveeduría, Aprobación y Bodega.
@@ -50,6 +50,8 @@ export function OrdenDetalle({
 
   const prov = proveedores.find((p) => p.id === orden.proveedorId);
   const b = ordenBadge(orden.estado);
+  const peds = ordenPedidos(orden);
+  const esDirecta = ordenEsDirecta(orden);
   const recs = recepciones.filter((r) => r.ordenId === orden.id);
   const subtotal = orden.lineas.filter((l) => l.tipo === "articulo").reduce((s, l) => s + ordenLineaImporte(l), 0);
   const iva = orden.lineas.filter((l) => l.tipo === "articulo").reduce((s, l) => s + ordenLineaImporte(l) * ((l.ivaPct || 0) / 100), 0);
@@ -63,14 +65,18 @@ export function OrdenDetalle({
           <div className="row gap-3">
             <h1 className="ds-heading">{orden.numero}</h1>
             <Badge tone={b.tone}>{b.label}</Badge>
+            {esDirecta && <Badge tone="yellow">Directa</Badge>}
           </div>
-          <p className="ds-muted">{prov?.code} · {prov?.nombre} · emitida {formatDate(orden.fecha)} · recibido {ordenRecibidoPct(orden)}%{orden.bcNumber ? ` · BC ${orden.bcNumber}` : ""}</p>
+          <p className="ds-muted">{orden.proveedorNo ?? prov?.code} · {orden.proveedorNombre ?? prov?.nombre} · emitida {formatDate(orden.fecha)} · recibido {ordenRecibidoPct(orden)}%{orden.bcNumber ? ` · BC ${orden.bcNumber}` : ""}</p>
           <div className="row gap-2 wrap mt-2">
-            <span className="ds-muted ds-body-sm">Solicitudes origen:</span>
-            {[...new Set(orden.lineas.filter((l) => l.pedidoNumero).map((l) => l.pedidoNumero!))].map((n) => (
-              <Badge key={n} tone="gray">{n}</Badge>
-            ))}
-            {orden.lineas.every((l) => !l.pedidoNumero) && <span className="ds-muted ds-body-sm">—</span>}
+            {esDirecta ? (
+              <span className="ds-muted ds-body-sm">Compra directa · sin solicitud de origen</span>
+            ) : (
+              <>
+                <span className="ds-muted ds-body-sm">Solicitudes origen:</span>
+                {peds.map((n) => <Badge key={n} tone="gray">{n}</Badge>)}
+              </>
+            )}
           </div>
         </div>
         <div className="row gap-3">

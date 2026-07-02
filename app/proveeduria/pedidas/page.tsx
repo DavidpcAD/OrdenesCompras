@@ -55,7 +55,7 @@ export default function ProveeduriaLineasPedidasPage() {
           ordenNumero: o.numero,
           itemNo: art?.code ?? l.articuloId ?? "—",
           descripcion: l.descripcion,
-          proveedor: prov ? `${prov.code} · ${prov.nombre}` : "—",
+          proveedor: o.proveedorNombre ? `${o.proveedorNo ?? prov?.code ?? ""} · ${o.proveedorNombre}`.trim().replace(/^· /, "") : prov ? `${prov.code} · ${prov.nombre}` : "—",
           pedido: l.pedidoNumero ?? "—",
           solicitante: ped?.solicitante ?? "—",
           unidad: l.unidad,

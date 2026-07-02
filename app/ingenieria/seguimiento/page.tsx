@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { AppShell } from "@/components/shell";
 import { Badge, Button, Card } from "@/components/ui";
 import { useStore } from "@/lib/store";
-import { destinoLabel, num, recibidoDeLineaPedido } from "@/lib/helpers";
+import { destinoLabel, num, recibidoDeLineaPedido, tipoSolicitudBadge } from "@/lib/helpers";
 
 export default function SeguimientoPage() {
   const { pedidos, ordenes } = useStore();
@@ -95,7 +95,7 @@ export default function SeguimientoPage() {
                     <td>{f.proyecto}</td>
                     <td className="ds-muted">{f.almacen}</td>
                     <td><span className="row gap-2" style={{ alignItems: "center" }}>
-                      {f.tipo === "repuesto" ? <Badge tone="yellow">Rep.</Badge> : <Badge tone="green">Mat.</Badge>}
+                      {(() => { const t = tipoSolicitudBadge(f.tipo); return <Badge tone={t.tone}>{t.label}</Badge>; })()}
                       <span className="ds-body-sm ds-strong">{f.pedidoNumero}</span>
                     </span></td>
                     <td>{f.articulo}</td>

@@ -129,8 +129,8 @@ export default function ImprimirOrdenPage() {
         {/* dos columnas: proveedor + datos / empresa */}
         <div className="po-cols">
           <div className="po-col-l">
-            <div className="po-prov">{prov?.nombre ?? "—"}</div>
-            <Campo k="Compra a-Nº proveedor" v={prov?.code ?? "—"} />
+            <div className="po-prov">{orden.proveedorNombre ?? prov?.nombre ?? "—"}</div>
+            <Campo k="Compra a-Nº proveedor" v={orden.proveedorNo ?? prov?.code ?? "—"} />
             <div style={{ height: 14 }} />
             <Campo k="Nº pedido" v={orden.numero} b />
             <Campo k="Fecha emisión documento" v={formatDate(orden.fecha)} />

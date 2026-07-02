@@ -1,4 +1,11 @@
-import type { Orden, OrdenLinea, Pedido, PedidoLinea } from "./types";
+import type { Orden, OrdenLinea, Pedido, PedidoLinea, TipoSolicitud } from "./types";
+
+// Badge del tipo de solicitud (Material / Repuesto / Stock).
+export function tipoSolicitudBadge(t: TipoSolicitud): { label: string; tone: string } {
+  return t === "repuesto" ? { label: "Repuesto", tone: "yellow" }
+    : t === "stock" ? { label: "Stock", tone: "gray" }
+    : { label: "Material", tone: "green" };
+}
 
 export function destinoLabel(p: Pedido): string {
   return p.tipoSolicitud === "repuesto"
@@ -10,6 +17,29 @@ export function destinoLabel(p: Pedido): string {
 // no la descripción del proyecto.
 export function destinoCodigo(p: Pedido): string {
   return (p.tipoSolicitud === "repuesto" ? p.maquinaNo : p.obraCodigo) ?? "—";
+}
+
+// Nombres de obra "vacíos" que no le dicen nada a Proveeduría (vienen así de BC).
+function esNombreObraVacio(s?: string): boolean {
+  const t = (s ?? "").trim().toLowerCase();
+  return !t || t === "por definir" || t === "sin definir" || t === "n/d";
+}
+
+// Texto ÚTIL para que Proveeduría identifique una solicitud. El modelo/nombre de
+// obra suele venir "POR DEFINIR" y el código de máquina (MAQ-0012) no dice nada,
+// así que se prioriza el COMENTARIO del solicitante y, en repuestos, el NOMBRE de
+// la máquina. `principal` es el texto fuerte; `secundaria` el dato de apoyo.
+export function solicitudResumen(p: Pedido): { principal: string; secundaria?: string } {
+  const comentario = p.notas?.trim() || undefined;
+  if (p.tipoSolicitud === "repuesto") {
+    const maquina = p.maquinaNombre?.trim() || undefined;
+    if (maquina) return { principal: maquina, secundaria: comentario };
+    if (comentario) return { principal: comentario };
+    return { principal: p.maquinaNo || "Repuesto" };
+  }
+  const obra = (!esNombreObraVacio(p.obraNombre) ? p.obraNombre?.trim() : undefined) || p.obraCodigo || undefined;
+  if (comentario) return { principal: comentario, secundaria: obra };
+  return { principal: obra || "Material" };
 }
 
 export const CRC = new Intl.NumberFormat("es-CR", {
@@ -68,6 +98,15 @@ export function pedidoTieneSaldo(p: Pedido): boolean {
   return p.lineas.some((l) => pedidoLineaPendiente(l) > 0);
 }
 
+// % de la solicitud que Proveeduría ya convirtió en órdenes de compra
+// (cantidadOrdenada / cantidad). Es el avance de COMPRA, distinto del de entrega.
+export function pedidoOrdenadoPct(p: Pedido): number {
+  const total = p.lineas.reduce((s, l) => s + l.cantidad, 0);
+  if (total === 0) return 0;
+  const ord = p.lineas.reduce((s, l) => s + Math.min(l.cantidadOrdenada, l.cantidad), 0);
+  return Math.round(Math.min(100, (ord / total) * 100));
+}
+
 // Cuánto de una línea de pedido ya LLEGÓ (recibido en bodega), rastreando las
 // órdenes en las que entró esa línea (enlace N:M por OrdenLinea.pedidoLineaId).
 export function recibidoDeLineaPedido(ordenes: Orden[], pedidoLineaId: string): number {
@@ -122,6 +161,19 @@ export function ordenEsParcial(o: Orden): boolean {
   return algo && !ordenEstaCompleta(o);
 }
 
+// Números de solicitud (PED-…) reales que originaron la orden. Las líneas
+// agregadas a mano llevan pedidoNumero "Manual" y no cuentan como solicitud.
+export function ordenPedidos(o: Orden): string[] {
+  return [...new Set(o.lineas.filter((l) => l.pedidoNumero && l.pedidoNumero !== "Manual").map((l) => l.pedidoNumero!))];
+}
+
+// Orden "directa" = compra armada sin partir de una solicitud (ninguna línea
+// proviene de un pedido real). Las órdenes que nacen de solicitudes tienen al
+// menos una línea con su PED-… de origen.
+export function ordenEsDirecta(o: Orden): boolean {
+  return ordenPedidos(o).length === 0;
+}
+
 // ---- badges ----
 export function pedidoBadge(estado: Pedido["estado"]): { label: string; tone: string } {
   switch (estado) {
@@ -131,6 +183,15 @@ export function pedidoBadge(estado: Pedido["estado"]): { label: string; tone: st
     case "cerrado": return { label: "Cerrado", tone: "gray" };
     case "devuelto": return { label: "Devuelto", tone: "red" };
   }
+}
+
+// Estado de COMPRA de una solicitud, tal como lo ve Proveeduría (derivado del
+// avance de órdenes, no del ciclo de vida borrador/aprobado del pedido).
+export function pedidoCompraBadge(p: Pedido): { label: string; tone: string } {
+  const pct = pedidoOrdenadoPct(p);
+  if (pct >= 100) return { label: "100% comprado", tone: "green" };
+  if (pct > 0) return { label: "Parcialmente comprado", tone: "yellow" };
+  return { label: "Pendiente de comprar", tone: "gray" };
 }
 
 export function ordenBadge(estado: Orden["estado"]): { label: string; tone: string } {

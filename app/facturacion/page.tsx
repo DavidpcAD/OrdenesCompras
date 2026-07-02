@@ -46,7 +46,7 @@ export default function FacturacionPage() {
                         <span className="ds-strong">{o.numero}</span>
                         {ordenEsParcial(o) ? <Badge tone="yellow">Parcial · {ordenRecibidoPct(o)}%</Badge> : <Badge tone="green">Lanzado</Badge>}
                       </div>
-                      <span className="ds-muted ds-label">{prov(o.proveedorId)?.nombre} · emitida {formatDate(o.fecha)}</span>
+                      <span className="ds-muted ds-label">{o.proveedorNombre ?? prov(o.proveedorId)?.nombre} · emitida {formatDate(o.fecha)}</span>
                       <div className="row gap-2 wrap">
                         {[...new Set(o.lineas.filter((l) => l.pedidoNumero).map((l) => l.pedidoNumero!))].slice(0, 3).map((n) => <Badge key={n} tone="gray">{n}</Badge>)}
                       </div>

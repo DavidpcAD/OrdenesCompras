@@ -5,9 +5,9 @@ import { useState } from "react";
 import { AppShell } from "@/components/shell";
 import { Badge, Button, Card, QtyRing, Tile } from "@/components/ui";
 import { useStore } from "@/lib/store";
-import { formatDate, pedidoBadge, recibidoDeLineaPedido, destinoCodigo, destinoLabel } from "@/lib/helpers";
+import { formatDate, pedidoCompraBadge, pedidoOrdenadoPct, recibidoDeLineaPedido, destinoCodigo, destinoLabel, tipoSolicitudBadge } from "@/lib/helpers";
 
-type Filtro = "todas" | "borrador" | "aprobado" | "devuelto";
+type Filtro = "todas" | "pendiente" | "parcial" | "comprado";
 
 export default function ProveeduriaSolicitudesPage() {
   const { pedidos, ordenes } = useStore();
@@ -15,6 +15,16 @@ export default function ProveeduriaSolicitudesPage() {
   const [filtro, setFiltro] = useState<Filtro>("todas");
   const [colF, setColF] = useState<Record<string, string>>({});
   const setCol = (k: string, v: string) => setColF((f) => ({ ...f, [k]: v }));
+
+  // Proveeduría solo ve solicitudes ya ENVIADAS por Ingeniería: se excluyen las
+  // que están en borrador o fueron devueltas (esas siguen en manos del solicitante).
+  const enviadas = pedidos.filter((p) => p.estado !== "borrador" && p.estado !== "devuelto");
+
+  // Clasificación por avance de COMPRA (cuánto ya se convirtió en órdenes).
+  const bucket = (p: typeof pedidos[number]): Exclude<Filtro, "todas"> => {
+    const pct = pedidoOrdenadoPct(p);
+    return pct >= 100 ? "comprado" : pct > 0 ? "parcial" : "pendiente";
+  };
 
   function entregado(p: typeof pedidos[number]): { rec: number; total: number; pct: number } {
     const total = p.lineas.reduce((s, l) => s + l.cantidad, 0);
@@ -27,24 +37,24 @@ export default function ProveeduriaSolicitudesPage() {
   const cellText = (p: typeof pedidos[number], k: string): string => {
     switch (k) {
       case "num": return p.numero;
-      case "tipo": return p.tipoSolicitud === "repuesto" ? "Repuesto" : "Material";
+      case "tipo": return tipoSolicitudBadge(p.tipoSolicitud).label;
       case "obra": return `${destinoCodigo(p)} ${destinoLabel(p)}`.trim();
       case "comentario": return p.notas ?? "";
       case "solicitante": return p.solicitante;
       case "fecha": return formatDate(p.fecha);
       case "lineas": return String(p.lineas.length);
       case "prioridad": return prioLabel(p);
-      case "estado": return pedidoBadge(p.estado).label;
+      case "estado": return pedidoCompraBadge(p).label;
       case "entregado": return `${entregado(p).pct}%`;
       default: return "";
     }
   };
 
-  const filtradas = pedidos
-    .filter((p) => filtro === "todas" ? true : p.estado === filtro)
+  const filtradas = enviadas
+    .filter((p) => filtro === "todas" ? true : bucket(p) === filtro)
     .filter((p) => COLS.every((k) => { const v = (colF[k] ?? "").trim().toLowerCase(); return !v || cellText(p, k).toLowerCase().includes(v); }));
 
-  const cuenta = (f: Filtro) => f === "todas" ? pedidos.length : pedidos.filter((p) => p.estado === f).length;
+  const cuenta = (f: Filtro) => f === "todas" ? enviadas.length : enviadas.filter((p) => bucket(p) === f).length;
 
   return (
     <AppShell role="proveeduria">
@@ -52,15 +62,15 @@ export default function ProveeduriaSolicitudesPage() {
         <div className="page__head">
           <div className="page__title">
             <h1 className="ds-heading">Solicitudes de Ingeniería</h1>
-            <p className="ds-muted">Todos los pedidos con su info, comentario y avance. Entrá a uno para crear la orden de compra o devolverlo.</p>
+            <p className="ds-muted">Solicitudes enviadas por Ingeniería, con su avance de compra. Entrá a una para crear la orden de compra o devolverla.</p>
           </div>
         </div>
 
         <div className="tiles mt-2">
           <Tile value={cuenta("todas")} label="Todas" onClick={() => setFiltro("todas")} active={filtro === "todas"} />
-          <Tile value={cuenta("aprobado")} label="Aprobadas (por ordenar)" accent="var(--ds-color-green-200)" onClick={() => setFiltro("aprobado")} active={filtro === "aprobado"} />
-          <Tile value={cuenta("borrador")} label="En borrador" accent="var(--ds-color-gray-100)" onClick={() => setFiltro("borrador")} active={filtro === "borrador"} />
-          <Tile value={cuenta("devuelto")} label="Devueltas" accent="var(--ds-color-red-100)" onClick={() => setFiltro("devuelto")} active={filtro === "devuelto"} />
+          <Tile value={cuenta("pendiente")} label="Pendientes de comprar" accent="var(--ds-color-gray-300)" onClick={() => setFiltro("pendiente")} active={filtro === "pendiente"} />
+          <Tile value={cuenta("parcial")} label="Parcialmente compradas" accent="var(--ds-color-yellow)" onClick={() => setFiltro("parcial")} active={filtro === "parcial"} />
+          <Tile value={cuenta("comprado")} label="100% compradas" accent="var(--ds-color-green-200)" onClick={() => setFiltro("comprado")} active={filtro === "comprado"} />
         </div>
 
         <Card className="mt-6" style={{ padding: 0, overflow: "hidden" }}>
@@ -86,12 +96,12 @@ export default function ProveeduriaSolicitudesPage() {
                   <tr><td colSpan={11}><div className="empty">No hay solicitudes que coincidan.</div></td></tr>
                 )}
                 {filtradas.map((p) => {
-                  const b = pedidoBadge(p.estado);
+                  const b = pedidoCompraBadge(p);
                   const e = entregado(p);
                   return (
                     <tr key={p.id} className="is-clickable" onClick={() => router.push(`/proveeduria/solicitudes/${p.id}`)}>
                       <td className="ds-strong">{p.numero}</td>
-                      <td>{p.tipoSolicitud === "repuesto" ? <Badge tone="yellow">Repuesto</Badge> : <Badge tone="green">Material</Badge>}</td>
+                      <td>{(() => { const t = tipoSolicitudBadge(p.tipoSolicitud); return <Badge tone={t.tone}>{t.label}</Badge>; })()}</td>
                       <td>
                         <div className="ds-strong ds-body-sm">{destinoCodigo(p)}</div>
                         <div className="ds-muted ds-body-sm ds-truncate" style={{ maxWidth: 160 }} title={destinoLabel(p)}>{destinoLabel(p)}</div>

@@ -21,7 +21,7 @@ export default function ArchivoPage() {
     switch (k) {
       case "factura": return r.numeroFactura;
       case "orden": return o?.numero ?? "";
-      case "proveedor": return (o ? prov(o.proveedorId)?.nombre : "") ?? "";
+      case "proveedor": return (o ? (o.proveedorNombre ?? prov(o.proveedorId)?.nombre) : "") ?? "";
       case "fecha": return formatDate(r.fechaRegistro);
       case "total": return money(r.total, o?.currencyCode);
       case "tipo": return r.parcial ? "Parcial" : "Completa";
@@ -67,10 +67,10 @@ export default function ArchivoPage() {
                 {filtradas.map((r) => {
                   const o = ordenes.find((x) => x.id === r.ordenId);
                   return (
-                    <tr key={r.id} className={o ? "is-clickable" : ""} onClick={() => o && router.push(`/proveeduria/ordenes/${o.id}`)}>
+                    <tr key={r.id} className="is-clickable" onClick={() => router.push(`/facturacion/recepcion/${r.id}`)}>
                       <td className="ds-strong">{r.numeroFactura}</td>
                       <td>{o?.numero ?? "—"}</td>
-                      <td>{o ? prov(o.proveedorId)?.nombre : "—"}</td>
+                      <td>{o ? (o.proveedorNombre ?? prov(o.proveedorId)?.nombre ?? "—") : "—"}</td>
                       <td>{formatDate(r.fechaRegistro)}</td>
                       <td className="ds-num">{money(r.total, o?.currencyCode)}</td>
                       <td>{r.parcial ? <Badge tone="yellow">Parcial</Badge> : <Badge tone="green">Completa</Badge>}</td>

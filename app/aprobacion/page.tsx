@@ -50,7 +50,7 @@ export default function AprobacionPage() {
                       <span className="ds-subtitle">{o.numero}</span>
                       <Badge tone="yellow">Pendiente de aprobación</Badge>
                     </div>
-                    <span className="ds-muted ds-label">{prov(o.proveedorId)?.code} · {prov(o.proveedorId)?.nombre} · {formatDate(o.fecha)}</span>
+                    <span className="ds-muted ds-label">{o.proveedorNo ?? prov(o.proveedorId)?.code} · {o.proveedorNombre ?? prov(o.proveedorId)?.nombre} · {formatDate(o.fecha)}</span>
                   </div>
                   <div className="row gap-3">
                     <Button variant="red" onClick={() => rechazar(o.id, o.numero)}>Rechazar</Button>

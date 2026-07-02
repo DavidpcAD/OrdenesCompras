@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Badge, Button, Card, QtyRing } from "@/components/ui";
 import { useStore } from "@/lib/store";
-import { money, formatDate, ordenBadge, ordenRecibidoPct, ordenSubtotal } from "@/lib/helpers";
+import { money, formatDate, ordenBadge, ordenRecibidoPct, ordenSubtotal, ordenPedidos, ordenEsDirecta } from "@/lib/helpers";
 import type { Orden } from "@/lib/types";
 
 // Tabla de órdenes reutilizable: incluye buscador y paginación ("Mostrar más")
@@ -31,8 +31,8 @@ export function OrdenesLista({
   const cellText = (o: Orden, k: string): string => {
     switch (k) {
       case "num": return o.numero;
-      case "prov": return prov(o.proveedorId)?.nombre ?? "";
-      case "solic": return [...new Set(o.lineas.filter((l) => l.pedidoNumero).map((l) => l.pedidoNumero!))].join(" ");
+      case "prov": return o.proveedorNombre ?? prov(o.proveedorId)?.nombre ?? "";
+      case "solic": return ordenEsDirecta(o) ? "Directa" : ordenPedidos(o).join(" ");
       case "fecha": return formatDate(o.fecha);
       case "total": return money(ordenSubtotal(o), o.currencyCode);
       case "recibido": return `${ordenRecibidoPct(o)}%`;
@@ -70,16 +70,17 @@ export function OrdenesLista({
               {filtradas.length === 0 && <tr><td colSpan={8}><div className="empty">{ordenes.length ? "Ninguna orden coincide con los filtros." : vacio}</div></td></tr>}
               {visibles.map((o) => {
                 const b = ordenBadge(o.estado);
-                const peds = [...new Set(o.lineas.filter((l) => l.pedidoNumero).map((l) => l.pedidoNumero!))];
+                const peds = ordenPedidos(o);
+                const directa = ordenEsDirecta(o);
                 return (
                   <tr key={o.id} className="is-clickable" onClick={() => router.push(hrefDetalle(o.id))}>
                     <td className="ds-strong">{o.numero}</td>
-                    <td>{prov(o.proveedorId)?.nombre ?? "—"}</td>
+                    <td>{o.proveedorNombre ?? prov(o.proveedorId)?.nombre ?? "—"}</td>
                     <td>
                       <div className="row gap-2 wrap">
+                        {directa && <Badge tone="yellow">Directa</Badge>}
                         {peds.slice(0, 2).map((n) => <Badge key={n} tone="gray">{n}</Badge>)}
                         {peds.length > 2 && <span className="ds-muted ds-body-sm">+{peds.length - 2}</span>}
-                        {peds.length === 0 && <span className="ds-muted ds-body-sm">—</span>}
                       </div>
                     </td>
                     <td>{formatDate(o.fecha)}</td>

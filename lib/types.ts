@@ -20,7 +20,7 @@
 export type Role = "ingenieria" | "proveeduria" | "aprobacion" | "facturacion";
 
 export type LineType = "articulo" | "cargo"; // 'cargo' = flete / cargo de producto
-export type TipoSolicitud = "material" | "repuesto";
+export type TipoSolicitud = "material" | "repuesto" | "stock"; // stock = compra para bodega/inventario
 
 // ---- Catálogos (espejo de Business Central) ----
 export interface Proveedor {
