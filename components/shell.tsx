@@ -13,7 +13,9 @@ const ROLE_META: Record<Role, { label: string; persona: string; home: string; na
     nav: [
       { href: "/ingenieria", label: "Mis solicitudes" },
       { href: "/ingenieria/nuevo", label: "Nueva solicitud" },
-      { href: "/ingenieria/planificacion", label: "Planificación" },
+      { href: "/ingenieria/clasificaciones", label: "Clasificaciones" },
+      { href: "/ingenieria/plantillas", label: "Plantillas" },
+      { href: "/ingenieria/matriz", label: "Matriz por obra" },
       { href: "/ingenieria/seguimiento", label: "Seguimiento por proyecto" },
     ],
   },

@@ -486,8 +486,8 @@ export async function listMovimientos(entidad: string, idEntidad: number) {
    filtra por creadoPor. Las líneas se guardan como JSON (code+cantidad+obra).
    ============================================================================ */
 
-export type PlantillaLineaDB = { code: string; cantidad: number; obraCodigo: string };
-export type Plantilla = { id: number; nombre: string; creadoPor: string; lineas: PlantillaLineaDB[]; fechaCreacion: string };
+export type PlantillaLineaDB = { code: string; descripcion?: string; cantidad: number; unidad?: string; obraCodigo: string };
+export type Plantilla = { id: number; nombre: string; creadoPor: string; idSubPartida: number | null; lineas: PlantillaLineaDB[]; fechaCreacion: string };
 
 function parseLineas(json: string): PlantillaLineaDB[] {
   try {
@@ -499,20 +499,22 @@ function parseLineas(json: string): PlantillaLineaDB[] {
 export async function listPlantillas(): Promise<Plantilla[]> {
   const pool = await getPool();
   const r = await pool.request().query(
-    "SELECT idPlantillaSolicitud, nombre, creadoPor, lineasJson, fechaCreacion FROM dbo.PlantillaSolicitud WHERE esEliminada = 0 ORDER BY nombre"
+    "SELECT idPlantillaSolicitud, nombre, creadoPor, idSubPartida, lineasJson, fechaCreacion FROM dbo.PlantillaSolicitud WHERE esEliminada = 0 ORDER BY nombre"
   );
   return r.recordset.map((row) => ({
     id: row.idPlantillaSolicitud,
     nombre: row.nombre,
     creadoPor: row.creadoPor,
+    idSubPartida: row.idSubPartida ?? null,
     lineas: parseLineas(row.lineasJson),
     fechaCreacion: row.fechaCreacion?.toISOString?.() ?? "",
   }));
 }
 
-export async function createPlantilla(input: { nombre: string; creadoPor: string; lineas: PlantillaLineaDB[] }): Promise<number> {
+export async function createPlantilla(input: { nombre: string; creadoPor: string; idSubPartida?: number | null; lineas: PlantillaLineaDB[] }): Promise<number> {
   const pool = await getPool();
   const lineasJson = JSON.stringify(input.lineas ?? []);
+  const idSub = input.idSubPartida ?? null;
   // upsert por (nombre, creadoPor): si el mismo usuario reusa el nombre, se actualiza.
   const ex = await pool.request()
     .input("nombre", sql.NVarChar(100), input.nombre)
@@ -522,17 +524,30 @@ export async function createPlantilla(input: { nombre: string; creadoPor: string
     const id = ex.recordset[0].idPlantillaSolicitud as number;
     await pool.request()
       .input("id", sql.Int, id)
+      .input("idSubPartida", sql.Int, idSub)
       .input("lineasJson", sql.NVarChar(sql.MAX), lineasJson)
       .input("modificadoPor", sql.NVarChar(100), input.creadoPor)
-      .query("UPDATE dbo.PlantillaSolicitud SET lineasJson=@lineasJson, fechaModificacion=SYSUTCDATETIME(), modificadoPor=@modificadoPor WHERE idPlantillaSolicitud=@id");
+      .query("UPDATE dbo.PlantillaSolicitud SET idSubPartida=@idSubPartida, lineasJson=@lineasJson, fechaModificacion=SYSUTCDATETIME(), modificadoPor=@modificadoPor WHERE idPlantillaSolicitud=@id");
     return id;
   }
   const ins = await pool.request()
     .input("nombre", sql.NVarChar(100), input.nombre)
     .input("creadoPor", sql.NVarChar(100), input.creadoPor)
+    .input("idSubPartida", sql.Int, idSub)
     .input("lineasJson", sql.NVarChar(sql.MAX), lineasJson)
-    .query("INSERT dbo.PlantillaSolicitud (nombre, creadoPor, lineasJson, esEliminada, fechaCreacion) OUTPUT INSERTED.idPlantillaSolicitud VALUES (@nombre,@creadoPor,@lineasJson,0,SYSUTCDATETIME())");
+    .query("INSERT dbo.PlantillaSolicitud (nombre, creadoPor, idSubPartida, lineasJson, esEliminada, fechaCreacion) OUTPUT INSERTED.idPlantillaSolicitud VALUES (@nombre,@creadoPor,@idSubPartida,@lineasJson,0,SYSUTCDATETIME())");
   return ins.recordset[0].idPlantillaSolicitud as number;
+}
+
+export async function updatePlantilla(id: number, input: { nombre: string; idSubPartida?: number | null; lineas: PlantillaLineaDB[]; usuario: string }): Promise<void> {
+  const pool = await getPool();
+  await pool.request()
+    .input("id", sql.Int, id)
+    .input("nombre", sql.NVarChar(100), input.nombre)
+    .input("idSubPartida", sql.Int, input.idSubPartida ?? null)
+    .input("lineasJson", sql.NVarChar(sql.MAX), JSON.stringify(input.lineas ?? []))
+    .input("modificadoPor", sql.NVarChar(100), input.usuario || null)
+    .query("UPDATE dbo.PlantillaSolicitud SET nombre=@nombre, idSubPartida=@idSubPartida, lineasJson=@lineasJson, fechaModificacion=SYSUTCDATETIME(), modificadoPor=@modificadoPor WHERE idPlantillaSolicitud=@id");
 }
 
 export async function deletePlantilla(id: number, usuario: string): Promise<void> {
@@ -541,4 +556,59 @@ export async function deletePlantilla(id: number, usuario: string): Promise<void
     .input("id", sql.Int, id)
     .input("modificadoPor", sql.NVarChar(100), usuario || null)
     .query("UPDATE dbo.PlantillaSolicitud SET esEliminada=1, fechaModificacion=SYSUTCDATETIME(), modificadoPor=@modificadoPor WHERE idPlantillaSolicitud=@id");
+}
+
+/* ============================================================================
+   WBS: etapa -> partida -> sub_partida (maestro de clasificaciones) + matriz.
+   "Clasificación" = sub_partida (nivel 1.1.1). Ver db/schema_clasificaciones.sql
+   ============================================================================ */
+export type WbsEtapa = { id: number; codigo: string; nombre: string };
+export type WbsPartida = { id: number; codigo: string; nombre: string; etapaId: number | null };
+export type WbsSubPartida = { id: number; codigo: string; nombre: string; partidaId: number | null };
+
+export async function listWbs(): Promise<{ etapas: WbsEtapa[]; partidas: WbsPartida[]; subpartidas: WbsSubPartida[] }> {
+  const pool = await getPool();
+  const [e, p, s] = await Promise.all([
+    pool.request().query("SELECT id, codigo, nombre FROM dbo.etapa WHERE activo = 1 ORDER BY codigo"),
+    pool.request().query("SELECT id, codigo, nombre, etapa_id FROM dbo.partida WHERE activo = 1 ORDER BY codigo"),
+    pool.request().query("SELECT id, codigo, nombre, partida_id FROM dbo.sub_partidas WHERE activo = 1 ORDER BY codigo"),
+  ]);
+  return {
+    etapas: e.recordset.map((r) => ({ id: r.id, codigo: String(r.codigo ?? ""), nombre: r.nombre ?? "" })),
+    partidas: p.recordset.map((r) => ({ id: r.id, codigo: String(r.codigo ?? ""), nombre: r.nombre ?? "", etapaId: r.etapa_id ?? null })),
+    subpartidas: s.recordset.map((r) => ({ id: r.id, codigo: String(r.codigo ?? ""), nombre: r.nombre ?? "", partidaId: r.partida_id ?? null })),
+  };
+}
+
+// Crea una clasificación (sub_partida) bajo una partida; el código se autogenera
+// como <codigoPartida>.<siguiente>.
+export async function createSubPartida(input: { partidaId: number; nombre: string }): Promise<number> {
+  const pool = await getPool();
+  const pr = await pool.request().input("pid", sql.Int, input.partidaId).query("SELECT codigo FROM dbo.partida WHERE id=@pid");
+  if (!pr.recordset.length) throw new Error("Partida no encontrada");
+  const pcod = String(pr.recordset[0].codigo);
+  const mx = await pool.request().input("pid", sql.Int, input.partidaId)
+    .query("SELECT MAX(CAST(RIGHT(codigo, CHARINDEX('.', REVERSE(codigo)) - 1) AS INT)) AS m FROM dbo.sub_partidas WHERE partida_id=@pid AND codigo LIKE '%.%.%'");
+  const next = (mx.recordset[0].m ?? 0) + 1;
+  const codigo = `${pcod}.${next}`;
+  const ins = await pool.request()
+    .input("codigo", sql.VarChar(20), codigo)
+    .input("nombre", sql.NVarChar(200), input.nombre)
+    .input("pid", sql.Int, input.partidaId)
+    .query("INSERT dbo.sub_partidas (codigo, nombre, partida_id, activo, creado_en) OUTPUT INSERTED.id VALUES (@codigo,@nombre,@pid,1,SYSUTCDATETIME())");
+  return ins.recordset[0].id as number;
+}
+
+export type ObraLite = { idObra: number; numeroObra: string; nombreMostrado: string };
+export async function listObras(): Promise<ObraLite[]> {
+  const pool = await getPool();
+  const r = await pool.request().query("SELECT idObra, numeroObra, nombreMostrado FROM dbo.Obra ORDER BY numeroObra");
+  return r.recordset.map((x) => ({ idObra: x.idObra, numeroObra: x.numeroObra ?? "", nombreMostrado: x.nombreMostrado ?? "" }));
+}
+
+export type MatrizCelda = { idObra: number; idSubPartida: number; estado: string };
+export async function matrizCeldas(): Promise<MatrizCelda[]> {
+  const pool = await getPool();
+  const r = await pool.request().query("SELECT idObra, idSubPartida, estado FROM dbo.vw_MatrizObraSubPartida");
+  return r.recordset.map((x) => ({ idObra: x.idObra, idSubPartida: x.idSubPartida, estado: x.estado ?? "" }));
 }
