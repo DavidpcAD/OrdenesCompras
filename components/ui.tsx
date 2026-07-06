@@ -2,22 +2,33 @@
 
 import React, { createContext, useCallback, useContext, useState } from "react";
 import { IconClose } from "@/components/icons";
+import { haptic } from "@/lib/haptic";
 
 // ---------------------------------------------------------------- Button
-type BtnVariant = "green" | "red" | "yellow" | "ghost" | "outline";
+// Variantes del Adelante DS: green (primaria) · red (destructiva) · white/black ·
+// ghost (blanco secundario) · outline (baja énfasis) · yellow. gray = deshabilitado.
+type BtnVariant = "green" | "red" | "white" | "black" | "yellow" | "ghost" | "outline" | "gray";
 type BtnSize = "sm" | "md" | "lg";
 
 export function Button({
-  variant = "green", size = "md", block, className = "", children, ...rest
+  variant = "green", size = "md", block, icon, className = "", children, ...rest
 }: React.ButtonHTMLAttributes<HTMLButtonElement> & {
-  variant?: BtnVariant; size?: BtnSize; block?: boolean;
+  variant?: BtnVariant; size?: BtnSize; block?: boolean; icon?: boolean;
 }) {
   const cls = [
     "ds-btn", `ds-btn--${variant}`,
     size !== "md" ? `ds-btn--${size}` : "",
-    block ? "ds-btn--block" : "", className,
+    block ? "ds-btn--block" : "",
+    icon ? "ds-btn--icon" : "", className,
   ].filter(Boolean).join(" ");
-  return <button className={cls} {...rest}>{children}</button>;
+  // Haptic del DS: vibración semántica al presionar (delete para destructiva).
+  // El anillo de "pressed" lo maneja el CSS vía :active. onClick nativo se mantiene
+  // para preservar activación por teclado.
+  const onPointerDown = (e: React.PointerEvent<HTMLButtonElement>) => {
+    if (!rest.disabled) (variant === "red" ? haptic.delete : haptic.select)();
+    rest.onPointerDown?.(e);
+  };
+  return <button className={cls} {...rest} onPointerDown={onPointerDown}>{children}</button>;
 }
 
 // ---------------------------------------------------------------- Field
@@ -105,7 +116,7 @@ export function QtyRing({ recibida, total }: { recibida: number; total: number }
         className="ds-qty-selector__ring"
         style={{ background: `conic-gradient(${color} ${pct * 360}deg, transparent 0deg)` }}
       />
-      <span className="ds-qty-selector__inner" style={{ background: "#fff", width: 34, height: 34, borderRadius: "50%", display: "grid", placeItems: "center" }}>
+      <span className="ds-qty-selector__inner" style={{ background: "var(--ds-color-white)", width: 34, height: 34, borderRadius: "50%", display: "grid", placeItems: "center" }}>
         {Math.round(pct * 100)}%
       </span>
     </span>

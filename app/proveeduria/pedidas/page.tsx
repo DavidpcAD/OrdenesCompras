@@ -63,7 +63,7 @@ export default function ProveeduriaLineasPedidasPage() {
     <AppShell role="proveeduria">
       <style>{`
         .print-report { display: none; }
-        @media print { .no-print { display: none !important; } .topbar { display: none !important; } .print-report { display: block !important; } @page { size: A4 landscape; margin: 12mm; } body { background: #fff; } }
+        @media print { .no-print { display: none !important; } .topbar { display: none !important; } .print-report { display: block !important; } @page { size: A4 landscape; margin: 12mm; } body { background: var(--ds-color-white); } }
       `}</style>
 
       <main className="page page--wide no-print">
@@ -88,34 +88,34 @@ export default function ProveeduriaLineasPedidasPage() {
 
       {/* Reporte imprimible (usa el filtro de estado) */}
       <div className="print-report">
-        <div style={{ fontFamily: '"Segoe UI",Roboto,system-ui,sans-serif', color: "#1a1a1a", fontSize: 11 }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", borderBottom: "2px solid #1a1a1a", paddingBottom: 12 }}>
-            <div style={{ fontWeight: 800, letterSpacing: 1, color: "#5f7d12", fontSize: 13, lineHeight: 1 }}>ADELANTE<br /><span style={{ fontSize: 8, letterSpacing: 3, color: "#888" }}>DESARROLLOS</span></div>
+        <div style={{ fontFamily: '"Segoe UI",Roboto,system-ui,sans-serif', color: "var(--ds-color-black)", fontSize: 11 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", borderBottom: "2px solid var(--ds-color-black)", paddingBottom: 12 }}>
+            <div style={{ fontWeight: 800, letterSpacing: 1, color: "var(--ds-color-green-200)", fontSize: 13, lineHeight: 1 }}>ADELANTE<br /><span style={{ fontSize: 8, letterSpacing: 3, color: "var(--ds-color-gray-400)" }}>DESARROLLOS</span></div>
             <div style={{ textAlign: "right" }}>
               <div style={{ fontSize: 20, fontWeight: 800 }}>Líneas pedidas</div>
-              <div style={{ color: "#555", marginTop: 4 }}>{EMPRESA_NOMBRE}</div>
-              <div style={{ color: "#555" }}>Generado {formatDate(new Date().toISOString())} · Filtro: {estadoFLabel}</div>
-              <div style={{ color: "#555" }}>{base.length} línea(s)</div>
+              <div style={{ color: "var(--ds-color-gray-500)", marginTop: 4 }}>{EMPRESA_NOMBRE}</div>
+              <div style={{ color: "var(--ds-color-gray-500)" }}>Generado {formatDate(new Date().toISOString())} · Filtro: {estadoFLabel}</div>
+              <div style={{ color: "var(--ds-color-gray-500)" }}>{base.length} línea(s)</div>
             </div>
           </div>
           <table style={{ width: "100%", borderCollapse: "collapse", marginTop: 16, fontSize: 10 }}>
             <thead>
               <tr>{["Orden", "Item", "Descripción", "Proveedor", "Pedido", "Solicitó", "Ordenado", "Recibido", "Estado"].map((h, i) => (
-                <th key={h} style={{ borderBottom: "1.5px solid #1a1a1a", padding: "6px 5px", textAlign: i === 6 || i === 7 ? "right" : "left", fontWeight: 700 }}>{h}</th>
+                <th key={h} style={{ borderBottom: "1.5px solid var(--ds-color-black)", padding: "6px 5px", textAlign: i === 6 || i === 7 ? "right" : "left", fontWeight: 700 }}>{h}</th>
               ))}</tr>
             </thead>
             <tbody>
               {base.map((r, idx) => (
                 <tr key={`p-${r.ordenId}-${r.itemNo}-${idx}`}>
-                  <td style={{ padding: "5px 5px", borderBottom: "1px solid #ededed", fontWeight: 600, whiteSpace: "nowrap" }}>{r.ordenNumero}</td>
-                  <td style={{ padding: "5px 5px", borderBottom: "1px solid #ededed", whiteSpace: "nowrap" }}>{r.itemNo}</td>
-                  <td style={{ padding: "5px 5px", borderBottom: "1px solid #ededed" }}>{r.descripcion}</td>
-                  <td style={{ padding: "5px 5px", borderBottom: "1px solid #ededed" }}>{r.proveedor}</td>
-                  <td style={{ padding: "5px 5px", borderBottom: "1px solid #ededed", whiteSpace: "nowrap" }}>{r.pedido}</td>
-                  <td style={{ padding: "5px 5px", borderBottom: "1px solid #ededed", whiteSpace: "nowrap" }}>{r.solicitante}</td>
-                  <td style={{ padding: "5px 5px", borderBottom: "1px solid #ededed", textAlign: "right", whiteSpace: "nowrap" }}>{num.format(r.ordenado)} {r.unidad}</td>
-                  <td style={{ padding: "5px 5px", borderBottom: "1px solid #ededed", textAlign: "right", whiteSpace: "nowrap" }}>{num.format(r.recibido)} {r.unidad}</td>
-                  <td style={{ padding: "5px 5px", borderBottom: "1px solid #ededed", whiteSpace: "nowrap" }}>{estadoLabel(r.estado)}</td>
+                  <td style={{ padding: "5px 5px", borderBottom: "1px solid var(--ds-color-gray-100)", fontWeight: 600, whiteSpace: "nowrap" }}>{r.ordenNumero}</td>
+                  <td style={{ padding: "5px 5px", borderBottom: "1px solid var(--ds-color-gray-100)", whiteSpace: "nowrap" }}>{r.itemNo}</td>
+                  <td style={{ padding: "5px 5px", borderBottom: "1px solid var(--ds-color-gray-100)" }}>{r.descripcion}</td>
+                  <td style={{ padding: "5px 5px", borderBottom: "1px solid var(--ds-color-gray-100)" }}>{r.proveedor}</td>
+                  <td style={{ padding: "5px 5px", borderBottom: "1px solid var(--ds-color-gray-100)", whiteSpace: "nowrap" }}>{r.pedido}</td>
+                  <td style={{ padding: "5px 5px", borderBottom: "1px solid var(--ds-color-gray-100)", whiteSpace: "nowrap" }}>{r.solicitante}</td>
+                  <td style={{ padding: "5px 5px", borderBottom: "1px solid var(--ds-color-gray-100)", textAlign: "right", whiteSpace: "nowrap" }}>{num.format(r.ordenado)} {r.unidad}</td>
+                  <td style={{ padding: "5px 5px", borderBottom: "1px solid var(--ds-color-gray-100)", textAlign: "right", whiteSpace: "nowrap" }}>{num.format(r.recibido)} {r.unidad}</td>
+                  <td style={{ padding: "5px 5px", borderBottom: "1px solid var(--ds-color-gray-100)", whiteSpace: "nowrap" }}>{estadoLabel(r.estado)}</td>
                 </tr>
               ))}
             </tbody>

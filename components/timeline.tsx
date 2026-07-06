@@ -53,12 +53,12 @@ function etiqueta(m: Movimiento): string {
 function colorPunto(m: Movimiento): string {
   if (m.entidad === "orden") {
     switch (m.tipoMovimiento) {
-      case "creado": return "#3b82f6";                    // En proveeduría · azul
+      case "creado": return "var(--ds-color-gray-400)";   // En proveeduría · neutral (gris)
       case "enviado_aprobacion": return "var(--ds-color-yellow)"; // pendiente · amarillo
       case "aprobado_lanzado": return "var(--ds-color-green-200)"; // lanzada · verde
-      case "recepcion_parcial": return "#f2994a";         // recibido parcial · naranja
+      case "recepcion_parcial": return "var(--ds-color-yellow)"; // recibido parcial · amarillo
       case "recepcion_total":
-      case "completado": return "#1f9d57";                // recibido total / completado · verde fuerte
+      case "completado": return "var(--ds-color-green-200)"; // recibido total / completado · verde fuerte
       case "eliminado": return "var(--ds-color-red-100)";
     }
   }

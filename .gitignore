@@ -10,5 +10,8 @@ next-env.d.ts
 .vercel
 *.tsbuildinfo
 
+# Config local de Claude Code / preview (no va en el repo)
+.claude/
+
 # Artefacto de Business Central (lo genera la extensión AL en carpeta equivocada — no va en este repo)
 extensionsPermissionSet.xml

@@ -93,8 +93,12 @@ h1, h2, h3, h4, p { margin: 0; }
 .ds-muted { color: var(--ds-color-gray-400); }
 .ds-strong { font-weight: var(--ds-font-weight-semibold); }
 
-/* =====================  BUTTON  ===================== */
+/* =====================  BUTTON  =====================
+   Alineado a react/design-system.css del Adelante DS.
+   Interacción firma = anillo exterior de 8px al presionar
+   (NO hover-lift). Transición de sombra + fondo. */
 .ds-btn {
+  position: relative;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -102,49 +106,61 @@ h1, h2, h3, h4, p { margin: 0; }
   border: 0;
   border-radius: var(--ds-radius-lg);
   padding: var(--ds-space-4);
-  font-family: inherit;
+  min-height: 56px;
+  font-family: var(--ds-font-family);
   font-size: var(--ds-font-size-body-md);
   font-weight: var(--ds-font-weight-semibold);
-  line-height: 1;
+  line-height: var(--ds-line-height-body-md);
+  letter-spacing: 0;
   cursor: pointer;
   box-shadow: var(--ds-shadow-03-big);
-  transition: transform .12s ease, background-color .15s ease, box-shadow .15s ease, opacity .15s ease;
+  transition: box-shadow 120ms ease, background 100ms ease;
+  white-space: nowrap;
   user-select: none;
+  overflow: visible;
 }
-.ds-btn:hover { transform: translateY(-1px); }
-.ds-btn:active { transform: translateY(0); }
 .ds-btn:focus-visible { outline: 3px solid color-mix(in srgb, var(--ds-color-green-100) 60%, transparent); outline-offset: 2px; }
-.ds-btn[disabled], .ds-btn--disabled {
-  cursor: not-allowed; opacity: .45; box-shadow: none; transform: none;
+.ds-btn[disabled], .ds-btn--disabled, .ds-btn--gray {
+  background: var(--ds-color-gray-200); color: var(--ds-color-gray-300);
+  cursor: not-allowed; pointer-events: none; box-shadow: none;
 }
 
-.ds-btn--green { background: var(--ds-color-green-100); color: var(--ds-color-black); }
-.ds-btn--green:hover { background: color-mix(in srgb, var(--ds-color-green-100) 88%, #fff); }
-.ds-btn--green:active, .ds-btn--green.ds-btn--pressed { background: var(--ds-color-green-200); color: #fff; }
+/* Colores (DS: green / red / white / black / gray) */
+.ds-btn--green  { background: var(--ds-color-green-100); color: var(--ds-color-black); }
+.ds-btn--red    { background: var(--ds-color-red-100);   color: var(--ds-color-white); }
+.ds-btn--white  { background: var(--ds-color-white);     color: var(--ds-color-black); }
+.ds-btn--black  { background: var(--ds-color-black);     color: var(--ds-color-white); }
+.ds-btn--yellow { background: var(--ds-color-yellow);    color: var(--ds-color-black); }
 
-.ds-btn--red { background: var(--ds-color-red-100); color: #fff; }
-.ds-btn--red:hover { background: color-mix(in srgb, var(--ds-color-red-100) 90%, #000); }
-.ds-btn--red:active, .ds-btn--red.ds-btn--pressed { background: var(--ds-color-red-200); }
+/* Pressed — anillo exterior de 8px (Figma) */
+.ds-btn--green:active,  .ds-btn--green.ds-btn--pressed  { box-shadow: 0 0 0 8px var(--ds-color-green-200), var(--ds-shadow-03-big); }
+.ds-btn--red:active,    .ds-btn--red.ds-btn--pressed    { background: var(--ds-color-red-200); box-shadow: 0 0 0 8px var(--ds-color-red-100), var(--ds-shadow-03-big); }
+.ds-btn--white:active,  .ds-btn--white.ds-btn--pressed  { box-shadow: 0 0 0 8px var(--ds-color-surface), var(--ds-shadow-03-big); }
+.ds-btn--black:active,  .ds-btn--black.ds-btn--pressed  { box-shadow: 0 0 0 8px rgba(0, 0, 0, 0.8), var(--ds-shadow-03-big); }
+.ds-btn--yellow:active, .ds-btn--yellow.ds-btn--pressed { box-shadow: 0 0 0 8px var(--ds-color-green-200), var(--ds-shadow-03-big); }
 
-.ds-btn--yellow { background: var(--ds-color-yellow); color: var(--ds-color-black); }
+/* ghost = botón blanco del DS (secundario neutro) */
+.ds-btn--ghost { background: var(--ds-color-white); color: var(--ds-color-black); box-shadow: var(--ds-shadow-02-soft); }
+.ds-btn--ghost:active, .ds-btn--ghost.ds-btn--pressed { box-shadow: 0 0 0 8px var(--ds-color-surface), var(--ds-shadow-02-soft); }
 
-.ds-btn--ghost {
-  background: #fff; color: var(--ds-color-black);
-  box-shadow: var(--ds-shadow-02-soft);
-}
-.ds-btn--ghost:hover { background: var(--ds-color-gray-100); }
+/* outline = baja énfasis (borde gris, sin sombra) — mantiene el press-ring del DS */
+.ds-btn--outline { background: transparent; color: var(--ds-color-gray-500); box-shadow: none; border: 1.5px solid var(--ds-color-gray-200); }
+.ds-btn--outline:hover { border-color: var(--ds-color-gray-400); color: var(--ds-color-black); }
+.ds-btn--outline:active, .ds-btn--outline.ds-btn--pressed { box-shadow: 0 0 0 8px var(--ds-color-gray-100); }
 
-.ds-btn--outline {
-  background: transparent; color: var(--ds-color-gray-500);
-  box-shadow: none; border: 1.5px solid var(--ds-color-gray-200);
-}
-.ds-btn--outline:hover { border-color: var(--ds-color-gray-400); color: var(--ds-color-black); transform: none; }
+/* Tamaños (DS: sm = 44px, radius-xl, shadow-01) */
+.ds-btn--sm { min-height: 44px; padding: var(--ds-space-2) var(--ds-space-4); font-size: var(--ds-font-size-body-sm); border-radius: var(--ds-radius-xl); box-shadow: var(--ds-shadow-01); }
+.ds-btn--sm.ds-btn--outline { box-shadow: none; }
+.ds-btn--lg { min-height: 64px; padding: var(--ds-space-5) var(--ds-space-6); font-size: var(--ds-font-size-subtitle); }
+.ds-btn--block, .ds-btn--full { width: 100%; }
+/* Icon-only (DS layout=icon): cuadrado 56px, sm=círculo 44px */
+.ds-btn--icon { width: 56px; height: 56px; padding: var(--ds-space-4); }
+.ds-btn--sm.ds-btn--icon { width: 44px; height: 44px; border-radius: 50%; padding: 0; }
 
-.ds-btn--sm { padding: var(--ds-space-2) var(--ds-space-4); font-size: var(--ds-font-size-label); border-radius: var(--ds-radius-md); }
-.ds-btn--lg { padding: var(--ds-space-5) var(--ds-space-6); font-size: var(--ds-font-size-subtitle); }
-.ds-btn--block { width: 100%; }
-
-/* =====================  FORM FIELD  ===================== */
+/* =====================  FORM FIELD  =====================
+   Alineado a react/design-system.css del Adelante DS:
+   sombra (shadow-01) en reposo, sin borde; al enfocar
+   borde negro 2px y se quita la sombra. */
 .ds-form-field { display: flex; flex-direction: column; gap: var(--ds-space-2); }
 .ds-form-field__label {
   font-size: var(--ds-font-size-label);
@@ -152,35 +168,48 @@ h1, h2, h3, h4, p { margin: 0; }
   color: var(--ds-color-black);
   padding-left: var(--ds-space-2);
 }
-.ds-form-field__input-wrap { position: relative; display: flex; }
+.ds-form-field__input-wrap { position: relative; display: flex; align-items: center; }
 .ds-form-field__input,
 .ds-form-field__select,
 .ds-form-field textarea {
   width: 100%;
   background: var(--ds-color-white);
   color: var(--ds-color-black);
-  border: 1.5px solid var(--ds-color-gray-200);
+  border: 2px solid transparent;
   border-radius: var(--ds-radius-xl);
+  box-shadow: var(--ds-shadow-01);
   padding: var(--ds-space-4) var(--ds-space-5);
   font-family: inherit;
   font-size: var(--ds-font-size-label);
   line-height: var(--ds-line-height-body-md);
-  transition: border-color .15s ease, box-shadow .15s ease;
+  transition: border-color 120ms ease, box-shadow 120ms ease;
   outline: none;
 }
 .ds-form-field textarea { border-radius: var(--ds-radius-lg); resize: vertical; min-height: 96px; }
-.ds-form-field__input::placeholder { color: var(--ds-color-gray-300); }
+.ds-form-field__input::placeholder,
+.ds-form-field textarea::placeholder { color: var(--ds-color-gray-300); }
+/* Foco / activo (DS --active) — borde negro, sin sombra */
 .ds-form-field__input:focus,
 .ds-form-field__select:focus,
-.ds-form-field textarea:focus {
-  border-color: var(--ds-color-green-100);
-  box-shadow: 0 0 0 4px color-mix(in srgb, var(--ds-color-green-100) 22%, transparent);
+.ds-form-field textarea:focus,
+.ds-form-field--active .ds-form-field__input {
+  border-color: var(--ds-color-black);
+  box-shadow: none;
 }
-.ds-form-field--advertencia .ds-form-field__input { border-color: var(--ds-color-red-100); }
+/* Válido (DS --x) — borde verde */
+.ds-form-field--x .ds-form-field__input { border-color: var(--ds-color-green-100); box-shadow: none; }
+/* Advertencia (DS --advertencia) — borde rojo */
+.ds-form-field--advertencia .ds-form-field__input { border-color: var(--ds-color-red-100); box-shadow: none; }
 .ds-form-field--advertencia .ds-form-field__help { color: var(--ds-color-red-200); }
 .ds-form-field__help { font-size: var(--ds-font-size-body-sm); color: var(--ds-color-gray-400); padding-left: var(--ds-space-2); }
 .ds-form-field__input:disabled,
-.ds-form-field__select:disabled { background: var(--ds-color-gray-100); color: var(--ds-color-gray-400); cursor: not-allowed; }
+.ds-form-field__select:disabled {
+  background: var(--ds-color-gray-100);
+  color: rgba(170, 175, 182, 0.5); /* DS: gray-300 @ 50% */
+  border-color: transparent;
+  box-shadow: none;
+  cursor: not-allowed;
+}
 
 /* =====================  CARD  ===================== */
 .ds-card {
@@ -190,8 +219,13 @@ h1, h2, h3, h4, p { margin: 0; }
   padding: var(--ds-space-6);
 }
 .ds-card--flat { box-shadow: none; border: 1.5px solid var(--ds-color-gray-100); }
+.ds-card--outlined { box-shadow: none; border: 1px solid var(--ds-color-gray-300); }  /* DS Card --outlined */
+.ds-card--filled { background: var(--ds-color-gray-100); }                            /* DS Card --filled */
 .ds-card--interactive { cursor: pointer; transition: transform .12s ease, box-shadow .15s ease; }
 .ds-card--interactive:hover { transform: translateY(-2px); box-shadow: var(--ds-shadow-03-big); }
+
+/* =====================  ICON  ===================== */
+.ds-icon { display: inline-block; flex-shrink: 0; }  /* DS Icon — usa currentColor */
 
 /* =====================  BADGE / STATUS  ===================== */
 .ds-badge {
@@ -442,31 +476,31 @@ h1, h2, h3, h4, p { margin: 0; }
 }
 .tpl-card:active { transform: translateY(1px); }
 .tpl-card.is-active { border-color: var(--ds-color-green-200); background: color-mix(in srgb, var(--ds-color-green-100) 18%, #fff); box-shadow: 0 0 0 1.5px var(--ds-color-green-200) inset; }
-.tpl-card__name { font-weight: 600; font-size: 13px; color: #1a1a1a; line-height: 1.2; }
-.tpl-card__meta { font-size: 11px; color: #8a8f98; }
+.tpl-card__name { font-weight: 600; font-size: 13px; color: var(--ds-color-black); line-height: 1.2; }
+.tpl-card__meta { font-size: 11px; color: var(--ds-color-gray-400); }
 .tpl-card__del {
   position: absolute; top: 5px; right: 5px; width: 19px; height: 19px;
-  border: none; background: transparent; color: #b6b9bf; border-radius: 6px;
+  border: none; background: transparent; color: var(--ds-color-gray-300); border-radius: 6px;
   cursor: pointer; line-height: 1; font-size: 15px; display: grid; place-items: center;
 }
-.tpl-card__del:hover { background: color-mix(in srgb, var(--ds-color-red-100, #e74c3c) 16%, #fff); color: #c0392b; }
+.tpl-card__del:hover { background: color-mix(in srgb, var(--ds-color-red-100) 16%, #fff); color: var(--ds-color-red-200); }
 .seg-mini { display: inline-flex; border: 1.5px solid var(--ds-color-gray-100); border-radius: 8px; overflow: hidden; }
-.seg-mini button { border: none; background: #fff; padding: 4px 12px; font-size: 12px; cursor: pointer; color: #8a8f98; }
-.seg-mini button.is-active { background: var(--ds-color-green-100); color: #1a1a1a; font-weight: 600; }
+.seg-mini button { border: none; background: #fff; padding: 4px 12px; font-size: 12px; cursor: pointer; color: var(--ds-color-gray-400); }
+.seg-mini button.is-active { background: var(--ds-color-green-100); color: var(--ds-color-black); font-weight: 600; }
 
 /* ---- Notificaciones (campanita) ---- */
 .notif-bell { position: relative; border: none; background: transparent; cursor: pointer; font-size: 18px; line-height: 1; padding: 4px 6px; border-radius: 8px; }
 .notif-bell:hover { background: rgba(0,0,0,.05); }
-.notif-bell__dot { position: absolute; top: -2px; right: -2px; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 9px; background: var(--ds-color-red-200, #e74c3c); color: #fff; font-size: 10px; font-weight: 700; display: grid; place-items: center; }
+.notif-bell__dot { position: absolute; top: -2px; right: -2px; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 9px; background: var(--ds-color-red-200); color: #fff; font-size: 10px; font-weight: 700; display: grid; place-items: center; }
 .notif-overlay { position: fixed; inset: 0; z-index: 40; }
 .notif-panel { position: absolute; top: calc(100% + 8px); right: 0; z-index: 41; width: 340px; max-height: 420px; overflow-y: auto; background: #fff; border: 1.5px solid var(--ds-color-gray-100); border-radius: 12px; box-shadow: 0 8px 28px rgba(0,0,0,.14); }
 .notif-panel__head { padding: 10px 14px; font-weight: 700; font-size: 13px; border-bottom: 1.5px solid var(--ds-color-gray-100); position: sticky; top: 0; background: #fff; }
-.notif-empty { padding: 20px 14px; color: #8a8f98; font-size: 13px; text-align: center; }
+.notif-empty { padding: 20px 14px; color: var(--ds-color-gray-400); font-size: 13px; text-align: center; }
 .notif-item { display: flex; flex-direction: column; gap: 3px; width: 100%; text-align: left; border: none; background: #fff; border-bottom: 1px solid var(--ds-color-gray-100); padding: 10px 14px; cursor: pointer; }
 .notif-item:hover { background: color-mix(in srgb, var(--ds-color-green-100) 8%, #fff); }
 .notif-item.is-unread { background: color-mix(in srgb, var(--ds-color-yellow) 12%, #fff); }
-.notif-item__msg { font-size: 13px; color: #1a1a1a; line-height: 1.3; }
-.notif-item__date { font-size: 11px; color: #8a8f98; }
+.notif-item__msg { font-size: 13px; color: var(--ds-color-black); line-height: 1.3; }
+.notif-item__date { font-size: 11px; color: var(--ds-color-gray-400); }
 
 /* Columnas que se ocultan en móvil (tablas de Bodega, etc.) */
 @media (max-width: 640px) {

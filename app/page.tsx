@@ -63,7 +63,7 @@ export default function LoginPage() {
         </div>
 
         {error && (
-          <p className="ds-body-sm" style={{ color: "var(--ds-color-red, #c96c6c)", marginTop: 12 }}>{error}</p>
+          <p className="ds-body-sm" style={{ color: "var(--ds-color-red-100)", marginTop: 12 }}>{error}</p>
         )}
 
         <Button block className="mt-6" onClick={entrar} disabled={cargando}>

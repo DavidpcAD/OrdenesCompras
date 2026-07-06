@@ -119,7 +119,7 @@ export function AppShell({ role, children }: { role: Role; children: React.React
               </>
             )}
           </div>
-          <span className="ds-badge" style={{ background: meta.color, color: "#000" }}>{meta.label} · {usuario ?? meta.persona}</span>
+          <span className="ds-badge" style={{ background: meta.color, color: "var(--ds-color-black)" }}>{meta.label} · {usuario ?? meta.persona}</span>
           <button className="link-btn" onClick={() => { setRole(null); setUsuario(null); router.replace("/"); }}>
             Salir
           </button>

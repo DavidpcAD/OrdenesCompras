@@ -562,7 +562,7 @@ export function SolicitudForm({
           <Button onClick={agregar} disabled={!puedeAgregar}>+ Agregar</Button>
         </div>
         {qaArticuloId && qaVariantesError && (
-          <p className="ds-body-sm" style={{ color: "var(--ds-color-red, #c96c6c)", marginTop: 8 }}>
+          <p className="ds-body-sm" style={{ color: "var(--ds-color-red-100)", marginTop: 8 }}>
             No se pudieron cargar las variantes de este material. Si requiere variante, el pedido podría fallar en Business Central — avisá a proveeduría antes de continuar.
           </p>
         )}
@@ -587,7 +587,7 @@ export function SolicitudForm({
                     <td><span className="ds-strong">{a?.code}</span> <span className="ds-muted">— {a?.descripcion}</span>{l.variantCode ? <span className="ds-body-sm ds-muted"> · var. {l.variantCode}{l.variantNombre ? ` (${l.variantNombre})` : ""}</span> : ""}</td>
                     {esMaterial && (
                       <td style={{ minWidth: 220 }}>
-                        <div style={!l.obraCodigo ? { outline: "1.5px solid var(--ds-color-red, #c96c6c)", borderRadius: 12 } : undefined}>
+                        <div style={!l.obraCodigo ? { outline: "1.5px solid var(--ds-color-red-100)", borderRadius: 12 } : undefined}>
                           <Combobox items={catObras} value={obraId} onChange={(k) => setLineObra(l.key, k)} getKey={(o) => o.id} getLabel={(o) => `${o.codigo} — ${o.nombre}`} placeholder="Asigná la obra…" />
                         </div>
                       </td>

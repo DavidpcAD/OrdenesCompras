@@ -89,7 +89,7 @@ export default function PlanificacionPage() {
             <table className="ds-table" style={{ minWidth: 720 }}>
               <thead>
                 <tr>
-                  <th style={{ minWidth: 200, position: "sticky", left: 0, background: "#fff", zIndex: 2 }}>Obra</th>
+                  <th style={{ minWidth: 200, position: "sticky", left: 0, background: "var(--ds-color-white)", zIndex: 2 }}>Obra</th>
                   {partidas.map((c) => <th key={c} style={{ minWidth: 120 }} className="ds-num">{c}</th>)}
                 </tr>
               </thead>
@@ -99,7 +99,7 @@ export default function PlanificacionPage() {
                 )}
                 {obrasVis.map((o) => (
                   <tr key={o}>
-                    <td style={{ position: "sticky", left: 0, background: "#fff", zIndex: 1 }}>
+                    <td style={{ position: "sticky", left: 0, background: "var(--ds-color-white)", zIndex: 1 }}>
                       <div className="ds-strong ds-body-sm">{o}</div>
                       {obraNombre[o] && <div className="ds-muted ds-body-sm ds-truncate" style={{ maxWidth: 200 }} title={obraNombre[o]}>{obraNombre[o]}</div>}
                     </td>

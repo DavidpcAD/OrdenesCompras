@@ -95,7 +95,7 @@ export default function MatrizPage() {
               <table className="ds-table" style={{ minWidth: 720 }}>
                 <thead>
                   <tr>
-                    <th style={{ minWidth: 180, position: "sticky", left: 0, background: "#fff", zIndex: 2 }}>Obra</th>
+                    <th style={{ minWidth: 180, position: "sticky", left: 0, background: "var(--ds-color-white)", zIndex: 2 }}>Obra</th>
                     {columnas.map((c) => <th key={c.id} style={{ minWidth: 130 }}>{c.nombre}</th>)}
                   </tr>
                 </thead>
@@ -103,7 +103,7 @@ export default function MatrizPage() {
                   {obrasVis.length === 0 && <tr><td colSpan={columnas.length + 1}><div className="empty">Ninguna obra coincide.</div></td></tr>}
                   {obrasVis.map((o) => (
                     <tr key={o.idObra}>
-                      <td style={{ position: "sticky", left: 0, background: "#fff", zIndex: 1 }}>
+                      <td style={{ position: "sticky", left: 0, background: "var(--ds-color-white)", zIndex: 1 }}>
                         <div className="ds-strong ds-body-sm">{o.numeroObra}</div>
                         {o.nombreMostrado && <div className="ds-muted ds-body-sm ds-truncate" style={{ maxWidth: 180 }} title={o.nombreMostrado}>{o.nombreMostrado}</div>}
                       </td>
