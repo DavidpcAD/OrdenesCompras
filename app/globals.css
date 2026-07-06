@@ -270,7 +270,27 @@ h1, h2, h3, h4, p { margin: 0; }
 .ds-table tbody tr.row-borrador td:first-child { box-shadow: inset 3px 0 0 var(--ds-color-yellow); font-weight: var(--ds-font-weight-semibold); }
 .ds-table tbody tr.row-borrador.is-clickable:hover td { background: color-mix(in srgb, var(--ds-color-yellow) 18%, #fff); }
 .ds-card.row-borrador { box-shadow: inset 3px 0 0 var(--ds-color-yellow), var(--ds-shadow-01); }
+/* DataTable con datos centrados; los numéricos quedan a la derecha */
+.ds-table--center thead th, .ds-table--center tbody td { text-align: center; }
+.ds-table--center thead th.ds-num, .ds-table--center tbody td.ds-num { text-align: right; }
+.ds-table--center .ds-truncate { margin: 0 auto; }
 .ds-num { text-align: right; font-variant-numeric: tabular-nums; }
+
+/* Flecha del select (dropdown): custom, separada del borde */
+.ds-form-field__select {
+  appearance: none; -webkit-appearance: none; -moz-appearance: none;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%23747b86' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'><path d='M6 9l6 6 6-6'/></svg>");
+  background-repeat: no-repeat;
+  background-position: right var(--ds-space-4) center;
+  padding-right: var(--ds-space-10);
+}
+
+/* Toolbar del DataTable: todos los controles a la misma altura y en línea */
+.dt-toolbar { align-items: center; }
+.dt-toolbar .ds-form-field__input { height: 40px; }
+.dt-toolbar .segmented { min-height: 40px; align-items: center; }
+.dt-toolbar .segmented__btn { display: inline-flex; align-items: center; }
+.dt-toolbar .ds-btn--sm { min-height: 40px; }
 /* Encabezados numéricos alineados con sus datos (a la derecha) */
 .ds-table thead th.ds-num { text-align: right; }
 .ds-pending-text { color: var(--ds-color-red-200); font-weight: var(--ds-font-weight-semibold); }
@@ -418,6 +438,11 @@ h1, h2, h3, h4, p { margin: 0; }
 .topnav__item svg { flex-shrink: 0; }
 .topnav__item:hover { background: var(--ds-color-gray-100); color: var(--ds-color-black); }
 .topnav__item.is-active { background: var(--ds-color-green-100); color: var(--ds-color-black); }
+/* mismo alto para todas las pestañas (activa o no) */
+.topnav__item { min-height: 40px; }
+/* Salir: botón con ícono al final del topbar */
+.topbar__salir { display: inline-flex; align-items: center; gap: 6px; width: auto; padding: var(--ds-space-2) var(--ds-space-3); color: var(--ds-color-gray-500); font-weight: var(--ds-font-weight-semibold); font-size: var(--ds-font-size-label); }
+.topbar__salir:hover { background: var(--ds-color-gray-100); color: var(--ds-color-red-200); }
 .topbar__tabs { margin-left: var(--ds-space-4); }
 /* la acción primaria no lleva la sombra pesada del botón; queda como acción compacta */
 .topbar__action { box-shadow: var(--ds-shadow-01); }
@@ -470,6 +495,7 @@ h1, h2, h3, h4, p { margin: 0; }
 /* modal */
 .modal-overlay { position: fixed; inset: 0; background: #0006; display: grid; place-items: center; z-index: 80; padding: var(--ds-space-6); animation: fade .15s ease; }
 .modal { width: 100%; max-width: 560px; background: #fff; border-radius: var(--ds-radius-2xl); box-shadow: var(--ds-shadow-03-big); padding: var(--ds-space-6); max-height: 88vh; overflow: auto; }
+.modal--wide { max-width: 920px; }
 @keyframes fade { from { opacity: 0; } to { opacity: 1; } }
 
 @media (max-width: 760px) {

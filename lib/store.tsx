@@ -51,6 +51,7 @@ interface StoreShape {
   usuario: string | null;
   setUsuario: (u: string | null) => void;
   cargando: boolean;
+  hydrated: boolean; // ya se leyó el rol/usuario de localStorage (evita rebotar al login al recargar)
 
   proveedores: Proveedor[];
   articulos: Articulo[];
@@ -461,7 +462,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     const reset: StoreShape["reset"] = () => setData(freshData());
 
     return {
-      role, setRole, usuario, setUsuario, cargando,
+      role, setRole, usuario, setUsuario, cargando, hydrated,
       proveedores: seed.proveedores, articulos: seed.articulos, obras: seed.obras,
       maquinas: seed.maquinas, almacenes: seed.almacenes,
       pedidos: data.pedidos, ordenes: data.ordenes, recepciones: data.recepciones, movimientos: data.movimientos,

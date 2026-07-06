@@ -8,8 +8,10 @@ import type { Role } from "@/lib/types";
 import { formatDate } from "@/lib/helpers";
 import {
   IconBell, IconList, IconOptions, IconDuplicate, IconMatrix, IconTrack,
-  IconReceipt, IconCheck, IconDelivery, IconFolder, IconPlus,
+  IconReceipt, IconCheck, IconDelivery, IconFolder, IconPlus, IconLogout,
 } from "@/components/icons";
+
+const cap = (s: string) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : s);
 
 type IconCmp = React.ComponentType<{ size?: number }>;
 type NavItem = { href: string; label: string; icon: IconCmp };
@@ -18,7 +20,6 @@ type RoleAction = { href: string; label: string };
 const ROLE_META: Record<Role, { label: string; persona: string; home: string; nav: NavItem[]; action?: RoleAction; color: string }> = {
   ingenieria: {
     label: "Ingeniería", persona: "Laura", home: "/ingenieria", color: "var(--ds-color-green-100)",
-    action: { href: "/ingenieria/nuevo", label: "Nueva solicitud" },
     nav: [
       { href: "/ingenieria", label: "Mis solicitudes", icon: IconList },
       { href: "/ingenieria/clasificaciones", label: "Clasificaciones", icon: IconOptions },
@@ -55,7 +56,7 @@ const ROLE_META: Record<Role, { label: string; persona: string; home: string; na
 };
 
 export function AppShell({ role, children }: { role: Role; children: React.ReactNode }) {
-  const { role: current, setRole, usuario, setUsuario, notificaciones, marcarNotifsLeidas } = useStore();
+  const { role: current, setRole, usuario, setUsuario, notificaciones, marcarNotifsLeidas, hydrated } = useStore();
   const router = useRouter();
   const pathname = usePathname();
   const [notifOpen, setNotifOpen] = useState(false);
@@ -68,13 +69,15 @@ export function AppShell({ role, children }: { role: Role; children: React.React
     if (open && noLeidas > 0) setTimeout(() => marcarNotifsLeidas(), 1200);
   }
 
-  // guard: si no hay rol o no coincide, mandar al login
+  // guard: esperar a que el store lea el rol de localStorage (hydrated) para no
+  // rebotar al login al recargar la página. Solo entonces se decide redirigir.
   useEffect(() => {
+    if (!hydrated) return;
     if (current === null) router.replace("/");
     else if (current !== role) router.replace(ROLE_META[current].home);
-  }, [current, role, router]);
+  }, [current, role, router, hydrated]);
 
-  if (current !== role) {
+  if (!hydrated || current !== role) {
     return <div className="page"><div className="empty">Cargando…</div></div>;
   }
 
@@ -137,11 +140,11 @@ export function AppShell({ role, children }: { role: Role; children: React.React
               </>
             )}
           </div>
-          <span className="ds-badge" style={{ background: meta.color, color: "var(--ds-color-black)" }}>{meta.label} · {usuario ?? meta.persona}</span>
-          <button className="link-btn" onClick={() => { setRole(null); setUsuario(null); router.replace("/"); }}>
-            Salir
-          </button>
           <span className="topbar__avatar">{(usuario ?? meta.persona).slice(0, 2).toUpperCase()}</span>
+          <span className="ds-badge" style={{ background: meta.color, color: "var(--ds-color-black)" }}>{cap(usuario ?? meta.persona)} · {meta.label}</span>
+          <button className="icon-btn topbar__salir" title="Salir" aria-label="Salir" onClick={() => { setRole(null); setUsuario(null); router.replace("/"); }}>
+            <IconLogout size={18} /><span>Salir</span>
+          </button>
         </div>
       </header>
       {children}

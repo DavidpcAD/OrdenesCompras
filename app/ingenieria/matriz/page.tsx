@@ -1,9 +1,11 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
 import { AppShell } from "@/components/shell";
-import { Badge, Card, Field, Input, Select, useToast } from "@/components/ui";
+import { Badge, Card, Field, Input, Modal, Select, useToast } from "@/components/ui";
+import { SolicitudForm } from "@/components/solicitud-form";
+import { IconPlus } from "@/components/icons";
+import { useStore } from "@/lib/store";
 
 type Etapa = { id: number; codigo: string; nombre: string };
 type Partida = { id: number; codigo: string; nombre: string; etapaId: number | null };
@@ -16,7 +18,10 @@ const TONO: Record<string, string> = { ENTREGADO: "green", COMPRADO: "green", PE
 const LABEL: Record<string, string> = { ENTREGADO: "Entregado", COMPRADO: "Comprado", PEDIDO: "Pedido", BORRADOR: "Borrador" };
 
 export default function MatrizPage() {
-  const toast = useToast(); const router = useRouter();
+  const toast = useToast();
+  const { addPedido } = useStore();
+  // Armar el pedido SIN salir de la matriz: modal con el formulario prellenado.
+  const [armar, setArmar] = useState<{ idObra: number; obra: string; clasif: number; nombre: string } | null>(null);
   const [etapas, setEtapas] = useState<Etapa[]>([]); const [partidas, setPartidas] = useState<Partida[]>([]);
   const [subpartidas, setSubpartidas] = useState<SubPartida[]>([]); const [clasifs, setClasifs] = useState<Clasif[]>([]);
   const [obras, setObras] = useState<Obra[]>([]); const [celdas, setCeldas] = useState<Celda[]>([]);
@@ -110,11 +115,11 @@ export default function MatrizPage() {
                       {columnas.map((c) => {
                         const est = mapa.get(`${o.idObra}|${c.id}`);
                         return (
-                          <td key={c.id}>
+                          <td key={c.id} style={{ textAlign: "center" }}>
                             {est ? <Badge tone={TONO[est] ?? "gray"}>{LABEL[est] ?? est}</Badge>
                               : <button className="icon-btn" title={`Armar pedido de ${c.nombre} para ${o.numeroObra}`}
-                                  onClick={() => router.push(`/ingenieria/nuevo?obra=${encodeURIComponent(o.numeroObra)}&clasif=${c.id}`)}
-                                  style={{ border: "1.5px dashed var(--ds-color-gray-200)", borderRadius: 8, width: 28, height: 28 }}>+</button>}
+                                  onClick={() => setArmar({ idObra: o.idObra, obra: o.numeroObra, clasif: c.id, nombre: c.nombre })}
+                                  style={{ border: "1.5px dashed var(--ds-color-gray-200)", borderRadius: 8, width: 30, height: 30, display: "inline-grid", placeItems: "center", margin: "0 auto" }}><IconPlus size={16} /></button>}
                           </td>
                         );
                       })}
@@ -124,6 +129,23 @@ export default function MatrizPage() {
               </table>
             </div>
           </Card>
+        )}
+
+        {armar && (
+          <Modal wide title={`Armar pedido · ${armar.nombre} · ${armar.obra}`} onClose={() => setArmar(null)}>
+            <SolicitudForm
+              obraPreset={armar.obra}
+              clasifPreset={armar.clasif}
+              textoBoton="Crear solicitud"
+              onCancelar={() => setArmar(null)}
+              guardar={async (input) => {
+                const p = await addPedido(input);
+                setCeldas((cs) => [...cs, { idObra: armar.idObra, idClasificacion: armar.clasif, estado: "BORRADOR" }]);
+                toast(`Solicitud ${p.numero} creada`, "success");
+                setArmar(null);
+              }}
+            />
+          </Modal>
         )}
       </main>
     </AppShell>

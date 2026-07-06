@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import * as XLSX from "xlsx";
 import { Button, Card, Field, Select, Textarea, useToast } from "@/components/ui";
-import { IconTrash } from "@/components/icons";
+import { IconTrash, IconPlus } from "@/components/icons";
 import { Combobox } from "@/components/combobox";
 import { useStore, type NewPedidoInput } from "@/lib/store";
 import type { Almacen, Articulo, Obra, Pedido, TipoSolicitud } from "@/lib/types";
@@ -36,18 +36,24 @@ export function SolicitudForm({
   guardar,
   textoBoton,
   onCancelar,
+  obraPreset,
+  clasifPreset,
 }: {
   inicial?: SolicitudInicial;
   guardar: (input: NewPedidoInput) => Promise<void>;
   textoBoton: string;
   onCancelar: () => void;
+  // Presets para usar el form embebido (p.ej. modal de la Matriz), sin depender
+  // de la URL. Si vienen, mandan sobre los query params.
+  obraPreset?: string;
+  clasifPreset?: number;
 }) {
   const { articulos, obras, maquinas, almacenes, usuario, planContexto, setPlanContexto } = useStore();
   const toast = useToast();
-  // Contexto opcional desde la Matriz por obra: /ingenieria/nuevo?obra=..&clasif=..
+  // Contexto opcional desde la Matriz por obra: por props (modal) o por URL.
   const search = useSearchParams();
-  const clasifParam = search.get("clasif");
-  const obraParam = search.get("obra");
+  const clasifParam = clasifPreset != null ? String(clasifPreset) : search.get("clasif");
+  const obraParam = obraPreset ?? search.get("obra");
   const [idClasificacion] = useState<number | null>(clasifParam ? Number(clasifParam) : null);
 
   const [bcArt, setBcArt] = useState<Articulo[] | null>(null);
@@ -533,7 +539,7 @@ export function SolicitudForm({
               <Combobox items={catObras} value={obraTodas} onChange={(k) => setObraTodas(k)} getKey={(o) => o.id} getLabel={(o) => `${o.codigo} — ${o.nombre}`} placeholder="Buscá la obra…" />
             </div>
             {lineas.length > 0 && obraTodas && (
-              <button type="button" className="link-btn" onClick={() => obraMasiva(obraTodas)}>Aplicar a las {lineas.length} línea(s)</button>
+              <Button variant="ghost" size="sm" onClick={() => obraMasiva(obraTodas)} style={{ whiteSpace: "nowrap" }}>Aplicar a todas</Button>
             )}
           </div>
         )}
@@ -568,7 +574,7 @@ export function SolicitudForm({
             <input ref={cantRef} className="ds-form-field__input" type="number" min={0} value={qaCantidad} placeholder="0"
               onChange={(e) => setQaCantidad(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") agregar(); }} />
           </div>
-          <Button onClick={agregar} disabled={!puedeAgregar}>+ Agregar</Button>
+          <Button onClick={agregar} disabled={!puedeAgregar} style={{ gap: "10px" }}><IconPlus size={20} /> Agregar</Button>
         </div>
         {qaArticuloId && qaVariantesError && (
           <p className="ds-body-sm" style={{ color: "var(--ds-color-red-100)", marginTop: 8 }}>

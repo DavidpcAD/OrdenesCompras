@@ -124,12 +124,12 @@ export function QtyRing({ recibida, total }: { recibida: number; total: number }
 }
 
 // ---------------------------------------------------------------- Modal
-export function Modal({ title, onClose, children, footer }: {
-  title: string; onClose: () => void; children: React.ReactNode; footer?: React.ReactNode;
+export function Modal({ title, onClose, children, footer, wide }: {
+  title: string; onClose: () => void; children: React.ReactNode; footer?: React.ReactNode; wide?: boolean;
 }) {
   return (
     <div className="modal-overlay" onClick={onClose}>
-      <div className="modal" onClick={(e) => e.stopPropagation()}>
+      <div className={`modal ${wide ? "modal--wide" : ""}`} onClick={(e) => e.stopPropagation()}>
         <div className="row row--between" style={{ marginBottom: 16 }}>
           <h3 className="ds-subtitle-lg">{title}</h3>
           <button className="icon-btn" onClick={onClose} aria-label="Cerrar"><IconClose /></button>

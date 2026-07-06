@@ -116,7 +116,7 @@ export function DataTable<T>({
   return (
     <>
       {/* Toolbar */}
-      <div className="row row--between wrap gap-3" style={{ marginBottom: 14, alignItems: "center", position: "relative" }}>
+      <div className="row row--between wrap gap-3 dt-toolbar" style={{ marginBottom: 14, alignItems: "center", position: "relative" }}>
         <Input value={globalFilter} onChange={(e) => setGlobalFilter(e.target.value)} placeholder="Buscar…" style={{ maxWidth: 300 }} />
         <div className="row gap-2" style={{ alignItems: "center" }}>
           <span className="ds-muted ds-body-sm">{table.getFilteredRowModel().rows.length}</span>
@@ -188,7 +188,7 @@ export function DataTable<T>({
         /* Vista Tabla */
         <Card style={{ padding: 0, overflow: "hidden" }}>
           <div className="ds-table-wrap" style={{ boxShadow: "none", overflowX: "auto" }}>
-            <table className="ds-table">
+            <table className="ds-table ds-table--center">
               <thead>
                 {table.getHeaderGroups().map((hg) => (
                   <tr key={hg.id}>
