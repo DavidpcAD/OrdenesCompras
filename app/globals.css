@@ -401,13 +401,27 @@ h1, h2, h3, h4, p { margin: 0; }
 .segmented { display: inline-flex; background: var(--ds-color-gray-100); border-radius: var(--ds-radius-lg); padding: 4px; gap: 4px; }
 .segmented__btn { padding: 8px 16px; border-radius: var(--ds-radius-md); border: 0; background: transparent; font-family: inherit; font-weight: var(--ds-font-weight-semibold); font-size: var(--ds-font-size-label); color: var(--ds-color-gray-500); cursor: pointer; transition: background-color .12s, color .12s; }
 .segmented__btn.is-active { background: #fff; color: #000; box-shadow: var(--ds-shadow-02-soft); }
+/* navegación de rol (espejo de .ds-nav del DS: activo = verde-100 + texto negro) */
+.topnav { display: flex; align-items: center; gap: var(--ds-space-1); }
+.topnav__item {
+  display: inline-flex; align-items: center; gap: var(--ds-space-2);
+  padding: var(--ds-space-2) var(--ds-space-3); border: 0; background: transparent;
+  border-radius: var(--ds-radius-lg); color: var(--ds-color-gray-500);
+  font-family: inherit; font-weight: var(--ds-font-weight-semibold); font-size: var(--ds-font-size-label);
+  white-space: nowrap; cursor: pointer; transition: background-color .12s ease, color .12s ease;
+}
+.topnav__item svg { flex-shrink: 0; }
+.topnav__item:hover { background: var(--ds-color-gray-100); color: var(--ds-color-black); }
+.topnav__item.is-active { background: var(--ds-color-green-100); color: var(--ds-color-black); }
 .topbar__tabs { margin-left: var(--ds-space-4); }
-/* En pantallas angostas las pestañas bajan a una segunda fila (con scroll si hace falta),
-   en vez de ocultarse. Así siempre se pueden ver y seleccionar. */
+/* la acción primaria no lleva la sombra pesada del botón; queda como acción compacta */
+.topbar__action { box-shadow: var(--ds-shadow-01); }
+/* En pantallas angostas la nav baja a una segunda fila (con scroll si hace falta),
+   en vez de ocultarse. Así siempre se puede ver y seleccionar. */
 @media (max-width: 760px) {
   .topbar { flex-wrap: wrap; row-gap: var(--ds-space-2); column-gap: var(--ds-space-4); }
   .topbar__tabs { order: 10; width: 100%; margin-left: 0; overflow-x: auto; }
-  .topbar__tabs .segmented { width: max-content; min-width: 100%; }
+  .topbar__tabs.topnav { width: max-content; min-width: 100%; }
 }
 
 /* master-detail (pedidos | líneas) */

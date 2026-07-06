@@ -6,42 +6,50 @@ import { useEffect, useState } from "react";
 import { useStore } from "@/lib/store";
 import type { Role } from "@/lib/types";
 import { formatDate } from "@/lib/helpers";
-import { IconBell } from "@/components/icons";
+import {
+  IconBell, IconList, IconOptions, IconDuplicate, IconMatrix, IconTrack,
+  IconReceipt, IconCheck, IconDelivery, IconFolder, IconPlus,
+} from "@/components/icons";
 
-const ROLE_META: Record<Role, { label: string; persona: string; home: string; nav: { href: string; label: string }[]; color: string }> = {
+type IconCmp = React.ComponentType<{ size?: number }>;
+type NavItem = { href: string; label: string; icon: IconCmp };
+type RoleAction = { href: string; label: string };
+
+const ROLE_META: Record<Role, { label: string; persona: string; home: string; nav: NavItem[]; action?: RoleAction; color: string }> = {
   ingenieria: {
     label: "Ingeniería", persona: "Laura", home: "/ingenieria", color: "var(--ds-color-green-100)",
+    action: { href: "/ingenieria/nuevo", label: "Nueva solicitud" },
     nav: [
-      { href: "/ingenieria", label: "Mis solicitudes" },
-      { href: "/ingenieria/nuevo", label: "Nueva solicitud" },
-      { href: "/ingenieria/clasificaciones", label: "Clasificaciones" },
-      { href: "/ingenieria/plantillas", label: "Plantillas" },
-      { href: "/ingenieria/matriz", label: "Matriz por obra" },
-      { href: "/ingenieria/seguimiento", label: "Seguimiento por proyecto" },
+      { href: "/ingenieria", label: "Mis solicitudes", icon: IconList },
+      { href: "/ingenieria/clasificaciones", label: "Clasificaciones", icon: IconOptions },
+      { href: "/ingenieria/plantillas", label: "Plantillas", icon: IconDuplicate },
+      { href: "/ingenieria/matriz", label: "Matriz", icon: IconMatrix },
+      { href: "/ingenieria/seguimiento", label: "Seguimiento", icon: IconTrack },
     ],
   },
   proveeduria: {
     label: "Proveeduría", persona: "Angie", home: "/proveeduria/ordenes", color: "var(--ds-color-yellow)",
+    action: { href: "/proveeduria/directa", label: "Compra directa" },
     nav: [
-      { href: "/proveeduria/ordenes", label: "Órdenes creadas" },
-      { href: "/proveeduria/solicitudes", label: "Solicitudes" },
-      { href: "/proveeduria", label: "Líneas por ordenar" },
-      { href: "/proveeduria/pedidas", label: "Líneas pedidas" },
+      { href: "/proveeduria/ordenes", label: "Órdenes creadas", icon: IconReceipt },
+      { href: "/proveeduria/solicitudes", label: "Solicitudes", icon: IconList },
+      { href: "/proveeduria", label: "Por ordenar", icon: IconOptions },
+      { href: "/proveeduria/pedidas", label: "Pedidas", icon: IconCheck },
     ],
   },
   aprobacion: {
     label: "Aprobación", persona: "Luis Roberto", home: "/aprobacion/todas", color: "var(--ds-color-green-200)",
     nav: [
-      { href: "/aprobacion/todas", label: "Todas las órdenes" },
-      { href: "/aprobacion", label: "Por aprobar" },
+      { href: "/aprobacion/todas", label: "Todas las órdenes", icon: IconReceipt },
+      { href: "/aprobacion", label: "Por aprobar", icon: IconCheck },
     ],
   },
   facturacion: {
     label: "Bodega", persona: "Kattya", home: "/facturacion/todas", color: "var(--ds-color-red-100)",
     nav: [
-      { href: "/facturacion/todas", label: "Todas las órdenes" },
-      { href: "/facturacion", label: "Por recibir" },
-      { href: "/facturacion/archivo", label: "Archivo / recepciones" },
+      { href: "/facturacion/todas", label: "Todas las órdenes", icon: IconReceipt },
+      { href: "/facturacion", label: "Por recibir", icon: IconDelivery },
+      { href: "/facturacion/archivo", label: "Archivo", icon: IconFolder },
     ],
   },
 };
@@ -79,21 +87,31 @@ export function AppShell({ role, children }: { role: Role; children: React.React
           <span className="topbar__logo">A</span>
           <span>Compras Adelante</span>
         </Link>
-        {meta.nav.length > 1 && (
-          <div className="segmented topbar__tabs">
-            {meta.nav.map((n) => {
-              const matches = meta.nav.map((x) => x.href).filter((h) => pathname.startsWith(h)).sort((a, b) => b.length - a.length);
-              const activeHref = matches[0] ?? meta.home;
-              return (
-                <button key={n.href} className={`segmented__btn ${activeHref === n.href ? "is-active" : ""}`} onClick={() => router.push(n.href)}>
-                  {n.label}
-                </button>
-              );
-            })}
-          </div>
-        )}
+        {meta.nav.length > 1 && (() => {
+          const activeHref = meta.nav.map((x) => x.href).filter((h) => pathname.startsWith(h)).sort((a, b) => b.length - a.length)[0] ?? meta.home;
+          return (
+            <nav className="topnav topbar__tabs" aria-label="Secciones">
+              {meta.nav.map((n) => {
+                const Icon = n.icon;
+                const active = activeHref === n.href;
+                return (
+                  <button key={n.href} className={`topnav__item ${active ? "is-active" : ""}`} onClick={() => router.push(n.href)} aria-current={active ? "page" : undefined}>
+                    <Icon size={18} />
+                    <span>{n.label}</span>
+                  </button>
+                );
+              })}
+            </nav>
+          );
+        })()}
         <div className="topbar__spacer" />
         <div className="topbar__user">
+          {/* Acción primaria del rol — siempre visible */}
+          {meta.action && (
+            <button className="ds-btn ds-btn--green ds-btn--sm topbar__action" onClick={() => router.push(meta.action!.href)}>
+              <IconPlus size={18} /><span>{meta.action.label}</span>
+            </button>
+          )}
           {/* Campanita de notificaciones */}
           <div style={{ position: "relative" }}>
             <button className="notif-bell" title="Notificaciones" onClick={toggleNotif} aria-label="Notificaciones">
