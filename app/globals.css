@@ -265,6 +265,11 @@ h1, h2, h3, h4, p { margin: 0; }
 .ds-table tbody tr.is-clickable { cursor: pointer; transition: background-color .12s ease; }
 .ds-table tbody tr.is-clickable:hover { background: var(--ds-color-gray-100); }
 .ds-table tbody tr.row-pending td { background: color-mix(in srgb, var(--ds-color-red-100) 8%, #fff); }
+/* Solicitudes en borrador (sin enviar): acento amarillo + tinte para que se noten */
+.ds-table tbody tr.row-borrador td { background: color-mix(in srgb, var(--ds-color-yellow) 10%, #fff); }
+.ds-table tbody tr.row-borrador td:first-child { box-shadow: inset 3px 0 0 var(--ds-color-yellow); font-weight: var(--ds-font-weight-semibold); }
+.ds-table tbody tr.row-borrador.is-clickable:hover td { background: color-mix(in srgb, var(--ds-color-yellow) 18%, #fff); }
+.ds-card.row-borrador { box-shadow: inset 3px 0 0 var(--ds-color-yellow), var(--ds-shadow-01); }
 .ds-num { text-align: right; font-variant-numeric: tabular-nums; }
 /* Encabezados numéricos alineados con sus datos (a la derecha) */
 .ds-table thead th.ds-num { text-align: right; }

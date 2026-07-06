@@ -21,13 +21,14 @@ type VistaCfg = {
 type Vista = { id: number; nombre: string; config: VistaCfg; esPredeterminada: boolean };
 
 export function DataTable<T>({
-  data, columns, tablaKey, getRowId, onRowClick, vacio = "No hay registros.", modoInicial = "tabla",
+  data, columns, tablaKey, getRowId, onRowClick, rowClassName, vacio = "No hay registros.", modoInicial = "tabla",
 }: {
   data: T[];
   columns: ColumnDef<T, any>[];
   tablaKey: string;
   getRowId?: (row: T) => string;
   onRowClick?: (row: T) => void;
+  rowClassName?: (row: T) => string;
   vacio?: string;
   modoInicial?: "tabla" | "grid";
 }) {
@@ -101,6 +102,14 @@ export function DataTable<T>({
     if (i < 0 || j < 0 || j >= order.length) return order;
     [order[i], order[j]] = [order[j], order[i]]; return order;
   });
+  // Reordenar arrastrando el encabezado: mueve `from` a la posición de `to`.
+  const [dragCol, setDragCol] = useState<string | null>(null);
+  const reorderCol = (from: string, to: string) => setColumnOrder((prev) => {
+    const order = prev.length ? [...prev] : leaf.map((c) => c.id);
+    const fi = order.indexOf(from), ti = order.indexOf(to);
+    if (fi < 0 || ti < 0 || fi === ti) return order;
+    order.splice(fi, 1); order.splice(ti, 0, from); return order;
+  });
   const labelDe = (colId: string) => (leaf.find((x) => x.id === colId)?.columnDef.meta as ColMeta | undefined)?.label ?? colId;
   const rows = table.getRowModel().rows;
 
@@ -164,7 +173,7 @@ export function DataTable<T>({
         rows.length === 0 ? <div className="empty">{vacio}</div> : (
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))", gap: 12 }}>
             {rows.map((row) => (
-              <Card key={row.id} interactive={!!onRowClick} onClick={onRowClick ? () => onRowClick(row.original) : undefined} style={{ minWidth: 0 }}>
+              <Card key={row.id} className={rowClassName?.(row.original) ?? ""} interactive={!!onRowClick} onClick={onRowClick ? () => onRowClick(row.original) : undefined} style={{ minWidth: 0 }}>
                 {row.getVisibleCells().map((cell) => (
                   <div key={cell.id} style={{ display: "grid", gridTemplateColumns: "minmax(64px, 38%) 1fr", gap: 8, alignItems: "start", padding: "4px 0" }}>
                     <span className="ds-muted ds-body-sm" style={{ overflowWrap: "anywhere" }}>{(cell.column.columnDef.meta as ColMeta | undefined)?.label ?? cell.column.id}</span>
@@ -186,8 +195,25 @@ export function DataTable<T>({
                     {hg.headers.map((h) => {
                       const meta = h.column.columnDef.meta as ColMeta | undefined;
                       const sorted = h.column.getIsSorted(); const canSort = h.column.getCanSort();
+                      const isDragging = dragCol === h.column.id;
+                      const isTarget = dragCol && dragCol !== h.column.id;
                       return (
-                        <th key={h.id} className={meta?.num ? "ds-num" : ""} style={{ cursor: canSort ? "pointer" : undefined, userSelect: "none", whiteSpace: "nowrap" }} onClick={canSort ? h.column.getToggleSortingHandler() : undefined}>
+                        <th
+                          key={h.id}
+                          className={meta?.num ? "ds-num" : ""}
+                          title="Clic para ordenar · arrastrá para mover la columna"
+                          draggable
+                          onDragStart={(e) => { setDragCol(h.column.id); e.dataTransfer.effectAllowed = "move"; }}
+                          onDragOver={(e) => { if (isTarget) e.preventDefault(); }}
+                          onDrop={(e) => { e.preventDefault(); if (dragCol) reorderCol(dragCol, h.column.id); setDragCol(null); }}
+                          onDragEnd={() => setDragCol(null)}
+                          style={{
+                            cursor: "grab", userSelect: "none", whiteSpace: "nowrap",
+                            opacity: isDragging ? 0.4 : 1,
+                            boxShadow: isTarget ? "inset 2px 0 0 var(--ds-color-green-100)" : undefined,
+                          }}
+                          onClick={canSort ? h.column.getToggleSortingHandler() : undefined}
+                        >
                           {h.isPlaceholder ? null : flexRender(h.column.columnDef.header, h.getContext())}
                           {canSort && <span className="ds-muted" style={{ fontSize: 10 }}> {sorted === "asc" ? "▲" : sorted === "desc" ? "▼" : "↕"}</span>}
                         </th>
@@ -208,7 +234,7 @@ export function DataTable<T>({
               <tbody>
                 {rows.length === 0 && <tr><td colSpan={table.getVisibleLeafColumns().length}><div className="empty">{vacio}</div></td></tr>}
                 {rows.map((row) => (
-                  <tr key={row.id} className={onRowClick ? "is-clickable" : ""} onClick={onRowClick ? () => onRowClick(row.original) : undefined}>
+                  <tr key={row.id} className={[onRowClick ? "is-clickable" : "", rowClassName?.(row.original) ?? ""].filter(Boolean).join(" ")} onClick={onRowClick ? () => onRowClick(row.original) : undefined}>
                     {row.getVisibleCells().map((cell) => {
                       const meta = cell.column.columnDef.meta as ColMeta | undefined;
                       return <td key={cell.id} className={meta?.num ? "ds-num" : ""}>{flexRender(cell.column.columnDef.cell, cell.getContext())}</td>;

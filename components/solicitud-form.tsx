@@ -154,9 +154,18 @@ export function SolicitudForm({
     if (pl) cargarPlantilla(String(pl.id));
   }, [plantillas]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
-    if (!obraParam) return;
-    const o = catObras.find((x) => x.codigo === obraParam);
-    if (o) setObraTodas(o.id);
+    if (obraParam) {
+      const o = catObras.find((x) => x.codigo === obraParam);
+      if (o) setObraTodas(o.id);
+      return;
+    }
+    // Al editar un pedido de material, precargar la obra del quick-add desde el
+    // propio pedido; si no, "Agregar" queda deshabilitado (exige obra).
+    if (inicial?.tipoSolicitud === "material" && !obraTodas) {
+      const code = inicial.obraCodigo || inicial.lineas?.[0]?.almacen;
+      const o = code ? catObras.find((x) => x.codigo === code) : null;
+      if (o) setObraTodas(o.id);
+    }
   }, [bcObras]); // eslint-disable-line react-hooks/exhaustive-deps
   // por defecto, cada quien ve las suyas
   useEffect(() => { if (solicitante && filtroPlantilla === "") setFiltroPlantilla(solicitante); }, [solicitante]); // eslint-disable-line react-hooks/exhaustive-deps
