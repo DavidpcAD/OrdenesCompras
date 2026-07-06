@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import { useStore } from "@/lib/store";
 import type { Role } from "@/lib/types";
 import { formatDate } from "@/lib/helpers";
+import { IconBell } from "@/components/icons";
 
 const ROLE_META: Record<Role, { label: string; persona: string; home: string; nav: { href: string; label: string }[]; color: string }> = {
   ingenieria: {
@@ -96,7 +97,7 @@ export function AppShell({ role, children }: { role: Role; children: React.React
           {/* Campanita de notificaciones */}
           <div style={{ position: "relative" }}>
             <button className="notif-bell" title="Notificaciones" onClick={toggleNotif} aria-label="Notificaciones">
-              🔔{noLeidas > 0 && <span className="notif-bell__dot">{noLeidas > 9 ? "9+" : noLeidas}</span>}
+              <IconBell size={20} />{noLeidas > 0 && <span className="notif-bell__dot">{noLeidas > 9 ? "9+" : noLeidas}</span>}
             </button>
             {notifOpen && (
               <>

@@ -162,13 +162,13 @@ export function DataTable<T>({
       {/* Vista Grid (tarjetas) */}
       {modo === "grid" ? (
         rows.length === 0 ? <div className="empty">{vacio}</div> : (
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: 12 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))", gap: 12 }}>
             {rows.map((row) => (
-              <Card key={row.id} interactive={!!onRowClick} onClick={onRowClick ? () => onRowClick(row.original) : undefined}>
+              <Card key={row.id} interactive={!!onRowClick} onClick={onRowClick ? () => onRowClick(row.original) : undefined} style={{ minWidth: 0 }}>
                 {row.getVisibleCells().map((cell) => (
-                  <div key={cell.id} className="row row--between gap-3" style={{ alignItems: "center", padding: "3px 0" }}>
-                    <span className="ds-muted ds-body-sm">{(cell.column.columnDef.meta as ColMeta | undefined)?.label ?? cell.column.id}</span>
-                    <span className="ds-body-sm" style={{ textAlign: "right" }}>{flexRender(cell.column.columnDef.cell, cell.getContext())}</span>
+                  <div key={cell.id} style={{ display: "grid", gridTemplateColumns: "minmax(64px, 38%) 1fr", gap: 8, alignItems: "start", padding: "4px 0" }}>
+                    <span className="ds-muted ds-body-sm" style={{ overflowWrap: "anywhere" }}>{(cell.column.columnDef.meta as ColMeta | undefined)?.label ?? cell.column.id}</span>
+                    <span className="ds-body-sm" style={{ textAlign: "right", minWidth: 0, overflowWrap: "anywhere" }}>{flexRender(cell.column.columnDef.cell, cell.getContext())}</span>
                   </div>
                 ))}
               </Card>

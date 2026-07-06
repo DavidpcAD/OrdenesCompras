@@ -38,3 +38,7 @@ export const IconCheck = ({ size = 18, ...p }: P) => (
 export const IconEye = ({ size = 16, ...p }: P) => (
   <svg {...base(size)} {...p}><path d="M1.5 12S5 5 12 5s10.5 7 10.5 7-3.5 7-10.5 7S1.5 12 1.5 12z" /><circle cx="12" cy="12" r="3" /></svg>
 );
+
+export const IconBell = ({ size = 20, ...p }: P) => (
+  <svg {...base(size)} {...p}><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9" /><path d="M13.7 21a2 2 0 0 1-3.4 0" /></svg>
+);
