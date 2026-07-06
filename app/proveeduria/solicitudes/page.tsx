@@ -1,11 +1,14 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useMemo, useState } from "react";
+import type { ColumnDef } from "@tanstack/react-table";
 import { AppShell } from "@/components/shell";
-import { Badge, Button, Card, QtyRing, Tile } from "@/components/ui";
+import { Badge, QtyRing, Tile } from "@/components/ui";
+import { DataTable } from "@/components/data-table";
 import { useStore } from "@/lib/store";
 import { formatDate, pedidoCompraBadge, pedidoOrdenadoPct, recibidoDeLineaPedido, destinoCodigo, destinoLabel, tipoSolicitudBadge } from "@/lib/helpers";
+import type { Pedido } from "@/lib/types";
 
 type Filtro = "todas" | "pendiente" | "parcial" | "comprado";
 
@@ -13,52 +16,40 @@ export default function ProveeduriaSolicitudesPage() {
   const { pedidos, ordenes } = useStore();
   const router = useRouter();
   const [filtro, setFiltro] = useState<Filtro>("todas");
-  const [colF, setColF] = useState<Record<string, string>>({});
-  const setCol = (k: string, v: string) => setColF((f) => ({ ...f, [k]: v }));
 
-  // Proveeduría solo ve solicitudes ya ENVIADAS por Ingeniería: se excluyen las
-  // que están en borrador o fueron devueltas (esas siguen en manos del solicitante).
+  // Proveeduría solo ve solicitudes ENVIADAS (no borrador ni devueltas).
   const enviadas = pedidos.filter((p) => p.estado !== "borrador" && p.estado !== "devuelto");
-
-  // Clasificación por avance de COMPRA (cuánto ya se convirtió en órdenes).
-  const bucket = (p: typeof pedidos[number]): Exclude<Filtro, "todas"> => {
+  const bucket = (p: Pedido): Exclude<Filtro, "todas"> => {
     const pct = pedidoOrdenadoPct(p);
     return pct >= 100 ? "comprado" : pct > 0 ? "parcial" : "pendiente";
   };
-
-  function entregado(p: typeof pedidos[number]): { rec: number; total: number; pct: number } {
+  const entregadoPct = (p: Pedido) => {
     const total = p.lineas.reduce((s, l) => s + l.cantidad, 0);
     const rec = p.lineas.reduce((s, l) => s + recibidoDeLineaPedido(ordenes, l.id), 0);
-    return { rec, total, pct: total > 0 ? Math.round(Math.min(100, (rec / total) * 100)) : 0 };
-  }
-
-  const COLS = ["num", "tipo", "obra", "comentario", "solicitante", "fecha", "lineas", "prioridad", "estado", "entregado"];
-  const prioLabel = (p: typeof pedidos[number]) => p.prioridad === "urgente" ? "Urgente" : p.prioridad === "alta" ? "Alta" : "Normal";
-  const cellText = (p: typeof pedidos[number], k: string): string => {
-    switch (k) {
-      case "num": return p.numero;
-      case "tipo": return tipoSolicitudBadge(p.tipoSolicitud).label;
-      case "obra": return `${destinoCodigo(p)} ${destinoLabel(p)}`.trim();
-      case "comentario": return p.notas ?? "";
-      case "solicitante": return p.solicitante;
-      case "fecha": return formatDate(p.fecha);
-      case "lineas": return String(p.lineas.length);
-      case "prioridad": return prioLabel(p);
-      case "estado": return pedidoCompraBadge(p).label;
-      case "entregado": return `${entregado(p).pct}%`;
-      default: return "";
-    }
+    return total > 0 ? Math.round(Math.min(100, (rec / total) * 100)) : 0;
   };
-
-  const filtradas = enviadas
-    .filter((p) => filtro === "todas" ? true : bucket(p) === filtro)
-    .filter((p) => COLS.every((k) => { const v = (colF[k] ?? "").trim().toLowerCase(); return !v || cellText(p, k).toLowerCase().includes(v); }));
-
   const cuenta = (f: Filtro) => f === "todas" ? enviadas.length : enviadas.filter((p) => bucket(p) === f).length;
+  const base = useMemo(() => enviadas.filter((p) => filtro === "todas" ? true : bucket(p) === filtro), [enviadas, filtro]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const columns = useMemo<ColumnDef<Pedido, any>[]>(() => [
+    { id: "num", header: "N.º", accessorFn: (p) => p.numero, meta: { label: "N.º" }, cell: (c) => <span className="ds-strong">{c.getValue()}</span> },
+    { id: "tipo", header: "Tipo", accessorFn: (p) => tipoSolicitudBadge(p.tipoSolicitud).label, meta: { label: "Tipo" }, cell: (c) => { const t = tipoSolicitudBadge(c.row.original.tipoSolicitud); return <Badge tone={t.tone}>{t.label}</Badge>; } },
+    {
+      id: "obra", header: "Destino", accessorFn: (p) => `${destinoCodigo(p)} ${destinoLabel(p)}`.trim(), meta: { label: "Destino" },
+      cell: (c) => { const p = c.row.original; return <div><div className="ds-strong ds-body-sm">{destinoCodigo(p)}</div><div className="ds-muted ds-body-sm ds-truncate" style={{ maxWidth: 160 }} title={destinoLabel(p)}>{destinoLabel(p)}</div></div>; },
+    },
+    { id: "comentario", header: "Comentario", accessorFn: (p) => p.notas ?? "", meta: { label: "Comentario" }, cell: (c) => <div className="ds-body-sm ds-muted ds-truncate" style={{ maxWidth: 220 }} title={c.getValue()}>{c.getValue() || "—"}</div> },
+    { id: "solicitante", header: "Solicitante", accessorFn: (p) => p.solicitante, meta: { label: "Solicitante" }, cell: (c) => c.getValue() },
+    { id: "fecha", header: "Fecha", accessorFn: (p) => p.fecha, meta: { label: "Fecha" }, cell: (c) => formatDate(c.getValue()) },
+    { id: "lineas", header: "Líneas", accessorFn: (p) => p.lineas.length, meta: { label: "Líneas", num: true }, enableColumnFilter: false, cell: (c) => c.getValue() },
+    { id: "prioridad", header: "Prioridad", accessorFn: (p) => p.prioridad, meta: { label: "Prioridad" }, cell: (c) => { const p = c.row.original; return p.prioridad === "urgente" ? <Badge tone="red">Urgente</Badge> : p.prioridad === "alta" ? <Badge tone="yellow">Alta</Badge> : <Badge tone="gray">Normal</Badge>; } },
+    { id: "estado", header: "Compra", accessorFn: (p) => pedidoCompraBadge(p).label, meta: { label: "Compra" }, cell: (c) => { const b = pedidoCompraBadge(c.row.original); return <Badge tone={b.tone}>{b.label}</Badge>; } },
+    { id: "entregado", header: "Entregado", accessorFn: (p) => entregadoPct(p), meta: { label: "Entregado" }, enableColumnFilter: false, cell: (c) => { const p = c.row.original; const total = p.lineas.reduce((s, l) => s + l.cantidad, 0); const rec = p.lineas.reduce((s, l) => s + recibidoDeLineaPedido(ordenes, l.id), 0); return <div className="row gap-3" style={{ alignItems: "center" }}><QtyRing recibida={rec} total={total} /><span className="ds-body-sm ds-muted">{entregadoPct(p)}%</span></div>; } },
+  ], [ordenes]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <AppShell role="proveeduria">
-      <main className="page">
+      <main className="page page--wide">
         <div className="page__head">
           <div className="page__title">
             <h1 className="ds-heading">Solicitudes de Ingeniería</h1>
@@ -73,54 +64,9 @@ export default function ProveeduriaSolicitudesPage() {
           <Tile value={cuenta("comprado")} label="100% compradas" accent="var(--ds-color-green-200)" onClick={() => setFiltro("comprado")} active={filtro === "comprado"} />
         </div>
 
-        <Card className="mt-6" style={{ padding: 0, overflow: "hidden" }}>
-          <div className="ds-table-wrap" style={{ boxShadow: "none" }}>
-            <table className="ds-table">
-              <thead>
-                <tr>
-                  <th>N.º</th><th>Tipo</th><th>Obra</th><th>Comentario</th><th>Solicitante</th><th>Fecha</th>
-                  <th className="ds-num">Líneas</th><th>Prioridad</th><th>Estado</th><th>Entregado</th><th></th>
-                </tr>
-                <tr>
-                  {COLS.map((k) => (
-                    <th key={k} style={{ padding: "4px 6px", fontWeight: 400 }}>
-                      <input value={colF[k] ?? ""} placeholder="Filtrar…" onChange={(e) => setCol(k, e.target.value)}
-                        style={{ width: "100%", boxSizing: "border-box", borderRadius: 8, padding: "4px 8px", fontSize: 12, font: "inherit", border: "1.5px solid var(--ds-color-gray-100)", background: "#fff", textAlign: k === "lineas" ? "right" : "left" }} />
-                    </th>
-                  ))}
-                  <th></th>
-                </tr>
-              </thead>
-              <tbody>
-                {filtradas.length === 0 && (
-                  <tr><td colSpan={11}><div className="empty">No hay solicitudes que coincidan.</div></td></tr>
-                )}
-                {filtradas.map((p) => {
-                  const b = pedidoCompraBadge(p);
-                  const e = entregado(p);
-                  return (
-                    <tr key={p.id} className="is-clickable" onClick={() => router.push(`/proveeduria/solicitudes/${p.id}`)}>
-                      <td className="ds-strong">{p.numero}</td>
-                      <td>{(() => { const t = tipoSolicitudBadge(p.tipoSolicitud); return <Badge tone={t.tone}>{t.label}</Badge>; })()}</td>
-                      <td>
-                        <div className="ds-strong ds-body-sm">{destinoCodigo(p)}</div>
-                        <div className="ds-muted ds-body-sm ds-truncate" style={{ maxWidth: 160 }} title={destinoLabel(p)}>{destinoLabel(p)}</div>
-                      </td>
-                      <td><div className="ds-body-sm ds-muted ds-truncate" style={{ maxWidth: 200 }} title={p.notas ?? ""}>{p.notas ? p.notas : "—"}</div></td>
-                      <td>{p.solicitante}</td>
-                      <td>{formatDate(p.fecha)}</td>
-                      <td className="ds-num">{p.lineas.length}</td>
-                      <td>{p.prioridad === "urgente" ? <Badge tone="red">Urgente</Badge> : p.prioridad === "alta" ? <Badge tone="yellow">Alta</Badge> : <Badge tone="gray">Normal</Badge>}</td>
-                      <td><Badge tone={b.tone}>{b.label}</Badge></td>
-                      <td><div className="row gap-3" style={{ alignItems: "center" }}><QtyRing recibida={e.rec} total={e.total} /><span className="ds-body-sm ds-muted">{e.pct}%</span></div></td>
-                      <td className="ds-num">›</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        </Card>
+        <div className="mt-6">
+          <DataTable data={base} columns={columns} tablaKey="solicitudes-prov" getRowId={(p) => p.id} onRowClick={(p) => router.push(`/proveeduria/solicitudes/${p.id}`)} vacio="No hay solicitudes que coincidan." />
+        </div>
       </main>
     </AppShell>
   );
