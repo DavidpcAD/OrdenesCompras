@@ -9,6 +9,7 @@
     "lint": "next lint"
   },
   "dependencies": {
+    "@tanstack/react-table": "^8.21.3",
     "mssql": "11.0.1",
     "next": "14.2.5",
     "react": "18.3.1",

@@ -638,3 +638,52 @@ export async function matrizCeldas(): Promise<MatrizCelda[]> {
   const r = await pool.request().query("SELECT idObra, idClasificacion, estado FROM dbo.vw_MatrizObraClasificacion");
   return r.recordset.map((x) => ({ idObra: x.idObra, idClasificacion: x.idClasificacion, estado: x.estado ?? "" }));
 }
+
+/* ============================================================================
+   Vistas de tabla guardadas por usuario (DataTable / TanStack). Ver
+   db/schema_tabla_vistas.sql
+   ============================================================================ */
+export type TablaVista = { id: number; nombre: string; config: any; esPredeterminada: boolean };
+
+export async function listVistas(usuario: string, tablaKey: string): Promise<TablaVista[]> {
+  const pool = await getPool();
+  const r = await pool.request()
+    .input("usuario", sql.NVarChar(100), usuario)
+    .input("tablaKey", sql.NVarChar(60), tablaKey)
+    .query("SELECT id, nombre, configJson, esPredeterminada FROM dbo.TablaVista WHERE esEliminada=0 AND usuario=@usuario AND tablaKey=@tablaKey ORDER BY nombre");
+  return r.recordset.map((row) => {
+    let config: any = {};
+    try { config = JSON.parse(row.configJson); } catch { config = {}; }
+    return { id: row.id, nombre: row.nombre, config, esPredeterminada: !!row.esPredeterminada };
+  });
+}
+
+export async function saveVista(input: { usuario: string; tablaKey: string; nombre: string; config: any; esPredeterminada?: boolean }): Promise<number> {
+  const pool = await getPool();
+  const configJson = JSON.stringify(input.config ?? {});
+  const pred = input.esPredeterminada ? 1 : 0;
+  if (pred) {
+    await pool.request().input("usuario", sql.NVarChar(100), input.usuario).input("tablaKey", sql.NVarChar(60), input.tablaKey)
+      .query("UPDATE dbo.TablaVista SET esPredeterminada=0 WHERE usuario=@usuario AND tablaKey=@tablaKey");
+  }
+  const ex = await pool.request()
+    .input("usuario", sql.NVarChar(100), input.usuario).input("tablaKey", sql.NVarChar(60), input.tablaKey).input("nombre", sql.NVarChar(100), input.nombre)
+    .query("SELECT id FROM dbo.TablaVista WHERE usuario=@usuario AND tablaKey=@tablaKey AND nombre=@nombre AND esEliminada=0");
+  if (ex.recordset.length) {
+    const id = ex.recordset[0].id as number;
+    await pool.request().input("id", sql.Int, id).input("configJson", sql.NVarChar(sql.MAX), configJson).input("pred", sql.Bit, pred)
+      .query("UPDATE dbo.TablaVista SET configJson=@configJson, esPredeterminada=@pred, fechaModificacion=SYSUTCDATETIME() WHERE id=@id");
+    return id;
+  }
+  const ins = await pool.request()
+    .input("usuario", sql.NVarChar(100), input.usuario).input("tablaKey", sql.NVarChar(60), input.tablaKey).input("nombre", sql.NVarChar(100), input.nombre)
+    .input("configJson", sql.NVarChar(sql.MAX), configJson).input("pred", sql.Bit, pred)
+    .query("INSERT dbo.TablaVista (usuario, tablaKey, nombre, configJson, esPredeterminada, esEliminada, fechaCreacion) OUTPUT INSERTED.id VALUES (@usuario,@tablaKey,@nombre,@configJson,@pred,0,SYSUTCDATETIME())");
+  return ins.recordset[0].id as number;
+}
+
+export async function deleteVista(id: number, usuario: string): Promise<void> {
+  const pool = await getPool();
+  await pool.request().input("id", sql.Int, id).input("usuario", sql.NVarChar(100), usuario)
+    .query("UPDATE dbo.TablaVista SET esEliminada=1, fechaModificacion=SYSUTCDATETIME() WHERE id=@id AND usuario=@usuario");
+}
