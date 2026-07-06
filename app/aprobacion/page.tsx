@@ -4,7 +4,9 @@ import { useState } from "react";
 import { AppShell } from "@/components/shell";
 import { Badge, Button, Card, Modal, Textarea, Tile, useToast } from "@/components/ui";
 import { useStore } from "@/lib/store";
+import { aprobarYLanzar } from "@/lib/aprobar";
 import { money, formatDate, num, ordenLineaImporte } from "@/lib/helpers";
+import type { Orden } from "@/lib/types";
 
 export default function AprobacionPage() {
   const { ordenes, proveedores, setOrdenEstado, devolverOrden } = useStore();
@@ -12,12 +14,16 @@ export default function AprobacionPage() {
   const prov = (id: string) => proveedores.find((p) => p.id === id);
   const [rechObj, setRechObj] = useState<{ id: string; numero: string } | null>(null);
   const [motivo, setMotivo] = useState("");
+  const [aprobandoId, setAprobandoId] = useState<string | null>(null);
 
   const porAprobar = ordenes.filter((o) => o.estado === "pendiente_aprobacion");
 
-  async function aprobar(id: string, numero: string) {
-    await setOrdenEstado(id, "lanzado");
-    toast(`Orden ${numero} aprobada y lanzada`, "success");
+  // Crea y lanza en BC; solo pasa a "lanzado" si BC de verdad lo hizo (lib/aprobar.ts).
+  async function aprobar(o: Orden) {
+    setAprobandoId(o.id);
+    const r = await aprobarYLanzar(o, setOrdenEstado);
+    toast(r.message, r.tone);
+    setAprobandoId(null);
   }
   // Rechazar/denegar: motivo OBLIGATORIO; vuelve a Proveeduría con la nota.
   async function confirmarRechazo() {
@@ -60,8 +66,8 @@ export default function AprobacionPage() {
                     <span className="ds-muted ds-label">{o.proveedorNo ?? prov(o.proveedorId)?.code} · {o.proveedorNombre ?? prov(o.proveedorId)?.nombre} · {formatDate(o.fecha)}</span>
                   </div>
                   <div className="row gap-3">
-                    <Button variant="red" onClick={() => { setMotivo(""); setRechObj({ id: o.id, numero: o.numero }); }}>Rechazar</Button>
-                    <Button onClick={() => aprobar(o.id, o.numero)}>Aprobar y lanzar</Button>
+                    <Button variant="red" onClick={() => { setMotivo(""); setRechObj({ id: o.id, numero: o.numero }); }} disabled={aprobandoId === o.id}>Rechazar</Button>
+                    <Button onClick={() => aprobar(o)} disabled={aprobandoId === o.id}>{aprobandoId === o.id ? "Lanzando…" : "Aprobar y lanzar"}</Button>
                   </div>
                 </div>
 

@@ -360,11 +360,11 @@ export async function bcVariants(itemNo: string): Promise<BcVariante[]> {
 // ---- Escritura: crear Pedido de compra (Purchase Order) por la API ESTÁNDAR ----
 export type NuevaLineaBc = { itemNo: string; cantidad: number; precio?: number; descripcion?: string };
 
-export async function bcCrearPedido(input: { vendorNo: string; currencyCode?: string; locationCode?: string; lineas: NuevaLineaBc[] }): Promise<{ number: string; id: string; omitidas: string[] }> {
+export async function bcCrearPedido(input: { vendorNo: string; currencyCode?: string; locationCode?: string; lineas: NuevaLineaBc[] }): Promise<{ number: string; id: string; omitidas: string[]; creadas: number; lineError?: string }> {
   if (!input?.vendorNo) throw new Error("Falta el proveedor (vendorNo).");
   const lineas = (input.lineas ?? []).filter((l) => l.itemNo && l.cantidad > 0);
   if (!lineas.length) throw new Error("No hay líneas de material válidas para el pedido.");
-  const cid = await getCompanyId();
+  const cid = await getStdCompanyId(); // MISMA compañía que items/vendors (API estándar)
   const jsonHeaders = { "Content-Type": "application/json" };
 
   // 1) Encabezado: proveedor (+ moneda si no es CRC).
@@ -375,10 +375,12 @@ export async function bcCrearPedido(input: { vendorNo: string; currencyCode?: st
   if (!resH.ok) throw new Error(`BC ${resH.status} al crear el pedido: ${(await resH.text()).slice(0, 300)}`);
   const po: any = await resH.json();
 
-  // 2) Líneas: una por material (tipo Artículo). Si una línea falla (p.ej. el item
-  // no existe en BC — típico con data de prueba), la OMITIMOS y seguimos, en vez de
-  // tumbar todo el pedido. Devolvemos las omitidas para avisar.
+  // 2) Líneas: una por material (tipo Artículo). Si una línea falla, la OMITIMOS y
+  // seguimos, pero GUARDAMOS el motivo real de BC (antes se descartaba y quedaba a
+  // ciegas por qué no se agregaban las líneas). Devolvemos omitidas + primer error.
   const omitidas: string[] = [];
+  let lineError: string | undefined;
+  let creadas = 0;
   for (const l of lineas) {
     const lineBody: Record<string, unknown> = { lineType: "Item", lineObjectNumber: l.itemNo, quantity: l.cantidad };
     if (l.precio && l.precio > 0) lineBody.directUnitCost = l.precio;
@@ -387,9 +389,19 @@ export async function bcCrearPedido(input: { vendorNo: string; currencyCode?: st
     const loc = input.locationCode || process.env.BC_RECEPCION_LOCATION;
     if (loc) lineBody.locationCode = loc;
     const resL = await bcFetch(`${stdRoot()}/companies(${cid})/purchaseOrders(${po.id})/purchaseOrderLines`, { method: "POST", headers: jsonHeaders, body: JSON.stringify(lineBody), cache: "no-store" });
-    if (!resL.ok) omitidas.push(l.itemNo);
+    if (resL.ok) { creadas++; }
+    else {
+      omitidas.push(l.itemNo);
+      if (!lineError) lineError = `${l.itemNo}: BC ${resL.status} ${(await resL.text()).slice(0, 400)}`;
+    }
   }
-  return { number: po.number ?? "", id: po.id ?? "", omitidas };
+  // Si NINGUNA línea entró, el pedido quedaría vacío en BC (y "no hay nada que
+  // lanzar"). Borramos el encabezado huérfano y fallamos con el motivo real.
+  if (creadas === 0) {
+    try { await bcFetch(`${stdRoot()}/companies(${cid})/purchaseOrders(${po.id})`, { method: "DELETE", cache: "no-store" }); } catch { /* best effort */ }
+    throw new Error(`BC rechazó todas las líneas del pedido — ${lineError ?? "sin detalle"}`);
+  }
+  return { number: po.number ?? "", id: po.id ?? "", omitidas, creadas, lineError };
 }
 
 // Raíz OData V4 (para los web services de codeunit custom, p.ej. AdelantePO).
@@ -442,13 +454,18 @@ export async function bcRegistrarFactura(
 // Si el create funciona pero el release falla (p.ej. AdelantePO no publicado aún),
 // devuelve el pedido creado con released=false para que la UI avise sin romperse.
 export async function bcCrearYLanzarPedido(input: { vendorNo: string; currencyCode?: string; locationCode?: string; lineas: NuevaLineaBc[] }):
-  Promise<{ number: string; id: string; omitidas: string[]; released: boolean; releaseError?: string }> {
-  const { number, id, omitidas } = await bcCrearPedido(input);
+  Promise<{ number: string; id: string; omitidas: string[]; creadas: number; lineError?: string; released: boolean; releaseError?: string }> {
+  const { number, id, omitidas, creadas, lineError } = await bcCrearPedido(input);
+  // Si NINGUNA línea entró a BC, no tiene sentido intentar lanzar (BC responde
+  // "nothing to release"). Devolvemos released=false con el motivo real de la línea.
+  if (creadas === 0) {
+    return { number, id, omitidas, creadas, lineError, released: false, releaseError: lineError ?? "BC rechazó todas las líneas del pedido." };
+  }
   try {
     await bcReleasePedido(number);
-    return { number, id, omitidas, released: true };
+    return { number, id, omitidas, creadas, lineError, released: true };
   } catch (e: any) {
-    return { number, id, omitidas, released: false, releaseError: String(e?.message ?? e) };
+    return { number, id, omitidas, creadas, lineError, released: false, releaseError: String(e?.message ?? e) };
   }
 }
 

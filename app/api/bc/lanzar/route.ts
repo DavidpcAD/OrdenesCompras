@@ -10,9 +10,9 @@ export const dynamic = "force-dynamic";
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-    const { number, id, omitidas, released, releaseError } = await bcCrearYLanzarPedido(body);
+    const { number, id, omitidas, creadas, lineError, released, releaseError } = await bcCrearYLanzarPedido(body);
     return NextResponse.json(
-      { number, id, omitidas, released, releaseError, deepLink: bcDeepLinkPedido(number) },
+      { number, id, omitidas, creadas, lineError, released, releaseError, deepLink: bcDeepLinkPedido(number) },
       { status: 201 },
     );
   } catch (e: any) {
