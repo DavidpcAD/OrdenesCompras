@@ -6,7 +6,7 @@ import { AppShell } from "@/components/shell";
 import { Badge, Button, Card, Field, Input, Select, useToast } from "@/components/ui";
 import { Combobox } from "@/components/combobox";
 import { useStore } from "@/lib/store";
-import { money } from "@/lib/helpers";
+import { money, almacenesFisicos } from "@/lib/helpers";
 import type { OrdenLinea } from "@/lib/types";
 
 // Orden DIRECTA: compra armada por Proveeduría sin partir de una solicitud de
@@ -37,7 +37,7 @@ export default function OrdenDirectaPage() {
     }).catch(() => {});
   }, []);
   const catProv = bcProv ?? proveedores;
-  const catAlm = bcAlm ?? almacenes;
+  const catAlm = almacenesFisicos(bcAlm ?? almacenes);
   const provSel = catProv.find((x) => x.id === proveedorId);
 
   const [rows, setRows] = useState<Row[]>([]);
@@ -120,7 +120,7 @@ export default function OrdenDirectaPage() {
           <div className="row wrap gap-2" style={{ alignItems: "flex-end", padding: "12px 16px", borderBottom: "1.5px solid var(--ds-color-gray-100)", background: "color-mix(in srgb, var(--ds-color-green-100) 6%, #fff)" }}>
             <div style={{ flex: "1 1 280px", minWidth: 220 }}>
               <label className="ds-label ds-muted" style={{ display: "block", marginBottom: 4 }}>Agregar artículo</label>
-              <Combobox items={itemsBc} value={qaCode} onChange={(k) => { setQaCode(k); const it = itemsBc.find((x) => x.code === k); if (it?.precioUltimo) setQaPrecio(String(it.precioUltimo)); }} getKey={(i) => i.code} getLabel={(i) => `${i.code} — ${i.descripcion}`} getSearch={(i) => `${i.code} ${i.descripcion}`} placeholder="Buscar artículo del catálogo…" />
+              <Combobox items={itemsBc} value={qaCode} onChange={(k) => { setQaCode(k); const it = itemsBc.find((x) => x.code === k); if (it?.precioUltimo) setQaPrecio(String(it.precioUltimo)); }} getKey={(i) => i.code} getLabel={(i) => `${i.code} — ${i.descripcion}`} getSearch={(i) => `${i.code} ${i.descripcion}`} minChars={2} placeholder="Buscar artículo del catálogo…" />
             </div>
             <div><label className="ds-label ds-muted" style={{ display: "block", marginBottom: 4 }}>Cantidad</label><Input type="number" min={0} value={qaQty} onChange={(e) => setQaQty(e.target.value)} placeholder="0" style={{ width: 90 }} /></div>
             <div><label className="ds-label ds-muted" style={{ display: "block", marginBottom: 4 }}>Precio</label><Input type="number" min={0} value={qaPrecio} onChange={(e) => setQaPrecio(e.target.value)} placeholder="0" style={{ width: 110 }} />{(() => { const it = itemsBc.find((x) => x.code === qaCode); return it?.precioUltimo ? <div className="ds-body-sm ds-muted" style={{ marginTop: 2 }}>últ. compra {money(it.precioUltimo, currency)}</div> : null; })()}</div>

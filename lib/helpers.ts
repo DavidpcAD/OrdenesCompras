@@ -222,3 +222,9 @@ export function nextNumero(prefix: string, existentes: string[]): string {
   const max = nums.length ? Math.max(...nums) : 0;
   return `${prefix}-${String(max + 1).padStart(6, "0")}`;
 }
+
+// Solo almacenes físicos (códigos ALM-*). Oculta bodegas de obra (VN-M.28, etc.),
+// que no son ubicaciones físicas de recepción y no deben ofrecerse al armar órdenes.
+export function almacenesFisicos<T extends { codigo: string }>(list: T[]): T[] {
+  return list.filter((a) => a.codigo.toUpperCase().startsWith("ALM-"));
+}

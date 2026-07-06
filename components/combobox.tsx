@@ -13,6 +13,7 @@ export function Combobox<T>({
   getSearch,
   placeholder = "Buscar…",
   max = 50,
+  minChars = 0,
 }: {
   items: T[];
   value: string;
@@ -22,16 +23,20 @@ export function Combobox<T>({
   getSearch?: (t: T) => string;
   placeholder?: string;
   max?: number;
+  // Mínimo de caracteres para mostrar opciones. Con 0 (default) al abrir muestra
+  // todo (útil para listas cortas). Con >0 no precarga nada: hay que escribir.
+  minChars?: number;
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
 
   const sel = items.find((i) => getKey(i) === value) ?? null;
   const q = query.trim().toLowerCase();
-  // Al abrir muestra TODAS las opciones (con scroll); al escribir, filtra.
+  const below = q.length < minChars;
+  // Bajo el umbral no muestra nada; con umbral 0 y sin texto muestra todo; si no, filtra.
   const matched = useMemo(
-    () => (q ? items.filter((i) => (getSearch ? getSearch(i) : getLabel(i)).toLowerCase().includes(q)) : items),
-    [items, q] // eslint-disable-line react-hooks/exhaustive-deps
+    () => (below ? [] : q ? items.filter((i) => (getSearch ? getSearch(i) : getLabel(i)).toLowerCase().includes(q)) : items),
+    [items, q, below] // eslint-disable-line react-hooks/exhaustive-deps
   );
   const filtered = matched.slice(0, max);
 
@@ -47,7 +52,7 @@ export function Combobox<T>({
       />
       {open && (
         <div className="combo__menu">
-          {filtered.length === 0 && <div className="combo__empty">{q ? "Sin coincidencias." : "No hay opciones."}</div>}
+          {filtered.length === 0 && <div className="combo__empty">{below ? `Escribí para buscar…` : q ? "Sin coincidencias." : "No hay opciones."}</div>}
           {filtered.map((i) => (
             <button
               key={getKey(i)}

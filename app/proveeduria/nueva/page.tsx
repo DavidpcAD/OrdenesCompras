@@ -6,7 +6,7 @@ import { AppShell } from "@/components/shell";
 import { Badge, Button, Card, Field, Input, Select, useToast } from "@/components/ui";
 import { Combobox } from "@/components/combobox";
 import { useStore } from "@/lib/store";
-import { money, ultimoPrecioProveedor } from "@/lib/helpers";
+import { money, ultimoPrecioProveedor, almacenesFisicos } from "@/lib/helpers";
 import type { OrdenLinea } from "@/lib/types";
 
 interface Row {
@@ -64,7 +64,7 @@ export default function ArmarOrdenPage() {
       })
       .catch(() => { /* sin BC, usa seed */ });
   }, []);
-  const catAlm = bcAlm ?? almacenes;
+  const catAlm = almacenesFisicos(bcAlm ?? almacenes);
   const [qaCode, setQaCode] = useState("");
   const [qaQty, setQaQty] = useState("");
   const [qaPrecio, setQaPrecio] = useState("");
@@ -85,12 +85,15 @@ export default function ArmarOrdenPage() {
 
   useEffect(() => { if (borrador.length === 0) router.replace("/proveeduria"); }, [borrador, router]);
 
-  // Último precio FACTURADO por BC (item + proveedor). Cae al historial local si BC no responde.
+  // Último precio de compra por BC: con proveedor trae el precio FACTURADO a ese
+  // proveedor; SIN proveedor cae al último costo directo del item. Así el precio
+  // del material aparece aunque todavía no se haya elegido proveedor.
   const [bcPrices, setBcPrices] = useState<Record<string, number | null>>({});
+  const itemIdsKey = [...new Set(rows.map((r) => r.articuloId).filter(Boolean))].sort().join(",");
   useEffect(() => {
-    const code = provSel?.code;
-    if (!code) { setBcPrices({}); return; }
-    const items = [...new Set(rows.map((r) => r.articuloId).filter(Boolean))];
+    const code = provSel?.code ?? "";
+    const items = itemIdsKey ? itemIdsKey.split(",") : [];
+    if (!items.length) { setBcPrices({}); return; }
     let cancel = false;
     Promise.all(items.map(async (it) => {
       try {
@@ -100,7 +103,7 @@ export default function ArmarOrdenPage() {
       } catch { return [it, null] as const; }
     })).then((pairs) => { if (!cancel) setBcPrices(Object.fromEntries(pairs)); });
     return () => { cancel = true; };
-  }, [proveedorId]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [proveedorId, itemIdsKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Prellenar el precio con el ÚLTIMO precio de compra (costo directo del item)
   // en las líneas que vengan sin precio. No pisa lo que el comprador ya escribió.
@@ -112,6 +115,16 @@ export default function ArmarOrdenPage() {
       return it?.precioUltimo ? { ...r, precio: String(it.precioUltimo) } : r;
     }));
   }, [itemsBc]);
+
+  // Prellenar también con el último precio de BC (por si el catálogo de items no
+  // trae costo pero lastprice sí). No pisa lo que el comprador ya escribió.
+  useEffect(() => {
+    setRows((rs) => rs.map((r) => {
+      if (Number(r.precio) > 0) return r;
+      const p = bcPrices[r.articuloId];
+      return typeof p === "number" && p > 0 ? { ...r, precio: String(p) } : r;
+    }));
+  }, [bcPrices]);
 
   const setRow = (id: string, patch: Partial<Row>) =>
     setRows((rs) => rs.map((r) => (r.pedidoLineaId === id ? { ...r, ...patch } : r)));
@@ -222,9 +235,9 @@ export default function ArmarOrdenPage() {
           <div className="row wrap gap-2" style={{ alignItems: "flex-end", padding: "12px 16px", borderBottom: "1.5px solid var(--ds-color-gray-100)", background: "color-mix(in srgb, var(--ds-color-green-100) 6%, #fff)" }}>
             <div style={{ flex: "1 1 280px", minWidth: 220 }}>
               <label className="ds-label ds-muted" style={{ display: "block", marginBottom: 4 }}>Agregar artículo</label>
-              <Combobox items={itemsBc} value={qaCode} onChange={(k) => setQaCode(k)}
+              <Combobox items={itemsBc} value={qaCode} onChange={(k) => { setQaCode(k); const it = itemsBc.find((x) => x.code === k); if (it?.precioUltimo) setQaPrecio(String(it.precioUltimo)); }}
                 getKey={(i) => i.code} getLabel={(i) => `${i.code} — ${i.descripcion}`} getSearch={(i) => `${i.code} ${i.descripcion}`}
-                placeholder="Buscar artículo del catálogo…" />
+                minChars={2} placeholder="Buscar artículo del catálogo…" />
             </div>
             <div>
               <label className="ds-label ds-muted" style={{ display: "block", marginBottom: 4 }}>Cantidad</label>
