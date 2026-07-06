@@ -178,7 +178,7 @@ export function ordenEsDirecta(o: Orden): boolean {
 export function pedidoBadge(estado: Pedido["estado"]): { label: string; tone: string } {
   switch (estado) {
     case "borrador": return { label: "Borrador", tone: "gray" };
-    case "aprobado": return { label: "Aprobado", tone: "green" };
+    case "aprobado": return { label: "En proveeduría", tone: "green" };
     case "en_orden": return { label: "En orden", tone: "yellow" };
     case "cerrado": return { label: "Cerrado", tone: "gray" };
     case "devuelto": return { label: "Devuelto", tone: "red" };

@@ -75,6 +75,7 @@ interface StoreShape {
   registrarRecepcion: (input: RegistrarRecepcionInput) => Promise<Recepcion>;
 
   devolverPedido: (id: string, motivo: string) => Promise<void>;
+  devolverOrden: (id: string, motivo: string) => Promise<void>;
 
   // Notificaciones in-app
   notificaciones: Notificacion[];
@@ -417,6 +418,28 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       });
     };
 
+    // ---------------- DEVOLVER / DENEGAR ORDEN A PROVEEDURÍA ----------------
+    // Luis Roberto (Aprobación) devuelve/deniega una orden. El motivo es
+    // obligatorio (lo valida la UI) y queda en el historial + como nota de la orden.
+    const devolverOrden: StoreShape["devolverOrden"] = async (id, motivo) => {
+      if (USE_API) {
+        await api.patchOrdenEstado(id, { estado: "abierto", usuario: persona, rol: rolActual, motivo });
+        await refreshFromApi();
+        return;
+      }
+      setData((d) => {
+        const prev = d.ordenes.find((o) => o.id === id);
+        const mov = mkMov({ entidad: "orden", idEntidad: id, documentoNo: prev?.numero ?? "", tipoMovimiento: "reabierto", estadoAnterior: prev?.estado, estadoNuevo: "abierto", detalle: `Motivo: ${motivo}` });
+        const notif = mkNotif("devuelto", `La orden ${prev?.numero ?? ""} fue devuelta por Aprobación: ${motivo}`, `/proveeduria/ordenes/${id}`, "proveeduria");
+        return {
+          ...d,
+          ordenes: d.ordenes.map((o) => (o.id === id ? { ...o, estado: "abierto" as Orden["estado"], notas: `↩ Devuelta por Aprobación: ${motivo}${o.notas ? ` · ${o.notas}` : ""}` } : o)),
+          movimientos: [mov, ...d.movimientos],
+          notificaciones: [notif, ...d.notificaciones],
+        };
+      });
+    };
+
     // ---------------- NOTIFICACIONES ----------------
     const marcarNotifsLeidas: StoreShape["marcarNotifsLeidas"] = () =>
       setData((d) => ({ ...d, notificaciones: d.notificaciones.map((n) => ({ ...n, leida: true })) }));
@@ -443,7 +466,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       maquinas: seed.maquinas, almacenes: seed.almacenes,
       pedidos: data.pedidos, ordenes: data.ordenes, recepciones: data.recepciones, movimientos: data.movimientos,
       addPedido, editPedido, updatePedido, setPedidoEstado, deletePedido,
-      createOrden, updateOrden, setOrdenEstado, registrarRecepcion, devolverPedido, reset,
+      createOrden, updateOrden, setOrdenEstado, registrarRecepcion, devolverPedido, devolverOrden, reset,
       notificaciones: data.notificaciones, marcarNotifsLeidas,
       planCategorias: data.planCategorias, planFilas: data.planFilas,
       addPlanCategoria, removePlanCategoria, addPlanFila, removePlanFila, setPlanCelda, cargarPlanificacion,

@@ -1,14 +1,17 @@
 "use client";
 
+import { useState } from "react";
 import { AppShell } from "@/components/shell";
-import { Badge, Button, Card, Tile, useToast } from "@/components/ui";
+import { Badge, Button, Card, Modal, Textarea, Tile, useToast } from "@/components/ui";
 import { useStore } from "@/lib/store";
 import { money, formatDate, num, ordenLineaImporte } from "@/lib/helpers";
 
 export default function AprobacionPage() {
-  const { ordenes, proveedores, setOrdenEstado } = useStore();
+  const { ordenes, proveedores, setOrdenEstado, devolverOrden } = useStore();
   const toast = useToast();
   const prov = (id: string) => proveedores.find((p) => p.id === id);
+  const [rechObj, setRechObj] = useState<{ id: string; numero: string } | null>(null);
+  const [motivo, setMotivo] = useState("");
 
   const porAprobar = ordenes.filter((o) => o.estado === "pendiente_aprobacion");
 
@@ -16,9 +19,13 @@ export default function AprobacionPage() {
     await setOrdenEstado(id, "lanzado");
     toast(`Orden ${numero} aprobada y lanzada`, "success");
   }
-  async function rechazar(id: string, numero: string) {
-    await setOrdenEstado(id, "abierto");
-    toast(`Orden ${numero} devuelta a proveeduría`, "info");
+  // Rechazar/denegar: motivo OBLIGATORIO; vuelve a Proveeduría con la nota.
+  async function confirmarRechazo() {
+    if (!rechObj) return;
+    if (!motivo.trim()) { toast("Escribí el motivo del rechazo.", "error"); return; }
+    await devolverOrden(rechObj.id, motivo.trim());
+    toast(`Orden ${rechObj.numero} devuelta a proveeduría`, "info");
+    setRechObj(null); setMotivo("");
   }
 
   return (
@@ -53,7 +60,7 @@ export default function AprobacionPage() {
                     <span className="ds-muted ds-label">{o.proveedorNo ?? prov(o.proveedorId)?.code} · {o.proveedorNombre ?? prov(o.proveedorId)?.nombre} · {formatDate(o.fecha)}</span>
                   </div>
                   <div className="row gap-3">
-                    <Button variant="red" onClick={() => rechazar(o.id, o.numero)}>Rechazar</Button>
+                    <Button variant="red" onClick={() => { setMotivo(""); setRechObj({ id: o.id, numero: o.numero }); }}>Rechazar</Button>
                     <Button onClick={() => aprobar(o.id, o.numero)}>Aprobar y lanzar</Button>
                   </div>
                 </div>
@@ -86,6 +93,14 @@ export default function AprobacionPage() {
             );
           })}
         </div>
+
+        {rechObj && (
+          <Modal title={`Rechazar ${rechObj.numero}`} onClose={() => setRechObj(null)}
+            footer={<><Button variant="outline" onClick={() => setRechObj(null)}>Cancelar</Button><Button variant="red" onClick={confirmarRechazo}>Rechazar y devolver</Button></>}>
+            <p className="ds-muted ds-body-sm" style={{ marginTop: 0 }}>Indicá por qué se devuelve la orden. Le llega una notificación a Proveeduría y el motivo queda en el historial.</p>
+            <Textarea value={motivo} onChange={(e) => setMotivo(e.target.value)} placeholder="Motivo del rechazo…" rows={4} style={{ width: "100%" }} />
+          </Modal>
+        )}
       </main>
     </AppShell>
   );

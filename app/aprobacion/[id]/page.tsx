@@ -1,15 +1,19 @@
 "use client";
 
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
+import { useState } from "react";
 import { AppShell } from "@/components/shell";
-import { Button, useToast } from "@/components/ui";
+import { Button, Modal, Textarea, useToast } from "@/components/ui";
 import { OrdenDetalle } from "@/components/orden-detalle";
 import { useStore } from "@/lib/store";
 
 export default function AprobacionOrdenDetallePage() {
   const { id } = useParams<{ id: string }>();
+  const router = useRouter();
   const toast = useToast();
-  const { ordenes, setOrdenEstado } = useStore();
+  const { ordenes, setOrdenEstado, devolverOrden } = useStore();
+  const [rechazarOpen, setRechazarOpen] = useState(false);
+  const [motivo, setMotivo] = useState("");
 
   const orden = ordenes.find((o) => o.id === id);
   if (!orden) {
@@ -49,11 +53,20 @@ export default function AprobacionOrdenDetallePage() {
     await setOrdenEstado(o.id, "lanzado", { bcNumber: bcNumber || undefined, bcDeepLink: bcDeepLink || undefined });
     toast(`${bcNumber || o.numero} aprobada y lanzada${aviso}`, "success");
   }
-  async function rechazar() { await setOrdenEstado(orden!.id, "abierto"); toast(`${orden!.numero} devuelta a proveeduría`, "info"); }
+
+  // Rechazar/denegar: el motivo es OBLIGATORIO. Vuelve a Proveeduría con la nota
+  // registrada en el historial y como notificación.
+  async function confirmarRechazo() {
+    if (!motivo.trim()) { toast("Escribí el motivo del rechazo.", "error"); return; }
+    await devolverOrden(orden!.id, motivo.trim());
+    toast(`${orden!.numero} devuelta a proveeduría`, "info");
+    setRechazarOpen(false);
+    router.push("/aprobacion");
+  }
 
   const acciones = orden.estado === "pendiente_aprobacion" ? (
     <>
-      <Button variant="red" onClick={rechazar}>Rechazar</Button>
+      <Button variant="red" onClick={() => setRechazarOpen(true)}>Rechazar</Button>
       <Button onClick={aprobar}>Aprobar y lanzar</Button>
     </>
   ) : null;
@@ -61,6 +74,13 @@ export default function AprobacionOrdenDetallePage() {
   return (
     <AppShell role="aprobacion">
       <OrdenDetalle orden={orden} volverHref="/aprobacion/todas" volverLabel="‹ Volver a órdenes" acciones={acciones} />
+      {rechazarOpen && (
+        <Modal title={`Rechazar ${orden.numero}`} onClose={() => setRechazarOpen(false)}
+          footer={<><Button variant="outline" onClick={() => setRechazarOpen(false)}>Cancelar</Button><Button variant="red" onClick={confirmarRechazo}>Rechazar y devolver</Button></>}>
+          <p className="ds-muted ds-body-sm" style={{ marginTop: 0 }}>Indicá por qué se devuelve la orden. Le llega una notificación a Proveeduría y el motivo queda en el historial.</p>
+          <Textarea value={motivo} onChange={(e) => setMotivo(e.target.value)} placeholder="Motivo del rechazo…" rows={4} style={{ width: "100%" }} />
+        </Modal>
+      )}
     </AppShell>
   );
 }

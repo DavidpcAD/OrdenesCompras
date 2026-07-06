@@ -157,6 +157,7 @@ export interface Orden {
   lineas: OrdenLinea[];
   bcNumber?: string;        // Nº del Pedido de compra en Business Central (CP-…)
   bcDeepLink?: string;      // link directo al Pedido en BC (editar / registrar / vista previa)
+  notas?: string;           // motivo de la última devolución/denegación (Aprobación → Proveeduría)
 }
 
 // ============================ RECEPCIÓN / FACTURA (Bodega · Kattya) =========

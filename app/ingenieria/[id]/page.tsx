@@ -50,8 +50,8 @@ export default function PedidoDetallePage() {
                 <Button variant="outline" onClick={() => router.push(`/ingenieria/${pedido.id}/editar`)}>
                   Editar
                 </Button>
-                <Button onClick={async () => { await setPedidoEstado(pedido.id, "aprobado"); toast(`${pedido.numero} aprobado y enviado a proveeduría`, "success"); }}>
-                  Aprobar y enviar a proveeduría
+                <Button onClick={async () => { await setPedidoEstado(pedido.id, "aprobado"); toast(`${pedido.numero} enviado a proveeduría`, "success"); }}>
+                  Enviar a proveeduría
                 </Button>
               </>
             )}
