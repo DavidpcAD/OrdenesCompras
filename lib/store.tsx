@@ -15,6 +15,7 @@ export interface NewPedidoInput {
   obraNombre?: string;
   maquinaNo?: string;
   maquinaNombre?: string;
+  idClasificacion?: number | null;
   solicitante: string;
   prioridad: Pedido["prioridad"];
   notas?: string;
@@ -194,7 +195,8 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       if (USE_API) {
         const { idPedidoCompra } = await api.createPedido({
           tipoSolicitud: input.tipoSolicitud, obra: input.obraCodigo, obraNombre: input.obraNombre,
-          maquinaNo: input.maquinaNo, solicitante: input.solicitante, prioridad: input.prioridad,
+          maquinaNo: input.maquinaNo, idClasificacion: input.idClasificacion ?? null,
+          solicitante: input.solicitante, prioridad: input.prioridad,
           notas: input.notas, usuario: persona, rol: rolActual,
           lineas: input.lineas.map((l) => ({ itemNo: l.articuloId, descripcion: l.descripcion, cantidad: l.cantidad, unidad: l.unidad, almacen: l.almacen, variantCode: l.variantCode })),
         });

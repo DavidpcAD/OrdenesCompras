@@ -1,10 +1,10 @@
 import { NextResponse } from "next/server";
-import { listWbs, createSubPartida } from "@/lib/repo";
+import { listWbs, createClasificacion } from "@/lib/repo";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-// Árbol del maestro: etapa -> partida -> sub_partida (clasificación).
+// Árbol del maestro: etapa -> partida -> sub_partida + clasificaciones del ingeniero.
 export async function GET() {
   try {
     return NextResponse.json(await listWbs());
@@ -13,17 +13,18 @@ export async function GET() {
   }
 }
 
-// Crear una clasificación = una sub_partida bajo una partida (código autogenerado).
+// Crear una clasificación (control del ingeniero) colgando de una partida O sub_partida.
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-    const partidaId = Number(body?.partidaId);
     const nombre = String(body?.nombre ?? "").trim();
-    if (!partidaId || !nombre) {
-      return NextResponse.json({ error: "Faltan partidaId o nombre" }, { status: 400 });
+    const partidaId = body?.partidaId != null ? Number(body.partidaId) : null;
+    const subPartidaId = body?.subPartidaId != null ? Number(body.subPartidaId) : null;
+    if (!nombre || (!partidaId && !subPartidaId)) {
+      return NextResponse.json({ error: "Falta nombre y una partida o sub-partida" }, { status: 400 });
     }
-    const id = await createSubPartida({ partidaId, nombre });
-    return NextResponse.json({ idSubPartida: id }, { status: 201 });
+    const id = await createClasificacion({ nombre, partidaId, subPartidaId });
+    return NextResponse.json({ idClasificacion: id }, { status: 201 });
   } catch (e: any) {
     return NextResponse.json({ error: String(e?.message ?? e) }, { status: 500 });
   }

@@ -1,27 +1,27 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { AppShell } from "@/components/shell";
 import { Badge, Card, Field, Input, Select, useToast } from "@/components/ui";
 
 type Etapa = { id: number; codigo: string; nombre: string };
 type Partida = { id: number; codigo: string; nombre: string; etapaId: number | null };
 type SubPartida = { id: number; codigo: string; nombre: string; partidaId: number | null };
-type Obra = { idObra: number; numeroObra: string; nombreMostrado: string };
-type Celda = { idObra: number; idSubPartida: number; estado: string };
+type Clasif = { id: number; nombre: string; partidaId: number | null; subPartidaId: number | null };
+type Obra = { idObra: number; numeroObra: string; nombreMostrado: string; areaCosteo: string; proyecto: string };
+type Celda = { idObra: number; idClasificacion: number; estado: string };
 
 const TONO: Record<string, string> = { ENTREGADO: "green", COMPRADO: "green", PEDIDO: "yellow", BORRADOR: "gray" };
 const LABEL: Record<string, string> = { ENTREGADO: "Entregado", COMPRADO: "Comprado", PEDIDO: "Pedido", BORRADOR: "Borrador" };
 
 export default function MatrizPage() {
-  const toast = useToast();
-  const [etapas, setEtapas] = useState<Etapa[]>([]);
-  const [partidas, setPartidas] = useState<Partida[]>([]);
-  const [subpartidas, setSubpartidas] = useState<SubPartida[]>([]);
-  const [obras, setObras] = useState<Obra[]>([]);
-  const [celdas, setCeldas] = useState<Celda[]>([]);
+  const toast = useToast(); const router = useRouter();
+  const [etapas, setEtapas] = useState<Etapa[]>([]); const [partidas, setPartidas] = useState<Partida[]>([]);
+  const [subpartidas, setSubpartidas] = useState<SubPartida[]>([]); const [clasifs, setClasifs] = useState<Clasif[]>([]);
+  const [obras, setObras] = useState<Obra[]>([]); const [celdas, setCeldas] = useState<Celda[]>([]);
   const [cargando, setCargando] = useState(true);
-  const [etapaSel, setEtapaSel] = useState(""); const [buscarObra, setBuscarObra] = useState("");
+  const [etapaSel, setEtapaSel] = useState(""); const [fArea, setFArea] = useState(""); const [fProy, setFProy] = useState(""); const [buscar, setBuscar] = useState("");
 
   useEffect(() => {
     (async () => {
@@ -29,29 +29,28 @@ export default function MatrizPage() {
         const r = await fetch("/api/matriz"); const d = await r.json();
         if (!r.ok) { toast(d.error ?? "No se pudo cargar", "error"); return; }
         setEtapas(d.etapas ?? []); setPartidas(d.partidas ?? []); setSubpartidas(d.subpartidas ?? []);
-        setObras(d.obras ?? []); setCeldas(d.celdas ?? []);
+        setClasifs(d.clasificaciones ?? []); setObras(d.obras ?? []); setCeldas(d.celdas ?? []);
         if ((d.etapas ?? []).length) setEtapaSel(String(d.etapas[0].id));
       } catch (e: any) { toast(String(e?.message ?? e), "error"); }
       finally { setCargando(false); }
     })();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const partidaDe = (s: SubPartida) => partidas.find((p) => p.id === s.partidaId);
-  // Columnas = sub_partidas de la etapa elegida (para que la matriz no tenga 90+ columnas).
-  const columnas = useMemo(() => {
-    return subpartidas.filter((s) => { const p = partidaDe(s); return !etapaSel || (p && String(p.etapaId) === etapaSel); });
-  }, [subpartidas, partidas, etapaSel]);
+  const etapaDeClas = (c: Clasif) => {
+    const sub = c.subPartidaId ? subpartidas.find((s) => s.id === c.subPartidaId) : undefined;
+    const p = partidas.find((x) => x.id === (c.partidaId ?? sub?.partidaId));
+    return p?.etapaId ?? null;
+  };
+  const columnas = useMemo(() => clasifs.filter((c) => !etapaSel || String(etapaDeClas(c)) === etapaSel), [clasifs, partidas, subpartidas, etapaSel]); // eslint-disable-line react-hooks/exhaustive-deps
+  const mapa = useMemo(() => { const m = new Map<string, string>(); for (const c of celdas) m.set(`${c.idObra}|${c.idClasificacion}`, c.estado); return m; }, [celdas]);
 
-  const mapa = useMemo(() => {
-    const m = new Map<string, string>();
-    for (const c of celdas) m.set(`${c.idObra}|${c.idSubPartida}`, c.estado);
-    return m;
-  }, [celdas]);
-
+  const areas = useMemo(() => [...new Set(obras.map((o) => o.areaCosteo).filter(Boolean))].sort(), [obras]);
+  const proyectos = useMemo(() => [...new Set(obras.map((o) => o.proyecto).filter(Boolean))].sort(), [obras]);
   const obrasVis = useMemo(() => {
-    const q = buscarObra.trim().toLowerCase();
-    return obras.filter((o) => !q || o.numeroObra.toLowerCase().includes(q) || (o.nombreMostrado ?? "").toLowerCase().includes(q));
-  }, [obras, buscarObra]);
+    const q = buscar.trim().toLowerCase();
+    return obras.filter((o) => (!fArea || o.areaCosteo === fArea) && (!fProy || o.proyecto === fProy)
+      && (!q || o.numeroObra.toLowerCase().includes(q) || (o.nombreMostrado ?? "").toLowerCase().includes(q)));
+  }, [obras, fArea, fProy, buscar]);
 
   return (
     <AppShell role="ingenieria">
@@ -59,7 +58,7 @@ export default function MatrizPage() {
         <div className="page__head">
           <div className="page__title">
             <h1 className="ds-heading">Matriz por obra</h1>
-            <p className="ds-muted">Filas = obras, columnas = clasificaciones (sub-partidas). Cada celda dice en qué va el pedido de esa clasificación para esa obra. Se llena sola con los pedidos.</p>
+            <p className="ds-muted">Filas = obras, columnas = clasificaciones. Cada celda dice en qué va el pedido de esa clasificación para esa obra. En las vacías, “+” arma el pedido desde su plantilla.</p>
           </div>
         </div>
 
@@ -70,33 +69,38 @@ export default function MatrizPage() {
                 {etapas.map((e) => <option key={e.id} value={e.id}>{e.codigo} · {e.nombre}</option>)}
               </Select>
             </Field>
-            <Field label="Buscar obra">
-              <Input value={buscarObra} onChange={(e) => setBuscarObra(e.target.value)} placeholder="Código o nombre de obra…" />
+            <Field label="Buscar obra"><Input value={buscar} onChange={(e) => setBuscar(e.target.value)} placeholder="Código o nombre…" /></Field>
+            <Field label="Área de costeo">
+              <Select value={fArea} onChange={(e) => setFArea(e.target.value)}>
+                <option value="">Todas</option>{areas.map((a) => <option key={a} value={a}>{a}</option>)}
+              </Select>
+            </Field>
+            <Field label="Proyecto">
+              <Select value={fProy} onChange={(e) => setFProy(e.target.value)}>
+                <option value="">Todos</option>{proyectos.map((p) => <option key={p} value={p}>{p}</option>)}
+              </Select>
             </Field>
           </div>
           <div className="row gap-2 wrap mt-2">
             {(["ENTREGADO", "COMPRADO", "PEDIDO", "BORRADOR"] as const).map((k) => <Badge key={k} tone={TONO[k]}>{LABEL[k]}</Badge>)}
-            <span className="ds-muted ds-body-sm">· celda vacía = sin pedido</span>
+            <span className="ds-muted ds-body-sm">· vacío = sin pedido ( + para armarlo )</span>
           </div>
         </Card>
 
-        {cargando ? <div className="empty mt-6">Cargando…</div> : (
+        {cargando ? <div className="empty mt-6">Cargando…</div> : columnas.length === 0 ? (
+          <div className="empty mt-6">No hay clasificaciones en esta etapa. Creá clasificaciones en el Maestro.</div>
+        ) : (
           <Card className="mt-4" style={{ padding: 0, overflow: "hidden" }}>
             <div className="ds-table-wrap" style={{ boxShadow: "none", overflowX: "auto" }}>
               <table className="ds-table" style={{ minWidth: 720 }}>
                 <thead>
                   <tr>
                     <th style={{ minWidth: 180, position: "sticky", left: 0, background: "#fff", zIndex: 2 }}>Obra</th>
-                    {columnas.map((c) => (
-                      <th key={c.id} style={{ minWidth: 130 }}>
-                        <div className="ds-body-sm">{c.nombre}</div>
-                        <div className="ds-muted ds-body-sm" style={{ fontFamily: "monospace", fontWeight: 400 }}>{c.codigo}</div>
-                      </th>
-                    ))}
+                    {columnas.map((c) => <th key={c.id} style={{ minWidth: 130 }}>{c.nombre}</th>)}
                   </tr>
                 </thead>
                 <tbody>
-                  {obrasVis.length === 0 && <tr><td colSpan={columnas.length + 1}><div className="empty">{obras.length === 0 ? "No hay obras." : "Ninguna obra coincide."}</div></td></tr>}
+                  {obrasVis.length === 0 && <tr><td colSpan={columnas.length + 1}><div className="empty">Ninguna obra coincide.</div></td></tr>}
                   {obrasVis.map((o) => (
                     <tr key={o.idObra}>
                       <td style={{ position: "sticky", left: 0, background: "#fff", zIndex: 1 }}>
@@ -105,7 +109,14 @@ export default function MatrizPage() {
                       </td>
                       {columnas.map((c) => {
                         const est = mapa.get(`${o.idObra}|${c.id}`);
-                        return <td key={c.id}>{est ? <Badge tone={TONO[est] ?? "gray"}>{LABEL[est] ?? est}</Badge> : <span className="ds-muted">—</span>}</td>;
+                        return (
+                          <td key={c.id}>
+                            {est ? <Badge tone={TONO[est] ?? "gray"}>{LABEL[est] ?? est}</Badge>
+                              : <button className="icon-btn" title={`Armar pedido de ${c.nombre} para ${o.numeroObra}`}
+                                  onClick={() => router.push(`/ingenieria/nuevo?obra=${encodeURIComponent(o.numeroObra)}&clasif=${c.id}`)}
+                                  style={{ border: "1.5px dashed var(--ds-color-gray-200)", borderRadius: 8, width: 28, height: 28 }}>+</button>}
+                          </td>
+                        );
                       })}
                     </tr>
                   ))}

@@ -10,7 +10,7 @@ export async function PUT(req: Request, { params }: { params: { id: string } }) 
     if (!body?.nombre) return NextResponse.json({ error: "Falta nombre" }, { status: 400 });
     await updatePlantilla(Number(params.id), {
       nombre: String(body.nombre),
-      idSubPartida: body.idSubPartida != null ? Number(body.idSubPartida) : null,
+      idClasificacion: body.idClasificacion != null ? Number(body.idClasificacion) : null,
       lineas: Array.isArray(body.lineas) ? body.lineas : [],
       usuario: String(body.usuario ?? ""),
     });

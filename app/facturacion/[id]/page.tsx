@@ -120,6 +120,7 @@ export default function RegistrarFacturaPage() {
               <Badge tone={ordenBadge(orden.estado).tone}>{ordenBadge(orden.estado).label}</Badge>
             </div>
             <p className="ds-muted">{orden.proveedorNo ?? prov?.code} · {orden.proveedorNombre ?? prov?.nombre} · recibido {ordenRecibidoPct(orden)}%{orden.currencyCode ? ` · ${orden.currencyCode}` : ""}</p>
+            {orden.almacenRecepcion && <p className="ds-body-sm ds-muted">Recepción en almacén <span className="ds-strong">{orden.almacenRecepcion}</span></p>}
             <div className="row gap-2 wrap mt-2">
               <span className="ds-muted ds-body-sm">Solicitudes origen:</span>
               {[...new Set(orden.lineas.filter((l) => l.pedidoNumero).map((l) => l.pedidoNumero!))].map((n) => <Badge key={n} tone="gray">{n}</Badge>)}
@@ -160,10 +161,10 @@ export default function RegistrarFacturaPage() {
             <table className="ds-table">
               <thead>
                 <tr>
-                  <th>Artículo</th><th>Almacén</th>
-                  <th className="ds-num">Ordenado</th><th className="ds-num">Ya recib.</th>
+                  <th style={{ width: 32 }}></th><th>Artículo</th><th className="hide-mobile">Almacén</th>
+                  <th className="ds-num">Ordenado</th><th className="ds-num hide-mobile">Ya recib.</th>
                   <th className="ds-num">Pend.</th><th className="ds-num">A recibir</th>
-                  <th className="ds-num">Precio</th>
+                  <th className="ds-num hide-mobile">Precio</th>
                   <th className="ds-num">A facturar</th>
                 </tr>
               </thead>
@@ -174,35 +175,37 @@ export default function RegistrarFacturaPage() {
                   const importe = importeRecibir(l);
                   return (
                     <tr key={l.id} className={pend > 0 && val < pend ? "row-pending" : ""}>
+                      <td className="ds-num"><input type="checkbox" checked={pend > 0 && val >= pend} disabled={pend <= 0} title="Marcar recibido completo" onChange={(e) => setRecibir((r) => ({ ...r, [l.id]: e.target.checked ? String(pend) : "0" }))} /></td>
                       <td>
                         {l.descripcion}
                         <div className="ds-body-sm ds-muted">
                           {[l.pedidoNumero, l.proyecto && `Proy. ${l.proyecto}`, l.taskNo && `Tarea ${l.taskNo}`, l.descuentoPct ? `−${l.descuentoPct}%` : null].filter(Boolean).join(" · ")}
                         </div>
                       </td>
-                      <td className="ds-muted">{l.almacen}</td>
+                      <td className="ds-muted hide-mobile">{l.almacen}</td>
                       <td className="ds-num">{num.format(l.cantidad)} {l.unidad}</td>
-                      <td className="ds-num">{num.format(l.cantidadRecibida)}</td>
+                      <td className="ds-num hide-mobile">{num.format(l.cantidadRecibida)}</td>
                       <td className="ds-num">{pend > 0 ? <span className="ds-pending-text">{num.format(pend)}</span> : "0"}</td>
                       <td className="ds-num">
                         <input className="ds-cell-input" type="number" min={0} max={pend} value={recibir[l.id] ?? ""} disabled={pend <= 0}
                           title={pend <= 0 ? "Esta línea ya se recibió completa" : undefined}
                           onChange={(e) => { const v = e.target.value; if (v === "") return setRecibir((r) => ({ ...r, [l.id]: "" })); const n = Math.max(0, Math.min(Number(v) || 0, pend)); setRecibir((r) => ({ ...r, [l.id]: String(n) })); }} />
                       </td>
-                      <td className="ds-num ds-muted">{money(l.precioUnitario, orden.currencyCode)}</td>
+                      <td className="ds-num ds-muted hide-mobile">{money(l.precioUnitario, orden.currencyCode)}</td>
                       <td className="ds-num ds-strong">{money(importe || 0, orden.currencyCode)}</td>
                     </tr>
                   );
                 })}
                 {cargo && (
                   <tr style={{ opacity: completaOrden ? 1 : 0.5 }}>
+                    <td></td>
                     <td><Badge tone="yellow">Cargo</Badge> {cargo.descripcion}</td>
-                    <td className="ds-muted">{cargo.almacen}</td>
+                    <td className="ds-muted hide-mobile">{cargo.almacen}</td>
                     <td className="ds-num">{num.format(cargo.cantidad)}</td>
-                    <td className="ds-num">{num.format(cargo.cantidadRecibida)}</td>
+                    <td className="ds-num hide-mobile">{num.format(cargo.cantidadRecibida)}</td>
                     <td className="ds-num">—</td>
                     <td className="ds-num">{completaOrden ? num.format(cargo.cantidad) : "—"}</td>
-                    <td className="ds-num ds-muted">{money(cargo.precioUnitario, orden.currencyCode)}</td>
+                    <td className="ds-num ds-muted hide-mobile">{money(cargo.precioUnitario, orden.currencyCode)}</td>
                     <td className="ds-num ds-strong">{money(fleteAplicado, orden.currencyCode)}</td>
                   </tr>
                 )}

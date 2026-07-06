@@ -2,25 +2,26 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { AppShell } from "@/components/shell";
-import { Badge, Button, Card, Field, Input, Modal, useToast } from "@/components/ui";
+import { Badge, Button, Card, Field, Input, Modal, Select, useToast } from "@/components/ui";
 import { Combobox } from "@/components/combobox";
 import { useStore } from "@/lib/store";
 
-type SubPartida = { id: number; codigo: string; nombre: string; partidaId: number | null };
-type Partida = { id: number; codigo: string; nombre: string; etapaId: number | null };
 type Etapa = { id: number; codigo: string; nombre: string };
-type Wbs = { etapas: Etapa[]; partidas: Partida[]; subpartidas: SubPartida[] };
+type Partida = { id: number; codigo: string; nombre: string; etapaId: number | null };
+type SubPartida = { id: number; codigo: string; nombre: string; partidaId: number | null };
+type Clasif = { id: number; nombre: string; partidaId: number | null; subPartidaId: number | null };
+type Wbs = { etapas: Etapa[]; partidas: Partida[]; subpartidas: SubPartida[]; clasificaciones: Clasif[] };
 type Linea = { code: string; descripcion?: string; cantidad: number; unidad?: string; obraCodigo?: string };
-type Plantilla = { id: number; nombre: string; creadoPor: string; idSubPartida: number | null; lineas: Linea[] };
+type Plantilla = { id: number; nombre: string; creadoPor: string; idClasificacion: number | null; lineas: Linea[] };
 type ItemBc = { code: string; descripcion: string; unidad: string };
 
 export default function PlantillasPage() {
   const toast = useToast();
   const { usuario } = useStore();
   const [plantillas, setPlantillas] = useState<Plantilla[]>([]);
-  const [wbs, setWbs] = useState<Wbs>({ etapas: [], partidas: [], subpartidas: [] });
+  const [wbs, setWbs] = useState<Wbs>({ etapas: [], partidas: [], subpartidas: [], clasificaciones: [] });
   const [items, setItems] = useState<ItemBc[]>([]);
-  const [buscar, setBuscar] = useState("");
+  const [buscar, setBuscar] = useState(""); const [fPartida, setFPartida] = useState("");
   const [editor, setEditor] = useState<Plantilla | "new" | null>(null);
 
   async function recargar() {
@@ -28,7 +29,7 @@ export default function PlantillasPage() {
       const [rp, rc] = await Promise.all([fetch("/api/plantillas"), fetch("/api/clasificaciones")]);
       const dp = await rp.json(); const dc = await rc.json();
       if (rp.ok) setPlantillas(dp.plantillas ?? []);
-      if (rc.ok) setWbs({ etapas: dc.etapas ?? [], partidas: dc.partidas ?? [], subpartidas: dc.subpartidas ?? [] });
+      if (rc.ok) setWbs({ etapas: dc.etapas ?? [], partidas: dc.partidas ?? [], subpartidas: dc.subpartidas ?? [], clasificaciones: dc.clasificaciones ?? [] });
     } catch (e: any) { toast(String(e?.message ?? e), "error"); }
   }
   useEffect(() => { recargar(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -38,18 +39,24 @@ export default function PlantillasPage() {
       .catch(() => {});
   }, []);
 
-  const subDe = (id: number | null) => wbs.subpartidas.find((s) => s.id === id);
-  const partDe = (s?: SubPartida) => wbs.partidas.find((p) => p.id === s?.partidaId);
-  const etapaDe = (p?: Partida) => wbs.etapas.find((e) => e.id === p?.etapaId);
+  const clasDe = (id: number | null) => wbs.clasificaciones.find((c) => c.id === id);
+  const ctxDeClas = (c?: Clasif) => {
+    if (!c) return { partida: undefined as Partida | undefined, etapa: undefined as Etapa | undefined, sub: undefined as SubPartida | undefined };
+    const sub = c.subPartidaId ? wbs.subpartidas.find((s) => s.id === c.subPartidaId) : undefined;
+    const partida = wbs.partidas.find((p) => p.id === (c.partidaId ?? sub?.partidaId));
+    const etapa = wbs.etapas.find((e) => e.id === partida?.etapaId);
+    return { partida, etapa, sub };
+  };
 
   const visibles = useMemo(() => {
     const q = buscar.trim().toLowerCase();
     return plantillas.filter((pl) => {
+      const c = clasDe(pl.idClasificacion); const { partida } = ctxDeClas(c);
+      if (fPartida && String(partida?.id) !== fPartida) return false;
       if (!q) return true;
-      const s = subDe(pl.idSubPartida);
-      return pl.nombre.toLowerCase().includes(q) || (s?.nombre.toLowerCase().includes(q) ?? false);
+      return pl.nombre.toLowerCase().includes(q) || (c?.nombre.toLowerCase().includes(q) ?? false);
     });
-  }, [plantillas, buscar, wbs]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [plantillas, buscar, fPartida, wbs]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function borrar(pl: Plantilla) {
     if (!confirm(`¿Borrar la plantilla "${pl.nombre}"?`)) return;
@@ -66,45 +73,47 @@ export default function PlantillasPage() {
         <div className="page__head">
           <div className="page__title">
             <h1 className="ds-heading">Plantillas de pedido</h1>
-            <p className="ds-muted">Cada plantilla se asocia a una clasificación (sub-partida) y trae sus líneas base. Ese amarre alimenta la matriz por obra.</p>
+            <p className="ds-muted">Cada plantilla se asocia a una clasificación y trae sus líneas base. Ese amarre alimenta la matriz por obra.</p>
           </div>
           <Button onClick={() => setEditor("new")}>+ Nueva plantilla</Button>
         </div>
 
         <Card className="mt-2">
-          <Field label="Buscar plantilla">
-            <Input value={buscar} onChange={(e) => setBuscar(e.target.value)} placeholder="Nombre o clasificación…" />
-          </Field>
+          <div className="grid-2">
+            <Field label="Buscar plantilla"><Input value={buscar} onChange={(e) => setBuscar(e.target.value)} placeholder="Nombre o clasificación…" /></Field>
+            <Field label="Partida">
+              <Select value={fPartida} onChange={(e) => setFPartida(e.target.value)}>
+                <option value="">Todas las partidas</option>
+                {wbs.partidas.map((p) => <option key={p.id} value={p.id}>{p.codigo} · {p.nombre}</option>)}
+              </Select>
+            </Field>
+          </div>
           <div className="ds-body-sm ds-muted mt-2">{visibles.length} plantilla(s)</div>
         </Card>
 
         <div className="mt-4" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 12 }}>
           {visibles.length === 0 && <div className="empty">No hay plantillas.</div>}
           {visibles.map((pl) => {
-            const s = subDe(pl.idSubPartida); const p = partDe(s); const e = etapaDe(p);
+            const c = clasDe(pl.idClasificacion); const { partida, etapa } = ctxDeClas(c);
             return (
-              <Card key={pl.id} className="is-clickable" onClick={() => setEditor(pl)} style={{ cursor: "pointer" }}>
+              <Card key={pl.id} onClick={() => setEditor(pl)} style={{ cursor: "pointer" }}>
                 <div className="row row--between" style={{ alignItems: "flex-start" }}>
                   <span className="ds-strong">{pl.nombre}</span>
                   <button className="icon-btn" title="Borrar" onClick={(ev) => { ev.stopPropagation(); borrar(pl); }}>×</button>
                 </div>
                 <div className="row gap-2 wrap mt-2">
-                  {e && <Badge tone="gray">{e.nombre}</Badge>}
-                  {s ? <Badge tone="green">{s.nombre}</Badge> : <Badge tone="red">Sin clasificación</Badge>}
+                  {etapa && <Badge tone="gray">{etapa.nombre}</Badge>}
+                  {c ? <Badge tone="green">{c.nombre}</Badge> : <Badge tone="red">Sin clasificación</Badge>}
                 </div>
-                <div className="ds-body-sm ds-muted mt-2">{pl.lineas.length} línea(s){p ? ` · Partida ${p.codigo}` : ""}</div>
+                <div className="ds-body-sm ds-muted mt-2">{pl.lineas.length} línea(s){partida ? ` · Partida ${partida.codigo}` : ""}</div>
               </Card>
             );
           })}
         </div>
 
         {editor && (
-          <PlantillaEditor
-            plantilla={editor === "new" ? null : editor}
-            wbs={wbs} items={items} usuario={usuario ?? ""}
-            onClose={() => setEditor(null)}
-            onSaved={() => { setEditor(null); recargar(); }}
-          />
+          <PlantillaEditor plantilla={editor === "new" ? null : editor} wbs={wbs} items={items} usuario={usuario ?? ""}
+            onClose={() => setEditor(null)} onSaved={() => { setEditor(null); recargar(); }} />
         )}
       </main>
     </AppShell>
@@ -115,15 +124,24 @@ function PlantillaEditor({ plantilla, wbs, items, usuario, onClose, onSaved }: {
   plantilla: Plantilla | null; wbs: Wbs; items: ItemBc[]; usuario: string; onClose: () => void; onSaved: () => void;
 }) {
   const toast = useToast();
+  // Contexto inicial desde la clasificación de la plantilla (si edita).
+  const clasInicial = wbs.clasificaciones.find((c) => c.id === plantilla?.idClasificacion);
+  const subInicial = clasInicial?.subPartidaId ? wbs.subpartidas.find((s) => s.id === clasInicial.subPartidaId) : undefined;
+  const partInicial = wbs.partidas.find((p) => p.id === (clasInicial?.partidaId ?? subInicial?.partidaId));
+  const [etapaId, setEtapaId] = useState(String(wbs.etapas.find((e) => e.id === partInicial?.etapaId)?.id ?? wbs.etapas[0]?.id ?? ""));
+  const partidasEt = wbs.partidas.filter((p) => String(p.etapaId) === etapaId);
+  const [partidaId, setPartidaId] = useState(String(partInicial?.id ?? partidasEt[0]?.id ?? ""));
+  const [idClas, setIdClas] = useState(plantilla?.idClasificacion ? String(plantilla.idClasificacion) : "");
   const [nombre, setNombre] = useState(plantilla?.nombre ?? "");
-  const [idSub, setIdSub] = useState<string>(plantilla?.idSubPartida ? String(plantilla.idSubPartida) : String(wbs.subpartidas[0]?.id ?? ""));
   const [lineas, setLineas] = useState<Linea[]>(plantilla?.lineas ?? []);
   const [qaCode, setQaCode] = useState(""); const [qaQty, setQaQty] = useState("");
   const [guardando, setGuardando] = useState(false);
 
-  const sub = wbs.subpartidas.find((s) => String(s.id) === idSub);
-  const part = wbs.partidas.find((p) => p.id === sub?.partidaId);
-  const etapa = wbs.etapas.find((e) => e.id === part?.etapaId);
+  // Clasificaciones bajo la partida elegida (directas o vía sus sub-partidas).
+  const clasOpciones = useMemo(() => {
+    const subsPartida = new Set(wbs.subpartidas.filter((s) => String(s.partidaId) === partidaId).map((s) => s.id));
+    return wbs.clasificaciones.filter((c) => String(c.partidaId) === partidaId || (c.subPartidaId != null && subsPartida.has(c.subPartidaId)));
+  }, [wbs, partidaId]);
 
   function agregar() {
     const it = items.find((x) => x.code === qaCode);
@@ -135,39 +153,45 @@ function PlantillaEditor({ plantilla, wbs, items, usuario, onClose, onSaved }: {
 
   async function guardar() {
     if (!nombre.trim()) { toast("Poné un nombre.", "error"); return; }
+    if (!idClas) { toast("Elegí la clasificación.", "error"); return; }
     setGuardando(true);
     try {
-      const body = { nombre: nombre.trim(), idSubPartida: idSub ? Number(idSub) : null, lineas, creadoPor: usuario, usuario };
+      const body = { nombre: nombre.trim(), idClasificacion: Number(idClas), lineas, creadoPor: usuario, usuario };
       const r = plantilla
         ? await fetch(`/api/plantillas/${plantilla.id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })
         : await fetch("/api/plantillas", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
       const d = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(d.error ?? "No se pudo guardar");
-      toast(`Plantilla ${plantilla ? "actualizada" : "creada"}`, "success");
-      onSaved();
+      toast(`Plantilla ${plantilla ? "actualizada" : "creada"}`, "success"); onSaved();
     } catch (e: any) { toast(String(e?.message ?? e), "error"); setGuardando(false); }
   }
 
   return (
     <Modal title={plantilla ? "Editar plantilla" : "Nueva plantilla de pedido"} onClose={onClose}
-      footer={<><Button variant="outline" onClick={onClose}>Cancelar</Button><Button onClick={guardar} disabled={guardando || !nombre.trim()}>{guardando ? "Guardando…" : "Guardar plantilla"}</Button></>}>
+      footer={<><Button variant="outline" onClick={onClose}>Cancelar</Button><Button onClick={guardar} disabled={guardando || !nombre.trim() || !idClas}>{guardando ? "Guardando…" : "Guardar plantilla"}</Button></>}>
       <div className="grid-2">
-        <Field label="Nombre de la plantilla">
-          <Input value={nombre} onChange={(e) => setNombre(e.target.value)} placeholder="Ej. Pisos porcelanato 60x120" />
+        <Field label="Nombre de la plantilla"><Input value={nombre} onChange={(e) => setNombre(e.target.value)} placeholder="Ej. Pisos porcelanato 60x120" /></Field>
+        <Field label="Etapa">
+          <Select value={etapaId} onChange={(e) => { setEtapaId(e.target.value); const f = wbs.partidas.find((p) => String(p.etapaId) === e.target.value); setPartidaId(String(f?.id ?? "")); setIdClas(""); }}>
+            {wbs.etapas.map((e) => <option key={e.id} value={e.id}>{e.codigo} · {e.nombre}</option>)}
+          </Select>
         </Field>
-        <Field label="Clasificación (sub-partida)">
-          <Combobox items={wbs.subpartidas} value={idSub} onChange={(k) => setIdSub(k)} getKey={(s) => String(s.id)}
-            getLabel={(s) => `${s.codigo} · ${s.nombre}`} getSearch={(s) => `${s.codigo} ${s.nombre}`} placeholder="Buscar clasificación…" />
+        <Field label="Partida">
+          <Select value={partidaId} onChange={(e) => { setPartidaId(e.target.value); setIdClas(""); }}>
+            {partidasEt.map((p) => <option key={p.id} value={p.id}>{p.codigo} · {p.nombre}</option>)}
+          </Select>
         </Field>
-        <Field label="Partida (auto)"><Input value={part ? `${part.codigo} · ${part.nombre}` : "—"} readOnly /></Field>
-        <Field label="Etapa (auto)"><Input value={etapa?.nombre ?? "—"} readOnly /></Field>
+        <Field label="Clasificación">
+          <Select value={idClas} onChange={(e) => setIdClas(e.target.value)}>
+            <option value="">{clasOpciones.length ? "Elegí la clasificación…" : "Sin clasificaciones en esta partida"}</option>
+            {clasOpciones.map((c) => <option key={c.id} value={c.id}>{c.nombre}</option>)}
+          </Select>
+        </Field>
       </div>
 
       <div className="mt-4">
-        <div className="row row--between" style={{ alignItems: "flex-end", marginBottom: 8 }}>
-          <span className="ds-label ds-muted">Líneas de la plantilla</span>
-        </div>
-        <div className="row wrap gap-2" style={{ alignItems: "flex-end", marginBottom: 10 }}>
+        <span className="ds-label ds-muted">Líneas de la plantilla</span>
+        <div className="row wrap gap-2" style={{ alignItems: "flex-end", margin: "8px 0 10px" }}>
           <div style={{ flex: "1 1 260px", minWidth: 200 }}>
             <label className="ds-label ds-muted" style={{ display: "block", marginBottom: 4 }}>Artículo</label>
             <Combobox items={items} value={qaCode} onChange={(k) => setQaCode(k)} getKey={(i) => i.code} getLabel={(i) => `${i.code} — ${i.descripcion}`} getSearch={(i) => `${i.code} ${i.descripcion}`} placeholder="Buscar artículo…" />

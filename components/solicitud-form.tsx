@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import * as XLSX from "xlsx";
 import { Button, Card, Field, Select, Textarea, useToast } from "@/components/ui";
 import { IconTrash } from "@/components/icons";
@@ -16,7 +17,7 @@ const SOLICITANTES = ["Laura Ureña", "Loana", "Michael Thames", "Roger Solano"]
 
 // ---- Plantillas (persistidas en SQL: dbo.PlantillaSolicitud) ----
 type PlantillaLinea = { code: string; cantidad: number; obraCodigo: string };
-type Plantilla = { id: number; nombre: string; creadoPor: string; lineas: PlantillaLinea[] };
+type Plantilla = { id: number; nombre: string; creadoPor: string; idClasificacion?: number | null; lineas: PlantillaLinea[] };
 const normTxt = (v: unknown) => String(v ?? "").trim().toUpperCase();
 
 export interface SolicitudInicial {
@@ -43,6 +44,11 @@ export function SolicitudForm({
 }) {
   const { articulos, obras, maquinas, almacenes, usuario, planContexto, setPlanContexto } = useStore();
   const toast = useToast();
+  // Contexto opcional desde la Matriz por obra: /ingenieria/nuevo?obra=..&clasif=..
+  const search = useSearchParams();
+  const clasifParam = search.get("clasif");
+  const obraParam = search.get("obra");
+  const [idClasificacion] = useState<number | null>(clasifParam ? Number(clasifParam) : null);
 
   const [bcArt, setBcArt] = useState<Articulo[] | null>(null);
   const [bcObras, setBcObras] = useState<Obra[] | null>(null);
@@ -141,6 +147,17 @@ export function SolicitudForm({
     } catch { /* sin DB, queda vacío */ }
   }
   useEffect(() => { recargarPlantillas(); }, []);
+  // Prefill desde la Matriz: carga la plantilla de esa clasificación y fija la obra.
+  useEffect(() => {
+    if (!clasifParam || plantillas.length === 0) return;
+    const pl = plantillas.find((p) => Number(p.idClasificacion) === Number(clasifParam));
+    if (pl) cargarPlantilla(String(pl.id));
+  }, [plantillas]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (!obraParam) return;
+    const o = catObras.find((x) => x.codigo === obraParam);
+    if (o) setObraTodas(o.id);
+  }, [bcObras]); // eslint-disable-line react-hooks/exhaustive-deps
   // por defecto, cada quien ve las suyas
   useEffect(() => { if (solicitante && filtroPlantilla === "") setFiltroPlantilla(solicitante); }, [solicitante]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -369,6 +386,7 @@ export function SolicitudForm({
         obraNombre: headerObraNombre,
         maquinaNo: tipo === "repuesto" ? maquina?.no : undefined,
         maquinaNombre: tipo === "repuesto" ? maquina?.nombre : undefined,
+        idClasificacion,
         solicitante,
         prioridad,
         notas: notas.trim() || undefined,

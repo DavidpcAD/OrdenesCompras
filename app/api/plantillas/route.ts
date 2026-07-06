@@ -21,7 +21,7 @@ export async function POST(req: Request) {
     const id = await createPlantilla({
       nombre: String(body.nombre),
       creadoPor: String(body.creadoPor),
-      idSubPartida: body.idSubPartida != null ? Number(body.idSubPartida) : null,
+      idClasificacion: body.idClasificacion != null ? Number(body.idClasificacion) : null,
       lineas: Array.isArray(body.lineas) ? body.lineas : [],
     });
     return NextResponse.json({ idPlantillaSolicitud: id }, { status: 201 });

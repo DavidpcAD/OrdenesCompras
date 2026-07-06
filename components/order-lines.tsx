@@ -10,7 +10,7 @@ export function OrderLinesTable({ orden, showRecepcion = true }: { orden: Orden;
       <table className="ds-table">
         <thead>
           <tr>
-            <th>Tipo</th><th>Descripción</th><th>Almacén</th>
+            <th className="hide-mobile">Tipo</th><th>Descripción</th><th className="hide-mobile">Almacén</th>
             <th className="ds-num">Cantidad</th>
             {showRecepcion && <th className="ds-num">Recibido</th>}
             {showRecepcion && <th className="ds-num">Pendiente</th>}
@@ -23,14 +23,14 @@ export function OrderLinesTable({ orden, showRecepcion = true }: { orden: Orden;
             const pendiente = showRecepcion && pend > 0 && l.tipo === "articulo";
             return (
               <tr key={l.id} className={pendiente ? "row-pending" : ""}>
-                <td>{l.tipo === "cargo" ? <Badge tone="yellow">Cargo</Badge> : <Badge tone="gray">Artículo</Badge>}</td>
+                <td className="hide-mobile">{l.tipo === "cargo" ? <Badge tone="yellow">Cargo</Badge> : <Badge tone="gray">Artículo</Badge>}</td>
                 <td>
                   {l.descripcion}
                   <div className="ds-body-sm ds-muted">
                     {[l.pedidoNumero, l.proyecto && `Proy. ${l.proyecto}`, l.taskNo && `Tarea ${l.taskNo}`, l.descuentoPct ? `−${l.descuentoPct}%` : null].filter(Boolean).join(" · ")}
                   </div>
                 </td>
-                <td className="ds-muted">{l.almacen}</td>
+                <td className="ds-muted hide-mobile">{l.almacen}</td>
                 <td className="ds-num">{num.format(l.cantidad)} {l.unidad}</td>
                 {showRecepcion && <td className="ds-num">{num.format(l.cantidadRecibida)}</td>}
                 {showRecepcion && (

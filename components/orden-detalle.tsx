@@ -68,6 +68,7 @@ export function OrdenDetalle({
             {esDirecta && <Badge tone="yellow">Directa</Badge>}
           </div>
           <p className="ds-muted">{orden.proveedorNo ?? prov?.code} · {orden.proveedorNombre ?? prov?.nombre} · emitida {formatDate(orden.fecha)} · recibido {ordenRecibidoPct(orden)}%{orden.bcNumber ? ` · BC ${orden.bcNumber}` : ""}</p>
+          {orden.almacenRecepcion && <p className="ds-body-sm ds-muted">Recepción en almacén <span className="ds-strong">{orden.almacenRecepcion}</span></p>}
           <div className="row gap-2 wrap mt-2">
             {esDirecta ? (
               <span className="ds-muted ds-body-sm">Compra directa · sin solicitud de origen</span>
