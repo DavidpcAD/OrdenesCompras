@@ -5,7 +5,7 @@ import {
   useReactTable, getCoreRowModel, getSortedRowModel, getFilteredRowModel, getPaginationRowModel, flexRender,
   type ColumnDef, type SortingState, type ColumnFiltersState, type VisibilityState, type ColumnOrderState, type PaginationState,
 } from "@tanstack/react-table";
-import { Button, Card, Input } from "@/components/ui";
+import { Button, Card, Input, Select } from "@/components/ui";
 import { useStore } from "@/lib/store";
 
 // Motor de tabla reutilizable (TanStack, headless) con el design system de la app.
@@ -251,9 +251,9 @@ export function DataTable<T>({
       <div className="row row--between wrap gap-3 mt-4" style={{ alignItems: "center" }}>
         <span className="ds-body-sm ds-muted">Página {table.getState().pagination.pageIndex + 1} de {Math.max(1, table.getPageCount())}</span>
         <div className="row gap-2" style={{ alignItems: "center" }}>
-          <select className="ds-form-field__select" value={pagination.pageSize} onChange={(e) => setPagination((p) => ({ ...p, pageSize: Number(e.target.value), pageIndex: 0 }))} style={{ width: "auto" }}>
+          <Select value={String(pagination.pageSize)} onChange={(e) => setPagination((p) => ({ ...p, pageSize: Number(e.target.value), pageIndex: 0 }))} style={{ width: "auto", minWidth: 120 }}>
             {[25, 50, 100, 200].map((n) => <option key={n} value={n}>{n} / pág.</option>)}
-          </select>
+          </Select>
           <Button variant="ghost" size="sm" onClick={() => table.previousPage()} disabled={!table.getCanPreviousPage()}>‹ Anterior</Button>
           <Button variant="ghost" size="sm" onClick={() => table.nextPage()} disabled={!table.getCanNextPage()}>Siguiente ›</Button>
         </div>

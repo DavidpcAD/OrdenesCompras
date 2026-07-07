@@ -61,6 +61,11 @@ export const IconLogout = ({ size = 18, ...p }: P) => (
   <svg {...base(size)} {...p}><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /><path d="M16 17l5-5-5-5" /><path d="M21 12H9" /></svg>
 );
 
+// Chevron abajo (flecha de los dropdown)
+export const IconChevronDown = ({ size = 20, ...p }: P) => (
+  <svg {...base(size)} {...p}><path d="M6 9l6 6 6-6" /></svg>
+);
+
 // ───────── Íconos de navegación — filled exactos del DS (react/Icon/Icon.tsx) ─────────
 
 // DS "list"

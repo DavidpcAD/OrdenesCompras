@@ -1,7 +1,7 @@
 "use client";
 
 import React, { createContext, useCallback, useContext, useState } from "react";
-import { IconClose } from "@/components/icons";
+import { IconClose, IconChevronDown } from "@/components/icons";
 import { haptic } from "@/lib/haptic";
 
 // ---------------------------------------------------------------- Button
@@ -48,9 +48,60 @@ export const Input = (p: React.InputHTMLAttributes<HTMLInputElement>) => (
   <input className="ds-form-field__input" {...p} />
 );
 
-export const Select = ({ children, ...p }: React.SelectHTMLAttributes<HTMLSelectElement>) => (
-  <select className="ds-form-field__select" {...p}>{children}</select>
-);
+// Dropdown propio (reemplaza al <select> nativo) para que el menú abierto siga
+// el design system: menú redondeado, hover y opción activa. API compatible con
+// el uso previo: value + onChange(e.target.value) + <option> hijos.
+const textOf = (n: React.ReactNode): string => {
+  if (n == null || n === false || n === true) return "";
+  if (typeof n === "string" || typeof n === "number") return String(n);
+  if (Array.isArray(n)) return n.map(textOf).join("");
+  if (React.isValidElement(n)) return textOf((n.props as any).children);
+  return "";
+};
+export function Select({
+  value, onChange, children, disabled, className = "", style, placeholder = "Seleccioná…",
+}: {
+  value?: string | number;
+  onChange?: (e: { target: { value: string } }) => void;
+  children?: React.ReactNode;
+  disabled?: boolean;
+  className?: string;
+  style?: React.CSSProperties;
+  placeholder?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const options = React.Children.toArray(children).flatMap((c) =>
+    React.isValidElement(c) && c.type === "option"
+      ? [{ value: String((c.props as any).value ?? ""), label: textOf((c.props as any).children) }]
+      : []
+  );
+  const cur = String(value ?? "");
+  const sel = options.find((o) => o.value === cur);
+  const pick = (v: string) => { onChange?.({ target: { value: v } }); setOpen(false); };
+  return (
+    <div className={`combo ds-select ${className}`} style={style}>
+      <button type="button" className="ds-form-field__input ds-select__trigger" disabled={disabled}
+        aria-haspopup="listbox" aria-expanded={open} onClick={() => { if (!disabled) setOpen((o) => !o); }}>
+        <span className={sel ? "" : "ds-select__ph"}>{sel ? sel.label : placeholder}</span>
+        <IconChevronDown size={20} className="ds-select__chev" />
+      </button>
+      {open && !disabled && (
+        <>
+          <div className="ds-select__overlay" onClick={() => setOpen(false)} />
+          <div className="combo__menu" role="listbox">
+            {options.length === 0 && <div className="combo__empty">Sin opciones.</div>}
+            {options.map((o) => (
+              <button key={o.value} type="button" role="option" aria-selected={o.value === cur}
+                className={`combo__item ${o.value === cur ? "is-active" : ""}`} onClick={() => pick(o.value)}>
+                {o.label}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
 
 export const Textarea = (p: React.TextareaHTMLAttributes<HTMLTextAreaElement>) => (
   <textarea {...p} />
