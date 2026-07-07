@@ -38,6 +38,7 @@ export function SolicitudForm({
   onCancelar,
   obraPreset,
   clasifPreset,
+  compact,
 }: {
   inicial?: SolicitudInicial;
   guardar: (input: NewPedidoInput) => Promise<void>;
@@ -47,6 +48,9 @@ export function SolicitudForm({
   // de la URL. Si vienen, mandan sobre los query params.
   obraPreset?: string;
   clasifPreset?: number;
+  // Modo compacto (modal de la Matriz): oculta tipo/prioridad/observaciones,
+  // Excel y guardar-plantilla, y el selector de obra (viene fijado por preset).
+  compact?: boolean;
 }) {
   const { articulos, obras, maquinas, almacenes, usuario, planContexto, setPlanContexto } = useStore();
   const toast = useToast();
@@ -432,6 +436,7 @@ export function SolicitudForm({
           </div>
         </Card>
       )}
+      {!compact && (
       <Card>
         <div className="row gap-3" style={{ marginBottom: 20 }}>
           <button type="button" className={`role-option ${esMaterial ? "is-selected" : ""}`} style={{ flex: 1, padding: "12px 16px" }} onClick={() => cambiarTipo("material")}>
@@ -464,8 +469,9 @@ export function SolicitudForm({
           <Field label="Observaciones (opcional)"><Textarea value={notas} onChange={(e) => setNotas(e.target.value)} placeholder="Indicaciones para proveeduría…" /></Field>
         </div>
       </Card>
+      )}
 
-      <Card className="mt-4">
+      <Card className={compact ? "" : "mt-4"} flat={compact}>
         <h3 className="ds-subtitle">{esRepuesto ? "Repuestos" : "Materiales"}</h3>
         <p className="ds-muted ds-body-sm" style={{ marginBottom: 16 }}>
           Buscá el {esMaterial ? "material, elegí la obra" : esRepuesto ? "repuesto" : "material"} y la cantidad, y agregalo. Se van sumando a la lista.
@@ -475,13 +481,15 @@ export function SolicitudForm({
           <div style={{ marginBottom: 16, borderRadius: 14, border: "1.5px solid var(--ds-color-gray-100)", background: "color-mix(in srgb, var(--ds-color-green-100) 6%, #fff)", overflow: "hidden" }}>
             {/* Encabezado: título + acciones de Excel */}
             <div className="row row--between wrap gap-2" style={{ alignItems: "center", padding: "10px 14px", borderBottom: "1.5px solid var(--ds-color-gray-100)", background: "color-mix(in srgb, var(--ds-color-green-100) 10%, #fff)" }}>
-              <span className="ds-strong ds-body-sm">📋 Plantillas y Excel</span>
+              <span className="ds-strong ds-body-sm">{compact ? "Plantilla a usar" : "📋 Plantillas y Excel"}</span>
+              {!compact && (
               <div className="row gap-2" style={{ alignItems: "center" }}>
                 <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" style={{ display: "none" }}
                   onChange={(e) => { const f = e.target.files?.[0]; if (f) importarExcel(f); }} />
                 <Button variant="outline" onClick={descargarExcel}>⬇ Descargar Excel</Button>
                 <Button variant="outline" onClick={() => fileRef.current?.click()}>⬆ Importar Excel</Button>
               </div>
+              )}
             </div>
             {/* Cuerpo: plantillas guardadas (tarjetas) + guardar */}
             <div style={{ padding: 14 }}>
@@ -499,7 +507,7 @@ export function SolicitudForm({
                       value={buscarPlantilla} onChange={(e) => setBuscarPlantilla(e.target.value)} />
                   )}
                 </div>
-                {lineas.length > 0 && (
+                {!compact && lineas.length > 0 && (
                   <div className="row gap-2" style={{ alignItems: "center" }}>
                     <input className="ds-form-field__input" style={{ maxWidth: 210, height: 38 }} placeholder="Guardar estas líneas como plantilla…" value={nombrePlantilla}
                       onChange={(e) => setNombrePlantilla(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") guardarComoPlantilla(); }} />
@@ -532,7 +540,7 @@ export function SolicitudForm({
         )}
 
         <div className="qa-box">
-        {esMaterial && (
+        {esMaterial && !compact && (
           <div className="row row--between wrap gap-2" style={{ alignItems: "flex-end", marginBottom: 10 }}>
             <div style={{ flex: "1 1 320px", minWidth: 240 }}>
               <label className="ds-label ds-muted" style={{ display: "block", marginBottom: 4 }}>Obra (se aplica a lo que agregás)</label>

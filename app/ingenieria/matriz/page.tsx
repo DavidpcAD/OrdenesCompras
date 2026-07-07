@@ -1,11 +1,13 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { AppShell } from "@/components/shell";
-import { Badge, Card, Field, Input, Modal, Select, useToast } from "@/components/ui";
+import { Badge, Button, Card, Field, Input, Modal, Select, useToast } from "@/components/ui";
 import { SolicitudForm } from "@/components/solicitud-form";
 import { IconPlus } from "@/components/icons";
 import { useStore } from "@/lib/store";
+import { pedidoBadge } from "@/lib/helpers";
 
 type Etapa = { id: number; codigo: string; nombre: string };
 type Partida = { id: number; codigo: string; nombre: string; etapaId: number | null };
@@ -19,8 +21,9 @@ const LABEL: Record<string, string> = { ENTREGADO: "Entregado", COMPRADO: "Compr
 
 export default function MatrizPage() {
   const toast = useToast();
-  const { addPedido } = useStore();
-  // Armar el pedido SIN salir de la matriz: modal con el formulario prellenado.
+  const router = useRouter();
+  const { addPedido, pedidos } = useStore();
+  // Armar/ver el pedido SIN salir de la matriz: modal con el formulario prellenado.
   const [armar, setArmar] = useState<{ idObra: number; obra: string; clasif: number; nombre: string } | null>(null);
   const [etapas, setEtapas] = useState<Etapa[]>([]); const [partidas, setPartidas] = useState<Partida[]>([]);
   const [subpartidas, setSubpartidas] = useState<SubPartida[]>([]); const [clasifs, setClasifs] = useState<Clasif[]>([]);
@@ -118,10 +121,17 @@ export default function MatrizPage() {
                         const est = mapa.get(`${o.idObra}|${c.id}`);
                         return (
                           <td key={c.id} style={{ width: 150, textAlign: "center" }}>
-                            {est ? <Badge tone={TONO[est] ?? "gray"}>{LABEL[est] ?? est}</Badge>
-                              : <button className="icon-btn" title={`Armar pedido de ${c.nombre} para ${o.numeroObra}`}
-                                  onClick={() => setArmar({ idObra: o.idObra, obra: o.numeroObra, clasif: c.id, nombre: c.nombre })}
-                                  style={{ border: "1.5px dashed var(--ds-color-gray-200)", borderRadius: 8, width: 32, height: 32, display: "inline-grid", placeItems: "center", margin: "0 auto", color: "var(--ds-color-gray-400)" }}><IconPlus size={16} /></button>}
+                            {est ? (
+                              <button type="button" title={`Ver / armar · ${c.nombre} · ${o.numeroObra}`}
+                                onClick={() => setArmar({ idObra: o.idObra, obra: o.numeroObra, clasif: c.id, nombre: c.nombre })}
+                                style={{ border: 0, background: "transparent", padding: 0, cursor: "pointer" }}>
+                                <Badge tone={TONO[est] ?? "gray"}>{LABEL[est] ?? est}</Badge>
+                              </button>
+                            ) : (
+                              <button className="icon-btn" title={`Armar pedido de ${c.nombre} para ${o.numeroObra}`}
+                                onClick={() => setArmar({ idObra: o.idObra, obra: o.numeroObra, clasif: c.id, nombre: c.nombre })}
+                                style={{ border: "1.5px dashed var(--ds-color-gray-200)", borderRadius: 8, width: 32, height: 32, display: "inline-grid", placeItems: "center", margin: "0 auto", color: "var(--ds-color-gray-400)" }}><IconPlus size={16} /></button>
+                            )}
                           </td>
                         );
                       })}
@@ -134,22 +144,49 @@ export default function MatrizPage() {
           </Card>
         )}
 
-        {armar && (
-          <Modal wide title={`Armar pedido · ${armar.nombre} · ${armar.obra}`} onClose={() => setArmar(null)}>
-            <SolicitudForm
-              obraPreset={armar.obra}
-              clasifPreset={armar.clasif}
-              textoBoton="Crear solicitud"
-              onCancelar={() => setArmar(null)}
-              guardar={async (input) => {
-                const p = await addPedido(input);
-                setCeldas((cs) => [...cs, { idObra: armar.idObra, idClasificacion: armar.clasif, estado: "BORRADOR" }]);
-                toast(`Solicitud ${p.numero} creada`, "success");
-                setArmar(null);
-              }}
-            />
-          </Modal>
-        )}
+        {armar && (() => {
+          const pedidosCelda = pedidos.filter((p) => p.obraCodigo === armar.obra && p.idClasificacion === armar.clasif);
+          return (
+            <Modal wide title={`Pedido · ${armar.obra}`} onClose={() => setArmar(null)}>
+              <div className="row gap-2 wrap" style={{ marginBottom: 14 }}>
+                <Badge tone="gray">{armar.nombre}</Badge>
+              </div>
+
+              {pedidosCelda.length > 0 && (
+                <Card flat style={{ marginBottom: 14 }}>
+                  <div className="ds-body-sm ds-strong" style={{ marginBottom: 8 }}>Ya solicitado</div>
+                  {pedidosCelda.map((p) => {
+                    const b = pedidoBadge(p.estado);
+                    return (
+                      <div key={p.id} className="row row--between gap-3" style={{ padding: "6px 0", borderTop: "1px solid var(--ds-color-gray-100)" }}>
+                        <span className="ds-body-sm"><span className="ds-strong">{p.numero}</span> · {p.lineas.length} línea(s)</span>
+                        <span className="row gap-2" style={{ alignItems: "center" }}>
+                          <Badge tone={b.tone}>{b.label}</Badge>
+                          <Button variant="ghost" size="sm" onClick={() => router.push(`/ingenieria/${p.id}`)}>Ver / editar</Button>
+                        </span>
+                      </div>
+                    );
+                  })}
+                </Card>
+              )}
+
+              <div className="ds-body-sm ds-strong" style={{ marginBottom: 8 }}>{pedidosCelda.length > 0 ? "Armar otro pedido" : "Armar pedido"}</div>
+              <SolicitudForm
+                compact
+                obraPreset={armar.obra}
+                clasifPreset={armar.clasif}
+                textoBoton="Crear solicitud"
+                onCancelar={() => setArmar(null)}
+                guardar={async (input) => {
+                  const p = await addPedido(input);
+                  setCeldas((cs) => [...cs, { idObra: armar.idObra, idClasificacion: armar.clasif, estado: "BORRADOR" }]);
+                  toast(`Solicitud ${p.numero} creada`, "success");
+                  setArmar(null);
+                }}
+              />
+            </Modal>
+          );
+        })()}
       </main>
     </AppShell>
   );

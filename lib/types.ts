@@ -113,6 +113,7 @@ export interface Pedido {
   estado: PedidoEstado;
   prioridad: "normal" | "alta" | "urgente";
   notas?: string;
+  idClasificacion?: number | null; // clasificación WBS (para ligar la celda de la Matriz al pedido)
   lineas: PedidoLinea[];
 }
 

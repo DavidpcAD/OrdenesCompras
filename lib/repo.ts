@@ -96,6 +96,7 @@ function mapPedido(p: any, lineas: any[]): Pedido {
     solicitante: p.solicitante ?? "", fecha: (p.fechaCreacion?.toISOString?.() ?? "").slice(0, 10),
     estado: (codigoDeId(p.idEstado) ?? "borrador") as Pedido["estado"],
     prioridad: (p.prioridad ?? "normal") as Pedido["prioridad"], notas: p.notaCreador ?? undefined,
+    idClasificacion: p.idClasificacion ?? null,
     lineas: lineas.map((l): PedidoLinea => ({
       id: String(l.idPedidoCompraDet), articuloId: l.itemNo ?? "", descripcion: l.descripcion ?? "",
       cantidad: Number(l.quantitySolicitado ?? 0), unidad: l.unitOfMeasureCode ?? "",
