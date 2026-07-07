@@ -285,12 +285,12 @@ h1, h2, h3, h4, p { margin: 0; }
   padding-right: var(--ds-space-10);
 }
 
-/* Toolbar del DataTable: todos los controles a la misma altura y en línea */
+/* Toolbar del DataTable: mismos alto, redondeo y tamaño de letra en los controles */
 .dt-toolbar { align-items: center; }
 .dt-toolbar .ds-form-field__input { height: 40px; }
-.dt-toolbar .segmented { min-height: 40px; align-items: center; }
-.dt-toolbar .segmented__btn { display: inline-flex; align-items: center; }
-.dt-toolbar .ds-btn--sm { min-height: 40px; }
+.dt-toolbar .segmented { min-height: 40px; align-items: center; border-radius: var(--ds-radius-lg); }
+.dt-toolbar .segmented__btn { display: inline-flex; align-items: center; font-size: var(--ds-font-size-label); border-radius: var(--ds-radius-md); }
+.dt-toolbar .ds-btn--sm { min-height: 40px; font-size: var(--ds-font-size-label); border-radius: var(--ds-radius-lg); }
 /* Encabezados numéricos alineados con sus datos (a la derecha) */
 .ds-table thead th.ds-num { text-align: right; }
 .ds-pending-text { color: var(--ds-color-red-200); font-weight: var(--ds-font-weight-semibold); }
@@ -443,6 +443,9 @@ h1, h2, h3, h4, p { margin: 0; }
 /* Salir: botón con ícono al final del topbar */
 .topbar__salir { display: inline-flex; align-items: center; gap: 6px; width: auto; padding: var(--ds-space-2) var(--ds-space-3); color: var(--ds-color-gray-500); font-weight: var(--ds-font-weight-semibold); font-size: var(--ds-font-size-label); }
 .topbar__salir:hover { background: var(--ds-color-gray-100); color: var(--ds-color-red-200); }
+/* Identidad: avatar DENTRO del pill "Nombre · Rol" */
+.topbar__identity { display: inline-flex; align-items: center; gap: var(--ds-space-2); height: 40px; padding: 0 var(--ds-space-4) 0 5px; border-radius: 999px; color: var(--ds-color-black); font-weight: var(--ds-font-weight-semibold); font-size: var(--ds-font-size-label); white-space: nowrap; }
+.topbar__identity .topbar__avatar { width: 30px; height: 30px; background: var(--ds-color-white); color: var(--ds-color-gray-500); font-size: var(--ds-font-size-body-sm); }
 .topbar__tabs { margin-left: var(--ds-space-4); }
 /* la acción primaria no lleva la sombra pesada del botón; queda como acción compacta */
 .topbar__action { box-shadow: var(--ds-shadow-01); }

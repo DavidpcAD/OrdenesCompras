@@ -140,8 +140,10 @@ export function AppShell({ role, children }: { role: Role; children: React.React
               </>
             )}
           </div>
-          <span className="topbar__avatar">{(usuario ?? meta.persona).slice(0, 2).toUpperCase()}</span>
-          <span className="ds-badge" style={{ background: meta.color, color: "var(--ds-color-black)" }}>{cap(usuario ?? meta.persona)} · {meta.label}</span>
+          <div className="topbar__identity" style={{ background: meta.color }}>
+            <span className="topbar__avatar">{(usuario ?? meta.persona).slice(0, 2).toUpperCase()}</span>
+            <span>{cap(usuario ?? meta.persona)} · {meta.label}</span>
+          </div>
           <button className="icon-btn topbar__salir" title="Salir" aria-label="Salir" onClick={() => { setRole(null); setUsuario(null); router.replace("/"); }}>
             <IconLogout size={18} /><span>Salir</span>
           </button>
