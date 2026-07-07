@@ -188,7 +188,7 @@ export function DataTable<T>({
         /* Vista Tabla */
         <Card style={{ padding: 0, overflow: "hidden" }}>
           <div className="ds-table-wrap" style={{ boxShadow: "none", overflowX: "auto" }}>
-            <table className="ds-table ds-table--center">
+            <table className="ds-table">
               <thead>
                 {table.getHeaderGroups().map((hg) => (
                   <tr key={hg.id}>

@@ -270,10 +270,6 @@ h1, h2, h3, h4, p { margin: 0; }
 .ds-table tbody tr.row-borrador td:first-child { box-shadow: inset 3px 0 0 var(--ds-color-yellow); font-weight: var(--ds-font-weight-semibold); }
 .ds-table tbody tr.row-borrador.is-clickable:hover td { background: color-mix(in srgb, var(--ds-color-yellow) 18%, #fff); }
 .ds-card.row-borrador { box-shadow: inset 3px 0 0 var(--ds-color-yellow), var(--ds-shadow-01); }
-/* DataTable con datos centrados; los numéricos quedan a la derecha */
-.ds-table--center thead th, .ds-table--center tbody td { text-align: center; }
-.ds-table--center thead th.ds-num, .ds-table--center tbody td.ds-num { text-align: right; }
-.ds-table--center .ds-truncate { margin: 0 auto; }
 .ds-num { text-align: right; font-variant-numeric: tabular-nums; }
 
 /* Dropdown propio (componente Select): trigger + flecha grande + menú del sistema */

@@ -97,15 +97,17 @@ export default function MatrizPage() {
         ) : (
           <Card className="mt-4" style={{ padding: 0, overflow: "hidden" }}>
             <div className="ds-table-wrap" style={{ boxShadow: "none", overflowX: "auto" }}>
-              <table className="ds-table" style={{ minWidth: 720 }}>
+              <table className="ds-table" style={{ tableLayout: "auto" }}>
                 <thead>
                   <tr>
-                    <th style={{ minWidth: 180, position: "sticky", left: 0, background: "var(--ds-color-white)", zIndex: 2 }}>Obra</th>
-                    {columnas.map((c) => <th key={c.id} style={{ minWidth: 130 }}>{c.nombre}</th>)}
+                    <th style={{ width: 200, position: "sticky", left: 0, background: "var(--ds-color-white)", zIndex: 2 }}>Obra</th>
+                    {columnas.map((c) => <th key={c.id} style={{ width: 150, textAlign: "center" }}>{c.nombre}</th>)}
+                    {/* columna espaciadora: absorbe el ancho sobrante para que las celdas no se estiren */}
+                    <th aria-hidden style={{ width: "100%" }} />
                   </tr>
                 </thead>
                 <tbody>
-                  {obrasVis.length === 0 && <tr><td colSpan={columnas.length + 1}><div className="empty">Ninguna obra coincide.</div></td></tr>}
+                  {obrasVis.length === 0 && <tr><td colSpan={columnas.length + 2}><div className="empty">Ninguna obra coincide.</div></td></tr>}
                   {obrasVis.map((o) => (
                     <tr key={o.idObra}>
                       <td style={{ position: "sticky", left: 0, background: "var(--ds-color-white)", zIndex: 1 }}>
@@ -115,14 +117,15 @@ export default function MatrizPage() {
                       {columnas.map((c) => {
                         const est = mapa.get(`${o.idObra}|${c.id}`);
                         return (
-                          <td key={c.id} style={{ textAlign: "center" }}>
+                          <td key={c.id} style={{ width: 150, textAlign: "center" }}>
                             {est ? <Badge tone={TONO[est] ?? "gray"}>{LABEL[est] ?? est}</Badge>
                               : <button className="icon-btn" title={`Armar pedido de ${c.nombre} para ${o.numeroObra}`}
                                   onClick={() => setArmar({ idObra: o.idObra, obra: o.numeroObra, clasif: c.id, nombre: c.nombre })}
-                                  style={{ border: "1.5px dashed var(--ds-color-gray-200)", borderRadius: 8, width: 30, height: 30, display: "inline-grid", placeItems: "center", margin: "0 auto" }}><IconPlus size={16} /></button>}
+                                  style={{ border: "1.5px dashed var(--ds-color-gray-200)", borderRadius: 8, width: 32, height: 32, display: "inline-grid", placeItems: "center", margin: "0 auto", color: "var(--ds-color-gray-400)" }}><IconPlus size={16} /></button>}
                           </td>
                         );
                       })}
+                      <td aria-hidden />
                     </tr>
                   ))}
                 </tbody>
