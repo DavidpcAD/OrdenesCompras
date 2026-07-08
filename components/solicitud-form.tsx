@@ -63,6 +63,9 @@ export function SolicitudForm({
   const [bcArt, setBcArt] = useState<Articulo[] | null>(null);
   const [bcObras, setBcObras] = useState<Obra[] | null>(null);
   const [bcAlm, setBcAlm] = useState<Almacen[] | null>(null);
+  // El catálogo de BC ya terminó de cargar (con éxito o no). Evita autocargar una
+  // plantilla contra el catálogo seed y disparar "no coincide" por una carrera.
+  const [catalogoCargado, setCatalogoCargado] = useState(false);
 
   useEffect(() => {
     let cancel = false;
@@ -82,6 +85,7 @@ export function SolicitudForm({
         if (obrasBc.length) setBcObras(obrasBc);
         if (almBc.length) setBcAlm(almBc);
       } catch { /* sin BC, usa catálogo de respaldo */ }
+      finally { if (!cancel) setCatalogoCargado(true); }
     })();
     return () => { cancel = true; };
   }, []);
@@ -159,10 +163,10 @@ export function SolicitudForm({
   useEffect(() => { recargarPlantillas(); }, []);
   // Prefill desde la Matriz: carga la plantilla de esa clasificación y fija la obra.
   useEffect(() => {
-    if (!clasifParam || plantillas.length === 0) return;
+    if (!clasifParam || plantillas.length === 0 || !catalogoCargado) return;
     const pl = plantillas.find((p) => Number(p.idClasificacion) === Number(clasifParam));
-    if (pl) cargarPlantilla(String(pl.id));
-  }, [plantillas]); // eslint-disable-line react-hooks/exhaustive-deps
+    if (pl) cargarPlantilla(String(pl.id), true);
+  }, [plantillas, catalogoCargado]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (obraParam) {
       const o = catObras.find((x) => x.codigo === obraParam);
@@ -332,11 +336,15 @@ export function SolicitudForm({
       toast(`No se pudo guardar la plantilla: ${String(e?.message ?? e)}`, "error");
     }
   }
-  function cargarPlantilla(id: string) {
+  function cargarPlantilla(id: string, auto = false) {
     const pl = plantillas.find((p) => String(p.id) === String(id));
     if (!pl) return;
     const { nuevas, sinMatch } = lineasDesde(pl.lineas);
-    if (!nuevas.length) { toast("Esa plantilla no coincide con el catálogo actual.", "error"); return; }
+    if (!nuevas.length) {
+      // En autocarga no molestamos; en manual avisamos suave (no rojo).
+      if (!auto) toast(`La plantilla "${pl.nombre}" tiene materiales que ya no están en el catálogo. Buscalos manualmente.`, "info");
+      return;
+    }
     // REEMPLAZA las líneas (no suma): al elegir otra plantilla, cambia la actual.
     setLineas(nuevas);
     setPlantillaCargada(id);

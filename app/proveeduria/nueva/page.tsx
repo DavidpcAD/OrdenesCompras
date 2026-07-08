@@ -65,9 +65,6 @@ export default function ArmarOrdenPage() {
       .catch(() => { /* sin BC, usa seed */ });
   }, []);
   const catAlm = almacenesFisicos(bcAlm ?? almacenes);
-  const [qaCode, setQaCode] = useState("");
-  const [qaQty, setQaQty] = useState("");
-  const [qaPrecio, setQaPrecio] = useState("");
 
   const [rows, setRows] = useState<Row[]>(() =>
     borrador.map((b) => {
@@ -129,16 +126,6 @@ export default function ArmarOrdenPage() {
   const setRow = (id: string, patch: Partial<Row>) =>
     setRows((rs) => rs.map((r) => (r.pedidoLineaId === id ? { ...r, ...patch } : r)));
   const removeRow = (id: string) => setRows((rs) => rs.filter((r) => r.pedidoLineaId !== id));
-  function agregarLinea() {
-    const it = itemsBc.find((x) => x.code === qaCode);
-    if (!it || !(Number(qaQty) > 0)) { toast("Elegí un artículo y una cantidad.", "error"); return; }
-    setRows((rs) => [...rs, {
-      pedidoNumero: "Manual", pedidoLineaId: `m-${Math.random().toString(36).slice(2, 9)}`,
-      articuloId: it.code, descripcion: it.descripcion, unidad: it.unidad, almacen: "",
-      cantidad: String(Number(qaQty)), precio: String(Number(qaPrecio) || 0), iva: "13", descuento: "0", proyecto: "", tarea: "",
-    }]);
-    setQaCode(""); setQaQty(""); setQaPrecio("");
-  }
 
   // Agregar líneas de OTRAS solicitudes ya hechas (pendientes por ordenar) a la
   // orden que se está armando, sin salir de la página.
@@ -250,24 +237,14 @@ export default function ArmarOrdenPage() {
         </Card>
 
         <Card className="mt-4" style={{ padding: 0, overflow: "hidden" }}>
-          {/* Agregar una línea manual (artículo del catálogo de BC que no venía en los pedidos) */}
-          <div className="row wrap gap-2" style={{ alignItems: "flex-end", padding: "12px 16px", borderBottom: "1.5px solid var(--ds-color-gray-100)", background: "color-mix(in srgb, var(--ds-color-green-100) 6%, #fff)" }}>
-            <div style={{ flex: "1 1 280px", minWidth: 220 }}>
-              <label className="ds-label ds-muted" style={{ display: "block", marginBottom: 4 }}>Agregar artículo</label>
-              <Combobox items={itemsBc} value={qaCode} onChange={(k) => { setQaCode(k); const it = itemsBc.find((x) => x.code === k); if (it?.precioUltimo) setQaPrecio(String(it.precioUltimo)); }}
-                getKey={(i) => i.code} getLabel={(i) => `${i.code} — ${i.descripcion}`} getSearch={(i) => `${i.code} ${i.descripcion}`}
-                minChars={2} placeholder="Buscar artículo del catálogo…" />
+          {/* En una OC armada desde solicitudes SOLO se agregan líneas que alguien ya
+              pidió. Material sin solicitud (limpieza, etc.) va por Compra directa. */}
+          <div className="row row--between wrap gap-3" style={{ alignItems: "center", padding: "12px 16px", borderBottom: "1.5px solid var(--ds-color-gray-100)", background: "color-mix(in srgb, var(--ds-color-green-100) 6%, #fff)" }}>
+            <div className="col" style={{ gap: 2 }}>
+              <span className="ds-strong ds-body-sm">Líneas de la orden</span>
+              <span className="ds-muted ds-body-sm">Solo materiales de solicitudes ya hechas. ¿Material sin solicitud? Usá <span className="ds-strong">Compra directa</span>.</span>
             </div>
-            <div>
-              <label className="ds-label ds-muted" style={{ display: "block", marginBottom: 4 }}>Cantidad</label>
-              <Input type="number" min={0} value={qaQty} onChange={(e) => setQaQty(e.target.value)} placeholder="0" style={{ width: 90 }} />
-            </div>
-            <div>
-              <label className="ds-label ds-muted" style={{ display: "block", marginBottom: 4 }}>Precio</label>
-              <Input type="number" min={0} value={qaPrecio} onChange={(e) => setQaPrecio(e.target.value)} placeholder="0" style={{ width: 110 }} />
-            </div>
-            <Button variant="outline" onClick={agregarLinea} disabled={!qaCode || !(Number(qaQty) > 0)}>+ Agregar línea</Button>
-            <Button variant="ghost" onClick={() => setAddOpen(true)} disabled={lineasDisponibles.length === 0} title="Sumar líneas pendientes de otras solicitudes ya hechas">+ De solicitudes{lineasDisponibles.length ? ` (${lineasDisponibles.length})` : ""}</Button>
+            <Button onClick={() => setAddOpen(true)} disabled={lineasDisponibles.length === 0} title="Sumar líneas pendientes de solicitudes ya hechas">+ De solicitudes{lineasDisponibles.length ? ` (${lineasDisponibles.length})` : ""}</Button>
           </div>
           <div className="ds-table-wrap" style={{ boxShadow: "none" }}>
             <table className="ds-table">
