@@ -358,10 +358,11 @@ export function SolicitudForm({
       toast(`No se pudo borrar la plantilla: ${String(e?.message ?? e)}`, "error");
     }
   }
-  const plantillasVisibles = (filtroPlantilla && filtroPlantilla !== "*"
-    ? plantillas.filter((p) => p.creadoPor === filtroPlantilla)
-    : plantillas
-  ).filter((p) => { const q = buscarPlantilla.trim().toLowerCase(); return !q || p.nombre.toLowerCase().includes(q); });
+  const plantillasVisibles = plantillas
+    // En contexto de una clasificación (Matriz), SOLO las plantillas de esa clasificación.
+    .filter((p) => idClasificacion == null || Number(p.idClasificacion) === Number(idClasificacion))
+    .filter((p) => (filtroPlantilla && filtroPlantilla !== "*" ? p.creadoPor === filtroPlantilla : true))
+    .filter((p) => { const q = buscarPlantilla.trim().toLowerCase(); return !q || p.nombre.toLowerCase().includes(q); });
   const creadoresPlantillas = useMemo(
     () => Array.from(new Set(plantillas.map((p) => p.creadoPor).filter(Boolean))).sort(),
     [plantillas]
@@ -532,7 +533,9 @@ export function SolicitudForm({
                 </div>
               ) : (
                 <p className="ds-body-sm ds-muted" style={{ margin: 0 }}>
-                  No hay plantillas guardadas todavía. Agregá materiales abajo y guardá la lista, o descargá el Excel para armarla en tu compu.
+                  {idClasificacion != null
+                    ? "No hay plantillas para esta clasificación todavía. Buscá el material abajo y agregalo."
+                    : "No hay plantillas guardadas todavía. Agregá materiales abajo y guardá la lista, o descargá el Excel para armarla en tu compu."}
                 </p>
               )}
             </div>
