@@ -5,7 +5,7 @@ import { useMemo, useState } from "react";
 import { AppShell } from "@/components/shell";
 import { Badge, Button, Card, Modal, useToast } from "@/components/ui";
 import { VistaToggle } from "@/components/vista-toggle";
-import { IconEye } from "@/components/icons";
+import { IconEye, IconReceipt, IconList } from "@/components/icons";
 import { useStore } from "@/lib/store";
 import { destinoLabel, destinoCodigo, money, num, pedidoLineaPendiente, solicitudResumen, tipoSolicitudBadge } from "@/lib/helpers";
 
@@ -143,8 +143,8 @@ export default function ProveeduriaMaterialesPage() {
         </div>
 
         <VistaToggle opciones={[
-          { label: "Por solicitud", href: "/proveeduria/solicitudes", active: false },
-          { label: "Por línea", href: "/proveeduria", active: true },
+          { label: "Por solicitud", href: "/proveeduria/solicitudes", active: false, icon: <IconReceipt size={16} /> },
+          { label: "Por línea", href: "/proveeduria", active: true, icon: <IconList size={16} /> },
         ]} />
 
         {baseRows.length === 0 ? (

@@ -7,6 +7,7 @@ import { AppShell } from "@/components/shell";
 import { Badge, QtyRing, Tile } from "@/components/ui";
 import { DataTable } from "@/components/data-table";
 import { VistaToggle } from "@/components/vista-toggle";
+import { IconReceipt, IconList } from "@/components/icons";
 import { useStore } from "@/lib/store";
 import { formatDate, pedidoCompraBadge, pedidoOrdenadoPct, recibidoDeLineaPedido, destinoCodigo, destinoLabel, tipoSolicitudBadge } from "@/lib/helpers";
 import type { Pedido } from "@/lib/types";
@@ -59,8 +60,8 @@ export default function ProveeduriaSolicitudesPage() {
         </div>
 
         <VistaToggle opciones={[
-          { label: "Por solicitud", href: "/proveeduria/solicitudes", active: true },
-          { label: "Por línea", href: "/proveeduria", active: false },
+          { label: "Por solicitud", href: "/proveeduria/solicitudes", active: true, icon: <IconReceipt size={16} /> },
+          { label: "Por línea", href: "/proveeduria", active: false, icon: <IconList size={16} /> },
         ]} />
 
         <div className="tiles mt-2">

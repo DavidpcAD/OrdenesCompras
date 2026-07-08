@@ -66,6 +66,21 @@ export const IconChevronDown = ({ size = 20, ...p }: P) => (
   <svg {...base(size)} {...p}><path d="M6 9l6 6 6-6" /></svg>
 );
 
+// Chevron izquierda (volver)
+export const IconChevronLeft = ({ size = 18, ...p }: P) => (
+  <svg {...base(size)} {...p}><path d="M15 6l-6 6 6 6" /></svg>
+);
+
+// Vista tabla (filas)
+export const IconTable = ({ size = 16, ...p }: P) => (
+  <svg {...base(size)} {...p}><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M3 9.5h18M3 15h18" /></svg>
+);
+
+// Vista grid (tarjetas)
+export const IconGrid = ({ size = 16, ...p }: P) => (
+  <svg {...base(size)} {...p}><rect x="3" y="3" width="7" height="7" rx="1.5" /><rect x="14" y="3" width="7" height="7" rx="1.5" /><rect x="3" y="14" width="7" height="7" rx="1.5" /><rect x="14" y="14" width="7" height="7" rx="1.5" /></svg>
+);
+
 // ───────── Íconos de navegación — filled exactos del DS (react/Icon/Icon.tsx) ─────────
 
 // DS "list"

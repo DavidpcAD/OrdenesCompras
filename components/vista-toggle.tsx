@@ -1,21 +1,26 @@
 "use client";
 
+import type { ReactNode } from "react";
 import { useRouter } from "next/navigation";
 
 // Toggle de vista para conceptos con dos granularidades (por documento / por línea):
 // Órdenes ↔ Líneas pedidas, y Solicitudes ↔ Líneas por ordenar. Navega entre las
 // dos rutas manteniendo el mismo concepto; cada vista trae su propio buscador/filtros.
-export function VistaToggle({ opciones }: { opciones: { label: string; href: string; active: boolean }[] }) {
+// Lleva un rótulo "Ver por:" e íconos para no confundirse con los filtros de estado.
+export function VistaToggle({ opciones }: { opciones: { label: string; href: string; active: boolean; icon?: ReactNode }[] }) {
   const router = useRouter();
   return (
-    <div className="segmented" role="tablist" aria-label="Ver por">
-      {opciones.map((o) => (
-        <button key={o.href} type="button" role="tab" aria-selected={o.active}
-          className={`segmented__btn ${o.active ? "is-active" : ""}`}
-          onClick={() => { if (!o.active) router.push(o.href); }}>
-          {o.label}
-        </button>
-      ))}
+    <div className="vista-toggle">
+      <span className="ds-muted ds-body-sm">Ver por:</span>
+      <div className="segmented" role="tablist" aria-label="Ver por">
+        {opciones.map((o) => (
+          <button key={o.href} type="button" role="tab" aria-selected={o.active}
+            className={`segmented__btn ${o.active ? "is-active" : ""}`}
+            onClick={() => { if (!o.active) router.push(o.href); }}>
+            {o.icon}{o.label}
+          </button>
+        ))}
+      </div>
     </div>
   );
 }

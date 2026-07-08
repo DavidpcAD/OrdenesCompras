@@ -6,6 +6,7 @@ import { AppShell } from "@/components/shell";
 import { Button, Tile } from "@/components/ui";
 import { OrdenesLista } from "@/components/ordenes-lista";
 import { VistaToggle } from "@/components/vista-toggle";
+import { IconReceipt, IconList } from "@/components/icons";
 import { useStore } from "@/lib/store";
 
 type Filtro = "todas" | "abierto" | "lanzado" | "completado";
@@ -45,8 +46,8 @@ export default function OrdenesPage() {
         </div>
 
         <VistaToggle opciones={[
-          { label: "Por orden", href: "/proveeduria/ordenes", active: true },
-          { label: "Por línea", href: "/proveeduria/pedidas", active: false },
+          { label: "Por orden", href: "/proveeduria/ordenes", active: true, icon: <IconReceipt size={16} /> },
+          { label: "Por línea", href: "/proveeduria/pedidas", active: false, icon: <IconList size={16} /> },
         ]} />
 
         <div className="tiles mt-2">

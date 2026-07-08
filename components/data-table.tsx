@@ -6,6 +6,7 @@ import {
   type ColumnDef, type SortingState, type ColumnFiltersState, type VisibilityState, type ColumnOrderState, type PaginationState,
 } from "@tanstack/react-table";
 import { Button, Card, Input, Select } from "@/components/ui";
+import { IconTable, IconGrid } from "@/components/icons";
 import { useStore } from "@/lib/store";
 
 // Motor de tabla reutilizable (TanStack, headless) con el design system de la app.
@@ -121,8 +122,8 @@ export function DataTable<T>({
         <div className="row gap-2" style={{ alignItems: "center" }}>
           <span className="ds-muted ds-body-sm">{table.getFilteredRowModel().rows.length}</span>
           <div className="segmented">
-            <button type="button" className={`segmented__btn ${modo === "tabla" ? "is-active" : ""}`} onClick={() => setModo("tabla")}>Tabla</button>
-            <button type="button" className={`segmented__btn ${modo === "grid" ? "is-active" : ""}`} onClick={() => setModo("grid")}>Grid</button>
+            <button type="button" className={`segmented__btn ${modo === "tabla" ? "is-active" : ""}`} onClick={() => setModo("tabla")}><IconTable size={15} />Tabla</button>
+            <button type="button" className={`segmented__btn ${modo === "grid" ? "is-active" : ""}`} onClick={() => setModo("grid")}><IconGrid size={15} />Grid</button>
           </div>
           <Button variant="ghost" size="sm" onClick={() => setPanel(panel === "cols" ? null : "cols")}>Columnas</Button>
           <Button variant="ghost" size="sm" onClick={() => setPanel(panel === "vistas" ? null : "vistas")}>Vistas</Button>

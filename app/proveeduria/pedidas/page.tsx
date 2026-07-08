@@ -6,6 +6,7 @@ import { AppShell } from "@/components/shell";
 import { Badge, Button } from "@/components/ui";
 import { DataTable } from "@/components/data-table";
 import { VistaToggle } from "@/components/vista-toggle";
+import { IconReceipt, IconList } from "@/components/icons";
 import { useStore } from "@/lib/store";
 import { num, formatDate } from "@/lib/helpers";
 
@@ -77,8 +78,8 @@ export default function ProveeduriaLineasPedidasPage() {
         </div>
 
         <VistaToggle opciones={[
-          { label: "Por orden", href: "/proveeduria/ordenes", active: false },
-          { label: "Por línea", href: "/proveeduria/pedidas", active: true },
+          { label: "Por orden", href: "/proveeduria/ordenes", active: false, icon: <IconReceipt size={16} /> },
+          { label: "Por línea", href: "/proveeduria/pedidas", active: true, icon: <IconList size={16} /> },
         ]} />
 
         <div className="segmented mt-2" style={{ maxWidth: 520 }}>
