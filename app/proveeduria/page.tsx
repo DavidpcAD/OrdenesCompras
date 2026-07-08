@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 import { AppShell } from "@/components/shell";
 import { Badge, Button, Card, Modal, useToast } from "@/components/ui";
+import { VistaToggle } from "@/components/vista-toggle";
 import { IconEye } from "@/components/icons";
 import { useStore } from "@/lib/store";
 import { destinoLabel, destinoCodigo, money, num, pedidoLineaPendiente, solicitudResumen, tipoSolicitudBadge } from "@/lib/helpers";
@@ -140,6 +141,11 @@ export default function ProveeduriaMaterialesPage() {
             <p className="ds-muted">Elegí un pedido para ver solo sus líneas, o seleccioná materiales de varios pedidos para una orden.</p>
           </div>
         </div>
+
+        <VistaToggle opciones={[
+          { label: "Por solicitud", href: "/proveeduria/solicitudes", active: false },
+          { label: "Por línea", href: "/proveeduria", active: true },
+        ]} />
 
         {baseRows.length === 0 ? (
           <Card className="mt-4"><div className="empty" style={{ padding: "56px 16px", lineHeight: 1.6 }}>

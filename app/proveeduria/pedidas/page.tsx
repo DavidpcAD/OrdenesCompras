@@ -5,6 +5,7 @@ import type { ColumnDef } from "@tanstack/react-table";
 import { AppShell } from "@/components/shell";
 import { Badge, Button } from "@/components/ui";
 import { DataTable } from "@/components/data-table";
+import { VistaToggle } from "@/components/vista-toggle";
 import { useStore } from "@/lib/store";
 import { num, formatDate } from "@/lib/helpers";
 
@@ -74,6 +75,11 @@ export default function ProveeduriaLineasPedidasPage() {
           </div>
           <div className="row gap-3"><Button variant="outline" onClick={() => base.length && window.print()}>Exportar PDF</Button></div>
         </div>
+
+        <VistaToggle opciones={[
+          { label: "Por orden", href: "/proveeduria/ordenes", active: false },
+          { label: "Por línea", href: "/proveeduria/pedidas", active: true },
+        ]} />
 
         <div className="segmented mt-2" style={{ maxWidth: 520 }}>
           <button className={`segmented__btn ${estadoF === "all" ? "is-active" : ""}`} onClick={() => setEstadoF("all")}>Todas ({baseRows.length})</button>

@@ -14,7 +14,8 @@ import {
 const cap = (s: string) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : s);
 
 type IconCmp = React.ComponentType<{ size?: number }>;
-type NavItem = { href: string; label: string; icon: IconCmp };
+// alt: rutas extra que activan esta pestaña. Prefijo por defecto; sufijo "$" = ruta exacta.
+type NavItem = { href: string; label: string; icon: IconCmp; alt?: string[] };
 type RoleAction = { href: string; label: string };
 
 const ROLE_META: Record<Role, { label: string; persona: string; home: string; nav: NavItem[]; action?: RoleAction; color: string }> = {
@@ -32,10 +33,10 @@ const ROLE_META: Record<Role, { label: string; persona: string; home: string; na
     label: "Proveeduría", persona: "Angie", home: "/proveeduria/ordenes", color: "var(--ds-color-yellow)",
     action: { href: "/proveeduria/directa", label: "Compra directa" },
     nav: [
-      { href: "/proveeduria/ordenes", label: "Órdenes creadas", icon: IconReceipt },
-      { href: "/proveeduria/solicitudes", label: "Solicitudes", icon: IconList },
-      { href: "/proveeduria", label: "Por ordenar", icon: IconOptions },
-      { href: "/proveeduria/pedidas", label: "Pedidas", icon: IconCheck },
+      // Órdenes y Solicitudes son un mismo concepto cada uno, con dos vistas
+      // (por documento / por línea) que se alternan con un toggle dentro de la página.
+      { href: "/proveeduria/ordenes", label: "Órdenes", icon: IconReceipt, alt: ["/proveeduria/pedidas"] },
+      { href: "/proveeduria/solicitudes", label: "Solicitudes", icon: IconList, alt: ["/proveeduria$"] },
     ],
   },
   aprobacion: {
@@ -91,7 +92,17 @@ export function AppShell({ role, children }: { role: Role; children: React.React
           <span>Compras Adelante</span>
         </Link>
         {meta.nav.length > 1 && (() => {
-          const activeHref = meta.nav.map((x) => x.href).filter((h) => pathname.startsWith(h)).sort((a, b) => b.length - a.length)[0] ?? meta.home;
+          const activeHref = meta.nav
+            .map((n) => {
+              let len = pathname.startsWith(n.href) ? n.href.length : 0;
+              for (const a of n.alt ?? []) {
+                if (a.endsWith("$")) { if (pathname === a.slice(0, -1)) len = Math.max(len, 1000); }
+                else if (pathname.startsWith(a)) len = Math.max(len, a.length);
+              }
+              return { href: n.href, len };
+            })
+            .filter((x) => x.len > 0)
+            .sort((a, b) => b.len - a.len)[0]?.href ?? meta.home;
           return (
             <nav className="topnav topbar__tabs" aria-label="Secciones">
               {meta.nav.map((n) => {

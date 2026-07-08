@@ -6,6 +6,7 @@ import type { ColumnDef } from "@tanstack/react-table";
 import { AppShell } from "@/components/shell";
 import { Badge, QtyRing, Tile } from "@/components/ui";
 import { DataTable } from "@/components/data-table";
+import { VistaToggle } from "@/components/vista-toggle";
 import { useStore } from "@/lib/store";
 import { formatDate, pedidoCompraBadge, pedidoOrdenadoPct, recibidoDeLineaPedido, destinoCodigo, destinoLabel, tipoSolicitudBadge } from "@/lib/helpers";
 import type { Pedido } from "@/lib/types";
@@ -56,6 +57,11 @@ export default function ProveeduriaSolicitudesPage() {
             <p className="ds-muted">Solicitudes enviadas por Ingeniería, con su avance de compra. Entrá a una para crear la orden de compra o devolverla.</p>
           </div>
         </div>
+
+        <VistaToggle opciones={[
+          { label: "Por solicitud", href: "/proveeduria/solicitudes", active: true },
+          { label: "Por línea", href: "/proveeduria", active: false },
+        ]} />
 
         <div className="tiles mt-2">
           <Tile value={cuenta("todas")} label="Todas" onClick={() => setFiltro("todas")} active={filtro === "todas"} />

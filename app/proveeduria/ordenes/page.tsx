@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { AppShell } from "@/components/shell";
 import { Button, Tile } from "@/components/ui";
 import { OrdenesLista } from "@/components/ordenes-lista";
+import { VistaToggle } from "@/components/vista-toggle";
 import { useStore } from "@/lib/store";
 
 type Filtro = "todas" | "abierto" | "lanzado" | "completado";
@@ -42,6 +43,11 @@ export default function OrdenesPage() {
           </div>
           <Button onClick={() => router.push("/proveeduria/directa")}>+ Nueva orden directa</Button>
         </div>
+
+        <VistaToggle opciones={[
+          { label: "Por orden", href: "/proveeduria/ordenes", active: true },
+          { label: "Por línea", href: "/proveeduria/pedidas", active: false },
+        ]} />
 
         <div className="tiles mt-2">
           <Tile value={ordenes.length} label="Órdenes totales" onClick={() => seleccionar("todas")} active={filtro === "todas"} />
