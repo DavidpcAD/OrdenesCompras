@@ -3,10 +3,10 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { AppShell } from "@/components/shell";
-import { Badge, Button, Card, Field, Input, Select, useToast } from "@/components/ui";
+import { Badge, Button, Card, Field, Input, Modal, Select, useToast } from "@/components/ui";
 import { Combobox } from "@/components/combobox";
 import { useStore } from "@/lib/store";
-import { money, ultimoPrecioProveedor, almacenesFisicos } from "@/lib/helpers";
+import { money, ultimoPrecioProveedor, almacenesFisicos, pedidoLineaPendiente } from "@/lib/helpers";
 import type { OrdenLinea } from "@/lib/types";
 
 interface Row {
@@ -25,7 +25,7 @@ interface Row {
 }
 
 export default function ArmarOrdenPage() {
-  const { pedidos, proveedores, ordenes, almacenes, borrador, createOrden, setOrdenEstado, setBorrador } = useStore();
+  const { pedidos, proveedores, ordenes, almacenes, articulos, borrador, createOrden, setOrdenEstado, setBorrador } = useStore();
   const router = useRouter();
   const toast = useToast();
 
@@ -140,6 +140,25 @@ export default function ArmarOrdenPage() {
     setQaCode(""); setQaQty(""); setQaPrecio("");
   }
 
+  // Agregar líneas de OTRAS solicitudes ya hechas (pendientes por ordenar) a la
+  // orden que se está armando, sin salir de la página.
+  const [addOpen, setAddOpen] = useState(false);
+  const yaEnOrden = new Set(rows.map((r) => r.pedidoLineaId));
+  const lineasDisponibles = pedidos
+    .filter((p) => p.estado === "aprobado" || p.estado === "en_orden")
+    .flatMap((p) => p.lineas
+      .filter((l) => pedidoLineaPendiente(l) > 0 && !yaEnOrden.has(l.id))
+      .map((l) => ({ p, l, pend: pedidoLineaPendiente(l) })));
+  function agregarDeSolicitud(p: (typeof pedidos)[number], l: (typeof pedidos)[number]["lineas"][number], pend: number) {
+    const a = articulos.find((x) => x.id === l.articuloId || x.code === l.articuloId);
+    setRows((rs) => [...rs, {
+      pedidoNumero: p.numero, pedidoLineaId: l.id, articuloId: l.articuloId,
+      descripcion: l.descripcion, unidad: l.unidad, almacen: l.almacen,
+      cantidad: String(pend), precio: String(a?.precioReferencia ?? 0), iva: "13", descuento: "0",
+      proyecto: p.tipoSolicitud === "material" ? (l.almacen || p.obraCodigo || "") : "", tarea: "",
+    }]);
+  }
+
   const calcImporte = (r: Row) => Number(r.cantidad) * Number(r.precio) * (1 - (Number(r.descuento) || 0) / 100);
   const subtotal = rows.reduce((s, r) => s + calcImporte(r), 0);
   const fleteShare = (r: Row) => (subtotal > 0 && (Number(flete) || 0) > 0 ? (Number(flete) || 0) * calcImporte(r) / subtotal : 0);
@@ -248,6 +267,7 @@ export default function ArmarOrdenPage() {
               <Input type="number" min={0} value={qaPrecio} onChange={(e) => setQaPrecio(e.target.value)} placeholder="0" style={{ width: 110 }} />
             </div>
             <Button variant="outline" onClick={agregarLinea} disabled={!qaCode || !(Number(qaQty) > 0)}>+ Agregar línea</Button>
+            <Button variant="ghost" onClick={() => setAddOpen(true)} disabled={lineasDisponibles.length === 0} title="Sumar líneas pendientes de otras solicitudes ya hechas">+ De solicitudes{lineasDisponibles.length ? ` (${lineasDisponibles.length})` : ""}</Button>
           </div>
           <div className="ds-table-wrap" style={{ boxShadow: "none" }}>
             <table className="ds-table">
@@ -318,6 +338,33 @@ export default function ArmarOrdenPage() {
           </div>
         </div>
       </div>
+
+      {addOpen && (
+        <Modal wide title="Agregar de solicitudes pendientes" onClose={() => setAddOpen(false)}
+          footer={<Button variant="outline" onClick={() => setAddOpen(false)}>Cerrar</Button>}>
+          <p className="ds-muted ds-body-sm" style={{ marginTop: 0 }}>Líneas pendientes por ordenar de solicitudes ya hechas. Se suman a esta orden.</p>
+          {lineasDisponibles.length === 0 ? (
+            <div className="empty">No hay líneas pendientes en otras solicitudes.</div>
+          ) : (
+            <div className="ds-table-wrap" style={{ boxShadow: "none", maxHeight: 420, overflow: "auto" }}>
+              <table className="ds-table">
+                <thead><tr><th>Pedido</th><th>Artículo</th><th>Destino</th><th className="ds-num">Pendiente</th><th /></tr></thead>
+                <tbody>
+                  {lineasDisponibles.map(({ p, l, pend }) => (
+                    <tr key={l.id}>
+                      <td className="ds-body-sm ds-strong">{p.numero}</td>
+                      <td><div className="ds-truncate" style={{ maxWidth: 260 }} title={l.descripcion}>{l.descripcion}</div></td>
+                      <td className="ds-muted ds-body-sm">{l.almacen || p.obraCodigo || "—"}</td>
+                      <td className="ds-num">{pend} {l.unidad}</td>
+                      <td className="ds-num"><Button variant="outline" size="sm" onClick={() => agregarDeSolicitud(p, l, pend)}>Agregar</Button></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </Modal>
+      )}
     </AppShell>
   );
 }

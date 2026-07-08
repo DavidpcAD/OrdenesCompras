@@ -27,6 +27,16 @@ export default function IngenieriaPage() {
   };
   function seleccionar(f: Filtro) { setFiltro(f); setTimeout(() => listaRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 0); }
 
+  // Días que un pedido lleva SIN que se le haya hecho nada (desde que se creó y
+  // mientras proveeduría no le haya ordenado nada). Si ya está ordenado o cerrado,
+  // ya hubo acción -> null (no cuenta).
+  const diasSinAccion = (p: Pedido): number | null => {
+    if (p.estado === "cerrado" || pedidoOrdenadoPct(p) > 0) return null;
+    const t = new Date(p.fecha).getTime();
+    if (isNaN(t)) return null;
+    return Math.max(0, Math.floor((Date.now() - t) / 86400000));
+  };
+
   const material = pedidos.filter((p) => p.tipoSolicitud === "material").length;
   const repuesto = pedidos.filter((p) => p.tipoSolicitud === "repuesto").length;
   const aprobados = pedidos.filter((p) => p.estado === "aprobado").length;
@@ -46,6 +56,12 @@ export default function IngenieriaPage() {
     { id: "comentario", header: "Comentario", accessorFn: (p) => p.notas ?? "", meta: { label: "Comentario" }, cell: (c) => <div className="ds-body-sm ds-muted ds-truncate" style={{ maxWidth: 220 }} title={c.getValue()}>{c.getValue() || "—"}</div> },
     { id: "solicitante", header: "Solicitante", accessorFn: (p) => p.solicitante, meta: { label: "Solicitante" }, cell: (c) => c.getValue() },
     { id: "fecha", header: "Fecha", accessorFn: (p) => p.fecha, meta: { label: "Fecha" }, cell: (c) => formatDate(c.getValue()) },
+    { id: "dias", header: "Días sin acción", accessorFn: (p) => diasSinAccion(p) ?? -1, meta: { label: "Días sin acción", num: true }, enableColumnFilter: false, cell: (c) => {
+        const d = diasSinAccion(c.row.original);
+        if (d == null) return <span className="ds-muted">—</span>;
+        const tone = d >= 7 ? "red" : d >= 3 ? "yellow" : "gray";
+        return <Badge tone={tone}>{d} d</Badge>;
+      } },
     { id: "lineas", header: "Líneas", accessorFn: (p) => p.lineas.length, meta: { label: "Líneas", num: true }, enableColumnFilter: false, cell: (c) => c.getValue() },
     { id: "prioridad", header: "Prioridad", accessorFn: (p) => p.prioridad, meta: { label: "Prioridad" }, cell: (c) => { const p = c.row.original; return p.prioridad === "urgente" ? <Badge tone="red">Urgente</Badge> : p.prioridad === "alta" ? <Badge tone="yellow">Alta</Badge> : <Badge tone="gray">Normal</Badge>; } },
     { id: "estado", header: "Estado", accessorFn: (p) => pedidoBadge(p.estado).label, meta: { label: "Estado" }, cell: (c) => { const b = pedidoBadge(c.row.original.estado); return <Badge tone={b.tone}>{b.label}</Badge>; } },
