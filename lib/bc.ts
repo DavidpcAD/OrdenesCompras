@@ -213,6 +213,24 @@ export async function bcItemLastCost(itemNo: string): Promise<number | null> {
   } catch { return null; }
 }
 
+// Último COSTO DE COMPRA real del material, vía la API custom Adelante
+// (page 50235 lastPurchasePrices sobre Item Ledger Entry, solo recepciones de
+// compra). Trae el movimiento más reciente (postingDate desc, entryNo desc) y
+// devuelve su unitCost. Es lo más fiel al "último precio pagado" por ese ítem.
+export async function bcItemUltimaCompra(itemNo: string): Promise<number | null> {
+  if (!itemNo) return null;
+  try {
+    const cid = await getCompanyId();
+    const filtro = `$filter=${encodeURIComponent(`itemNo eq '${itemNo}'`)}`;
+    const url = `${customRoot("purchasing")}/companies(${cid})/lastPurchasePrices?${filtro}&$orderby=postingDate desc,entryNo desc&$top=1`;
+    const res = await bcFetch(url, { next: { revalidate: 300 } } as RequestInit);
+    if (!res.ok) return null;
+    const row = ((await res.json())?.value ?? [])[0];
+    const uc = row?.unitCost;
+    return (typeof uc === "number" && uc > 0) ? uc : null;
+  } catch { return null; }
+}
+
 export async function bcObras(): Promise<BcObra[]> {
   const rows = await listAll("project", "jobs");
   return rows.map((j) => ({
