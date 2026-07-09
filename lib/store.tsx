@@ -293,7 +293,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
           proveedorNo: input.proveedorNo ?? p?.code ?? input.proveedorId, proveedorNombre: input.proveedorNombre ?? p?.nombre, currencyCode: input.currencyCode,
           usuario: persona, rol: rolActual,
           lineas: input.lineas.map((l) => ({
-            tipoLinea: l.tipo, itemNo: l.articuloId, idPedidoCompraDet: l.pedidoLineaId ? Number(l.pedidoLineaId) : undefined,
+            tipoLinea: l.tipo, itemNo: l.articuloId, variantCode: l.variantCode, idPedidoCompraDet: l.pedidoLineaId ? Number(l.pedidoLineaId) : undefined,
             descripcion: l.descripcion, cantidad: l.cantidad, unidad: l.unidad, almacen: l.almacen,
             precioUnitario: l.precioUnitario, ivaPct: l.ivaPct, descuentoPct: l.descuentoPct, jobNo: l.proyecto, taskNo: l.taskNo,
           })),

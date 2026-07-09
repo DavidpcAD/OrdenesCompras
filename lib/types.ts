@@ -128,6 +128,7 @@ export interface OrdenLinea {
   id: string;
   tipo: LineType;
   articuloId?: string;
+  variantCode?: string;     // variante del item (obligatoria en BC para items con variantes)
   pedidoLineaId?: string;   // enlace N:M a la línea de pedido origen
   pedidoNumero?: string;
   descripcion: string;

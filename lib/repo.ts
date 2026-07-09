@@ -271,7 +271,7 @@ function mapOrden(o: any, lineas: any[]): Orden {
     bcNumber: o.bcNo || undefined,           // Nº del Pedido en BC (para relanzar/recibir/facturar)
     lineas: lineas.map((l): OrdenLinea => ({
       id: String(l.idOrdenCompraDet), tipo: (l.tipoLinea === "cargo" ? "cargo" : "articulo"),
-      articuloId: l.itemNo ?? undefined, pedidoLineaId: l.idPedidoCompraDet ? String(l.idPedidoCompraDet) : undefined,
+      articuloId: l.itemNo ?? undefined, variantCode: l.variantCode ?? undefined, pedidoLineaId: l.idPedidoCompraDet ? String(l.idPedidoCompraDet) : undefined,
       pedidoNumero: undefined, descripcion: l.descripcion ?? "", cantidad: Number(l.quantity ?? 0),
       unidad: l.unitOfMeasureCode ?? "", almacen: l.locationCode ?? "", precioUnitario: Number(l.directUnitCost ?? 0),
       ivaPct: Number(l.vatPct ?? 0), descuentoPct: Number(l.lineDiscountPct ?? 0) || undefined,
@@ -284,7 +284,7 @@ function mapOrden(o: any, lineas: any[]): Orden {
 export interface NewOrdenDB {
   proveedorNo: string; proveedorNombre?: string; currencyCode: string; usuario: string; rol: Role;
   lineas: {
-    tipoLinea: string; itemNo?: string; idPedidoCompraDet?: number; descripcion: string; cantidad: number;
+    tipoLinea: string; itemNo?: string; variantCode?: string; idPedidoCompraDet?: number; descripcion: string; cantidad: number;
     unidad: string; almacen: string; precioUnitario: number; ivaPct: number; descuentoPct?: number; jobNo?: string; taskNo?: string;
   }[];
 }
@@ -317,6 +317,7 @@ export async function createOrden(input: NewOrdenDB): Promise<number> {
         .input("tipoLinea", sql.NVarChar(30), l.tipoLinea)
         .input("descripcion", sql.NVarChar(250), l.descripcion)
         .input("itemNo", sql.NVarChar(50), l.itemNo ?? null)
+        .input("variantCode", sql.NVarChar(20), l.variantCode ?? null)
         .input("unitOfMeasureCode", sql.NVarChar(20), l.unidad)
         .input("locationCode", sql.NVarChar(20), l.almacen)
         .input("quantity", sql.Decimal(18, 4), l.cantidad)
@@ -326,8 +327,8 @@ export async function createOrden(input: NewOrdenDB): Promise<number> {
         .input("jobNo", sql.NVarChar(20), l.jobNo ?? null)
         .input("taskNo", sql.NVarChar(15), l.taskNo ?? null)
         .input("creadoPor", sql.NVarChar(100), input.usuario)
-        .query(`INSERT dbo.OrdenCompraDet (idOrdenCompra,idPedidoCompraDet,lineNum,tipoLinea,descripcion,itemNo,unitOfMeasureCode,locationCode,quantity,quantityRecibida,quantityFacturada,directUnitCost,vatPct,lineDiscountPct,jobNo,taskNo,fechaCreacion,creadoPor)
-                VALUES (@idOrdenCompra,@idPedidoCompraDet,@lineNum,@tipoLinea,@descripcion,@itemNo,@unitOfMeasureCode,@locationCode,@quantity,0,0,@directUnitCost,@vatPct,@lineDiscountPct,@jobNo,@taskNo,getdate(),@creadoPor)`);
+        .query(`INSERT dbo.OrdenCompraDet (idOrdenCompra,idPedidoCompraDet,lineNum,tipoLinea,descripcion,itemNo,variantCode,unitOfMeasureCode,locationCode,quantity,quantityRecibida,quantityFacturada,directUnitCost,vatPct,lineDiscountPct,jobNo,taskNo,fechaCreacion,creadoPor)
+                VALUES (@idOrdenCompra,@idPedidoCompraDet,@lineNum,@tipoLinea,@descripcion,@itemNo,@variantCode,@unitOfMeasureCode,@locationCode,@quantity,0,0,@directUnitCost,@vatPct,@lineDiscountPct,@jobNo,@taskNo,getdate(),@creadoPor)`);
       // descontar saldo del pedido origen
       if (l.idPedidoCompraDet) {
         await new sql.Request(tx).input("id", sql.Int, l.idPedidoCompraDet).input("q", sql.Decimal(18, 4), l.cantidad)

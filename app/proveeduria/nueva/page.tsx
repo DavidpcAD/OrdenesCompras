@@ -13,6 +13,7 @@ interface Row {
   pedidoNumero: string;
   pedidoLineaId: string;
   articuloId: string;
+  variantCode: string;
   descripcion: string;
   unidad: string;
   almacen: string;
@@ -68,10 +69,10 @@ export default function ArmarOrdenPage() {
 
   const [rows, setRows] = useState<Row[]>(() =>
     borrador.map((b) => {
-      let info = { pedidoNumero: "", articuloId: "", descripcion: "", unidad: "", almacen: "", proyecto: "" };
+      let info = { pedidoNumero: "", articuloId: "", variantCode: "", descripcion: "", unidad: "", almacen: "", proyecto: "" };
       for (const p of pedidos) {
         const l = p.lineas.find((x) => x.id === b.pedidoLineaId);
-        if (l) { info = { pedidoNumero: p.numero, articuloId: l.articuloId, descripcion: l.descripcion, unidad: l.unidad, almacen: l.almacen, proyecto: p.tipoSolicitud === "material" ? (l.almacen || p.obraCodigo || "") : "" }; break; }
+        if (l) { info = { pedidoNumero: p.numero, articuloId: l.articuloId, variantCode: l.variantCode ?? "", descripcion: l.descripcion, unidad: l.unidad, almacen: l.almacen, proyecto: p.tipoSolicitud === "material" ? (l.almacen || p.obraCodigo || "") : "" }; break; }
       }
       return {
         pedidoLineaId: b.pedidoLineaId, ...info,
@@ -141,7 +142,7 @@ export default function ArmarOrdenPage() {
     // para que proveeduría escriba lo acordado con el proveedor.
     const hist = itemsBc.find((x) => x.code === l.articuloId)?.precioUltimo ?? bcPrices[l.articuloId] ?? 0;
     setRows((rs) => [...rs, {
-      pedidoNumero: p.numero, pedidoLineaId: l.id, articuloId: l.articuloId,
+      pedidoNumero: p.numero, pedidoLineaId: l.id, articuloId: l.articuloId, variantCode: l.variantCode ?? "",
       descripcion: l.descripcion, unidad: l.unidad, almacen: l.almacen,
       cantidad: String(pend), precio: String(hist || 0), iva: "13", descuento: "0",
       proyecto: p.tipoSolicitud === "material" ? (l.almacen || p.obraCodigo || "") : "", tarea: "",
@@ -178,7 +179,7 @@ export default function ArmarOrdenPage() {
     setGuardando(true);
     try {
     const ls: Omit<OrdenLinea, "id" | "cantidadRecibida" | "cantidadFacturada">[] = rows.map((r) => ({
-      tipo: "articulo", articuloId: r.articuloId, pedidoLineaId: r.pedidoLineaId, pedidoNumero: r.pedidoNumero,
+      tipo: "articulo", articuloId: r.articuloId, variantCode: r.variantCode || undefined, pedidoLineaId: r.pedidoLineaId, pedidoNumero: r.pedidoNumero,
       descripcion: r.descripcion, cantidad: Number(r.cantidad), unidad: r.unidad, almacen: r.almacen,
       precioUnitario: Number(r.precio), ivaPct: Number(r.iva) || 0, descuentoPct: Number(r.descuento) || 0,
       proyecto: r.proyecto || undefined, taskNo: r.tarea || undefined,

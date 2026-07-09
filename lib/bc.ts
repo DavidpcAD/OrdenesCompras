@@ -323,7 +323,7 @@ export async function bcUltimoPrecioFacturado(itemNo: string, vendorNo: string):
   }
 }
 
-export type BcVariante = { code: string; descripcion: string };
+export type BcVariante = { code: string; descripcion: string; id?: string };
 
 // Resultado de cargar variantes. `disponible=false` significa que NO se pudo
 // consultar el catálogo de variantes (p.ej. la app no tiene permiso sobre la
@@ -336,6 +336,7 @@ function mapVariantes(rows: any[]): BcVariante[] {
   return (rows ?? []).map((v: any) => ({
     code: v.code ?? v.Code ?? "",
     descripcion: v.description ?? v.Description ?? v.code ?? "",
+    id: v.id ?? v.systemId ?? undefined,   // systemId (GUID), para itemVariantId al crear el pedido
   }));
 }
 
@@ -375,8 +376,30 @@ export async function bcVariants(itemNo: string): Promise<BcVariante[]> {
   return (await bcVariantsEx(itemNo)).variantes;
 }
 
+// Resuelve el código de variante de un item a su itemVariantId (systemId GUID),
+// que es lo que exige la línea estándar de BC (igual que locationId). Cachea por
+// item+code. Usa la API estándar de itemVariants (devuelve id).
+const stdVariantIdCache: Record<string, string | null> = {};
+async function getStdVariantId(itemNo: string, code: string): Promise<string | null> {
+  if (!itemNo || !code) return null;
+  const key = `${itemNo}|${code}`;
+  if (key in stdVariantIdCache) return stdVariantIdCache[key];
+  try {
+    const cid = await getStdCompanyId();
+    const filtro = `$filter=${encodeURIComponent(`itemNumber eq '${itemNo}' and code eq '${code}'`)}&$select=id,code`;
+    const res = await bcFetch(`${stdRoot()}/companies(${cid})/itemVariants?${filtro}`, { cache: "no-store" });
+    if (res.ok) {
+      const id = ((await res.json()).value ?? [])[0]?.id ?? null;
+      stdVariantIdCache[key] = id;
+      return id;
+    }
+  } catch { /* no resoluble */ }
+  stdVariantIdCache[key] = null;
+  return null;
+}
+
 // ---- Escritura: crear Pedido de compra (Purchase Order) por la API ESTÁNDAR ----
-export type NuevaLineaBc = { itemNo: string; cantidad: number; precio?: number; descripcion?: string };
+export type NuevaLineaBc = { itemNo: string; cantidad: number; precio?: number; descripcion?: string; variantCode?: string };
 
 // La API estándar de purchaseOrderLine NO acepta `locationCode`; requiere
 // `locationId` (el systemId GUID del almacén). Lo resolvemos por código contra
@@ -429,6 +452,11 @@ export async function bcCrearPedido(input: { vendorNo: string; currencyCode?: st
     const lineBody: Record<string, unknown> = { lineType: "Item", lineObjectNumber: l.itemNo, quantity: l.cantidad };
     if (l.precio && l.precio > 0) lineBody.directUnitCost = l.precio;
     if (locId) lineBody.locationId = locId;
+    // Variante: si el item la exige, BC pide itemVariantId (GUID), no el código.
+    if (l.variantCode) {
+      const vId = await getStdVariantId(l.itemNo, l.variantCode);
+      if (vId) lineBody.itemVariantId = vId;
+    }
     const resL = await bcFetch(`${stdRoot()}/companies(${cid})/purchaseOrders(${po.id})/purchaseOrderLines`, { method: "POST", headers: jsonHeaders, body: JSON.stringify(lineBody), cache: "no-store" });
     if (resL.ok) { creadas++; }
     else {

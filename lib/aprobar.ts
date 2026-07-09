@@ -17,7 +17,7 @@ export async function aprobarYLanzar(
 ): Promise<{ ok: boolean; message: string; tone: "success" | "error" }> {
   const lineasBc = orden.lineas
     .filter((l) => l.tipo === "articulo" && l.articuloId && l.cantidad > 0)
-    .map((l) => ({ itemNo: l.articuloId!, cantidad: l.cantidad, precio: l.precioUnitario || 0, descripcion: l.descripcion }));
+    .map((l) => ({ itemNo: l.articuloId!, cantidad: l.cantidad, precio: l.precioUnitario || 0, descripcion: l.descripcion, variantCode: l.variantCode }));
 
   // Sin proveedor de BC o sin líneas: no hay nada que enviar a BC; se lanza local.
   if (!orden.proveedorNo || !lineasBc.length) {
