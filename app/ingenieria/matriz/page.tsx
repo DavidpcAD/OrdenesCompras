@@ -38,7 +38,7 @@ export default function MatrizPage() {
         if (!r.ok) { toast(d.error ?? "No se pudo cargar", "error"); return; }
         setEtapas(d.etapas ?? []); setPartidas(d.partidas ?? []); setSubpartidas(d.subpartidas ?? []);
         setClasifs(d.clasificaciones ?? []); setObras(d.obras ?? []); setCeldas(d.celdas ?? []);
-        if ((d.etapas ?? []).length) setEtapaSel(String(d.etapas[0].id));
+        // Por defecto "Todas las etapas" (etapaSel = ""), para no esconder clasificaciones.
       } catch (e: any) { toast(String(e?.message ?? e), "error"); }
       finally { setCargando(false); }
     })();
@@ -74,6 +74,7 @@ export default function MatrizPage() {
           <div className="grid-2">
             <Field label="Etapa (columnas)">
               <Select value={etapaSel} onChange={(e) => setEtapaSel(e.target.value)}>
+                <option value="">Todas las etapas</option>
                 {etapas.map((e) => <option key={e.id} value={e.id}>{e.codigo} · {e.nombre}</option>)}
               </Select>
             </Field>
@@ -96,7 +97,7 @@ export default function MatrizPage() {
         </Card>
 
         {cargando ? <div className="empty mt-6">Cargando…</div> : columnas.length === 0 ? (
-          <div className="empty mt-6">No hay clasificaciones en esta etapa. Creá clasificaciones en el Maestro.</div>
+          <div className="empty mt-6">{etapaSel ? "No hay clasificaciones en esta etapa." : "No hay clasificaciones."} Creá clasificaciones en el Maestro.</div>
         ) : (
           <Card className="mt-4" style={{ padding: 0, overflow: "hidden" }}>
             <div className="ds-table-wrap" style={{ boxShadow: "none", overflowX: "auto" }}>
