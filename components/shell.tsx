@@ -4,14 +4,23 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { useStore } from "@/lib/store";
-import type { Role } from "@/lib/types";
+import type { Role, Notificacion } from "@/lib/types";
 import { formatDate } from "@/lib/helpers";
 import {
   IconBell, IconList, IconOptions, IconDuplicate, IconMatrix, IconTrack,
   IconReceipt, IconCheck, IconDelivery, IconFolder, IconPlus, IconLogout,
+  IconBox, IconWarning,
 } from "@/components/icons";
 
 const cap = (s: string) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : s);
+
+// Ícono por tipo de notificación (el color lo da la clase notif-item__icon--<tipo>).
+const NOTIF_ICON: Record<Notificacion["tipo"], React.ReactNode> = {
+  pedido: <IconList size={18} />,
+  orden: <IconBox size={18} />,
+  factura: <IconReceipt size={18} />,
+  devuelto: <IconWarning size={18} />,
+};
 
 type IconCmp = React.ComponentType<{ size?: number }>;
 // alt: rutas extra que activan esta pestaña. Prefijo por defecto; sufijo "$" = ruta exacta.
@@ -135,17 +144,29 @@ export function AppShell({ role, children }: { role: Role; children: React.React
               <>
                 <div className="notif-overlay" onClick={() => setNotifOpen(false)} />
                 <div className="notif-panel">
-                  <div className="notif-panel__head">Notificaciones</div>
+                  <div className="notif-panel__head">
+                    <span className="notif-panel__title">Notificaciones</span>
+                    {noLeidas > 0 && <span className="notif-panel__count">{noLeidas} sin leer</span>}
+                  </div>
                   {notifsRol.length === 0 ? (
-                    <div className="notif-empty">Sin notificaciones.</div>
+                    <div className="notif-empty">
+                      <span className="notif-empty__icon"><IconBell size={22} /></span>
+                      Sin notificaciones
+                    </div>
                   ) : (
-                    notifsRol.slice(0, 30).map((n) => (
-                      <button key={n.id} className={`notif-item ${n.leida ? "" : "is-unread"}`}
-                        onClick={() => { setNotifOpen(false); if (n.href) router.push(n.href); }}>
-                        <span className="notif-item__msg">{n.mensaje}</span>
-                        <span className="notif-item__date">{formatDate(n.fecha)}</span>
-                      </button>
-                    ))
+                    <div className="notif-list">
+                      {notifsRol.slice(0, 30).map((n) => (
+                        <button key={n.id} className={`notif-item ${n.leida ? "" : "is-unread"}`}
+                          onClick={() => { setNotifOpen(false); if (n.href) router.push(n.href); }}>
+                          <span className={`notif-item__icon notif-item__icon--${n.tipo}`}>{NOTIF_ICON[n.tipo]}</span>
+                          <span className="notif-item__body">
+                            <span className="notif-item__msg">{n.mensaje}</span>
+                            <span className="notif-item__date">{formatDate(n.fecha)}</span>
+                          </span>
+                          {!n.leida && <span className="notif-item__dot" aria-hidden />}
+                        </button>
+                      ))}
+                    </div>
                   )}
                 </div>
               </>
