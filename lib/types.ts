@@ -178,6 +178,9 @@ export interface Recepcion {
   total: number;
   lineas: RecepcionLinea[];
   parcial: boolean;
+  // MODO 2: material recibido pero la factura quedó EN REVISIÓN (aún sin registrar).
+  // Se deriva de numeroFactura vacío; Kattya la registra después (bcFacturarRecibido).
+  facturaEnRevision?: boolean;
 }
 
 // ============================ BITÁCORA / MOVIMIENTOS ========================

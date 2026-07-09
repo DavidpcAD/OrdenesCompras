@@ -109,6 +109,47 @@ export default function RegistrarFacturaPage() {
     }
   }
 
+  // MODO 2: el material llegó bien pero la factura viene con problemas. Se recibe
+  // el material (BC: solo recepción) y la factura queda EN REVISIÓN para Kattya.
+  async function recibirEnRevision() {
+    if (!algoRecibido) { toast("Indicá al menos una cantidad a recibir.", "error"); return; }
+    const excede = articulo.find((l) => Number(recibir[l.id] || 0) > ordenLineaPendiente(l) + 1e-9);
+    if (excede) { toast(`No podés recibir más de lo pendiente en "${excede.descripcion}".`, "error"); return; }
+    const lineas = articulo
+      .filter((l) => Number(recibir[l.id] || 0) > 0)
+      .map((l) => ({ ordenLineaId: l.id, cantidadRecibida: Number(recibir[l.id]) }));
+    const bcLineas = articulo
+      .filter((l) => Number(recibir[l.id] || 0) > 0 && l.articuloId)
+      .map((l) => ({ itemNo: l.articuloId as string, qty: Number(recibir[l.id]) }));
+
+    setGuardando(true);
+    let aviso = "";
+    try {
+      if (orden!.bcNumber && bcLineas.length) {
+        try {
+          const r = await fetch("/api/bc/recibir", {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ orderNo: orden!.bcNumber, lineas: bcLineas }),
+          });
+          const d = await r.json().catch(() => ({}));
+          aviso = r.ok ? ` · recibido en BC (${d.receiptNo ?? "OK"})` : ` · NO se pudo recibir en BC: ${d.error ?? r.status}`;
+        } catch (e: any) { aviso = ` · BC no disponible: ${String(e?.message ?? e)}`; }
+      } else if (!orden!.bcNumber) {
+        aviso = " · (sin N.º de BC, no se recibió en BC)";
+      }
+      await registrarRecepcion({
+        ordenId: orden!.id, numeroFactura: "", fechaFactura, fechaRecepcion, fechaRegistro,
+        total: subtotalRecibido, lineas, facturaEnRevision: true,
+      });
+      const falloBc = aviso.includes("NO se pudo") || aviso.includes("no disponible");
+      toast(`Material recibido — factura EN REVISIÓN${aviso}`, falloBc ? "info" : "success");
+      router.push(`/facturacion`);
+    } catch (e: any) {
+      toast(String(e?.message ?? e), "error");
+      setGuardando(false);
+    }
+  }
+
   return (
     <AppShell role="facturacion">
       <main className="page page--wide">
@@ -240,8 +281,9 @@ export default function RegistrarFacturaPage() {
               {completaOrden ? <Badge tone="green">Recepción completa</Badge> : <Badge tone="yellow">Recepción parcial — la orden queda abierta</Badge>}
             </div>
           </div>
-          <div className="row gap-3">
+          <div className="row gap-3 wrap">
             <Button variant="outline" onClick={() => setPreview(true)} disabled={!algoRecibido}>Vista previa</Button>
+            <Button variant="ghost" onClick={recibirEnRevision} disabled={!algoRecibido || guardando} title="El material llegó bien pero la factura tiene problemas: recibí el material y mandá la factura a revisión.">Recibir sin factura (a revisión)</Button>
             <Button variant="red" onClick={registrar} disabled={!algoRecibido || !numeroFactura.trim() || guardando}>{guardando ? "Registrando…" : "Registrar factura"}</Button>
           </div>
         </div>

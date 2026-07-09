@@ -468,6 +468,41 @@ export async function bcRegistrarFactura(
   return d?.value ?? "Registrado";
 }
 
+// MODO 2 — Solo RECEPCIÓN (material llega bien, la factura queda en revisión).
+// Registra la recepción en BC (Receive=true, Invoice=false) vía AdelantePO_PostReceipt.
+// Mueve inventario/cantidad recibida sin tocar la factura ni el ledger del proveedor.
+export async function bcRecibir(orderNo: string, lines: { itemNo: string; qty: number }[]): Promise<string> {
+  if (!orderNo) throw new Error("Falta el número de pedido de BC.");
+  const cid = await getStdCompanyId();
+  const url = `${odataRoot()}/AdelantePO_PostReceipt?company=${encodeURIComponent(cid)}`;
+  const res = await bcFetch(url, {
+    method: "POST", cache: "no-store",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ orderNo, linesJson: JSON.stringify(lines) }),
+  });
+  if (!res.ok) throw new Error(`BC recibir ${res.status}: ${(await res.text()).slice(0, 250)}`);
+  const d: any = await res.json().catch(() => ({}));
+  return d?.value ?? "Recibido";
+}
+
+// MODO 2 — Solo FACTURA de lo ya recibido (Kattya revisa y registra después).
+// Factura en BC lo que estaba recibido-no-facturado (Receive=false, Invoice=true)
+// vía AdelantePO_PostInvoiceOfReceived.
+export async function bcFacturarRecibido(orderNo: string, vendorInvoiceNo: string, lines: { itemNo: string; qty: number }[]): Promise<string> {
+  if (!orderNo) throw new Error("Falta el número de pedido de BC.");
+  if (!vendorInvoiceNo) throw new Error("Falta el N.º de factura del proveedor.");
+  const cid = await getStdCompanyId();
+  const url = `${odataRoot()}/AdelantePO_PostInvoiceOfReceived?company=${encodeURIComponent(cid)}`;
+  const res = await bcFetch(url, {
+    method: "POST", cache: "no-store",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ orderNo, vendorInvoiceNo, linesJson: JSON.stringify(lines) }),
+  });
+  if (!res.ok) throw new Error(`BC facturar ${res.status}: ${(await res.text()).slice(0, 250)}`);
+  const d: any = await res.json().catch(() => ({}));
+  return d?.value ?? "Facturado";
+}
+
 // Crea el Pedido en BC (queda Abierto) y lo LANZA enseguida -> "Lanzado".
 // Si el create funciona pero el release falla (p.ej. AdelantePO no publicado aún),
 // devuelve el pedido creado con released=false para que la UI avise sin romperse.

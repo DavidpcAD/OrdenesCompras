@@ -43,6 +43,8 @@ interface RegistrarRecepcionInput {
   fechaRegistro: string;
   total: number;
   lineas: RecepcionLinea[];
+  // MODO 2: recibir el material dejando la factura EN REVISIÓN (sin registrarla).
+  facturaEnRevision?: boolean;
 }
 
 interface StoreShape {
@@ -74,6 +76,8 @@ interface StoreShape {
   setOrdenEstado: (id: string, estado: Orden["estado"], extra?: { bcNumber?: string; bcDeepLink?: string }) => Promise<void>;
 
   registrarRecepcion: (input: RegistrarRecepcionInput) => Promise<Recepcion>;
+  // MODO 2: registrar la factura de una recepción que quedó EN REVISIÓN (Kattya).
+  facturarRecepcion: (recepcionId: string, numeroFactura: string) => Promise<void>;
 
   devolverPedido: (id: string, motivo: string) => Promise<void>;
   devolverOrden: (id: string, motivo: string) => Promise<void>;
@@ -371,8 +375,9 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         await refreshFromApi();
         return { id: String(idRecepcionCompra), ordenId: input.ordenId, numeroFactura: input.numeroFactura,
           fechaFactura: input.fechaFactura, fechaRecepcion: input.fechaRecepcion, fechaRegistro: input.fechaRegistro,
-          total: input.total, lineas: input.lineas, parcial: false };
+          total: input.total, lineas: input.lineas, parcial: false, facturaEnRevision: !!input.facturaEnRevision };
       }
+      const enRevision = !!input.facturaEnRevision;
       let created!: Recepcion;
       setData((d) => {
         const orden = d.ordenes.find((o) => o.id === input.ordenId)!;
@@ -382,7 +387,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
           id: uid(), ordenId: input.ordenId, numeroFactura: input.numeroFactura,
           fechaFactura: input.fechaFactura, fechaRecepcion: input.fechaRecepcion,
           fechaRegistro: input.fechaRegistro, total: input.total, lineas: input.lineas,
-          parcial: recibidoAhora < recibidoTotal,
+          parcial: recibidoAhora < recibidoTotal, facturaEnRevision: enRevision,
         };
         let completada = false;
         const ordenes = d.ordenes.map((o) => {
@@ -390,18 +395,46 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
           const lineas = o.lineas.map((l) => {
             const rl = input.lineas.find((x) => x.ordenLineaId === l.id);
             if (!rl) return l;
-            return { ...l, cantidadRecibida: l.cantidadRecibida + rl.cantidadRecibida, cantidadFacturada: l.cantidadFacturada + rl.cantidadRecibida };
+            // En revisión: sube lo RECIBIDO pero NO lo facturado (se factura después).
+            return { ...l, cantidadRecibida: l.cantidadRecibida + rl.cantidadRecibida, cantidadFacturada: l.cantidadFacturada + (enRevision ? 0 : rl.cantidadRecibida) };
           });
           const upd = { ...o, lineas };
-          completada = ordenEstaCompleta(upd);
+          completada = !enRevision && ordenEstaCompleta(upd);
           return { ...upd, estado: (completada ? "completado" : upd.estado) as Orden["estado"] };
         });
-        const movRec = mkMov({ entidad: "recepcion", idEntidad: created.id, documentoNo: input.numeroFactura, tipoMovimiento: "creado", detalle: `Factura ${input.numeroFactura}` });
-        const movOrd = mkMov({ entidad: "orden", idEntidad: input.ordenId, documentoNo: orden.numero, tipoMovimiento: completada ? "recepcion_total" : "recepcion_parcial", estadoNuevo: completada ? "completado" : orden.estado, detalle: `Factura ${input.numeroFactura}` });
-        const notif = mkNotif("factura", `Factura ${input.numeroFactura} registrada en ${orden.numero}${completada ? " (orden completada)" : " (parcial)"}`, `/proveeduria/ordenes/${orden.id}`, "proveeduria");
+        const detalle = enRevision ? "Recepción (factura en revisión)" : `Factura ${input.numeroFactura}`;
+        const movRec = mkMov({ entidad: "recepcion", idEntidad: created.id, documentoNo: input.numeroFactura || "(en revisión)", tipoMovimiento: enRevision ? "recibido" : "creado", detalle });
+        const movOrd = mkMov({ entidad: "orden", idEntidad: input.ordenId, documentoNo: orden.numero, tipoMovimiento: completada ? "recepcion_total" : "recepcion_parcial", estadoNuevo: completada ? "completado" : orden.estado, detalle });
+        const notif = enRevision
+          ? mkNotif("factura", `Material recibido en ${orden.numero} — factura EN REVISIÓN (registrala en Bodega)`, `/facturacion/archivo`, "facturacion")
+          : mkNotif("factura", `Factura ${input.numeroFactura} registrada en ${orden.numero}${completada ? " (orden completada)" : " (parcial)"}`, `/proveeduria/ordenes/${orden.id}`, "proveeduria");
         return { ...d, ordenes, recepciones: [created, ...d.recepciones], movimientos: [movOrd, movRec, ...d.movimientos], notificaciones: [notif, ...d.notificaciones] };
       });
       return created;
+    };
+
+    // MODO 2 — Kattya registra la factura de una recepción que estaba EN REVISIÓN.
+    // Marca la factura, sube lo FACTURADO de la orden y cierra la revisión.
+    const facturarRecepcion: StoreShape["facturarRecepcion"] = async (recepcionId, numeroFactura) => {
+      if (USE_API) { await refreshFromApi(); return; }
+      setData((d) => {
+        const rec = d.recepciones.find((r) => r.id === recepcionId);
+        if (!rec) return d;
+        const orden = d.ordenes.find((o) => o.id === rec.ordenId);
+        const ordenes = d.ordenes.map((o) => {
+          if (o.id !== rec.ordenId) return o;
+          const lineas = o.lineas.map((l) => {
+            const rl = rec.lineas.find((x) => x.ordenLineaId === l.id);
+            return rl ? { ...l, cantidadFacturada: l.cantidadFacturada + rl.cantidadRecibida } : l;
+          });
+          const upd = { ...o, lineas };
+          return { ...upd, estado: (ordenEstaCompleta(upd) ? "completado" : upd.estado) as Orden["estado"] };
+        });
+        const recepciones = d.recepciones.map((r) => (r.id === recepcionId ? { ...r, numeroFactura, facturaEnRevision: false } : r));
+        const mov = mkMov({ entidad: "recepcion", idEntidad: recepcionId, documentoNo: numeroFactura, tipoMovimiento: "creado", detalle: `Factura ${numeroFactura} registrada (venía de revisión)` });
+        const notif = mkNotif("factura", `Factura ${numeroFactura} registrada en ${orden?.numero ?? ""} (salió de revisión)`, `/proveeduria/ordenes/${rec.ordenId}`, "proveeduria");
+        return { ...d, ordenes, recepciones, movimientos: [mov, ...d.movimientos], notificaciones: [notif, ...d.notificaciones] };
+      });
     };
 
     // ---------------- DEVOLVER PEDIDO AL INGENIERO ----------------
@@ -467,7 +500,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       maquinas: seed.maquinas, almacenes: seed.almacenes,
       pedidos: data.pedidos, ordenes: data.ordenes, recepciones: data.recepciones, movimientos: data.movimientos,
       addPedido, editPedido, updatePedido, setPedidoEstado, deletePedido,
-      createOrden, updateOrden, setOrdenEstado, registrarRecepcion, devolverPedido, devolverOrden, reset,
+      createOrden, updateOrden, setOrdenEstado, registrarRecepcion, facturarRecepcion, devolverPedido, devolverOrden, reset,
       notificaciones: data.notificaciones, marcarNotifsLeidas,
       planCategorias: data.planCategorias, planFilas: data.planFilas,
       addPlanCategoria, removePlanCategoria, addPlanFila, removePlanFila, setPlanCelda, cargarPlanificacion,
