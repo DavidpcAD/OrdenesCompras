@@ -378,6 +378,27 @@ export async function bcVariants(itemNo: string): Promise<BcVariante[]> {
 // ---- Escritura: crear Pedido de compra (Purchase Order) por la API ESTÁNDAR ----
 export type NuevaLineaBc = { itemNo: string; cantidad: number; precio?: number; descripcion?: string };
 
+// La API estándar de purchaseOrderLine NO acepta `locationCode`; requiere
+// `locationId` (el systemId GUID del almacén). Lo resolvemos por código contra
+// la entidad /locations estándar y lo cacheamos por código.
+const stdLocationIdCache: Record<string, string | null> = {};
+async function getStdLocationId(cid: string, code: string): Promise<string | null> {
+  if (!code) return null;
+  if (code in stdLocationIdCache) return stdLocationIdCache[code];
+  try {
+    const filtro = `$filter=${encodeURIComponent(`code eq '${code}'`)}&$select=id,code`;
+    const res = await bcFetch(`${stdRoot()}/companies(${cid})/locations?${filtro}`, { cache: "no-store" });
+    if (res.ok) {
+      const data = await res.json();
+      const id = (data.value ?? [])[0]?.id ?? null;
+      stdLocationIdCache[code] = id;
+      return id;
+    }
+  } catch { /* sin ubicación resoluble */ }
+  stdLocationIdCache[code] = null;
+  return null;
+}
+
 export async function bcCrearPedido(input: { vendorNo: string; currencyCode?: string; locationCode?: string; lineas: NuevaLineaBc[] }): Promise<{ number: string; id: string; omitidas: string[]; creadas: number; lineError?: string }> {
   if (!input?.vendorNo) throw new Error("Falta el proveedor (vendorNo).");
   const lineas = (input.lineas ?? []).filter((l) => l.itemNo && l.cantidad > 0);
@@ -399,13 +420,15 @@ export async function bcCrearPedido(input: { vendorNo: string; currencyCode?: st
   const omitidas: string[] = [];
   let lineError: string | undefined;
   let creadas = 0;
+  // Almacén de recepción fijo (p.ej. ALM-GRAL): aunque Ingeniería pida para una
+  // obra, el material entra siempre al almacén general. Configurable por env.
+  // La línea estándar de BC requiere el GUID (locationId), no el código.
+  const loc = input.locationCode || process.env.BC_RECEPCION_LOCATION;
+  const locId = loc ? await getStdLocationId(cid, loc) : null;
   for (const l of lineas) {
     const lineBody: Record<string, unknown> = { lineType: "Item", lineObjectNumber: l.itemNo, quantity: l.cantidad };
     if (l.precio && l.precio > 0) lineBody.directUnitCost = l.precio;
-    // Almacén de recepción fijo (p.ej. ALM-GRAL): aunque Ingeniería pida para una
-    // obra, el material entra siempre al almacén general. Configurable por env.
-    const loc = input.locationCode || process.env.BC_RECEPCION_LOCATION;
-    if (loc) lineBody.locationCode = loc;
+    if (locId) lineBody.locationId = locId;
     const resL = await bcFetch(`${stdRoot()}/companies(${cid})/purchaseOrders(${po.id})/purchaseOrderLines`, { method: "POST", headers: jsonHeaders, body: JSON.stringify(lineBody), cache: "no-store" });
     if (resL.ok) { creadas++; }
     else {
