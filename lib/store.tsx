@@ -351,7 +351,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
 
     const setOrdenEstado: StoreShape["setOrdenEstado"] = async (id, estado, extra) => {
       if (USE_API) {
-        await api.patchOrdenEstado(id, { estado, usuario: persona, rol: rolActual });
+        await api.patchOrdenEstado(id, { estado, usuario: persona, rol: rolActual, bcNumber: extra?.bcNumber });
         await refreshFromApi();
         return;
       }

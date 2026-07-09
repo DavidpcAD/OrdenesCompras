@@ -25,6 +25,29 @@ export async function aprobarYLanzar(
     return { ok: true, tone: "success", message: `${orden.numero} aprobada y lanzada (sin envío a BC)` };
   }
 
+  // Si la orden YA se creó en BC en un intento previo (tiene bcNumber pero el
+  // release falló), NO se crea otra: solo se REINTENTA el release de ese pedido.
+  // Así no se acumulan pedidos duplicados en BC en cada reintento.
+  if (orden.bcNumber) {
+    let res: Response;
+    let d: any = {};
+    try {
+      res = await fetch("/api/bc/release", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ orderNo: orden.bcNumber }),
+      });
+      d = await res.json().catch(() => ({}));
+    } catch (e: any) {
+      return { ok: false, tone: "error", message: `No se pudo contactar BC: ${String(e?.message ?? e)}. La orden queda pendiente.` };
+    }
+    if (!(res.ok && d.ok)) {
+      return { ok: false, tone: "error", message: `No se lanzó ${orden.bcNumber} en BC: ${d.error || `HTTP ${res.status}`}. La orden queda pendiente.` };
+    }
+    await setOrdenEstado(orden.id, "lanzado", { bcNumber: orden.bcNumber });
+    return { ok: true, tone: "success", message: `${orden.bcNumber} aprobada y lanzada en BC` };
+  }
+
+  // Primer intento: crear el pedido en BC y lanzarlo.
   let res: Response;
   let d: any = {};
   try {
@@ -38,15 +61,22 @@ export async function aprobarYLanzar(
     return { ok: false, tone: "error", message: `No se pudo contactar BC: ${String(e?.message ?? e)}. La orden queda pendiente.` };
   }
 
-  // Solo es éxito si BC devolvió creada Y lanzada.
-  if (!(res.ok && d.released === true)) {
-    const motivo = d.releaseError || d.lineError || d.error || `HTTP ${res.status}`;
-    return { ok: false, tone: "error", message: `No se lanzó en BC: ${motivo}. La orden queda pendiente.` };
+  // Si el pedido se CREÓ en BC (aunque el release falle), guardamos su número:
+  // el próximo intento solo relanzará ese mismo pedido en vez de crear otro.
+  if (res.ok && d.number) {
+    if (d.released === true) {
+      const aviso = Array.isArray(d.omitidas) && d.omitidas.length
+        ? ` · ojo: BC omitió ${d.omitidas.length} línea(s): ${d.omitidas.join(", ")}`
+        : "";
+      await setOrdenEstado(orden.id, "lanzado", { bcNumber: d.number, bcDeepLink: d.deepLink || undefined });
+      return { ok: true, tone: "success", message: `${d.number} aprobada y lanzada en BC${aviso}` };
+    }
+    // Creado pero no lanzado: persistimos el bcNumber sin cambiar el estado real.
+    await setOrdenEstado(orden.id, orden.estado, { bcNumber: d.number, bcDeepLink: d.deepLink || undefined });
+    return { ok: false, tone: "error", message: `${d.number} se creó en BC pero no se lanzó: ${d.releaseError || "sin detalle"}. Reintentá "Aprobar y lanzar" (no se creará otro).` };
   }
 
-  const aviso = Array.isArray(d.omitidas) && d.omitidas.length
-    ? ` · ojo: BC omitió ${d.omitidas.length} línea(s): ${d.omitidas.join(", ")}`
-    : "";
-  await setOrdenEstado(orden.id, "lanzado", { bcNumber: d.number || undefined, bcDeepLink: d.deepLink || undefined });
-  return { ok: true, tone: "success", message: `${d.number || orden.numero} aprobada y lanzada en BC${aviso}` };
+  // Ni siquiera se creó el pedido en BC.
+  const motivo = d.lineError || d.error || `HTTP ${res.status}`;
+  return { ok: false, tone: "error", message: `No se creó en BC: ${motivo}. La orden queda pendiente.` };
 }

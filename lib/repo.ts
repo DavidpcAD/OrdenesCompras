@@ -268,6 +268,7 @@ function mapOrden(o: any, lineas: any[]): Orden {
     currencyCode: o.currencyCode ?? "",
     estado: (codigoDeId(o.idEstado) ?? "abierto") as Orden["estado"],
     versionesArchivadas: Number(o.versionesArchivadas ?? 0),
+    bcNumber: o.bcNo || undefined,           // Nº del Pedido en BC (para relanzar/recibir/facturar)
     lineas: lineas.map((l): OrdenLinea => ({
       id: String(l.idOrdenCompraDet), tipo: (l.tipoLinea === "cargo" ? "cargo" : "articulo"),
       articuloId: l.itemNo ?? undefined, pedidoLineaId: l.idPedidoCompraDet ? String(l.idPedidoCompraDet) : undefined,
@@ -343,12 +344,16 @@ export async function createOrden(input: NewOrdenDB): Promise<number> {
   }
 }
 
-export async function setOrdenEstado(id: number, estado: string, usuario: string, rol: Role, motivo?: string) {
+export async function setOrdenEstado(id: number, estado: string, usuario: string, rol: Role, motivo?: string, bcNumber?: string) {
   const pool = await getPool();
   const prev = await pool.request().input("id", sql.Int, id).query("SELECT idEstado, ordenNo FROM dbo.OrdenCompra WHERE idOrdenCompra=@id");
   const idEstado = await idDeEstado(estado);
-  await pool.request().input("id", sql.Int, id).input("e", sql.Int, idEstado).input("u", sql.NVarChar(100), usuario)
-    .query("UPDATE dbo.OrdenCompra SET idEstado=@e, fechaModificacion=getdate(), modificadoPor=@u WHERE idOrdenCompra=@id");
+  // Si BC devolvió el Nº del pedido, lo guardamos en bcNo (una vez creado en BC,
+  // el reintento solo relanza y la recepción/factura ya lo encuentran).
+  const req = pool.request().input("id", sql.Int, id).input("e", sql.Int, idEstado).input("u", sql.NVarChar(100), usuario);
+  let setBc = "";
+  if (bcNumber) { req.input("bcno", sql.NVarChar(20), bcNumber); setBc = ", bcNo=@bcno, syncedToBc=1"; }
+  await req.query(`UPDATE dbo.OrdenCompra SET idEstado=@e, fechaModificacion=getdate(), modificadoPor=@u${setBc} WHERE idOrdenCompra=@id`);
   const tipo = estado === "pendiente_aprobacion" ? "enviado_aprobacion" : estado === "lanzado" ? "aprobado_lanzado" : estado === "abierto" ? "reabierto" : estado;
   const tx = new sql.Transaction(pool); await tx.begin();
   await logMov(tx, { entidad: "orden", idEntidad: id, documentoNo: prev.recordset[0]?.ordenNo ?? "", tipoMovimiento: tipo, estadoAnterior: codigoDeId(prev.recordset[0]?.idEstado), estadoNuevo: estado, detalle: motivo ? `Motivo: ${motivo}` : undefined, usuario, rol });
