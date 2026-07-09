@@ -181,6 +181,18 @@ export function SolicitudForm({
       if (o) setObraTodas(o.id);
     }
   }, [bcObras]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Obra FIJA (celda de Matriz / deep-link ?obra=): el pedido se arma para una obra
+  // ya elegida, así que la forzamos en TODAS las líneas (incluidas las de plantilla)
+  // y no se puede cambiar por línea.
+  useEffect(() => {
+    if (!obraParam || tipo !== "material") return;
+    const o = catObras.find((x) => x.codigo === obraParam);
+    if (!o) return;
+    setLineas((ls) => (ls.some((l) => l.obraCodigo !== o.codigo)
+      ? ls.map((l) => ({ ...l, obraCodigo: o.codigo, obraNombre: o.nombre }))
+      : ls));
+  }, [obraParam, catObras, lineas, tipo]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // por defecto, cada quien ve las suyas
   useEffect(() => { if (solicitante && filtroPlantilla === "") setFiltroPlantilla(solicitante); }, [solicitante]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -621,9 +633,14 @@ export function SolicitudForm({
                     <td><span className="ds-strong">{a?.code}</span> <span className="ds-muted">— {a?.descripcion}</span>{l.variantCode ? <span className="ds-body-sm ds-muted"> · var. {l.variantCode}{l.variantNombre ? ` (${l.variantNombre})` : ""}</span> : ""}</td>
                     {esMaterial && (
                       <td style={{ minWidth: 220 }}>
-                        <div style={!l.obraCodigo ? { outline: "1.5px solid var(--ds-color-red-100)", borderRadius: 12 } : undefined}>
-                          <Combobox items={catObras} value={obraId} onChange={(k) => setLineObra(l.key, k)} getKey={(o) => o.id} getLabel={(o) => `${o.codigo} — ${o.nombre}`} placeholder="Asigná la obra…" />
-                        </div>
+                        {obraParam ? (
+                          // Obra fija por la celda de la Matriz: se muestra, no se edita.
+                          <span className="ds-body-sm">{l.obraNombre ? `${l.obraCodigo} — ${l.obraNombre}` : (l.obraCodigo || obraParam)}</span>
+                        ) : (
+                          <div style={!l.obraCodigo ? { outline: "1.5px solid var(--ds-color-red-100)", borderRadius: 12 } : undefined}>
+                            <Combobox items={catObras} value={obraId} onChange={(k) => setLineObra(l.key, k)} getKey={(o) => o.id} getLabel={(o) => `${o.codigo} — ${o.nombre}`} placeholder="Asigná la obra…" />
+                          </div>
+                        )}
                       </td>
                     )}
                     <td className="ds-muted">{a?.unidad ?? "—"}</td>
