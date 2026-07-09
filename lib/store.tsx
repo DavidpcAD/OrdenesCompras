@@ -416,7 +416,11 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     // MODO 2 — Kattya registra la factura de una recepción que estaba EN REVISIÓN.
     // Marca la factura, sube lo FACTURADO de la orden y cierra la revisión.
     const facturarRecepcion: StoreShape["facturarRecepcion"] = async (recepcionId, numeroFactura) => {
-      if (USE_API) { await refreshFromApi(); return; }
+      if (USE_API) {
+        await api.setRecepcionFactura(recepcionId, { numeroFactura, usuario: persona, rol: rolActual });
+        await refreshFromApi();
+        return;
+      }
       setData((d) => {
         const rec = d.recepciones.find((r) => r.id === recepcionId);
         if (!rec) return d;

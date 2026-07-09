@@ -365,6 +365,10 @@ export interface NewRecepcionDB {
 export async function createRecepcion(input: NewRecepcionDB): Promise<number> {
   const pool = await getPool();
   const tx = new sql.Transaction(pool); await tx.begin();
+  // MODO 2: si la factura viene EN REVISIÓN (sin número), solo se recibe el
+  // material; NO se sube lo facturado ni se cierra la orden. Kattya registra
+  // la factura después vía setRecepcionFactura.
+  const enRevision = !String(input.numeroFactura ?? "").trim();
   try {
     const ord = await new sql.Request(tx).input("id", sql.Int, input.idOrdenCompra).query("SELECT ordenNo FROM dbo.OrdenCompra WHERE idOrdenCompra=@id");
     const ordenNo = ord.recordset[0]?.ordenNo ?? "";
@@ -395,24 +399,71 @@ export async function createRecepcion(input: NewRecepcionDB): Promise<number> {
         .input("creadoPor", sql.NVarChar(100), input.usuario)
         .query(`INSERT dbo.RecepcionCompraDet (idRecepcionCompra,idOrdenCompraDet,lineNum,quantityRecibida,precioFactura,fechaCreacion,creadoPor)
                 VALUES (@idRecepcionCompra,@idOrdenCompraDet,@lineNum,@quantityRecibida,@precioFactura,getdate(),@creadoPor)`);
-      // acumular en la orden
+      // acumular en la orden (en revisión: solo recibida, la facturada se sube al registrar la factura)
       await new sql.Request(tx).input("id", sql.Int, l.idOrdenCompraDet).input("q", sql.Decimal(18, 4), l.cantidadRecibida)
-        .query("UPDATE dbo.OrdenCompraDet SET quantityRecibida=ISNULL(quantityRecibida,0)+@q, quantityFacturada=ISNULL(quantityFacturada,0)+@q WHERE idOrdenCompraDet=@id");
+        .query(`UPDATE dbo.OrdenCompraDet SET quantityRecibida=ISNULL(quantityRecibida,0)+@q${enRevision ? "" : ", quantityFacturada=ISNULL(quantityFacturada,0)+@q"} WHERE idOrdenCompraDet=@id`);
       line += 10000;
     }
     // ¿orden completa?
     const saldo = await new sql.Request(tx).input("id", sql.Int, input.idOrdenCompra)
       .query("SELECT SUM(quantity - ISNULL(quantityRecibida,0)) AS pend FROM dbo.OrdenCompraDet WHERE idOrdenCompra=@id AND tipoLinea='articulo'");
-    const completa = Number(saldo.recordset[0].pend ?? 0) <= 0;
+    // En revisión NO cierra la orden: queda pendiente de factura hasta que Kattya la registre.
+    const completa = !enRevision && Number(saldo.recordset[0].pend ?? 0) <= 0;
     if (completa) {
       const idComp = await idDeEstado("completado");
       await new sql.Request(tx).input("id", sql.Int, input.idOrdenCompra).input("e", sql.Int, idComp)
         .query("UPDATE dbo.OrdenCompra SET idEstado=@e WHERE idOrdenCompra=@id");
     }
-    await logMov(tx, { entidad: "recepcion", idEntidad: idRec, documentoNo: input.numeroFactura, tipoMovimiento: "creado", usuario: input.usuario, rol: input.rol, detalle: `Factura ${input.numeroFactura}` });
-    await logMov(tx, { entidad: "orden", idEntidad: input.idOrdenCompra, documentoNo: ordenNo, tipoMovimiento: completa ? "recepcion_total" : "recepcion_parcial", estadoNuevo: completa ? "completado" : undefined, usuario: input.usuario, rol: input.rol, detalle: `Factura ${input.numeroFactura}` });
+    const detMov = enRevision ? "Recepción (factura en revisión)" : `Factura ${input.numeroFactura}`;
+    await logMov(tx, { entidad: "recepcion", idEntidad: idRec, documentoNo: input.numeroFactura || "(en revisión)", tipoMovimiento: enRevision ? "recibido" : "creado", usuario: input.usuario, rol: input.rol, detalle: detMov });
+    await logMov(tx, { entidad: "orden", idEntidad: input.idOrdenCompra, documentoNo: ordenNo, tipoMovimiento: completa ? "recepcion_total" : "recepcion_parcial", estadoNuevo: completa ? "completado" : undefined, usuario: input.usuario, rol: input.rol, detalle: detMov });
     await tx.commit();
     return idRec;
+  } catch (e) {
+    await tx.rollback();
+    throw e;
+  }
+}
+
+// MODO 2 — Kattya registra la factura de una recepción que estaba EN REVISIÓN.
+// Marca el número de factura, sube lo FACTURADO de la orden (= lo recibido en
+// esa recepción) y cierra la orden si ya quedó todo recibido.
+export async function setRecepcionFactura(idRec: number, numeroFactura: string, usuario: string, rol: Role): Promise<void> {
+  const num = String(numeroFactura ?? "").trim();
+  if (!num) throw new Error("El número de factura es obligatorio.");
+  const pool = await getPool();
+  const tx = new sql.Transaction(pool); await tx.begin();
+  try {
+    const rec = await new sql.Request(tx).input("id", sql.Int, idRec)
+      .query("SELECT idOrdenCompra FROM dbo.RecepcionCompra WHERE idRecepcionCompra=@id AND esEliminada=0");
+    const row = rec.recordset[0];
+    if (!row) throw new Error(`La recepción ${idRec} no existe.`);
+    const idOrden = row.idOrdenCompra as number;
+
+    await new sql.Request(tx).input("id", sql.Int, idRec).input("f", sql.NVarChar(40), num)
+      .query("UPDATE dbo.RecepcionCompra SET numeroFactura=@f, fechaFactura=ISNULL(fechaFactura,getdate()) WHERE idRecepcionCompra=@id");
+
+    // subir lo FACTURADO de cada línea de la orden por lo que se recibió en esta recepción
+    const dets = await new sql.Request(tx).input("id", sql.Int, idRec)
+      .query("SELECT idOrdenCompraDet, quantityRecibida FROM dbo.RecepcionCompraDet WHERE idRecepcionCompra=@id");
+    for (const d of dets.recordset) {
+      await new sql.Request(tx).input("id", sql.Int, d.idOrdenCompraDet).input("q", sql.Decimal(18, 4), d.quantityRecibida)
+        .query("UPDATE dbo.OrdenCompraDet SET quantityFacturada=ISNULL(quantityFacturada,0)+@q WHERE idOrdenCompraDet=@id");
+    }
+
+    const ord = await new sql.Request(tx).input("id", sql.Int, idOrden).query("SELECT ordenNo FROM dbo.OrdenCompra WHERE idOrdenCompra=@id");
+    const ordenNo = ord.recordset[0]?.ordenNo ?? "";
+    const saldo = await new sql.Request(tx).input("id", sql.Int, idOrden)
+      .query("SELECT SUM(quantity - ISNULL(quantityRecibida,0)) AS pend FROM dbo.OrdenCompraDet WHERE idOrdenCompra=@id AND tipoLinea='articulo'");
+    const completa = Number(saldo.recordset[0].pend ?? 0) <= 0;
+    if (completa) {
+      const idComp = await idDeEstado("completado");
+      await new sql.Request(tx).input("id", sql.Int, idOrden).input("e", sql.Int, idComp)
+        .query("UPDATE dbo.OrdenCompra SET idEstado=@e WHERE idOrdenCompra=@id");
+    }
+    await logMov(tx, { entidad: "recepcion", idEntidad: idRec, documentoNo: num, tipoMovimiento: "creado", usuario, rol, detalle: `Factura ${num} registrada (venía de revisión)` });
+    await logMov(tx, { entidad: "orden", idEntidad: idOrden, documentoNo: ordenNo, tipoMovimiento: completa ? "recepcion_total" : "recepcion_parcial", estadoNuevo: completa ? "completado" : undefined, usuario, rol, detalle: `Factura ${num}` });
+    await tx.commit();
   } catch (e) {
     await tx.rollback();
     throw e;

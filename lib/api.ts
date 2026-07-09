@@ -39,4 +39,8 @@ export const api = {
 
   createRecepcion: (body: unknown): Promise<{ idRecepcionCompra: number }> =>
     fetch("/api/recepciones", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }).then(jsonOrThrow),
+
+  // MODO 2: registrar la factura de una recepción que estaba en revisión.
+  setRecepcionFactura: (id: string, body: unknown): Promise<{ ok: true }> =>
+    fetch(`/api/recepciones/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }).then(jsonOrThrow),
 };
