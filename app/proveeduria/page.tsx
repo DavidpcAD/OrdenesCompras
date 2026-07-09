@@ -27,7 +27,7 @@ interface Row {
 }
 
 export default function ProveeduriaMaterialesPage() {
-  const { pedidos, articulos, setBorrador } = useStore();
+  const { pedidos, setBorrador } = useStore();
   const router = useRouter();
   const toast = useToast();
 
@@ -45,17 +45,16 @@ export default function ProveeduriaMaterialesPage() {
       p.lineas.forEach((l) => {
         const pend = pedidoLineaPendiente(l);
         if (pend <= 0) return;
-        const a = articulos.find((x) => x.id === l.articuloId);
         rows.push({
           pedidoId: p.id, pedidoNumero: p.numero, destino: destinoLabel(p), tipo: p.tipoSolicitud,
           pedidoLineaId: l.id, articuloId: l.articuloId, descripcion: l.descripcion,
           unidad: l.unidad, almacen: l.almacen, pendiente: pend,
-          incluir: false, cantidad: String(pend), precio: String(a?.precioReferencia ?? 0), iva: "13",
+          incluir: false, cantidad: String(pend), precio: "0", iva: "13",
         });
       });
     });
     return rows;
-  }, [pedidosConSaldo, articulos]);
+  }, [pedidosConSaldo]);
 
   const [rows, setRows] = useState<Row[]>(baseRows);
   const baseKey = baseRows.map((r) => r.pedidoLineaId).join(",");
@@ -121,10 +120,7 @@ export default function ProveeduriaMaterialesPage() {
   function convertirPedido(p: typeof pedidos[number]) {
     const lineas = p.lineas
       .filter((l) => pedidoLineaPendiente(l) > 0)
-      .map((l) => {
-        const a = articulos.find((x) => x.id === l.articuloId);
-        return { pedidoLineaId: l.id, cantidad: pedidoLineaPendiente(l), precio: a?.precioReferencia ?? 0, iva: 13 };
-      });
+      .map((l) => ({ pedidoLineaId: l.id, cantidad: pedidoLineaPendiente(l), precio: 0, iva: 13 }));
     if (!lineas.length) { toast("Este pedido no tiene líneas pendientes por ordenar.", "error"); return; }
     setBorrador(lineas);
     router.push("/proveeduria/nueva");

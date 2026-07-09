@@ -25,7 +25,7 @@ interface Row {
 }
 
 export default function ArmarOrdenPage() {
-  const { pedidos, proveedores, ordenes, almacenes, articulos, borrador, createOrden, setOrdenEstado, setBorrador } = useStore();
+  const { pedidos, proveedores, ordenes, almacenes, borrador, createOrden, setOrdenEstado, setBorrador } = useStore();
   const router = useRouter();
   const toast = useToast();
 
@@ -137,11 +137,13 @@ export default function ArmarOrdenPage() {
       .filter((l) => pedidoLineaPendiente(l) > 0 && !yaEnOrden.has(l.id))
       .map((l) => ({ p, l, pend: pedidoLineaPendiente(l) })));
   function agregarDeSolicitud(p: (typeof pedidos)[number], l: (typeof pedidos)[number]["lineas"][number], pend: number) {
-    const a = articulos.find((x) => x.id === l.articuloId || x.code === l.articuloId);
+    // Precio inicial = último precio de compra real (BC); si no hay historial, 0
+    // para que proveeduría escriba lo acordado con el proveedor.
+    const hist = itemsBc.find((x) => x.code === l.articuloId)?.precioUltimo ?? bcPrices[l.articuloId] ?? 0;
     setRows((rs) => [...rs, {
       pedidoNumero: p.numero, pedidoLineaId: l.id, articuloId: l.articuloId,
       descripcion: l.descripcion, unidad: l.unidad, almacen: l.almacen,
-      cantidad: String(pend), precio: String(a?.precioReferencia ?? 0), iva: "13", descuento: "0",
+      cantidad: String(pend), precio: String(hist || 0), iva: "13", descuento: "0",
       proyecto: p.tipoSolicitud === "material" ? (l.almacen || p.obraCodigo || "") : "", tarea: "",
     }]);
   }

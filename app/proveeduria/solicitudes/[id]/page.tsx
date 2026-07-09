@@ -12,7 +12,7 @@ export default function ProveeduriaPedidoDetallePage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
   const toast = useToast();
-  const { pedidos, ordenes, articulos, setBorrador, devolverPedido } = useStore();
+  const { pedidos, ordenes, setBorrador, devolverPedido } = useStore();
   const [devolverOpen, setDevolverOpen] = useState(false);
   const [motivo, setMotivo] = useState("");
 
@@ -30,7 +30,7 @@ export default function ProveeduriaPedidoDetallePage() {
   function crearOC() {
     const lineas = pedido!.lineas
       .filter((l) => pedidoLineaPendiente(l) > 0)
-      .map((l) => { const a = articulos.find((x) => x.id === l.articuloId); return { pedidoLineaId: l.id, cantidad: pedidoLineaPendiente(l), precio: a?.precioReferencia ?? 0, iva: 13 }; });
+      .map((l) => ({ pedidoLineaId: l.id, cantidad: pedidoLineaPendiente(l), precio: 0, iva: 13 }));
     if (!lineas.length) { toast("Este pedido no tiene líneas pendientes por ordenar.", "error"); return; }
     setBorrador(lineas);
     router.push("/proveeduria/nueva");
