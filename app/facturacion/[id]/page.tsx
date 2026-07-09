@@ -77,7 +77,7 @@ export default function RegistrarFacturaPage() {
     // Líneas para BC: cantidad recibida en esta factura por item (solo artículos).
     const bcLineas = articulo
       .filter((l) => Number(recibir[l.id] || 0) > 0 && l.articuloId)
-      .map((l) => ({ itemNo: l.articuloId as string, qty: Number(recibir[l.id]) }));
+      .map((l) => ({ itemNo: l.articuloId as string, qty: Number(recibir[l.id]), variantCode: l.variantCode }));
 
     setGuardando(true);
     let aviso = "";
@@ -120,7 +120,7 @@ export default function RegistrarFacturaPage() {
       .map((l) => ({ ordenLineaId: l.id, cantidadRecibida: Number(recibir[l.id]) }));
     const bcLineas = articulo
       .filter((l) => Number(recibir[l.id] || 0) > 0 && l.articuloId)
-      .map((l) => ({ itemNo: l.articuloId as string, qty: Number(recibir[l.id]) }));
+      .map((l) => ({ itemNo: l.articuloId as string, qty: Number(recibir[l.id]), variantCode: l.variantCode }));
 
     setGuardando(true);
     let aviso = "";

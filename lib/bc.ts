@@ -503,7 +503,7 @@ export async function bcReleasePedido(orderNo: string): Promise<string> {
 export async function bcRegistrarFactura(
   orderNo: string,
   vendorInvoiceNo: string,
-  lines: { itemNo: string; qty: number }[],
+  lines: { itemNo: string; qty: number; variantCode?: string }[],
 ): Promise<string> {
   if (!orderNo) throw new Error("Falta el número de pedido de BC.");
   if (!vendorInvoiceNo) throw new Error("Falta el N.º de factura del proveedor.");
@@ -522,7 +522,7 @@ export async function bcRegistrarFactura(
 // MODO 2 — Solo RECEPCIÓN (material llega bien, la factura queda en revisión).
 // Registra la recepción en BC (Receive=true, Invoice=false) vía AdelantePO_PostReceipt.
 // Mueve inventario/cantidad recibida sin tocar la factura ni el ledger del proveedor.
-export async function bcRecibir(orderNo: string, lines: { itemNo: string; qty: number }[]): Promise<string> {
+export async function bcRecibir(orderNo: string, lines: { itemNo: string; qty: number; variantCode?: string }[]): Promise<string> {
   if (!orderNo) throw new Error("Falta el número de pedido de BC.");
   const cid = await getStdCompanyId();
   const url = `${odataRoot()}/AdelantePO_PostReceipt?company=${encodeURIComponent(cid)}`;
@@ -539,7 +539,7 @@ export async function bcRecibir(orderNo: string, lines: { itemNo: string; qty: n
 // MODO 2 — Solo FACTURA de lo ya recibido (Kattya revisa y registra después).
 // Factura en BC lo que estaba recibido-no-facturado (Receive=false, Invoice=true)
 // vía AdelantePO_PostInvoiceOfReceived.
-export async function bcFacturarRecibido(orderNo: string, vendorInvoiceNo: string, lines: { itemNo: string; qty: number }[]): Promise<string> {
+export async function bcFacturarRecibido(orderNo: string, vendorInvoiceNo: string, lines: { itemNo: string; qty: number; variantCode?: string }[]): Promise<string> {
   if (!orderNo) throw new Error("Falta el número de pedido de BC.");
   if (!vendorInvoiceNo) throw new Error("Falta el N.º de factura del proveedor.");
   const cid = await getStdCompanyId();

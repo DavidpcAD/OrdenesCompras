@@ -34,7 +34,7 @@ export default function ArchivoPage() {
     const o = ordenDe(rec);
     const bcLineas = rec.lineas
       .filter((l) => Number(l.cantidadRecibida) > 0)
-      .map((l) => ({ itemNo: o?.lineas.find((x) => x.id === l.ordenLineaId)?.articuloId ?? "", qty: l.cantidadRecibida }))
+      .map((l) => { const ol = o?.lineas.find((x) => x.id === l.ordenLineaId); return { itemNo: ol?.articuloId ?? "", qty: l.cantidadRecibida, variantCode: ol?.variantCode }; })
       .filter((x) => x.itemNo);
     setGuardando(true);
     let aviso = "";
