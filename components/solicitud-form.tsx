@@ -726,7 +726,7 @@ export function SolicitudForm({
                 <th style={{ minWidth: 260 }}>{esRepuesto ? "Repuesto" : "Artículo"}</th>
                 {esMaterial && <th>Obra</th>}
                 <th>Variante</th>
-                <th>Unidad</th><th className="ds-num">Cantidad</th><th></th>
+                <th className="ds-num">Cantidad</th><th>Unidad</th><th></th>
               </tr>
             </thead>
             <tbody>
@@ -761,12 +761,12 @@ export function SolicitudForm({
                         );
                       })()}
                     </td>
-                    <td className="ds-muted">{a?.unidad ?? "—"}</td>
                     <td className="ds-num">
                       <input className="ds-form-field__input" type="number" min={0} value={l.cantidad}
                         onChange={(e) => setLineCantidad(l.key, e.target.value)}
                         style={{ width: 90, textAlign: "right", padding: "6px 10px" }} />
                     </td>
+                    <td className="ds-muted">{a?.unidad ?? "—"}</td>
                     <td><button className="icon-btn" onClick={() => removeLine(l.key)} aria-label="Quitar"><IconTrash /></button></td>
                   </tr>
                 );

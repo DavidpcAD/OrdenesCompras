@@ -49,10 +49,10 @@ const ROLE_META: Record<Role, { label: string; persona: string; home: string; na
     ],
   },
   aprobacion: {
-    label: "Aprobación", persona: "Luis Roberto", home: "/aprobacion/todas", color: "var(--ds-color-green-200)",
+    label: "Aprobación", persona: "Luis Roberto", home: "/aprobacion", color: "var(--ds-color-green-200)",
     nav: [
-      { href: "/aprobacion/todas", label: "Todas las órdenes", icon: IconReceipt },
       { href: "/aprobacion", label: "Por aprobar", icon: IconCheck },
+      { href: "/aprobacion/todas", label: "Todas las órdenes", icon: IconReceipt },
     ],
   },
   facturacion: {

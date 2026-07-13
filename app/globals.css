@@ -526,7 +526,15 @@ h1, h2, h3, h4, p { margin: 0; }
 /* En pantallas angostas la nav baja a una segunda fila (con scroll si hace falta),
    en vez de ocultarse. Así siempre se puede ver y seleccionar. */
 @media (max-width: 760px) {
-  .topbar { flex-wrap: wrap; row-gap: var(--ds-space-2); column-gap: var(--ds-space-4); }
+  .topbar { flex-wrap: wrap; row-gap: var(--ds-space-2); column-gap: var(--ds-space-3); padding: var(--ds-space-3) var(--ds-space-4); }
+  .topbar__spacer { display: none; }
+  /* Campana + identidad + Salir agrupados a la derecha, sin dispersarse. */
+  .topbar__user { margin-left: auto; gap: var(--ds-space-2); }
+  .topbar__identity { height: 36px; padding: 0 var(--ds-space-3) 0 4px; font-size: var(--ds-font-size-body-sm); }
+  .topbar__identity .topbar__avatar { width: 28px; height: 28px; }
+  /* "Salir" solo ícono en móvil para no recargar la fila. */
+  .topbar__salir span { display: none; }
+  .topbar__salir { padding: var(--ds-space-2); }
   .topbar__tabs { order: 10; width: 100%; margin-left: 0; overflow-x: auto; }
   .topbar__tabs.topnav { width: max-content; min-width: 100%; }
 }

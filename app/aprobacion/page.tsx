@@ -103,7 +103,15 @@ export default function AprobacionPage() {
                   <button type="button" onClick={() => toggleAbierto(o.id)} aria-expanded={open}
                     className="col" style={{ gap: 4, flex: "1 1 240px", minWidth: 200, background: "none", border: 0, padding: 0, textAlign: "left", cursor: "pointer" }}>
                     <div className="row gap-3" style={{ alignItems: "center" }}>
-                      <span aria-hidden style={{ display: "inline-block", transition: "transform .15s", transform: open ? "rotate(90deg)" : "none", color: "var(--ds-color-gray-300)", fontSize: 14 }}>▸</span>
+                      <span aria-hidden style={{
+                        display: "grid", placeItems: "center", width: 30, height: 30, flexShrink: 0, borderRadius: "50%",
+                        border: "1.5px solid var(--ds-color-gray-200)",
+                        color: open ? "var(--ds-color-black)" : "var(--ds-color-gray-400)",
+                        background: open ? "color-mix(in srgb, var(--ds-color-green-100) 18%, #fff)" : "var(--ds-color-white)",
+                        transition: "background .15s, color .15s",
+                      }}>
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><path d="M8 9l4-4 4 4" /><path d="M16 15l-4 4-4-4" /></svg>
+                      </span>
                       <span
                         onClick={(e) => { e.stopPropagation(); toggleSel(o.id); }}
                         style={{ display: "inline-flex", alignItems: "center" }}>
