@@ -155,6 +155,39 @@ export function SolicitudForm({
   const [qaVariantes, setQaVariantes] = useState<Variante[]>([]);
   const [qaVariante, setQaVariante] = useState("");
   const [qaVariantesError, setQaVariantesError] = useState(false);
+
+  // Variantes por CÓDIGO de artículo, para EXIGIRLAS por línea (no solo al
+  // agregar a mano). Así un material que requiere variante no puede salir del
+  // pedido sin ella, venga de donde venga (manual, Excel, plantilla o Matriz).
+  const [varMap, setVarMap] = useState<Record<string, { variantes: Variante[]; disponible: boolean }>>({});
+  const varPromises = useRef<Map<string, Promise<{ variantes: Variante[]; disponible: boolean }>>>(new Map());
+  const codeDeLinea = (l: DraftLine) => catArticulos.find((a) => a.id === l.articuloId)?.code ?? "";
+  function getVariantes(code: string): Promise<{ variantes: Variante[]; disponible: boolean }> {
+    if (!code) return Promise.resolve({ variantes: [], disponible: true });
+    const cached = varPromises.current.get(code);
+    if (cached) return cached;
+    const p = fetch(`/api/bc/variants?item=${encodeURIComponent(code)}`)
+      .then((r) => (r.ok ? r.json() : { variantes: [], disponible: false }))
+      .then((d) => ({ variantes: (d.variantes ?? []) as Variante[], disponible: d.disponible !== false }))
+      .catch(() => ({ variantes: [] as Variante[], disponible: false }));
+    varPromises.current.set(code, p);
+    p.then((res) => setVarMap((m) => ({ ...m, [code]: res })));
+    return p;
+  }
+  // Precarga las variantes de todas las líneas del borrador.
+  useEffect(() => {
+    for (const l of lineas) { const c = codeDeLinea(l); if (c) getVariantes(c); }
+  }, [lineas, catArticulos]); // eslint-disable-line react-hooks/exhaustive-deps
+  const varDeLinea = (l: DraftLine) => varMap[codeDeLinea(l)];
+  // "Necesita variante": el artículo tiene variantes en BC y la línea no eligió ninguna.
+  const lineaNecesitaVariante = (l: DraftLine) => { const v = varDeLinea(l); return !!v && v.variantes.length > 0 && !l.variantCode; };
+  function setLineVariante(key: string, code: string) {
+    setLineas((ls) => ls.map((l) => {
+      if (l.key !== key) return l;
+      const found = varDeLinea(l)?.variantes.find((x) => x.code === code);
+      return { ...l, variantCode: code, variantNombre: found?.descripcion ?? "" };
+    }));
+  }
   const cantRef = useRef<HTMLInputElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -444,16 +477,26 @@ export function SolicitudForm({
   const lineasOk = tipo === "material" ? lineas.every((l) => Number(l.cantidad) > 0 && !!l.obraCodigo)
     : lineas.every((l) => Number(l.cantidad) > 0);
   const lineasSinObra = tipo === "material" ? lineas.filter((l) => !l.obraCodigo).length : 0;
-  const puedeGuardar = destinoOk && !!solicitante && lineas.length > 0 && lineasOk;
+  const lineasSinVariante = lineas.filter(lineaNecesitaVariante).length;
+  const puedeGuardar = destinoOk && !!solicitante && lineas.length > 0 && lineasOk && lineasSinVariante === 0;
   const [guardando, setGuardando] = useState(false);
 
   async function onGuardar(handler: (input: NewPedidoInput) => Promise<void> = guardar) {
     if (!puedeGuardar) {
       if (tipo === "material" && lineasSinObra > 0) toast(`Faltan ${lineasSinObra} línea(s) sin obra. Asignales la obra antes de guardar.`, "error");
       else if (tipo === "material" && lineas.some((l) => !(Number(l.cantidad) > 0))) toast("Hay líneas con cantidad en 0.", "error");
+      else if (lineasSinVariante > 0) toast(`${lineasSinVariante} línea(s) requieren elegir variante antes de continuar.`, "error");
       else toast(tipo === "repuesto" ? "Indicá la máquina y al menos un repuesto." : tipo === "stock" ? "Indicá la bodega y al menos un material." : "Agregá al menos un material (con su obra).", "error");
       return;
     }
+    // Garantía final: verificamos contra BC que ninguna línea salga sin su
+    // variante si el artículo la exige (cubre Excel/plantilla/Matriz aunque el
+    // catálogo aún no se hubiera precargado en pantalla).
+    const codes = Array.from(new Set(lineas.map(codeDeLinea).filter(Boolean)));
+    const reslist = await Promise.all(codes.map(getVariantes));
+    const porCode = new Map(codes.map((c, i) => [c, reslist[i]]));
+    const faltan = lineas.filter((l) => { const v = porCode.get(codeDeLinea(l)); return !!v && v.variantes.length > 0 && !l.variantCode; });
+    if (faltan.length) { toast(`${faltan.length} línea(s) requieren elegir variante antes de continuar.`, "error"); return; }
     const maquina = maquinas.find((m) => m.id === maquinaId);
     const bodega = catAlm.find((a) => a.codigo === almacenStock);
     // En material, la obra del encabezado se deriva de las líneas. En Stock se
@@ -682,17 +725,18 @@ export function SolicitudForm({
               <tr>
                 <th style={{ minWidth: 260 }}>{esRepuesto ? "Repuesto" : "Artículo"}</th>
                 {esMaterial && <th>Obra</th>}
+                <th>Variante</th>
                 <th>Unidad</th><th className="ds-num">Cantidad</th><th></th>
               </tr>
             </thead>
             <tbody>
-              {lineas.length === 0 && (<tr><td colSpan={esMaterial ? 5 : 4}><div className="empty" style={{ padding: "28px 0" }}>Todavía no agregaste {esRepuesto ? "repuestos" : "materiales"}.</div></td></tr>)}
+              {lineas.length === 0 && (<tr><td colSpan={esMaterial ? 6 : 5}><div className="empty" style={{ padding: "28px 0" }}>Todavía no agregaste {esRepuesto ? "repuestos" : "materiales"}.</div></td></tr>)}
               {lineas.map((l) => {
                 const a = catArticulos.find((x) => x.id === l.articuloId);
                 const obraId = catObras.find((o) => o.codigo === l.obraCodigo)?.id ?? "";
                 return (
                   <tr key={l.key}>
-                    <td><span className="ds-strong">{a?.code}</span> <span className="ds-muted">— {a?.descripcion}</span>{l.variantCode ? <span className="ds-body-sm ds-muted"> · var. {l.variantCode}{l.variantNombre ? ` (${l.variantNombre})` : ""}</span> : ""}</td>
+                    <td><span className="ds-strong">{a?.code}</span> <span className="ds-muted">— {a?.descripcion}</span></td>
                     {esMaterial && (
                       <td style={{ minWidth: 220 }}>
                         {obraParam ? (
@@ -705,6 +749,18 @@ export function SolicitudForm({
                         )}
                       </td>
                     )}
+                    <td style={{ minWidth: 200 }}>
+                      {(() => {
+                        const v = varDeLinea(l);
+                        if (!v) return <span className="ds-muted ds-body-sm">…</span>;
+                        if (v.variantes.length === 0) return <span className="ds-muted ds-body-sm">{v.disponible ? "—" : "sin verificar"}</span>;
+                        return (
+                          <div style={!l.variantCode ? { outline: "1.5px solid var(--ds-color-red-100)", borderRadius: 12 } : undefined}>
+                            <Combobox items={v.variantes} value={l.variantCode} onChange={(k) => setLineVariante(l.key, k)} getKey={(x) => x.code} getLabel={(x) => `${x.code} — ${x.descripcion}`} placeholder="Falta variante…" />
+                          </div>
+                        );
+                      })()}
+                    </td>
                     <td className="ds-muted">{a?.unidad ?? "—"}</td>
                     <td className="ds-num">
                       <input className="ds-form-field__input" type="number" min={0} value={l.cantidad}
