@@ -599,3 +599,7 @@ h1, h2, h3, h4, p { margin: 0; }
 @media (max-width: 640px) {
   .hide-mobile { display: none !important; }
 }
+
+/* Fila de 3 tiles: 3 en desktop, apila en móvil (evita que se corte el 3º). */
+.tiles-3 { grid-template-columns: repeat(3, 1fr); }
+@media (max-width: 760px) { .tiles-3 { grid-template-columns: 1fr 1fr; } }

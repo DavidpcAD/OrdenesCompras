@@ -60,7 +60,7 @@ export default function AprobacionPage() {
           </div>
         </div>
 
-        <div className="tiles mt-2" style={{ gridTemplateColumns: "repeat(3, 1fr)" }}>
+        <div className="tiles tiles-3 mt-2">
           <Tile value={porAprobar.length} label="Pendientes de aprobación" accent="var(--ds-color-yellow)" />
           <Tile value={ordenes.filter((o) => o.estado === "lanzado").length} label="Lanzadas" accent="var(--ds-color-green-100)" />
           <Tile value={ordenes.filter((o) => o.estado === "completado").length} label="Completadas" accent="var(--ds-color-green-200)" />
@@ -105,14 +105,14 @@ export default function AprobacionPage() {
                 <div className="ds-table-wrap" style={{ boxShadow: "none", border: "1.5px solid var(--ds-color-gray-100)" }}>
                   <table className="ds-table">
                     <thead>
-                      <tr><th>Tipo</th><th>Descripción</th><th>Almacén</th><th className="ds-num">Cantidad</th><th className="ds-num">Precio</th><th className="ds-num">Importe</th></tr>
+                      <tr><th className="hide-mobile">Tipo</th><th>Descripción</th><th className="hide-mobile">Almacén</th><th className="ds-num">Cantidad</th><th className="ds-num">Precio</th><th className="ds-num">Importe</th></tr>
                     </thead>
                     <tbody>
                       {o.lineas.map((l) => (
                         <tr key={l.id}>
-                          <td>{l.tipo === "cargo" ? <Badge tone="yellow">Cargo</Badge> : <Badge tone="gray">Artículo</Badge>}</td>
+                          <td className="hide-mobile">{l.tipo === "cargo" ? <Badge tone="yellow">Cargo</Badge> : <Badge tone="gray">Artículo</Badge>}</td>
                           <td>{l.descripcion}{l.pedidoNumero && <div className="ds-body-sm ds-muted">{l.pedidoNumero}</div>}</td>
-                          <td className="ds-muted ds-body-sm">{l.almacen}</td>
+                          <td className="ds-muted ds-body-sm hide-mobile">{l.almacen}</td>
                           <td className="ds-num">{num.format(l.cantidad)} {l.unidad}</td>
                           <td className="ds-num">{money(l.precioUnitario, o.currencyCode)}</td>
                           <td className="ds-num ds-strong">{money(ordenLineaImporte(l), o.currencyCode)}</td>
