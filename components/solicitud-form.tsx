@@ -40,6 +40,8 @@ export function SolicitudForm({
   inicial,
   guardar,
   textoBoton,
+  guardarSecundario,
+  textoBotonSecundario,
   onCancelar,
   obraPreset,
   clasifPreset,
@@ -48,6 +50,9 @@ export function SolicitudForm({
   inicial?: SolicitudInicial;
   guardar: (input: NewPedidoInput) => Promise<void>;
   textoBoton: string;
+  // Acción secundaria opcional (p.ej. "Crear y enviar a proveeduría" en la Matriz).
+  guardarSecundario?: (input: NewPedidoInput) => Promise<void>;
+  textoBotonSecundario?: string;
   onCancelar: () => void;
   // Presets para usar el form embebido (p.ej. modal de la Matriz), sin depender
   // de la URL. Si vienen, mandan sobre los query params.
@@ -434,7 +439,7 @@ export function SolicitudForm({
   const puedeGuardar = destinoOk && !!solicitante && lineas.length > 0 && lineasOk;
   const [guardando, setGuardando] = useState(false);
 
-  async function onGuardar() {
+  async function onGuardar(handler: (input: NewPedidoInput) => Promise<void> = guardar) {
     if (!puedeGuardar) {
       if (tipo === "material" && lineasSinObra > 0) toast(`Faltan ${lineasSinObra} línea(s) sin obra. Asignales la obra antes de guardar.`, "error");
       else if (tipo === "material" && lineas.some((l) => !(Number(l.cantidad) > 0))) toast("Hay líneas con cantidad en 0.", "error");
@@ -453,7 +458,7 @@ export function SolicitudForm({
       : tipo === "stock" ? (bodega?.nombre ?? almacenStock) : undefined;
     setGuardando(true);
     try {
-      await guardar({
+      await handler({
         tipoSolicitud: tipo,
         obraCodigo: headerObraCodigo,
         obraNombre: headerObraNombre,
@@ -709,7 +714,10 @@ export function SolicitudForm({
 
       <div className="row gap-3 mt-6" style={{ justifyContent: "flex-end" }}>
         <Button variant="outline" onClick={onCancelar}>Cancelar</Button>
-        <Button onClick={onGuardar} disabled={!puedeGuardar || guardando}>{guardando ? "Guardando…" : textoBoton}</Button>
+        {guardarSecundario && textoBotonSecundario && (
+          <Button variant="outline" onClick={() => onGuardar(guardarSecundario)} disabled={!puedeGuardar || guardando}>{textoBotonSecundario}</Button>
+        )}
+        <Button onClick={() => onGuardar()} disabled={!puedeGuardar || guardando}>{guardando ? "Guardando…" : textoBoton}</Button>
       </div>
     </>
   );

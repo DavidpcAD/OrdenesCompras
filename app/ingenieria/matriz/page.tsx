@@ -22,7 +22,7 @@ const LABEL: Record<string, string> = { ENTREGADO: "Entregado", COMPRADO: "Compr
 export default function MatrizPage() {
   const toast = useToast();
   const router = useRouter();
-  const { addPedido, pedidos } = useStore();
+  const { addPedido, pedidos, setPedidoEstado } = useStore();
   // Armar/ver el pedido SIN salir de la matriz: modal con el formulario prellenado.
   const [armar, setArmar] = useState<{ idObra: number; obra: string; clasif: number; nombre: string } | null>(null);
   const [etapas, setEtapas] = useState<Etapa[]>([]); const [partidas, setPartidas] = useState<Partida[]>([]);
@@ -185,6 +185,14 @@ export default function MatrizPage() {
                         <span className="ds-body-sm"><span className="ds-strong">{p.numero}</span> · {p.lineas.length} línea(s)</span>
                         <span className="row gap-2" style={{ alignItems: "center" }}>
                           <Badge tone={b.tone}>{b.label}</Badge>
+                          {p.estado === "borrador" && (
+                            <Button variant="outline" size="sm" onClick={async () => {
+                              await setPedidoEstado(p.id, "aprobado");
+                              setCeldas((cs) => [...cs, { idObra: armar.idObra, idClasificacion: armar.clasif, estado: "PEDIDO" }]);
+                              toast(`${p.numero} enviada a proveeduría`, "success");
+                              setArmar(null);
+                            }}>Enviar a proveeduría</Button>
+                          )}
                           <Button variant="ghost" size="sm" onClick={() => router.push(`/ingenieria/${p.id}`)}>Ver / editar</Button>
                         </span>
                       </div>
@@ -198,12 +206,22 @@ export default function MatrizPage() {
                 compact
                 obraPreset={armar.obra}
                 clasifPreset={armar.clasif}
-                textoBoton="Crear solicitud"
+                textoBoton="Crear y enviar a proveeduría"
                 onCancelar={() => setArmar(null)}
                 guardar={async (input) => {
+                  // Primario: crear el pedido y enviarlo a proveeduría de una vez.
+                  const p = await addPedido(input);
+                  await setPedidoEstado(p.id, "aprobado");
+                  setCeldas((cs) => [...cs, { idObra: armar.idObra, idClasificacion: armar.clasif, estado: "PEDIDO" }]);
+                  toast(`Solicitud ${p.numero} creada y enviada a proveeduría`, "success");
+                  setArmar(null);
+                }}
+                textoBotonSecundario="Guardar borrador"
+                guardarSecundario={async (input) => {
+                  // Secundario: dejarlo en borrador (aún sin enviar).
                   const p = await addPedido(input);
                   setCeldas((cs) => [...cs, { idObra: armar.idObra, idClasificacion: armar.clasif, estado: "BORRADOR" }]);
-                  toast(`Solicitud ${p.numero} creada`, "success");
+                  toast(`Borrador ${p.numero} guardado`, "success");
                   setArmar(null);
                 }}
               />
