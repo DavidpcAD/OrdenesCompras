@@ -508,6 +508,52 @@ export async function bcReleasePedido(orderNo: string): Promise<string> {
   return d?.value ?? "Released";
 }
 
+// Re-sincroniza PRECIO + VARIANTE de las líneas de un pedido YA creado en BC, para
+// reflejar correcciones hechas en la app después de crearlo (antes, "reintentar
+// lanzar" solo relanzaba la versión vieja). Empareja por número de artículo en
+// orden y solo hace PATCH de lo que cambió.
+// OJO: no verificado aún contra un pedido real con release fallido — probar en
+// el Sandbox (CP-003833) antes de confiar en producción.
+export async function bcResyncPedidoLines(orderNo: string, lineas: NuevaLineaBc[]): Promise<{ patched: number; sinMatch: string[] }> {
+  if (!orderNo) throw new Error("Falta el número de pedido de BC.");
+  const items = (lineas ?? []).filter((l) => l.itemNo && l.cantidad > 0);
+  if (!items.length) return { patched: 0, sinMatch: [] };
+  const cid = await getStdCompanyId();
+  const jsonHeaders = { "Content-Type": "application/json" };
+  // 1) Pedido por número -> id.
+  const filtro = `$filter=${encodeURIComponent(`number eq '${orderNo}'`)}&$select=id,number`;
+  const resPo = await bcFetch(`${stdRoot()}/companies(${cid})/purchaseOrders?${filtro}`, { cache: "no-store" });
+  if (!resPo.ok) throw new Error(`BC ${resPo.status} al buscar el pedido ${orderNo}.`);
+  const poId = ((await resPo.json()).value ?? [])[0]?.id;
+  if (!poId) throw new Error(`No se encontró el pedido ${orderNo} en BC.`);
+  // 2) Líneas existentes en BC.
+  const resLines = await bcFetch(`${stdRoot()}/companies(${cid})/purchaseOrders(${poId})/purchaseOrderLines?$select=id,lineType,lineObjectNumber,quantity,directUnitCost,itemVariantId`, { cache: "no-store" });
+  if (!resLines.ok) throw new Error(`BC ${resLines.status} al leer las líneas de ${orderNo}.`);
+  const bcLines: any[] = (await resLines.json()).value ?? [];
+  const usados = new Set<string>();
+  let patched = 0; const sinMatch: string[] = [];
+  for (const l of items) {
+    const bc = bcLines.find((b) => !usados.has(b.id) && String(b.lineObjectNumber) === String(l.itemNo) && /item/i.test(String(b.lineType)));
+    if (!bc) { sinMatch.push(l.itemNo); continue; }
+    usados.add(bc.id);
+    const patch: Record<string, unknown> = {};
+    if (l.precio && l.precio > 0 && Number(bc.directUnitCost) !== l.precio) patch.directUnitCost = l.precio;
+    if (l.variantCode) {
+      const vId = await getStdVariantId(l.itemNo, l.variantCode);
+      if (vId && bc.itemVariantId !== vId) patch.itemVariantId = vId;
+    }
+    if (!Object.keys(patch).length) continue;
+    const resP = await bcFetch(`${stdRoot()}/companies(${cid})/purchaseOrders(${poId})/purchaseOrderLines(${bc.id})`, {
+      method: "PATCH", cache: "no-store",
+      headers: { ...jsonHeaders, "If-Match": bc["@odata.etag"] ?? "*" },
+      body: JSON.stringify(patch),
+    });
+    if (!resP.ok) throw new Error(`BC ${resP.status} al actualizar la línea ${l.itemNo}: ${(await resP.text()).slice(0, 200)}`);
+    patched++;
+  }
+  return { patched, sinMatch };
+}
+
 // Registra (Recibir + Facturar) una factura parcial del pedido en BC con todos sus
 // movimientos contables, vía el web service custom AdelantePO_PostInvoice.
 // lines = cantidades recibidas en ESTA factura por item ({itemNo, qty}).

@@ -180,6 +180,11 @@ export default function ArmarOrdenPage() {
   // "Guardar como abierta": solo registra la orden local como borrador/abierta.
   async function crear(aprobar: boolean) {
     if (!puedeCrear) { toast("Seleccioná un proveedor.", "error"); return; }
+    // Precio obligatorio para enviar a aprobación: ninguna línea puede ir a BC en 0.
+    if (aprobar) {
+      const sinPrecio = rows.filter((r) => !(Number(r.precio) > 0)).length;
+      if (sinPrecio) { toast(`${sinPrecio} línea(s) sin precio. Poné el precio acordado antes de enviar a aprobación.`, "error"); return; }
+    }
     setGuardando(true);
     try {
     const ls: Omit<OrdenLinea, "id" | "cantidadRecibida" | "cantidadFacturada">[] = rows.map((r) => ({

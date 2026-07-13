@@ -29,6 +29,12 @@ export async function aprobarYLanzar(
     return { ok: true, tone: "success", message: `${orden.numero} aprobada y lanzada (sin envío a BC)` };
   }
 
+  // Precio obligatorio: ninguna línea puede ir a BC en 0 (BC la deja sin costo).
+  const sinPrecio = lineasBc.filter((l) => !(l.precio > 0));
+  if (sinPrecio.length) {
+    return { ok: false, tone: "error", message: `La orden tiene ${sinPrecio.length} línea(s) sin precio; no se envía a BC. Poné el precio en proveeduría antes de lanzar.` };
+  }
+
   // Si la orden YA se creó en BC en un intento previo (tiene bcNumber pero el
   // release falló), NO se crea otra: solo se REINTENTA el release de ese pedido.
   // Así no se acumulan pedidos duplicados en BC en cada reintento.
@@ -36,9 +42,12 @@ export async function aprobarYLanzar(
     let res: Response;
     let d: any = {};
     try {
-      res = await fetch("/api/bc/release", {
+      // Re-sincroniza las líneas (precio + variante) del pedido YA creado en BC y
+      // luego lanza. Así, si la orden se corrigió en la app después de crearse en
+      // BC, esas correcciones viajan a BC en vez de relanzar la versión vieja.
+      res = await fetch("/api/bc/relanzar", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ orderNo: orden.bcNumber }),
+        body: JSON.stringify({ orderNo: orden.bcNumber, lineas: lineasBc, flete }),
       });
       d = await res.json().catch(() => ({}));
     } catch (e: any) {
