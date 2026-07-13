@@ -390,10 +390,19 @@ h1, h2, h3, h4, p { margin: 0; }
 }
 .dt-check.is-checked { background: var(--ds-color-black); border-color: var(--ds-color-black); }
 
-/* Slide-to-confirm: empujoncito del grip en reposo para invitar a deslizar */
+/* Slide-to-confirm: handle de arrastre (3 barritas) + empujoncito en reposo */
+.stc-handle { display: inline-flex; align-items: center; gap: 3px; }
+.stc-handle i { width: 2.5px; height: 18px; border-radius: 2px; background: var(--ds-color-gray-300); }
 @keyframes stc-nudge { 0%, 100% { transform: translateX(0); } 25% { transform: translateX(-4px); } 75% { transform: translateX(4px); } }
 .stc-grip { animation: stc-nudge 1.8s ease-in-out infinite; }
-@media (prefers-reduced-motion: reduce) { .stc-grip { animation: none; } }
+/* Spinner mientras se lanza a BC */
+@keyframes stc-spin { to { transform: rotate(360deg); } }
+.stc-spinner {
+  width: 22px; height: 22px; border-radius: 50%;
+  border: 3px solid color-mix(in srgb, var(--ds-color-white) 45%, transparent);
+  border-top-color: var(--ds-color-white); animation: stc-spin .7s linear infinite;
+}
+@media (prefers-reduced-motion: reduce) { .stc-grip, .stc-spinner { animation: none; } }
 /* ocultar flechitas de los input number para que no corten el valor */
 .ds-cell-input[type=number]::-webkit-outer-spin-button,
 .ds-cell-input[type=number]::-webkit-inner-spin-button,
