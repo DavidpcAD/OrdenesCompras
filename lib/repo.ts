@@ -629,16 +629,18 @@ export type Clasificacion = { id: number; nombre: string; partidaId: number | nu
 
 export async function listWbs(): Promise<{ etapas: WbsEtapa[]; partidas: WbsPartida[]; subpartidas: WbsSubPartida[]; clasificaciones: Clasificacion[] }> {
   const pool = await getPool();
-  const [e, p, s, c] = await Promise.all([
+  // OJO: en esta base, dbo.partida usa la convención "boletas" (idPartida/idEtapa/
+  // esActivo) y NO existe dbo.sub_partidas. Aliaseamos las columnas de partida y las
+  // clasificaciones cuelgan solo de partida (sin sub-partida).
+  const [e, p, c] = await Promise.all([
     pool.request().query("SELECT id, codigo, nombre FROM dbo.etapa WHERE activo = 1 ORDER BY codigo"),
-    pool.request().query("SELECT id, codigo, nombre, etapa_id FROM dbo.partida WHERE activo = 1 ORDER BY codigo"),
-    pool.request().query("SELECT id, codigo, nombre, partida_id FROM dbo.sub_partidas WHERE activo = 1 ORDER BY codigo"),
+    pool.request().query("SELECT idPartida AS id, codigo, nombre, idEtapa AS etapa_id FROM dbo.partida WHERE esActivo = 1 ORDER BY codigo"),
     pool.request().query("SELECT id, nombre, partida_id, sub_partida_id FROM dbo.clasificacion WHERE activo = 1 ORDER BY nombre"),
   ]);
   return {
     etapas: e.recordset.map((r) => ({ id: r.id, codigo: String(r.codigo ?? ""), nombre: r.nombre ?? "" })),
     partidas: p.recordset.map((r) => ({ id: r.id, codigo: String(r.codigo ?? ""), nombre: r.nombre ?? "", etapaId: r.etapa_id ?? null })),
-    subpartidas: s.recordset.map((r) => ({ id: r.id, codigo: String(r.codigo ?? ""), nombre: r.nombre ?? "", partidaId: r.partida_id ?? null })),
+    subpartidas: [],
     clasificaciones: c.recordset.map((r) => ({ id: r.id, nombre: r.nombre ?? "", partidaId: r.partida_id ?? null, subPartidaId: r.sub_partida_id ?? null })),
   };
 }
