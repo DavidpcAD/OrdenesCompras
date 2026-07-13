@@ -17,9 +17,12 @@ export default function AprobacionPage() {
   const [aprobandoId, setAprobandoId] = useState<string | null>(null);
   const [sel, setSel] = useState<Set<string>>(new Set());
   const [lote, setLote] = useState(false);
+  const [abierto, setAbierto] = useState<Set<string>>(new Set());
 
   const porAprobar = ordenes.filter((o) => o.estado === "pendiente_aprobacion");
   const toggleSel = (id: string) => setSel((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  const toggleAbierto = (id: string) => setAbierto((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  const todasAbiertas = porAprobar.length > 0 && porAprobar.every((o) => abierto.has(o.id));
   const seleccionadas = porAprobar.filter((o) => sel.has(o.id));
 
   // Crea y lanza en BC; solo pasa a "lanzado" si BC de verdad lo hizo (lib/aprobar.ts).
@@ -68,12 +71,19 @@ export default function AprobacionPage() {
 
         {porAprobar.length > 0 && (
           <div className="row row--between wrap gap-3 mt-6" style={{ alignItems: "center", padding: "10px 14px", borderRadius: 12, background: "color-mix(in srgb, var(--ds-color-green-100) 8%, #fff)", border: "1.5px solid var(--ds-color-gray-100)" }}>
-            <label className="row gap-2" style={{ alignItems: "center", cursor: "pointer" }}>
-              <input type="checkbox" checked={sel.size > 0 && sel.size === porAprobar.length}
-                ref={(el) => { if (el) el.indeterminate = sel.size > 0 && sel.size < porAprobar.length; }}
-                onChange={(e) => setSel(e.target.checked ? new Set(porAprobar.map((o) => o.id)) : new Set())} />
-              <span className="ds-body-sm ds-strong">Seleccionar todas ({porAprobar.length})</span>
-            </label>
+            <div className="row gap-4 wrap" style={{ alignItems: "center" }}>
+              <label className="row gap-2" style={{ alignItems: "center", cursor: "pointer" }}>
+                <input type="checkbox" checked={sel.size > 0 && sel.size === porAprobar.length}
+                  ref={(el) => { if (el) el.indeterminate = sel.size > 0 && sel.size < porAprobar.length; }}
+                  onChange={(e) => setSel(e.target.checked ? new Set(porAprobar.map((o) => o.id)) : new Set())} />
+                <span className="ds-body-sm ds-strong">Seleccionar todas ({porAprobar.length})</span>
+              </label>
+              <button type="button" className="ds-body-sm ds-strong"
+                onClick={() => setAbierto(todasAbiertas ? new Set() : new Set(porAprobar.map((o) => o.id)))}
+                style={{ background: "none", border: 0, padding: 0, cursor: "pointer", color: "var(--ds-color-green-200)", textDecoration: "underline" }}>
+                {todasAbiertas ? "Colapsar todas" : "Expandir todas"}
+              </button>
+            </div>
             <Button onClick={aprobarSeleccionadas} disabled={sel.size === 0 || lote}>
               {lote ? "Lanzando…" : `Aprobar y lanzar seleccionadas (${sel.size})`}
             </Button>
@@ -85,47 +95,52 @@ export default function AprobacionPage() {
           {porAprobar.map((o) => {
             const articulos = o.lineas.filter((l) => l.tipo === "articulo");
             const total = o.lineas.reduce((s, l) => s + ordenLineaImporte(l), 0);
+            const open = abierto.has(o.id);
             return (
               <Card key={o.id}>
-                <div className="row row--between wrap gap-4" style={{ marginBottom: 12 }}>
-                  <div className="col" style={{ gap: 4 }}>
+                <div className="row row--between wrap gap-4">
+                  <button type="button" onClick={() => toggleAbierto(o.id)} aria-expanded={open}
+                    className="col" style={{ gap: 4, flex: "1 1 240px", minWidth: 200, background: "none", border: 0, padding: 0, textAlign: "left", cursor: "pointer" }}>
                     <div className="row gap-3" style={{ alignItems: "center" }}>
-                      <input type="checkbox" checked={sel.has(o.id)} onChange={() => toggleSel(o.id)} title="Seleccionar para aprobar en lote" style={{ width: 16, height: 16 }} />
+                      <span aria-hidden style={{ display: "inline-block", transition: "transform .15s", transform: open ? "rotate(90deg)" : "none", color: "var(--ds-color-gray-300)", fontSize: 14 }}>▸</span>
+                      <span
+                        onClick={(e) => { e.stopPropagation(); toggleSel(o.id); }}
+                        style={{ display: "inline-flex", alignItems: "center" }}>
+                        <input type="checkbox" checked={sel.has(o.id)} onChange={() => toggleSel(o.id)} onClick={(e) => e.stopPropagation()} title="Seleccionar para aprobar en lote" style={{ width: 16, height: 16 }} />
+                      </span>
                       <span className="ds-subtitle">{o.numero}</span>
                       <Badge tone="yellow">Pendiente de aprobación</Badge>
                     </div>
                     <span className="ds-muted ds-label">{o.proveedorNo ?? prov(o.proveedorId)?.code} · {o.proveedorNombre ?? prov(o.proveedorId)?.nombre} · {formatDate(o.fecha)}</span>
-                  </div>
-                  <div className="row gap-3">
+                    <span className="ds-muted ds-body-sm">{articulos.length} línea(s) · Total <span className="ds-strong">{money(total, o.currencyCode)}</span></span>
+                  </button>
+                  <div className="row gap-3" style={{ alignItems: "flex-start" }}>
                     <Button variant="red" onClick={() => { setMotivo(""); setRechObj({ id: o.id, numero: o.numero }); }} disabled={aprobandoId === o.id}>Rechazar</Button>
                     <Button onClick={() => aprobar(o)} disabled={aprobandoId === o.id}>{aprobandoId === o.id ? "Lanzando…" : "Aprobar y lanzar"}</Button>
                   </div>
                 </div>
 
-                <div className="ds-table-wrap" style={{ boxShadow: "none", border: "1.5px solid var(--ds-color-gray-100)" }}>
-                  <table className="ds-table">
-                    <thead>
-                      <tr><th className="hide-mobile">Tipo</th><th>Descripción</th><th className="hide-mobile">Almacén</th><th className="ds-num">Cantidad</th><th className="ds-num">Precio</th><th className="ds-num">Importe</th></tr>
-                    </thead>
-                    <tbody>
-                      {o.lineas.map((l) => (
-                        <tr key={l.id}>
-                          <td className="hide-mobile">{l.tipo === "cargo" ? <Badge tone="yellow">Cargo</Badge> : <Badge tone="gray">Artículo</Badge>}</td>
-                          <td>{l.descripcion}{l.pedidoNumero && <div className="ds-body-sm ds-muted">{l.pedidoNumero}</div>}</td>
-                          <td className="ds-muted ds-body-sm hide-mobile">{l.almacen}</td>
-                          <td className="ds-num">{num.format(l.cantidad)} {l.unidad}</td>
-                          <td className="ds-num">{money(l.precioUnitario, o.currencyCode)}</td>
-                          <td className="ds-num ds-strong">{money(ordenLineaImporte(l), o.currencyCode)}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-
-                <div className="row mt-4" style={{ justifyContent: "flex-end" }}>
-                  <span className="ds-muted ds-label" style={{ marginRight: 12 }}>{articulos.length} línea(s) · Total</span>
-                  <span className="ds-subtitle">{money(total, o.currencyCode)}</span>
-                </div>
+                {open && (
+                  <div className="ds-table-wrap mt-3" style={{ boxShadow: "none", border: "1.5px solid var(--ds-color-gray-100)" }}>
+                    <table className="ds-table">
+                      <thead>
+                        <tr><th className="hide-mobile">Tipo</th><th>Descripción</th><th className="hide-mobile">Almacén</th><th className="ds-num">Cantidad</th><th className="ds-num">Precio</th><th className="ds-num">Importe</th></tr>
+                      </thead>
+                      <tbody>
+                        {o.lineas.map((l) => (
+                          <tr key={l.id}>
+                            <td className="hide-mobile">{l.tipo === "cargo" ? <Badge tone="yellow">Cargo</Badge> : <Badge tone="gray">Artículo</Badge>}</td>
+                            <td>{l.descripcion}{l.pedidoNumero && <div className="ds-body-sm ds-muted">{l.pedidoNumero}</div>}</td>
+                            <td className="ds-muted ds-body-sm hide-mobile">{l.almacen}</td>
+                            <td className="ds-num">{num.format(l.cantidad)} {l.unidad}</td>
+                            <td className="ds-num">{money(l.precioUnitario, o.currencyCode)}</td>
+                            <td className="ds-num ds-strong">{money(ordenLineaImporte(l), o.currencyCode)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
               </Card>
             );
           })}
