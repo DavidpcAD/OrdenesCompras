@@ -460,9 +460,8 @@ h1, h2, h3, h4, p { margin: 0; }
 .tile__label { color: var(--ds-color-gray-400); font-size: var(--ds-font-size-label); }
 .tile__accent { width: 36px; height: 4px; border-radius: 2px; background: var(--ds-color-green-100); }
 /* tile clickeable (filtro) */
-.tile--clickable { cursor: pointer; text-align: left; border: 1.5px solid transparent; font-family: inherit; transition: border-color .12s ease, box-shadow .12s ease, transform .06s ease; }
+.tile--clickable { cursor: pointer; text-align: left; border: 1.5px solid transparent; font-family: inherit; transition: border-color .12s ease, box-shadow .12s ease; }
 .tile--clickable:hover { border-color: var(--ds-color-gray-200); }
-.tile--clickable:active { transform: translateY(1px); }
 .tile--clickable.is-active { border-color: var(--tile-accent, var(--ds-color-green-100)); box-shadow: 0 0 0 3px color-mix(in srgb, var(--tile-accent, var(--ds-color-green-100)) 22%, transparent); }
 
 /* segmented totals box */

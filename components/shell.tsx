@@ -56,10 +56,10 @@ const ROLE_META: Record<Role, { label: string; persona: string; home: string; na
     ],
   },
   facturacion: {
-    label: "Bodega", persona: "Kattya", home: "/facturacion/todas", color: "var(--ds-color-red-100)",
+    label: "Bodega", persona: "Kattya", home: "/facturacion", color: "var(--ds-color-red-100)",
     nav: [
-      { href: "/facturacion/todas", label: "Todas las órdenes", icon: IconReceipt },
       { href: "/facturacion", label: "Por recibir", icon: IconDelivery },
+      { href: "/facturacion/todas", label: "Todas las órdenes", icon: IconReceipt },
       { href: "/facturacion/archivo", label: "Archivo", icon: IconFolder },
     ],
   },
