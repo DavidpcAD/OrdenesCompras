@@ -68,7 +68,8 @@ export function SolicitudForm({
   const search = useSearchParams();
   const clasifParam = clasifPreset != null ? String(clasifPreset) : search.get("clasif");
   const obraParam = obraPreset ?? search.get("obra");
-  const [idClasificacion] = useState<number | null>(clasifParam ? Number(clasifParam) : null);
+  // Reactivo (no useState): si viene clasifPreset de la Matriz, siempre se manda.
+  const idClasificacion: number | null = clasifParam ? Number(clasifParam) : null;
 
   const [bcArt, setBcArt] = useState<Articulo[] | null>(null);
   const [bcObras, setBcObras] = useState<Obra[] | null>(null);
@@ -216,10 +217,14 @@ export function SolicitudForm({
   // y no se puede cambiar por línea.
   useEffect(() => {
     if (!obraParam || tipo !== "material") return;
+    // Forzamos el CÓDIGO del preset aunque la obra no esté en el catálogo del form
+    // (la Matriz usa dbo.Obra.numeroObra, que puede no venir en el catálogo BC/seed).
+    // Así el encabezado del pedido queda con la obra real y no "(varias)".
     const o = catObras.find((x) => x.codigo === obraParam);
-    if (!o) return;
-    setLineas((ls) => (ls.some((l) => l.obraCodigo !== o.codigo)
-      ? ls.map((l) => ({ ...l, obraCodigo: o.codigo, obraNombre: o.nombre }))
+    const code = o?.codigo ?? obraParam;
+    const nombre = o?.nombre ?? "";
+    setLineas((ls) => (ls.some((l) => l.obraCodigo !== code)
+      ? ls.map((l) => ({ ...l, obraCodigo: code, obraNombre: nombre }))
       : ls));
   }, [obraParam, catObras, lineas, tipo]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -244,16 +249,19 @@ export function SolicitudForm({
   }
   const qaArticulo = catArticulos.find((a) => a.id === qaArticuloId);
   const variantePendiente = qaVariantes.length > 0 && !qaVariante;
-  const puedeAgregar = !!qaArticuloId && Number(qaCantidad) > 0 && (tipo === "material" ? !!obraTodas : true) && !variantePendiente;
+  // En material se exige obra; pero si viene fija por preset (Matriz), esa alcanza.
+  const puedeAgregar = !!qaArticuloId && Number(qaCantidad) > 0 && (tipo === "material" ? (!!obraTodas || !!obraParam) : true) && !variantePendiente;
 
   function agregar() {
     if (!puedeAgregar) return;
     const obra = catObras.find((o) => o.id === obraTodas);
     const variante = qaVariantes.find((v) => v.code === qaVariante);
+    // Si la obra viene fija por preset (Matriz) y no está en el catálogo, usamos el código del preset.
+    const obraCode = tipo === "material" ? (obra?.codigo ?? obraParam ?? "") : "";
     setLineas((ls) => [{
       key: Math.random().toString(36).slice(2),
       articuloId: qaArticuloId,
-      obraCodigo: tipo === "material" ? (obra?.codigo ?? "") : "",
+      obraCodigo: obraCode,
       obraNombre: tipo === "material" ? (obra?.nombre ?? "") : "",
       variantCode: qaVariante,
       variantNombre: variante?.descripcion ?? "",
