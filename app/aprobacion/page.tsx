@@ -5,6 +5,7 @@ import { AppShell } from "@/components/shell";
 import { Badge, Button, Card, Modal, Textarea, Tile, useToast } from "@/components/ui";
 import { useStore } from "@/lib/store";
 import { aprobarYLanzar } from "@/lib/aprobar";
+import { SlideConfirm } from "@/components/slide-confirm";
 import { money, formatDate, num, ordenLineaImporte } from "@/lib/helpers";
 import type { Orden } from "@/lib/types";
 
@@ -114,9 +115,12 @@ export default function AprobacionPage() {
                     <span className="ds-muted ds-label">{o.proveedorNo ?? prov(o.proveedorId)?.code} · {o.proveedorNombre ?? prov(o.proveedorId)?.nombre} · {formatDate(o.fecha)}</span>
                     <span className="ds-muted ds-body-sm">{articulos.length} línea(s) · Total <span className="ds-strong">{money(total, o.currencyCode)}</span></span>
                   </button>
-                  <div className="row gap-3" style={{ alignItems: "flex-start" }}>
-                    <Button variant="red" onClick={() => { setMotivo(""); setRechObj({ id: o.id, numero: o.numero }); }} disabled={aprobandoId === o.id}>Rechazar</Button>
-                    <Button onClick={() => aprobar(o)} disabled={aprobandoId === o.id}>{aprobandoId === o.id ? "Lanzando…" : "Aprobar y lanzar"}</Button>
+                  <div style={{ flex: "1 1 320px", minWidth: 260, maxWidth: 460 }}>
+                    <SlideConfirm
+                      busy={aprobandoId === o.id}
+                      onApprove={() => aprobar(o)}
+                      onReject={() => { setMotivo(""); setRechObj({ id: o.id, numero: o.numero }); }}
+                    />
                   </div>
                 </div>
 

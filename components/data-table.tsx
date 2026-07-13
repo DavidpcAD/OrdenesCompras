@@ -1,13 +1,24 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  useReactTable, getCoreRowModel, getSortedRowModel, getFilteredRowModel, getPaginationRowModel, flexRender,
-  type ColumnDef, type SortingState, type ColumnFiltersState, type VisibilityState, type ColumnOrderState, type PaginationState,
+  useReactTable, getCoreRowModel, getSortedRowModel, getFilteredRowModel, getPaginationRowModel,
+  getFacetedRowModel, getFacetedUniqueValues, flexRender,
+  type Column, type ColumnDef, type FilterFn, type SortingState, type ColumnFiltersState, type VisibilityState, type ColumnOrderState, type PaginationState,
 } from "@tanstack/react-table";
 import { Button, Card, Input, Select } from "@/components/ui";
 import { IconTable, IconGrid } from "@/components/icons";
 import { useStore } from "@/lib/store";
+
+// Texto plano de un valor de celda (para opciones y comparación de filtro).
+const asText = (v: unknown): string => v == null ? "" : String(v);
+
+// Filtro multi-selección: el valor del filtro es un arreglo de valores permitidos.
+// Vacío/undefined = sin filtro (todas). Coincide si el texto de la celda está en el set.
+const multiFilter: FilterFn<any> = (row, colId, value) => {
+  if (!value || (Array.isArray(value) && value.length === 0)) return true;
+  return (value as string[]).includes(asText(row.getValue(colId)));
+};
 
 // Motor de tabla reutilizable (TanStack, headless) con el design system de la app.
 // Vista Tabla o Grid, ordenar, filtro por columna, búsqueda global, mostrar/ocultar
@@ -34,7 +45,11 @@ export function DataTable<T>({
   modoInicial?: "tabla" | "grid";
 }) {
   const { usuario } = useStore();
+  // Inyecta el filtro multi-selección a las columnas que no traigan uno propio.
+  const cols = useMemo(() => columns.map((c) => (c.filterFn ? c : { ...c, filterFn: multiFilter })), [columns]);
   const [sorting, setSorting] = useState<SortingState>([]);
+  const [filterCol, setFilterCol] = useState<string | null>(null);
+  const [filterAnchor, setFilterAnchor] = useState<{ left: number; top: number }>({ left: 0, top: 0 });
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
   const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({});
   const [columnOrder, setColumnOrder] = useState<ColumnOrderState>(() => columns.map((c) => c.id!).filter(Boolean));
@@ -44,7 +59,7 @@ export function DataTable<T>({
   const [modo, setModo] = useState<"tabla" | "grid">(modoInicial);
 
   const table = useReactTable({
-    data, columns,
+    data, columns: cols,
     state: { sorting, columnFilters, columnVisibility, columnOrder, globalFilter, pagination },
     onSortingChange: setSorting, onColumnFiltersChange: setColumnFilters, onColumnVisibilityChange: setColumnVisibility,
     onColumnOrderChange: setColumnOrder, onGlobalFilterChange: setGlobalFilter, onPaginationChange: setPagination,
@@ -52,7 +67,17 @@ export function DataTable<T>({
     getRowId: getRowId ? (row) => getRowId(row) : undefined,
     getCoreRowModel: getCoreRowModel(), getSortedRowModel: getSortedRowModel(),
     getFilteredRowModel: getFilteredRowModel(), getPaginationRowModel: getPaginationRowModel(),
+    getFacetedRowModel: getFacetedRowModel(), getFacetedUniqueValues: getFacetedUniqueValues(),
   });
+
+  // Abre el popover de filtro anclado bajo el botón de la columna.
+  function abrirFiltro(colId: string, btn: HTMLElement) {
+    if (filterCol === colId) { setFilterCol(null); return; }
+    const r = btn.getBoundingClientRect();
+    const left = Math.min(r.left, window.innerWidth - 330 - 12);
+    setFilterAnchor({ left: Math.max(12, left), top: r.bottom + 6 });
+    setFilterCol(colId);
+  }
 
   // ---- Vistas guardadas (SQL) ----
   const [vistas, setVistas] = useState<Vista[]>([]);
@@ -223,13 +248,22 @@ export function DataTable<T>({
                   </tr>
                 ))}
                 <tr>
-                  {table.getVisibleLeafColumns().map((col) => (
-                    <th key={col.id} style={{ padding: "4px 6px", fontWeight: 400 }}>
-                      {col.getCanFilter() ? (
-                        <input className="ds-cell-input" value={(col.getFilterValue() as string) ?? ""} placeholder="Filtrar…" onChange={(e) => col.setFilterValue(e.target.value)} style={{ width: "100%", boxSizing: "border-box" }} />
-                      ) : null}
-                    </th>
-                  ))}
+                  {table.getVisibleLeafColumns().map((col) => {
+                    const activos = ((col.getFilterValue() as string[] | undefined) ?? []).length;
+                    return (
+                      <th key={col.id} style={{ padding: "4px 6px", fontWeight: 400 }}>
+                        {col.getCanFilter() ? (
+                          <button type="button" className={`dt-filter-btn${activos ? " is-active" : ""}${filterCol === col.id ? " is-open" : ""}`}
+                            onClick={(e) => { e.stopPropagation(); abrirFiltro(col.id, e.currentTarget); }}>
+                            <span className="dt-filter-btn__ico" aria-hidden>
+                              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 5h18l-7 8v6l-4 2v-8z" /></svg>
+                            </span>
+                            {activos ? `${activos} sel.` : "Filtrar"}
+                          </button>
+                        ) : null}
+                      </th>
+                    );
+                  })}
                 </tr>
               </thead>
               <tbody>
@@ -257,6 +291,63 @@ export function DataTable<T>({
           </Select>
           <Button variant="ghost" size="sm" onClick={() => table.previousPage()} disabled={!table.getCanPreviousPage()}>‹ Anterior</Button>
           <Button variant="ghost" size="sm" onClick={() => table.nextPage()} disabled={!table.getCanNextPage()}>Siguiente ›</Button>
+        </div>
+      </div>
+
+      {/* Popover de filtro por columna (buscador + checkboxes) */}
+      {filterCol && (() => {
+        const col = table.getColumn(filterCol);
+        if (!col) return null;
+        return <ColumnFilterPopover col={col} label={labelDe(filterCol)} anchor={filterAnchor} onClose={() => setFilterCol(null)} />;
+      })()}
+    </>
+  );
+}
+
+// Popover de filtro estilo Adelante: cajita blanca flotante con buscador y lista
+// de opciones (valores distintos de la columna) como checkboxes multi-selección.
+// "Todos" limpia el filtro. Posición fija (evita recortes por el scroll horizontal).
+function ColumnFilterPopover<T>({ col, label, anchor, onClose }: {
+  col: Column<T, unknown>; label: string; anchor: { left: number; top: number }; onClose: () => void;
+}) {
+  const [q, setQ] = useState("");
+  const sel = new Set((col.getFilterValue() as string[] | undefined) ?? []);
+  const opciones = useMemo(() => {
+    const set = new Set<string>();
+    for (const k of col.getFacetedUniqueValues().keys()) { const s = asText(k); if (s !== "") set.add(s); }
+    return Array.from(set).sort((a, b) => a.localeCompare(b, "es", { numeric: true }));
+  }, [col]);
+  const visibles = opciones.filter((o) => o.toLowerCase().includes(q.toLowerCase()));
+  const todos = sel.size === 0;
+
+  const toggle = (val: string) => {
+    const next = new Set(sel);
+    next.has(val) ? next.delete(val) : next.add(val);
+    col.setFilterValue(next.size ? Array.from(next) : undefined);
+  };
+
+  return (
+    <>
+      <div className="dt-filter-scrim" onClick={onClose} />
+      <div className="dt-filter-pop" style={{ left: anchor.left, top: anchor.top }} onClick={(e) => e.stopPropagation()}>
+        <div className="dt-filter-pop__search">
+          <input autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder={`Buscar en ${label}…`} />
+        </div>
+        <div className="dt-filter-pop__list">
+          <button type="button" className="dt-filter-row" onClick={() => col.setFilterValue(undefined)}>
+            <span className={`dt-check${todos ? " is-checked" : ""}`} aria-hidden>{todos ? "✓" : ""}</span>
+            <span className="dt-strong">Todos</span>
+          </button>
+          {visibles.length === 0 && <div className="dt-filter-empty">Sin coincidencias</div>}
+          {visibles.map((opt) => {
+            const on = sel.has(opt);
+            return (
+              <button key={opt} type="button" className="dt-filter-row" onClick={() => toggle(opt)}>
+                <span className={`dt-check${on ? " is-checked" : ""}`} aria-hidden>{on ? "✓" : ""}</span>
+                <span>{opt}</span>
+              </button>
+            );
+          })}
         </div>
       </div>
     </>

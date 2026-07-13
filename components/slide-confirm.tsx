@@ -1,0 +1,179 @@
+"use client";
+
+import { useEffect, useRef, useState } from "react";
+
+// Slide-to-confirm BIDIRECCIONAL (inspirado en el DS "SlideToConfirm", pero con
+// dos direcciones). Deslizar a la DERECHA confirma la acción "aprobar" (verde);
+// a la IZQUIERDA confirma "rechazar" (rojo). El track negro muestra las dos
+// etiquetas atenuadas; al arrastrar hacia un lado esa zona se ilumina. Pasado el
+// umbral y al soltar, se dispara el callback correspondiente. Funciona con mouse
+// y con touch (pointer events + pointer capture).
+
+type Dir = "right" | "left";
+
+export function SlideConfirm({
+  onApprove,
+  onReject,
+  approveLabel = "Aprobar y lanzar",
+  rejectLabel = "Rechazar",
+  disabled = false,
+  busy = false,
+  height = 68,
+  knobWidth = 78,
+  threshold = 0.7,
+}: {
+  onApprove: () => void;
+  onReject: () => void;
+  approveLabel?: string;
+  rejectLabel?: string;
+  disabled?: boolean;
+  busy?: boolean;
+  height?: number;
+  knobWidth?: number;
+  threshold?: number;
+}) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [maxDrag, setMaxDrag] = useState(0);
+  const [dragX, setDragX] = useState(0);
+  const [dragging, setDragging] = useState(false);
+  const [committed, setCommitted] = useState<Dir | null>(null);
+  const startRef = useRef(0);
+
+  // maxDrag = mitad del recorrido libre a cada lado.
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const update = () => setMaxDrag(Math.max(0, (el.getBoundingClientRect().width - knobWidth) / 2));
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [knobWidth]);
+
+  const locked = disabled || busy || committed !== null;
+  const progress = maxDrag > 0 ? Math.min(1, Math.abs(dragX) / maxDrag) : 0;
+  const dir: Dir | null = dragX > 4 ? "right" : dragX < -4 ? "left" : null;
+
+  const rubber = (raw: number) => {
+    if (raw > maxDrag) return maxDrag + (raw - maxDrag) * 0.2;
+    if (raw < -maxDrag) return -maxDrag + (raw + maxDrag) * 0.2;
+    return raw;
+  };
+
+  const onPointerDown = (e: React.PointerEvent) => {
+    if (locked) return;
+    (e.target as Element).setPointerCapture?.(e.pointerId);
+    startRef.current = e.clientX - dragX;
+    setDragging(true);
+  };
+  const onPointerMove = (e: React.PointerEvent) => {
+    if (!dragging || locked) return;
+    setDragX(rubber(e.clientX - startRef.current));
+  };
+  const onPointerUp = (e: React.PointerEvent) => {
+    if (!dragging) return;
+    setDragging(false);
+    try { (e.target as Element).releasePointerCapture?.(e.pointerId); } catch { /* noop */ }
+    if (locked) return;
+    const p = maxDrag > 0 ? Math.abs(dragX) / maxDrag : 0;
+    if (p >= threshold && dir) commit(dir);
+    else setDragX(0);
+  };
+
+  function commit(d: Dir) {
+    setCommitted(d);
+    setDragX(d === "right" ? maxDrag : -maxDrag);
+    // Pequeña espera para que se vea el estado confirmado antes de disparar.
+    window.setTimeout(() => {
+      if (d === "right") onApprove(); else onReject();
+      // El rechazo abre un modal (motivo); la aprobación es async en el padre.
+      // Reseteamos el slider para dejarlo listo si el padre no lo desmonta.
+      setCommitted(null);
+      setDragX(0);
+    }, 320);
+  }
+
+  // Opacidad de cada zona: base tenue + sube con el progreso hacia ese lado.
+  const rightOpacity = dir === "right" ? 0.25 + progress * 0.75 : 0.16;
+  const leftOpacity = dir === "left" ? 0.25 + progress * 0.75 : 0.16;
+  const trans = dragging ? "none" : "transform .28s cubic-bezier(.22,1,.36,1), opacity .2s ease";
+
+  const knobLeft = maxDrag + dragX; // centro en reposo (maxDrag), se mueve con dragX
+
+  return (
+    <div
+      ref={containerRef}
+      style={{
+        position: "relative",
+        width: "100%",
+        height,
+        borderRadius: 18,
+        overflow: "hidden",
+        background: "var(--ds-color-black)",
+        touchAction: "none",
+        userSelect: "none",
+        opacity: disabled ? 0.5 : 1,
+      }}
+    >
+      {/* Zona izquierda (rechazar / rojo) */}
+      <div style={{
+        position: "absolute", left: 0, top: 0, bottom: 0, width: "50%",
+        background: "var(--ds-color-red-100)", opacity: leftOpacity, transition: trans,
+      }} />
+      {/* Zona derecha (aprobar / verde) */}
+      <div style={{
+        position: "absolute", right: 0, top: 0, bottom: 0, width: "50%",
+        background: "var(--ds-color-green-100)", opacity: rightOpacity, transition: trans,
+      }} />
+
+      {/* Etiqueta izquierda */}
+      <div style={{
+        position: "absolute", left: 16, top: 0, bottom: 0, display: "flex", alignItems: "center", gap: 6,
+        color: "var(--ds-color-white)", fontWeight: 600, fontSize: 14,
+        opacity: committed === "right" ? 0 : dir === "left" ? 1 : 0.85, transition: trans, pointerEvents: "none",
+      }}>
+        <span aria-hidden style={{ fontSize: 18 }}>‹</span>{rejectLabel}
+      </div>
+      {/* Etiqueta derecha */}
+      <div style={{
+        position: "absolute", right: 16, top: 0, bottom: 0, display: "flex", alignItems: "center", gap: 6,
+        color: dir === "right" || committed === "right" ? "var(--ds-color-black)" : "var(--ds-color-white)",
+        fontWeight: 600, fontSize: 14,
+        opacity: committed === "left" ? 0 : dir === "right" ? 1 : 0.85, transition: trans, pointerEvents: "none",
+      }}>
+        {approveLabel}<span aria-hidden style={{ fontSize: 18 }}>›</span>
+      </div>
+
+      {/* Perilla */}
+      <div
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={onPointerUp}
+        onPointerCancel={onPointerUp}
+        style={{
+          position: "absolute", top: 6, bottom: 6, width: knobWidth,
+          transform: `translateX(${knobLeft}px)`, transition: trans,
+          borderRadius: 13,
+          background: committed === "left" ? "var(--ds-color-red-100)"
+            : committed === "right" ? "var(--ds-color-green-200)"
+            : "var(--ds-color-white)",
+          display: "flex", alignItems: "center", justifyContent: "center", gap: 2,
+          cursor: locked ? "default" : dragging ? "grabbing" : "grab",
+          boxShadow: dragging ? "0 6px 14px rgba(0,0,0,.28)" : "0 2px 6px rgba(0,0,0,.2)",
+          color: committed ? "var(--ds-color-white)" : "var(--ds-color-black)",
+        }}
+      >
+        {busy ? (
+          <span style={{ fontSize: 13, fontWeight: 700 }}>…</span>
+        ) : committed === "right" ? (
+          <span aria-hidden style={{ fontSize: 22, fontWeight: 700 }}>✓</span>
+        ) : committed === "left" ? (
+          <span aria-hidden style={{ fontSize: 20, fontWeight: 700 }}>✕</span>
+        ) : (
+          <span aria-hidden className={!dragging ? "stc-grip" : undefined}
+            style={{ fontSize: 20, fontWeight: 700, letterSpacing: -2, color: "var(--ds-color-gray-300)" }}>‹›</span>
+        )}
+      </div>
+    </div>
+  );
+}
