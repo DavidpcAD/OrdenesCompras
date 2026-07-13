@@ -217,6 +217,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
           id: uid(), numero, tipoSolicitud: input.tipoSolicitud,
           obraCodigo: input.obraCodigo, obraNombre: input.obraNombre,
           maquinaNo: input.maquinaNo, maquinaNombre: input.maquinaNombre,
+          idClasificacion: input.idClasificacion ?? null,
           solicitante: input.solicitante, fecha: todayISO(), estado: "borrador",
           prioridad: input.prioridad, notas: input.notas, loteRef: input.loteRef,
           lineas: input.lineas.map((l) => ({ ...l, id: uid(), cantidadOrdenada: 0 })),
