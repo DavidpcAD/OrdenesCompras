@@ -14,7 +14,7 @@ const NOMBRE_POR_CODIGO: Record<string, string> = {
   // pedido
   borrador: "Borrador", aprobado: "Aprobado", en_orden: "En orden", cerrado: "Cerrado",
   // orden
-  abierto: "Abierto", pendiente_aprobacion: "Pendiente de aprobación", lanzado: "Lanzado", completado: "Completado",
+  abierto: "Abierto", pendiente_aprobacion: "Pendiente de aprobación", rechazado: "Rechazado", lanzado: "Lanzado", completado: "Completado",
 };
 const CODIGO_POR_NOMBRE: Record<string, string> = Object.fromEntries(
   Object.entries(NOMBRE_POR_CODIGO).map(([c, n]) => [n, c])

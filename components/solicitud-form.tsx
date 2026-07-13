@@ -18,6 +18,11 @@ const SOLICITANTES = ["Laura Ureña", "Loana", "Michael Thames", "Roger Solano"]
 // ---- Plantillas (persistidas en SQL: dbo.PlantillaSolicitud) ----
 type PlantillaLinea = { code: string; cantidad: number; obraCodigo: string };
 type Plantilla = { id: number; nombre: string; creadoPor: string; idClasificacion?: number | null; lineas: PlantillaLinea[] };
+// WBS para filtrar plantillas por etapa/partida.
+type WbsNodo = { id: number; codigo: string; nombre: string };
+type WbsPartida = { id: number; codigo: string; nombre: string; etapaId: number | null };
+type WbsSubPartida = { id: number; codigo: string; nombre: string; partidaId: number | null };
+type WbsClasif = { id: number; nombre: string; partidaId: number | null; subPartidaId: number | null };
 const normTxt = (v: unknown) => String(v ?? "").trim().toUpperCase();
 
 export interface SolicitudInicial {
@@ -129,10 +134,12 @@ export function SolicitudForm({
     if (inicial?.tipoSolicitud === "stock" && inicial.obraCodigo && !almacenStock) setAlmacenStock(inicial.obraCodigo);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const catalogo = useMemo(
-    () => catArticulos.filter((a) => (tipo === "repuesto" ? a.code.startsWith("R") : !a.code.startsWith("R"))),
-    [catArticulos, tipo]
-  );
+  // Catálogo de ítems. La antigua convención "código empieza con R = repuesto" NO
+  // existe en el catálogo real de BC (los ítems son M01-…, M13-…), así que dejaba
+  // el buscador de Repuesto vacío. Mostramos el catálogo completo para todos los
+  // tipos; el tipo define el DESTINO (obra/máquina/bodega), no qué ítems se pueden
+  // pedir. (Si más adelante hay una categoría de BC para repuestos, se filtra acá.)
+  const catalogo = catArticulos;
 
   // ---- alta rápida ----
   const [qaArticuloId, setQaArticuloId] = useState("");
@@ -152,6 +159,10 @@ export function SolicitudForm({
   const [buscarPlantilla, setBuscarPlantilla] = useState("");
   const [plantillaCargada, setPlantillaCargada] = useState<string>("");
   const [obraTodas, setObraTodas] = useState("");
+  // Filtros de plantillas por etapa/partida (cuando hay muchas). Requiere el WBS.
+  const [fEtapaPl, setFEtapaPl] = useState("");
+  const [fPartidaPl, setFPartidaPl] = useState("");
+  const [wbs, setWbs] = useState<{ etapas: WbsNodo[]; partidas: WbsPartida[]; subpartidas: WbsSubPartida[]; clasificaciones: WbsClasif[] }>({ etapas: [], partidas: [], subpartidas: [], clasificaciones: [] });
   async function recargarPlantillas() {
     try {
       const r = await fetch("/api/plantillas");
@@ -161,6 +172,20 @@ export function SolicitudForm({
     } catch { /* sin DB, queda vacío */ }
   }
   useEffect(() => { recargarPlantillas(); }, []);
+  useEffect(() => {
+    fetch("/api/clasificaciones").then((r) => (r.ok ? r.json() : null)).then((d) => {
+      if (d) setWbs({ etapas: d.etapas ?? [], partidas: d.partidas ?? [], subpartidas: d.subpartidas ?? [], clasificaciones: d.clasificaciones ?? [] });
+    }).catch(() => { /* sin WBS, filtros vacíos */ });
+  }, []);
+  // clasificación -> partida/etapa (para filtrar y etiquetar plantillas).
+  const ctxDeClasPl = (idClas?: number | null) => {
+    const c = idClas != null ? wbs.clasificaciones.find((x) => x.id === idClas) : undefined;
+    const sub = c?.subPartidaId ? wbs.subpartidas.find((s) => s.id === c.subPartidaId) : undefined;
+    const partida = c ? wbs.partidas.find((p) => p.id === (c.partidaId ?? sub?.partidaId)) : undefined;
+    const etapa = wbs.etapas.find((e) => e.id === partida?.etapaId);
+    return { partida, etapa };
+  };
+  const partidasDeEtapaPl = useMemo(() => wbs.partidas.filter((p) => !fEtapaPl || String(p.etapaId) === fEtapaPl), [wbs.partidas, fEtapaPl]);
   // Prefill desde la Matriz: carga la plantilla de esa clasificación y fija la obra.
   useEffect(() => {
     if (!clasifParam || plantillas.length === 0 || !catalogoCargado) return;
@@ -382,6 +407,14 @@ export function SolicitudForm({
     // En contexto de una clasificación (Matriz), SOLO las plantillas de esa clasificación.
     .filter((p) => idClasificacion == null || Number(p.idClasificacion) === Number(idClasificacion))
     .filter((p) => (filtroPlantilla && filtroPlantilla !== "*" ? p.creadoPor === filtroPlantilla : true))
+    // Filtros por etapa/partida (para acotar cuando hay muchas plantillas).
+    .filter((p) => {
+      if (!fEtapaPl && !fPartidaPl) return true;
+      const { etapa, partida } = ctxDeClasPl(p.idClasificacion);
+      if (fEtapaPl && String(etapa?.id) !== fEtapaPl) return false;
+      if (fPartidaPl && String(partida?.id) !== fPartidaPl) return false;
+      return true;
+    })
     .filter((p) => { const q = buscarPlantilla.trim().toLowerCase(); return !q || p.nombre.toLowerCase().includes(q); });
   const creadoresPlantillas = useMemo(
     () => Array.from(new Set(plantillas.map((p) => p.creadoPor).filter(Boolean))).sort(),
@@ -498,7 +531,7 @@ export function SolicitudForm({
           Buscá el {esMaterial ? "material, elegí la obra" : esRepuesto ? "repuesto" : "material"} y la cantidad, y agregalo. Se van sumando a la lista.
         </p>
 
-        {esMaterial && (
+        {(esMaterial || esStock) && (
           <div style={{ marginBottom: 16, borderRadius: 14, border: "1.5px solid var(--ds-color-gray-100)", background: "color-mix(in srgb, var(--ds-color-green-100) 6%, #fff)", overflow: "hidden" }}>
             {/* Encabezado: título + acciones de Excel */}
             <div className="row row--between wrap gap-2" style={{ alignItems: "center", padding: "10px 14px", borderBottom: "1.5px solid var(--ds-color-gray-100)", background: "color-mix(in srgb, var(--ds-color-green-100) 10%, #fff)" }}>
@@ -526,6 +559,22 @@ export function SolicitudForm({
                   {plantillas.length > 4 && (
                     <input className="ds-form-field__input" style={{ maxWidth: 180, height: 34 }} placeholder="Buscar plantilla…"
                       value={buscarPlantilla} onChange={(e) => setBuscarPlantilla(e.target.value)} />
+                  )}
+                  {!compact && wbs.etapas.length > 0 && (
+                    <>
+                      <div style={{ minWidth: 150 }}>
+                        <Select value={fEtapaPl} onChange={(e) => { setFEtapaPl(e.target.value); setFPartidaPl(""); }}>
+                          <option value="">Todas las etapas</option>
+                          {wbs.etapas.map((et) => <option key={et.id} value={et.id}>{et.codigo} · {et.nombre}</option>)}
+                        </Select>
+                      </div>
+                      <div style={{ minWidth: 170 }}>
+                        <Select value={fPartidaPl} onChange={(e) => setFPartidaPl(e.target.value)}>
+                          <option value="">Todas las partidas</option>
+                          {partidasDeEtapaPl.map((p) => <option key={p.id} value={p.id}>{p.codigo} · {p.nombre}</option>)}
+                        </Select>
+                      </div>
+                    </>
                   )}
                 </div>
                 {!compact && lineas.length > 0 && (

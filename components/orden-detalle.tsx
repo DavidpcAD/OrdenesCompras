@@ -16,11 +16,13 @@ export function OrdenDetalle({
   volverHref,
   volverLabel = "‹ Volver",
   acciones,
+  solicitudHref,
 }: {
   orden: Orden;
   volverHref: string;
   volverLabel?: string;
   acciones?: React.ReactNode;
+  solicitudHref?: (l: Orden["lineas"][number]) => string | null;
 }) {
   const { proveedores, recepciones } = useStore();
   const router = useRouter();
@@ -96,7 +98,7 @@ export function OrdenDetalle({
       </div>
 
       <Card style={{ padding: 0, overflow: "hidden" }}>
-        <OrderLinesTable orden={orden} />
+        <OrderLinesTable orden={orden} solicitudHref={solicitudHref} />
       </Card>
 
       <div className="row mt-6" style={{ justifyContent: "flex-end" }}>

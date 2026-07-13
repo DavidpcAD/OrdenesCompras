@@ -131,12 +131,16 @@ export default function ArmarOrdenPage() {
   // Agregar líneas de OTRAS solicitudes ya hechas (pendientes por ordenar) a la
   // orden que se está armando, sin salir de la página.
   const [addOpen, setAddOpen] = useState(false);
+  const [addF, setAddF] = useState({ pedido: "", articulo: "", destino: "" });
   const yaEnOrden = new Set(rows.map((r) => r.pedidoLineaId));
   const lineasDisponibles = pedidos
     .filter((p) => p.estado === "aprobado" || p.estado === "en_orden")
     .flatMap((p) => p.lineas
       .filter((l) => pedidoLineaPendiente(l) > 0 && !yaEnOrden.has(l.id))
       .map((l) => ({ p, l, pend: pedidoLineaPendiente(l) })));
+  const inc = (v: string, q: string) => !q || v.toLowerCase().includes(q.toLowerCase());
+  const lineasDispFiltradas = lineasDisponibles.filter(({ p, l }) =>
+    inc(p.numero, addF.pedido) && inc(l.descripcion, addF.articulo) && inc(l.almacen || p.obraCodigo || "", addF.destino));
   function agregarDeSolicitud(p: (typeof pedidos)[number], l: (typeof pedidos)[number]["lineas"][number], pend: number) {
     // Precio inicial = último precio de compra real (BC); si no hay historial, 0
     // para que proveeduría escriba lo acordado con el proveedor.
@@ -328,9 +332,18 @@ export default function ArmarOrdenPage() {
           ) : (
             <div className="ds-table-wrap" style={{ boxShadow: "none", maxHeight: 420, overflow: "auto" }}>
               <table className="ds-table">
-                <thead><tr><th>Pedido</th><th>Artículo</th><th>Destino</th><th className="ds-num">Pendiente</th><th /></tr></thead>
+                <thead>
+                  <tr><th>Pedido</th><th>Artículo</th><th>Destino</th><th className="ds-num">Pendiente</th><th /></tr>
+                  <tr>
+                    <th><input className="ds-cell-input" style={{ width: "100%" }} placeholder="Filtrar…" value={addF.pedido} onChange={(e) => setAddF((f) => ({ ...f, pedido: e.target.value }))} /></th>
+                    <th><input className="ds-cell-input" style={{ width: "100%" }} placeholder="Filtrar…" value={addF.articulo} onChange={(e) => setAddF((f) => ({ ...f, articulo: e.target.value }))} /></th>
+                    <th><input className="ds-cell-input" style={{ width: "100%" }} placeholder="Filtrar…" value={addF.destino} onChange={(e) => setAddF((f) => ({ ...f, destino: e.target.value }))} /></th>
+                    <th /><th />
+                  </tr>
+                </thead>
                 <tbody>
-                  {lineasDisponibles.map(({ p, l, pend }) => (
+                  {lineasDispFiltradas.length === 0 && <tr><td colSpan={5}><div className="empty" style={{ padding: "20px 0" }}>Ninguna línea coincide con el filtro.</div></td></tr>}
+                  {lineasDispFiltradas.map(({ p, l, pend }) => (
                     <tr key={l.id}>
                       <td className="ds-body-sm ds-strong">{p.numero}</td>
                       <td><div className="ds-truncate" style={{ maxWidth: 260 }} title={l.descripcion}>{l.descripcion}</div></td>

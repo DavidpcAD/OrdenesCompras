@@ -121,6 +121,7 @@ export interface Pedido {
 export type OrdenEstado =
   | "abierto"
   | "pendiente_aprobacion"
+  | "rechazado"
   | "lanzado"
   | "completado";
 
@@ -160,6 +161,7 @@ export interface Orden {
   bcNumber?: string;        // Nº del Pedido de compra en Business Central (CP-…)
   bcDeepLink?: string;      // link directo al Pedido en BC (editar / registrar / vista previa)
   notas?: string;           // motivo de la última devolución/denegación (Aprobación → Proveeduría)
+  motivoRechazo?: string;   // motivo del rechazo (Aprobación); también queda en el histórico
 }
 
 // ============================ RECEPCIÓN / FACTURA (Bodega · Kattya) =========

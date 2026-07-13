@@ -9,7 +9,7 @@ import { VistaToggle } from "@/components/vista-toggle";
 import { IconReceipt, IconList } from "@/components/icons";
 import { useStore } from "@/lib/store";
 
-type Filtro = "todas" | "abierto" | "lanzado" | "completado";
+type Filtro = "todas" | "abierto" | "rechazado" | "lanzado" | "completado";
 
 export default function OrdenesPage() {
   const { ordenes } = useStore();
@@ -23,6 +23,7 @@ export default function OrdenesPage() {
   }
 
   const abiertas = ordenes.filter((o) => o.estado === "abierto").length;
+  const rechazadas = ordenes.filter((o) => o.estado === "rechazado").length;
   const lanzadas = ordenes.filter((o) => o.estado === "lanzado").length;
   const completas = ordenes.filter((o) => o.estado === "completado").length;
 
@@ -30,6 +31,7 @@ export default function OrdenesPage() {
   const etiqueta: Record<Filtro, string> = {
     todas: "Todas las órdenes",
     abierto: "Órdenes abiertas (borrador)",
+    rechazado: "Órdenes rechazadas (corregir y reenviar)",
     lanzado: "Órdenes lanzadas",
     completado: "Órdenes completadas",
   };
@@ -53,6 +55,7 @@ export default function OrdenesPage() {
         <div className="tiles mt-2">
           <Tile value={ordenes.length} label="Órdenes totales" onClick={() => seleccionar("todas")} active={filtro === "todas"} />
           <Tile value={abiertas} label="Abiertas (borrador)" accent="var(--ds-color-gray-300)" onClick={() => seleccionar("abierto")} active={filtro === "abierto"} />
+          <Tile value={rechazadas} label="Rechazadas" accent="var(--ds-color-red-200)" onClick={() => seleccionar("rechazado")} active={filtro === "rechazado"} />
           <Tile value={lanzadas} label="Lanzadas" accent="var(--ds-color-green-100)" onClick={() => seleccionar("lanzado")} active={filtro === "lanzado"} />
           <Tile value={completas} label="Completadas" accent="var(--ds-color-green-200)" onClick={() => seleccionar("completado")} active={filtro === "completado"} />
         </div>

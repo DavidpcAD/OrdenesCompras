@@ -15,8 +15,12 @@ export default function AprobacionPage() {
   const [rechObj, setRechObj] = useState<{ id: string; numero: string } | null>(null);
   const [motivo, setMotivo] = useState("");
   const [aprobandoId, setAprobandoId] = useState<string | null>(null);
+  const [sel, setSel] = useState<Set<string>>(new Set());
+  const [lote, setLote] = useState(false);
 
   const porAprobar = ordenes.filter((o) => o.estado === "pendiente_aprobacion");
+  const toggleSel = (id: string) => setSel((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  const seleccionadas = porAprobar.filter((o) => sel.has(o.id));
 
   // Crea y lanza en BC; solo pasa a "lanzado" si BC de verdad lo hizo (lib/aprobar.ts).
   async function aprobar(o: Orden) {
@@ -24,6 +28,18 @@ export default function AprobacionPage() {
     const r = await aprobarYLanzar(o, setOrdenEstado);
     toast(r.message, r.tone);
     setAprobandoId(null);
+  }
+  // Aprobar y lanzar en LOTE: una por una (BC no debe recibir todo en paralelo).
+  async function aprobarSeleccionadas() {
+    if (!seleccionadas.length) return;
+    setLote(true);
+    let ok = 0; const fallos: string[] = [];
+    for (const o of seleccionadas) {
+      const r = await aprobarYLanzar(o, setOrdenEstado);
+      if (r.ok) ok++; else fallos.push(o.numero);
+    }
+    setLote(false); setSel(new Set());
+    toast(`Aprobadas y lanzadas: ${ok}${fallos.length ? ` · con problema: ${fallos.join(", ")} (revisá cada una)` : ""}`, fallos.length ? "info" : "success");
   }
   // Rechazar/denegar: motivo OBLIGATORIO; vuelve a Proveeduría con la nota.
   async function confirmarRechazo() {
@@ -50,7 +66,21 @@ export default function AprobacionPage() {
           <Tile value={ordenes.filter((o) => o.estado === "completado").length} label="Completadas" accent="var(--ds-color-green-200)" />
         </div>
 
-        <div className="col gap-4 mt-6">
+        {porAprobar.length > 0 && (
+          <div className="row row--between wrap gap-3 mt-6" style={{ alignItems: "center", padding: "10px 14px", borderRadius: 12, background: "color-mix(in srgb, var(--ds-color-green-100) 8%, #fff)", border: "1.5px solid var(--ds-color-gray-100)" }}>
+            <label className="row gap-2" style={{ alignItems: "center", cursor: "pointer" }}>
+              <input type="checkbox" checked={sel.size > 0 && sel.size === porAprobar.length}
+                ref={(el) => { if (el) el.indeterminate = sel.size > 0 && sel.size < porAprobar.length; }}
+                onChange={(e) => setSel(e.target.checked ? new Set(porAprobar.map((o) => o.id)) : new Set())} />
+              <span className="ds-body-sm ds-strong">Seleccionar todas ({porAprobar.length})</span>
+            </label>
+            <Button onClick={aprobarSeleccionadas} disabled={sel.size === 0 || lote}>
+              {lote ? "Lanzando…" : `Aprobar y lanzar seleccionadas (${sel.size})`}
+            </Button>
+          </div>
+        )}
+
+        <div className="col gap-4 mt-4">
           {porAprobar.length === 0 && <Card><div className="empty" style={{ lineHeight: 1.6 }}>No hay órdenes pendientes de aprobación.<br /><span className="ds-muted ds-body-sm">Para ver las que ya aprobaste o se completaron, abrí la pestaña <strong>“Todas las órdenes”</strong> arriba.</span></div></Card>}
           {porAprobar.map((o) => {
             const articulos = o.lineas.filter((l) => l.tipo === "articulo");
@@ -59,7 +89,8 @@ export default function AprobacionPage() {
               <Card key={o.id}>
                 <div className="row row--between wrap gap-4" style={{ marginBottom: 12 }}>
                   <div className="col" style={{ gap: 4 }}>
-                    <div className="row gap-3">
+                    <div className="row gap-3" style={{ alignItems: "center" }}>
+                      <input type="checkbox" checked={sel.has(o.id)} onChange={() => toggleSel(o.id)} title="Seleccionar para aprobar en lote" style={{ width: 16, height: 16 }} />
                       <span className="ds-subtitle">{o.numero}</span>
                       <Badge tone="yellow">Pendiente de aprobación</Badge>
                     </div>

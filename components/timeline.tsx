@@ -22,6 +22,7 @@ const estadoLabel = (c?: string) => (c ? (ESTADO_LABEL[c] ?? c) : undefined);
 const LABEL: Record<string, string> = {
   creado: "Creado",
   reabierto: "Reabierto",
+  rechazado: "Rechazado",
   editado: "Editado",
   aprobado: "Aprobado",
   en_orden: "Pasó a orden de compra",
@@ -42,6 +43,7 @@ function etiqueta(m: Movimiento): string {
     if (m.tipoMovimiento === "creado") return "En proveeduría · orden de compra creada";
     if (m.tipoMovimiento === "enviado_aprobacion") return "Orden enviada a aprobación";
     if (m.tipoMovimiento === "aprobado_lanzado") return "Orden aprobada y lanzada";
+    if (m.tipoMovimiento === "rechazado") return "Orden rechazada por Aprobación";
     if (m.tipoMovimiento === "recepcion_parcial") return "Recibido en bodega (parcial)";
     if (m.tipoMovimiento === "recepcion_total") return "Recibido en bodega (total)";
   }
@@ -59,6 +61,7 @@ function colorPunto(m: Movimiento): string {
       case "recepcion_parcial": return "var(--ds-color-yellow)"; // recibido parcial · amarillo
       case "recepcion_total":
       case "completado": return "var(--ds-color-green-200)"; // recibido total / completado · verde fuerte
+      case "rechazado": return "var(--ds-color-red-200)";    // rechazada · rojo
       case "eliminado": return "var(--ds-color-red-100)";
     }
   }

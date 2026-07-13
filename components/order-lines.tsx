@@ -1,10 +1,11 @@
 "use client";
 
+import Link from "next/link";
 import { Badge } from "@/components/ui";
 import { money, num, ordenLineaImporte, ordenLineaPendiente } from "@/lib/helpers";
-import type { Orden } from "@/lib/types";
+import type { Orden, OrdenLinea } from "@/lib/types";
 
-export function OrderLinesTable({ orden, showRecepcion = true }: { orden: Orden; showRecepcion?: boolean }) {
+export function OrderLinesTable({ orden, showRecepcion = true, solicitudHref }: { orden: Orden; showRecepcion?: boolean; solicitudHref?: (l: OrdenLinea) => string | null }) {
   return (
     <div className="ds-table-wrap" style={{ boxShadow: "none" }}>
       <table className="ds-table">
@@ -27,7 +28,16 @@ export function OrderLinesTable({ orden, showRecepcion = true }: { orden: Orden;
                 <td>
                   {l.descripcion}
                   <div className="ds-body-sm ds-muted">
-                    {[l.pedidoNumero, l.proyecto && `Proy. ${l.proyecto}`, l.taskNo && `Tarea ${l.taskNo}`, l.descuentoPct ? `−${l.descuentoPct}%` : null].filter(Boolean).join(" · ")}
+                    {(() => {
+                      const rest = [l.proyecto && `Proy. ${l.proyecto}`, l.taskNo && `Tarea ${l.taskNo}`, l.descuentoPct ? `−${l.descuentoPct}%` : null].filter(Boolean).join(" · ");
+                      const href = l.pedidoNumero ? solicitudHref?.(l) : null;
+                      return <>
+                        {l.pedidoNumero && (href
+                          ? <Link className="linklike" href={href} title="Ver la solicitud (quién la pidió)">{l.pedidoNumero}</Link>
+                          : <span>{l.pedidoNumero}</span>)}
+                        {l.pedidoNumero && rest ? " · " : ""}{rest}
+                      </>;
+                    })()}
                   </div>
                 </td>
                 <td className="ds-muted hide-mobile">{l.almacen}</td>

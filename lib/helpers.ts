@@ -198,6 +198,7 @@ export function ordenBadge(estado: Orden["estado"]): { label: string; tone: stri
   switch (estado) {
     case "abierto": return { label: "Abierto", tone: "gray" };
     case "pendiente_aprobacion": return { label: "Pendiente de aprobación", tone: "yellow" };
+    case "rechazado": return { label: "Rechazada", tone: "red" };
     case "lanzado": return { label: "Lanzado", tone: "green" };
     case "completado": return { label: "Completado", tone: "green" };
   }

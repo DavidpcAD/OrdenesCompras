@@ -34,7 +34,7 @@ export default function MatrizPage() {
   useEffect(() => {
     (async () => {
       try {
-        const r = await fetch("/api/matriz"); const d = await r.json();
+        const r = await fetch("/api/matriz", { cache: "no-store" }); const d = await r.json();
         if (!r.ok) { toast(d.error ?? "No se pudo cargar", "error"); return; }
         setEtapas(d.etapas ?? []); setPartidas(d.partidas ?? []); setSubpartidas(d.subpartidas ?? []);
         setClasifs(d.clasificaciones ?? []); setObras(d.obras ?? []); setCeldas(d.celdas ?? []);
@@ -50,7 +50,29 @@ export default function MatrizPage() {
     return p?.etapaId ?? null;
   };
   const columnas = useMemo(() => clasifs.filter((c) => !etapaSel || String(etapaDeClas(c)) === etapaSel), [clasifs, partidas, subpartidas, etapaSel]); // eslint-disable-line react-hooks/exhaustive-deps
-  const mapa = useMemo(() => { const m = new Map<string, string>(); for (const c of celdas) m.set(`${c.idObra}|${c.idClasificacion}`, c.estado); return m; }, [celdas]);
+  // Estado de cada celda: se arma desde la vista SQL (celdas) Y desde los pedidos
+  // del store (siempre frescos), quedándose con el estado de mayor avance. Así la
+  // celda refleja al instante lo recién solicitado y sobrevive a recargas aunque la
+  // vista venga desfasada o cacheada.
+  const mapa = useMemo(() => {
+    const RANK: Record<string, number> = { ENTREGADO: 4, COMPRADO: 3, PEDIDO: 2, BORRADOR: 1 };
+    const EST_DE_CODIGO: Record<string, string> = { cerrado: "ENTREGADO", en_orden: "COMPRADO", aprobado: "PEDIDO", borrador: "BORRADOR" };
+    const m = new Map<string, string>();
+    const put = (idObra: number, idClas: number, est?: string) => {
+      if (!est) return;
+      const k = `${idObra}|${idClas}`;
+      const prev = m.get(k);
+      if (!prev || (RANK[est] ?? 0) > (RANK[prev] ?? 0)) m.set(k, est);
+    };
+    for (const c of celdas) put(c.idObra, c.idClasificacion, c.estado);
+    const idPorObra = new Map(obras.map((o) => [o.numeroObra, o.idObra]));
+    for (const p of pedidos) {
+      if (p.idClasificacion == null || !p.obraCodigo) continue;
+      const io = idPorObra.get(p.obraCodigo);
+      if (io != null) put(io, p.idClasificacion, EST_DE_CODIGO[p.estado]);
+    }
+    return m;
+  }, [celdas, pedidos, obras]);
 
   const areas = useMemo(() => [...new Set(obras.map((o) => o.areaCosteo).filter(Boolean))].sort(), [obras]);
   const proyectos = useMemo(() => [...new Set(obras.map((o) => o.proyecto).filter(Boolean))].sort(), [obras]);

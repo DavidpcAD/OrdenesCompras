@@ -501,6 +501,14 @@ h1, h2, h3, h4, p { margin: 0; }
 }
 .back-link:hover { color: var(--ds-color-black); box-shadow: var(--ds-shadow-02-soft); }
 .back-link:active { transform: translateY(1px); }
+
+/* Enlace en línea (p.ej. Nº de solicitud en una tabla) */
+.linklike {
+  border: 0; background: transparent; padding: 0; cursor: pointer; font: inherit;
+  color: var(--ds-color-green-200); font-weight: var(--ds-font-weight-semibold);
+  text-decoration: underline; text-underline-offset: 2px;
+}
+.linklike:hover { color: var(--ds-color-black); }
 .back-link svg { flex-shrink: 0; }
 
 /* timeline / historial */

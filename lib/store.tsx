@@ -338,8 +338,15 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     // moneda y almacén. Solo mock/local (la orden todavía no viajó a BC).
     const updateOrden: StoreShape["updateOrden"] = async (id, input) => {
       setData((d) => {
-        const lineas: OrdenLinea[] = input.lineas.map((l) => ({ ...l, id: uid(), cantidadRecibida: 0, cantidadFacturada: 0 }));
         const prevo = d.ordenes.find((o) => o.id === id);
+        // Conservar recibido/facturado (y el id) de la línea previa que corresponda,
+        // para NO perder la trazabilidad al editar.
+        const prevLines = [...(prevo?.lineas ?? [])];
+        const lineas: OrdenLinea[] = input.lineas.map((l) => {
+          const idx = prevLines.findIndex((pl) => pl.tipo === l.tipo && pl.articuloId === l.articuloId && pl.pedidoLineaId === l.pedidoLineaId);
+          const prev = idx >= 0 ? prevLines.splice(idx, 1)[0] : undefined;
+          return { ...l, id: prev?.id ?? uid(), cantidadRecibida: prev?.cantidadRecibida ?? 0, cantidadFacturada: prev?.cantidadFacturada ?? 0 };
+        });
         const ordenes = d.ordenes.map((o) => (o.id === id ? {
           ...o, proveedorId: input.proveedorId, proveedorNo: input.proveedorNo, proveedorNombre: input.proveedorNombre,
           currencyCode: input.currencyCode, almacenRecepcion: input.almacenRecepcion ?? o.almacenRecepcion, lineas,
@@ -461,17 +468,17 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     // obligatorio (lo valida la UI) y queda en el historial + como nota de la orden.
     const devolverOrden: StoreShape["devolverOrden"] = async (id, motivo) => {
       if (USE_API) {
-        await api.patchOrdenEstado(id, { estado: "abierto", usuario: persona, rol: rolActual, motivo });
+        await api.patchOrdenEstado(id, { estado: "rechazado", usuario: persona, rol: rolActual, motivo });
         await refreshFromApi();
         return;
       }
       setData((d) => {
         const prev = d.ordenes.find((o) => o.id === id);
-        const mov = mkMov({ entidad: "orden", idEntidad: id, documentoNo: prev?.numero ?? "", tipoMovimiento: "reabierto", estadoAnterior: prev?.estado, estadoNuevo: "abierto", detalle: `Motivo: ${motivo}` });
-        const notif = mkNotif("devuelto", `La orden ${prev?.numero ?? ""} fue devuelta por Aprobación: ${motivo}`, `/proveeduria/ordenes/${id}`, "proveeduria");
+        const mov = mkMov({ entidad: "orden", idEntidad: id, documentoNo: prev?.numero ?? "", tipoMovimiento: "rechazado", estadoAnterior: prev?.estado, estadoNuevo: "rechazado", detalle: `Motivo: ${motivo}` });
+        const notif = mkNotif("devuelto", `La orden ${prev?.numero ?? ""} fue RECHAZADA por Aprobación: ${motivo}`, `/proveeduria/ordenes/${id}`, "proveeduria");
         return {
           ...d,
-          ordenes: d.ordenes.map((o) => (o.id === id ? { ...o, estado: "abierto" as Orden["estado"], notas: `↩ Devuelta por Aprobación: ${motivo}${o.notas ? ` · ${o.notas}` : ""}` } : o)),
+          ordenes: d.ordenes.map((o) => (o.id === id ? { ...o, estado: "rechazado" as Orden["estado"], motivoRechazo: motivo, notas: `✕ Rechazada por Aprobación: ${motivo}${o.notas ? ` · ${o.notas}` : ""}` } : o)),
           movimientos: [mov, ...d.movimientos],
           notificaciones: [notif, ...d.notificaciones],
         };

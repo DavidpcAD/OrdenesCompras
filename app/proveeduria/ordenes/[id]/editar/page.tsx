@@ -16,8 +16,13 @@ export default function EditarOrdenPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
   const toast = useToast();
-  const { ordenes, proveedores, almacenes, updateOrden } = useStore();
+  const { ordenes, proveedores, almacenes, recepciones, pedidos, updateOrden } = useStore();
   const orden = ordenes.find((o) => o.id === id);
+  // id del pedido (solicitud) de origen de una línea, para enlazar a su detalle.
+  const pedidoIdDe = (pedidoLineaId?: string, pedidoNumero?: string) =>
+    (pedidoLineaId && pedidos.find((p) => p.lineas.some((l) => l.id === pedidoLineaId))?.id)
+    || (pedidoNumero && pedidos.find((p) => p.numero === pedidoNumero)?.id)
+    || null;
 
   const [bcProv, setBcProv] = useState<typeof proveedores | null>(null);
   const [itemsBc, setItemsBc] = useState<{ code: string; descripcion: string; unidad: string; precioUltimo?: number }[]>([]);
@@ -62,10 +67,20 @@ export default function EditarOrdenPage() {
   const [guardando, setGuardando] = useState(false);
 
   if (!orden) return <AppShell role="proveeduria"><main className="page"><div className="empty">Orden no encontrada.</div></main></AppShell>;
-  if (orden.estado !== "abierto") {
+  // No se puede editar una orden que ya tiene recepciones: reescribir las líneas
+  // rompería la trazabilidad de lo recibido/facturado (y su enlace a las recepciones).
+  const tieneRecepciones = recepciones.some((r) => r.ordenId === orden.id)
+    || orden.lineas.some((l) => l.cantidadRecibida > 0 || l.cantidadFacturada > 0);
+  if (tieneRecepciones) {
     return <AppShell role="proveeduria"><main className="page">
       <div className="back-link" onClick={() => router.push(`/proveeduria/ordenes/${id}`)}>‹ Volver a la orden</div>
-      <div className="empty" style={{ padding: "48px 16px" }}>Esta orden ya no se puede editar: solo se permite mientras está Abierta (sin enviar a aprobación).</div>
+      <div className="empty" style={{ padding: "48px 16px" }}>Esta orden ya tiene recepciones registradas, así que no se puede editar: se perdería la trazabilidad de lo recibido y facturado.</div>
+    </main></AppShell>;
+  }
+  if (orden.estado !== "abierto" && orden.estado !== "rechazado") {
+    return <AppShell role="proveeduria"><main className="page">
+      <div className="back-link" onClick={() => router.push(`/proveeduria/ordenes/${id}`)}>‹ Volver a la orden</div>
+      <div className="empty" style={{ padding: "48px 16px" }}>Esta orden ya no se puede editar: solo se permite mientras está Abierta o Rechazada.</div>
     </main></AppShell>;
   }
 
@@ -143,12 +158,17 @@ export default function EditarOrdenPage() {
           )}
           <div className="ds-table-wrap" style={{ boxShadow: "none" }}>
             <table className="ds-table">
-              <thead><tr><th>Artículo</th><th>Obra</th><th className="ds-num">Cantidad</th><th className="ds-num">Precio</th><th className="ds-num">Desc%</th><th className="ds-num">IVA%</th><th className="ds-num">Importe</th><th></th></tr></thead>
+              <thead><tr><th>Artículo</th><th>Solicitud</th><th>Obra</th><th className="ds-num">Cantidad</th><th className="ds-num">Precio</th><th className="ds-num">Desc%</th><th className="ds-num">IVA%</th><th className="ds-num">Importe</th><th></th></tr></thead>
               <tbody>
-                {rows.length === 0 && <tr><td colSpan={8}><div className="empty">Sin líneas. Agregá al menos una.</div></td></tr>}
+                {rows.length === 0 && <tr><td colSpan={9}><div className="empty">Sin líneas. Agregá al menos una.</div></td></tr>}
                 {rows.map((r) => (
                   <tr key={r.key}>
-                    <td><div className="ds-truncate" title={r.descripcion} style={{ maxWidth: 220 }}>{r.descripcion}</div>{r.pedidoNumero && <div className="ds-body-sm ds-muted">{r.pedidoNumero}</div>}</td>
+                    <td><div className="ds-truncate" title={r.descripcion} style={{ maxWidth: 220 }}>{r.descripcion}</div></td>
+                    <td className="ds-body-sm">{(() => {
+                      const pid = pedidoIdDe(r.pedidoLineaId, r.pedidoNumero);
+                      if (r.pedidoNumero && pid) return <button type="button" className="linklike" title="Ver la solicitud (quién la pidió)" onClick={() => router.push(`/proveeduria/solicitudes/${pid}`)}>{r.pedidoNumero}</button>;
+                      return <span className="ds-muted">{r.pedidoNumero || "—"}</span>;
+                    })()}</td>
                     <td className="ds-muted ds-body-sm">{r.obra || "—"}</td>
                     <td className="ds-num"><input className="ds-cell-input" type="number" min={0} value={r.cantidad} style={{ width: 70 }} onChange={(e) => setRow(r.key, { cantidad: e.target.value })} /></td>
                     <td className="ds-num"><input className="ds-cell-input" type="number" min={0} value={r.precio} style={{ width: 92 }} onChange={(e) => setRow(r.key, { precio: e.target.value })} /></td>

@@ -18,6 +18,10 @@ export async function aprobarYLanzar(
   const lineasBc = orden.lineas
     .filter((l) => l.tipo === "articulo" && l.articuloId && l.cantidad > 0)
     .map((l) => ({ itemNo: l.articuloId!, cantidad: l.cantidad, precio: l.precioUnitario || 0, descripcion: l.descripcion, variantCode: l.variantCode }));
+  // Flete/transporte -> se manda a BC como Cargo de producto (Item Charge) para que
+  // el codeunit lo distribuya al costo de los artículos recibidos.
+  const cargo = orden.lineas.find((l) => l.tipo === "cargo" && (l.precioUnitario || 0) > 0);
+  const flete = cargo ? { monto: (cargo.precioUnitario || 0) * (cargo.cantidad || 1), descripcion: cargo.descripcion } : undefined;
 
   // Sin proveedor de BC o sin líneas: no hay nada que enviar a BC; se lanza local.
   if (!orden.proveedorNo || !lineasBc.length) {
@@ -54,7 +58,7 @@ export async function aprobarYLanzar(
     res = await fetch("/api/bc/lanzar", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ vendorNo: orden.proveedorNo, currencyCode: orden.currencyCode, locationCode: orden.almacenRecepcion || "ALM-GRAL", lineas: lineasBc }),
+      body: JSON.stringify({ vendorNo: orden.proveedorNo, currencyCode: orden.currencyCode, locationCode: orden.almacenRecepcion || "ALM-GRAL", lineas: lineasBc, flete }),
     });
     d = await res.json().catch(() => ({}));
   } catch (e: any) {
