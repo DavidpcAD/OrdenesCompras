@@ -7,7 +7,7 @@ import type {
 } from "./types";
 import * as seed from "./seed";
 import { nextNumero, nowISO, ordenEstaCompleta, PERSONA_POR_ROL, todayISO } from "./helpers";
-import { api, USE_API } from "./api";
+import { api, USE_API as USE_API_BUILD } from "./api";
 
 export interface NewPedidoInput {
   tipoSolicitud: TipoSolicitud;
@@ -138,7 +138,10 @@ function freshData(): Persisted {
   };
 }
 
-export function StoreProvider({ children }: { children: React.ReactNode }) {
+export function StoreProvider({ children, useApi }: { children: React.ReactNode; useApi?: boolean }) {
+  // Modo SQL vs mock. Preferimos el valor RUNTIME (env `USE_API`, pasado por el
+  // layout del server); si no viene, caemos al flag de build (NEXT_PUBLIC_USE_API).
+  const USE_API = useApi ?? USE_API_BUILD;
   const [role, setRole] = useState<Role | null>(null);
   const [usuario, setUsuario] = useState<string | null>(null);
   const [data, setData] = useState<Persisted>(() => freshData());

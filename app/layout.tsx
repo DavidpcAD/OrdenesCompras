@@ -9,6 +9,9 @@ export const metadata: Metadata = {
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
+  // Runtime (no build-time): permite activar el modo SQL con la env `USE_API=1`
+  // en el App Service sin rebuild. Cae al flag público de build si no está.
+  const useApi = process.env.USE_API === "1" || process.env.NEXT_PUBLIC_USE_API === "1";
   return (
     <html lang="es">
       <head>
@@ -20,7 +23,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         />
       </head>
       <body>
-        <StoreProvider>
+        <StoreProvider useApi={useApi}>
           <ToastProvider>{children}</ToastProvider>
         </StoreProvider>
       </body>
