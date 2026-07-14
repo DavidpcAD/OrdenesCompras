@@ -42,7 +42,7 @@ export default function ProveeduriaSolicitudesPage() {
     },
     { id: "comentario", header: "Comentario", accessorFn: (p) => p.notas ?? "", meta: { label: "Comentario" }, cell: (c) => <div className="ds-body-sm ds-muted ds-truncate" style={{ maxWidth: 220 }} title={c.getValue()}>{c.getValue() || "—"}</div> },
     { id: "solicitante", header: "Solicitante", accessorFn: (p) => p.solicitante, meta: { label: "Solicitante" }, cell: (c) => c.getValue() },
-    { id: "fecha", header: "Fecha", accessorFn: (p) => p.fecha, meta: { label: "Fecha" }, cell: (c) => formatDate(c.getValue()) },
+    { id: "fecha", header: "Fecha", accessorFn: (p) => p.fecha, meta: { label: "Fecha", date: true }, cell: (c) => formatDate(c.getValue()) },
     { id: "lineas", header: "Líneas", accessorFn: (p) => p.lineas.length, meta: { label: "Líneas", num: true }, enableColumnFilter: false, cell: (c) => c.getValue() },
     { id: "prioridad", header: "Prioridad", accessorFn: (p) => p.prioridad, meta: { label: "Prioridad" }, cell: (c) => { const p = c.row.original; return p.prioridad === "urgente" ? <Badge tone="red">Urgente</Badge> : p.prioridad === "alta" ? <Badge tone="yellow">Alta</Badge> : <Badge tone="gray">Normal</Badge>; } },
     { id: "estado", header: "Compra", accessorFn: (p) => pedidoCompraBadge(p).label, meta: { label: "Compra" }, cell: (c) => { const b = pedidoCompraBadge(c.row.original); return <Badge tone={b.tone}>{b.label}</Badge>; } },

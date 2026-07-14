@@ -20,12 +20,26 @@ const multiFilter: FilterFn<any> = (row, colId, value) => {
   return (value as string[]).includes(asText(row.getValue(colId)));
 };
 
+// Filtro de fecha por RANGO: el valor es { from?, to? } en ISO (YYYY-MM-DD).
+// Compara la parte de fecha del valor de la celda (funciona día/mes/año/rango).
+type DateRange = { from?: string; to?: string };
+const dateRangeFilter: FilterFn<any> = (row, colId, value) => {
+  const r = value as DateRange | undefined;
+  if (!r || (!r.from && !r.to)) return true;
+  const v = asText(row.getValue(colId)).slice(0, 10);
+  if (!v) return false;
+  if (r.from && v < r.from) return false;
+  if (r.to && v > r.to) return false;
+  return true;
+};
+const isDateCol = (c: { meta?: unknown }) => !!(c.meta as { date?: boolean } | undefined)?.date;
+
 // Motor de tabla reutilizable (TanStack, headless) con el design system de la app.
 // Vista Tabla o Grid, ordenar, filtro por columna, búsqueda global, mostrar/ocultar
 // y reordenar columnas, paginación, y VISTAS guardadas por usuario en SQL (/api/vistas).
 // Cada columna debe tener `id`; opcional meta.label (nombre legible) y meta.num (derecha).
 
-type ColMeta = { label?: string; num?: boolean };
+type ColMeta = { label?: string; num?: boolean; date?: boolean };
 type VistaCfg = {
   columnOrder?: ColumnOrderState; columnVisibility?: VisibilityState; sorting?: SortingState;
   columnFilters?: ColumnFiltersState; globalFilter?: string; pageSize?: number; modo?: "tabla" | "grid";
@@ -48,7 +62,7 @@ export function DataTable<T>({
 }) {
   const { usuario } = useStore();
   // Inyecta el filtro multi-selección a las columnas que no traigan uno propio.
-  const cols = useMemo(() => columns.map((c) => (c.filterFn ? c : { ...c, filterFn: multiFilter })), [columns]);
+  const cols = useMemo(() => columns.map((c) => (c.filterFn ? c : { ...c, filterFn: isDateCol(c) ? dateRangeFilter : multiFilter })), [columns]);
   const [sorting, setSorting] = useState<SortingState>([]);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const toggleExpanded = (id: string) => setExpanded((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
@@ -227,7 +241,11 @@ export function DataTable<T>({
                       const meta = h.column.columnDef.meta as ColMeta | undefined;
                       const sorted = h.column.getIsSorted(); const canSort = h.column.getCanSort();
                       const canFilter = h.column.getCanFilter();
-                      const activos = ((h.column.getFilterValue() as string[] | undefined) ?? []).length;
+                      const fv = h.column.getFilterValue();
+                      const esFecha = isDateCol(h.column.columnDef);
+                      const activos = esFecha
+                        ? ((fv as DateRange | undefined)?.from || (fv as DateRange | undefined)?.to ? 1 : 0)
+                        : ((fv as string[] | undefined) ?? []).length;
                       const isDragging = dragCol === h.column.id;
                       const isTarget = dragCol && dragCol !== h.column.id;
                       return (
@@ -336,16 +354,53 @@ export function DataTable<T>({
 function ColumnFilterPopover<T>({ col, label, anchor, onClose }: {
   col: Column<T, unknown>; label: string; anchor: { left: number; top: number }; onClose: () => void;
 }) {
+  // Hooks primero (siempre), luego la rama de fecha retorna antes de tocar `sel`
+  // (para fecha el filtro es un objeto {from,to}, no un arreglo).
   const [q, setQ] = useState("");
-  const sel = new Set((col.getFilterValue() as string[] | undefined) ?? []);
   const opciones = useMemo(() => {
+    if (isDateCol(col.columnDef)) return [] as string[];
     const set = new Set<string>();
     for (const k of col.getFacetedUniqueValues().keys()) { const s = asText(k); if (s !== "") set.add(s); }
     return Array.from(set).sort((a, b) => a.localeCompare(b, "es", { numeric: true }));
   }, [col]);
+
+  // Columna de fecha: filtro por rango (día / mes / año / rango libre).
+  if (isDateCol(col.columnDef)) {
+    const range = (col.getFilterValue() as DateRange | undefined) ?? {};
+    const setRange = (r: DateRange) => col.setFilterValue(r.from || r.to ? r : undefined);
+    const pad = (n: number) => String(n).padStart(2, "0");
+    const hoy = new Date();
+    const y = hoy.getFullYear(), m = hoy.getMonth();
+    const iso = (dt: Date) => `${dt.getFullYear()}-${pad(dt.getMonth() + 1)}-${pad(dt.getDate())}`;
+    const mesFrom = `${y}-${pad(m + 1)}-01`, mesTo = iso(new Date(y, m + 1, 0));
+    const hoyIso = iso(hoy);
+    return (
+      <>
+        <div className="dt-filter-scrim" onClick={onClose} />
+        <div className="dt-filter-pop" style={{ left: anchor.left, top: anchor.top }} onClick={(e) => e.stopPropagation()}>
+          <div className="dt-filter-pop__list" style={{ padding: 14, gap: 12, display: "flex", flexDirection: "column" }}>
+            <div className="dt-date-quick">
+              <button type="button" onClick={() => setRange({ from: hoyIso, to: hoyIso })}>Hoy</button>
+              <button type="button" onClick={() => setRange({ from: mesFrom, to: mesTo })}>Este mes</button>
+              <button type="button" onClick={() => setRange({ from: `${y}-01-01`, to: `${y}-12-31` })}>Este año</button>
+            </div>
+            <label className="dt-date-field"><span>Desde</span>
+              <input type="date" value={range.from ?? ""} max={range.to || undefined} onChange={(e) => setRange({ ...range, from: e.target.value })} />
+            </label>
+            <label className="dt-date-field"><span>Hasta</span>
+              <input type="date" value={range.to ?? ""} min={range.from || undefined} onChange={(e) => setRange({ ...range, to: e.target.value })} />
+            </label>
+            <button type="button" className="dt-date-clear" onClick={() => setRange({})}>Limpiar</button>
+          </div>
+        </div>
+      </>
+    );
+  }
+
+  // Columna normal: multi-selección por checkboxes.
+  const sel = new Set((col.getFilterValue() as string[] | undefined) ?? []);
   const visibles = opciones.filter((o) => o.toLowerCase().includes(q.toLowerCase()));
   const todos = sel.size === 0;
-
   const toggle = (val: string) => {
     const next = new Set(sel);
     next.has(val) ? next.delete(val) : next.add(val);
