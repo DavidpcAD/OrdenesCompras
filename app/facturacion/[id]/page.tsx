@@ -5,6 +5,7 @@ import { useMemo, useState } from "react";
 import { AppShell } from "@/components/shell";
 import { Badge, Button, Card, Field, Input, Modal, useToast } from "@/components/ui";
 import { IconWarning } from "@/components/icons";
+import { DateField } from "@/components/date-field";
 import { useStore } from "@/lib/store";
 import { money, distribuirCargo, num, ordenBadge, ordenLineaPendiente, ordenRecibidoPct, todayISO } from "@/lib/helpers";
 
@@ -177,15 +178,15 @@ export default function RegistrarFacturaPage() {
               <Input value={numeroFactura} onChange={(e) => setNumeroFactura(e.target.value)} placeholder="Ej. F-0099281" />
             </Field>
             <Field label="Fecha de recepción en bodega">
-              <Input type="date" value={fechaRecepcion} onChange={(e) => setFechaRecepcion(e.target.value)} />
+              <DateField value={fechaRecepcion} onChange={setFechaRecepcion} />
             </Field>
             <Field label="Fecha de la factura">
-              <Input type="date" value={fechaFactura} onChange={(e) => { setFechaFactura(e.target.value); setFechaRegistro(e.target.value); }} />
+              <DateField value={fechaFactura} onChange={(v) => { setFechaFactura(v); setFechaRegistro(v); }} />
             </Field>
             <Field label="Fecha de registro (contable)"
               warning={!fechasCoinciden}
               help={fechasCoinciden ? "Coincide con la fecha de factura ✓" : "Debe coincidir con la fecha de factura para que cuadre con el estado de cuenta del proveedor."}>
-              <Input type="date" value={fechaRegistro} onChange={(e) => setFechaRegistro(e.target.value)} />
+              <DateField value={fechaRegistro} onChange={setFechaRegistro} />
             </Field>
           </div>
         </Card>
