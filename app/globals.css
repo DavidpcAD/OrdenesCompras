@@ -424,6 +424,16 @@ h1, h2, h3, h4, p { margin: 0; }
 .dt-exp-row td { background: transparent; }
 @media (prefers-reduced-motion: reduce) { .dt-exp-wrap { transition: none; } }
 
+/* NavigationControls del DS: pill blanco con chevron (prev/next de la tabla) */
+.ds-navctrl {
+  display: grid; place-items: center; width: 52px; height: 44px;
+  border: 0; border-radius: var(--ds-radius-xl); background: var(--ds-color-white);
+  box-shadow: var(--ds-shadow-03-big); color: var(--ds-color-black); cursor: pointer;
+  transition: box-shadow 120ms ease, background 120ms ease;
+}
+.ds-navctrl:not(:disabled):active { box-shadow: 0 0 0 8px var(--ds-color-surface), var(--ds-shadow-03-big); }
+.ds-navctrl:disabled { background: var(--ds-color-gray-100); color: var(--ds-color-gray-300); box-shadow: none; cursor: not-allowed; }
+
 /* Slide-to-confirm: handle de arrastre (3 barritas) + empujoncito en reposo */
 .stc-handle { display: inline-flex; align-items: center; gap: 3px; }
 .stc-handle i { width: 2.5px; height: 18px; border-radius: 2px; background: var(--ds-color-gray-300); }

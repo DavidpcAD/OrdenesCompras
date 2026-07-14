@@ -309,8 +309,14 @@ export function DataTable<T>({
           <Select value={String(pagination.pageSize)} onChange={(e) => setPagination((p) => ({ ...p, pageSize: Number(e.target.value), pageIndex: 0 }))} style={{ width: "auto", minWidth: 120 }}>
             {[25, 50, 100, 200].map((n) => <option key={n} value={n}>{n} / pág.</option>)}
           </Select>
-          <Button variant="ghost" size="sm" onClick={() => table.previousPage()} disabled={!table.getCanPreviousPage()}>‹ Anterior</Button>
-          <Button variant="ghost" size="sm" onClick={() => table.nextPage()} disabled={!table.getCanNextPage()}>Siguiente ›</Button>
+          <button type="button" className="ds-navctrl" title="Anterior" aria-label="Página anterior"
+            onClick={() => table.previousPage()} disabled={!table.getCanPreviousPage()}>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M15 6l-6 6 6 6" /></svg>
+          </button>
+          <button type="button" className="ds-navctrl" title="Siguiente" aria-label="Página siguiente"
+            onClick={() => table.nextPage()} disabled={!table.getCanNextPage()}>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M9 6l6 6-6 6" /></svg>
+          </button>
         </div>
       </div>
 
@@ -373,4 +379,5 @@ function ColumnFilterPopover<T>({ col, label, anchor, onClose }: {
     </>
   );
 }
+
 
