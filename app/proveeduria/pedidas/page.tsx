@@ -74,21 +74,23 @@ export default function ProveeduriaLineasPedidasPage() {
             <h1 className="ds-heading">Líneas pedidas</h1>
             <p className="ds-muted">Todos los materiales ya ordenados a proveedores. Filtrá por estado o por columna y exportá el detalle a PDF.</p>
           </div>
-          <div className="row gap-3"><Button variant="outline" onClick={() => base.length && window.print()}>Exportar PDF</Button></div>
+          <div className="row gap-3 wrap" style={{ alignItems: "center" }}>
+            <VistaToggle opciones={[
+              { label: "Por orden", href: "/proveeduria/ordenes", active: false, icon: <IconReceipt size={16} /> },
+              { label: "Por línea", href: "/proveeduria/pedidas", active: true, icon: <IconList size={16} /> },
+            ]} />
+            <Button variant="outline" onClick={() => base.length && window.print()}>Exportar PDF</Button>
+          </div>
         </div>
 
-        <VistaToggle opciones={[
-          { label: "Por orden", href: "/proveeduria/ordenes", active: false, icon: <IconReceipt size={16} /> },
-          { label: "Por línea", href: "/proveeduria/pedidas", active: true, icon: <IconList size={16} /> },
-        ]} />
-
-        <div className="segmented mt-2" style={{ maxWidth: 520 }}>
-          <button className={`segmented__btn ${estadoF === "all" ? "is-active" : ""}`} onClick={() => setEstadoF("all")}>Todas ({baseRows.length})</button>
-          <button className={`segmented__btn ${estadoF === "pendiente" ? "is-active" : ""}`} onClick={() => setEstadoF("pendiente")}>Pendiente de llegar ({totPend})</button>
-          <button className={`segmented__btn ${estadoF === "llego" ? "is-active" : ""}`} onClick={() => setEstadoF("llego")}>Ya llegó ({totLlego})</button>
+        <div className="filterbar">
+          <span className="filterbar__label">Estado</span>
+          <button type="button" className={`filter-chip ${estadoF === "all" ? "is-active" : ""}`} onClick={() => setEstadoF("all")}>Todas <span className="filter-chip__count">{baseRows.length}</span></button>
+          <button type="button" className={`filter-chip ${estadoF === "pendiente" ? "is-active" : ""}`} onClick={() => setEstadoF("pendiente")}>Pendiente de llegar <span className="filter-chip__count">{totPend}</span></button>
+          <button type="button" className={`filter-chip ${estadoF === "llego" ? "is-active" : ""}`} onClick={() => setEstadoF("llego")}>Ya llegó <span className="filter-chip__count">{totLlego}</span></button>
         </div>
 
-        <div className="mt-4">
+        <div className="mt-2">
           <DataTable data={base} columns={columns} tablaKey="lineas-pedidas" vacio="No hay líneas que coincidan con el filtro." />
         </div>
       </main>

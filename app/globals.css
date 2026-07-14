@@ -560,6 +560,21 @@ h1, h2, h3, h4, p { margin: 0; }
 .segmented { display: inline-flex; background: var(--ds-color-gray-100); border-radius: var(--ds-radius-lg); padding: 4px; gap: 4px; }
 .segmented__btn { padding: 8px 16px; border-radius: var(--ds-radius-md); border: 0; background: transparent; font-family: inherit; font-weight: var(--ds-font-weight-semibold); font-size: var(--ds-font-size-label); color: var(--ds-color-gray-500); cursor: pointer; transition: background-color .12s, color .12s; }
 .segmented__btn.is-active { background: #fff; color: #000; box-shadow: var(--ds-shadow-02-soft); }
+
+/* Filtros de estado como "chips" (pills con contador) — lenguaje visual distinto
+   del toggle de vista, para que no se vean como una barra doble amontonada. */
+.filterbar { display: flex; align-items: center; flex-wrap: wrap; gap: var(--ds-space-2); margin: var(--ds-space-2) 0 var(--ds-space-5); }
+.filterbar__label { font-size: var(--ds-font-size-body-sm); color: var(--ds-color-gray-400); margin-right: var(--ds-space-1); }
+.filter-chip {
+  display: inline-flex; align-items: center; gap: var(--ds-space-2); min-height: 38px; padding: 6px 14px;
+  border: 1.5px solid var(--ds-color-gray-200); border-radius: 999px; background: var(--ds-color-white);
+  color: var(--ds-color-gray-500); font-family: inherit; font-weight: var(--ds-font-weight-semibold);
+  font-size: var(--ds-font-size-label); cursor: pointer; transition: border-color .12s, color .12s, background-color .12s;
+}
+.filter-chip:hover { border-color: var(--ds-color-gray-300); color: var(--ds-color-black); }
+.filter-chip.is-active { background: var(--ds-color-green-100); border-color: var(--ds-color-green-100); color: var(--ds-color-black); }
+.filter-chip__count { display: inline-flex; align-items: center; justify-content: center; min-width: 20px; height: 20px; padding: 0 6px; border-radius: 999px; background: color-mix(in srgb, var(--ds-color-gray-500) 14%, transparent); font-size: var(--ds-font-size-body-sm); font-weight: var(--ds-font-weight-semibold); color: inherit; }
+.filter-chip.is-active .filter-chip__count { background: color-mix(in srgb, #000 16%, transparent); }
 /* navegación de rol (espejo de .ds-nav del DS: activo = verde-100 + texto negro) */
 .topnav { display: flex; align-items: center; gap: var(--ds-space-1); }
 .topnav__item {
