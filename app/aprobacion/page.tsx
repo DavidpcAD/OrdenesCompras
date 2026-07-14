@@ -85,9 +85,14 @@ export default function AprobacionPage() {
                 {todasAbiertas ? "Colapsar todas" : "Expandir todas"}
               </button>
             </div>
-            <Button onClick={aprobarSeleccionadas} disabled={sel.size === 0 || lote}>
-              {lote ? "Lanzando…" : `Aprobar y lanzar seleccionadas (${sel.size})`}
-            </Button>
+            {sel.size > 0 ? (
+              <div style={{ flex: "1 1 300px", minWidth: 240, maxWidth: 420 }}>
+                <SlideConfirm oneWay busy={lote} height={56} threshold={0.75}
+                  approveLabel={`Aprobar y lanzar (${sel.size})`} onApprove={aprobarSeleccionadas} />
+              </div>
+            ) : (
+              <span className="ds-muted ds-body-sm">Seleccioná órdenes para aprobar y lanzar en lote.</span>
+            )}
           </div>
         )}
 

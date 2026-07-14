@@ -2,16 +2,12 @@
 
 import { useEffect, useRef, useState } from "react";
 
-// Slide-to-confirm BIDIRECCIONAL (inspirado en el DS "SlideToConfirm", pero con
-// dos direcciones). Deslizar a la DERECHA confirma "aprobar" (verde); a la
-// IZQUIERDA confirma "rechazar" (rojo). El track negro muestra las dos etiquetas
-// atenuadas; al arrastrar hacia un lado esa zona se ilumina. Pasado el umbral y
-// al soltar, se dispara el callback. Funciona con mouse y touch.
-//
-// IMPORTANTE (aprobar): al confirmar a la derecha el slider queda FIJO en el
-// extremo con spinner mientras el padre procesa (`busy`). No se resetea solo:
-// si BC responde OK el padre desmonta la tarjeta; si falla, `busy` vuelve a
-// false y el slider regresa al centro para reintentar.
+// Slide-to-confirm inspirado en el DS "SlideToConfirm".
+//  • Bidireccional (default): derecha = aprobar (verde), izquierda = rechazar
+//    (rojo); knob al centro. Al aprobar queda fijo con spinner (`busy`) hasta que
+//    el padre resuelva.
+//  • oneWay: una sola dirección (verde), knob a la izquierda que crece hacia la
+//    derecha (como el "PEDIR" del DS). Se usa para "Aprobar y lanzar en lote".
 
 type Dir = "right" | "left";
 
@@ -25,9 +21,10 @@ export function SlideConfirm({
   height = 68,
   knobWidth = 76,
   threshold = 0.7,
+  oneWay = false,
 }: {
   onApprove: () => void;
-  onReject: () => void;
+  onReject?: () => void;
   approveLabel?: string;
   rejectLabel?: string;
   disabled?: boolean;
@@ -35,7 +32,9 @@ export function SlideConfirm({
   height?: number;
   knobWidth?: number;
   threshold?: number;
+  oneWay?: boolean;
 }) {
+  const twoWay = !oneWay;
   const containerRef = useRef<HTMLDivElement>(null);
   const [maxDrag, setMaxDrag] = useState(0);
   const [dragX, setDragX] = useState(0);
@@ -44,19 +43,18 @@ export function SlideConfirm({
   const startRef = useRef(0);
   const sawBusy = useRef(false);
 
-  // maxDrag = mitad del recorrido libre a cada lado.
+  // Recorrido libre: mitad a cada lado (bidireccional) o completo (oneWay).
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
-    const update = () => setMaxDrag(Math.max(0, (el.getBoundingClientRect().width - knobWidth) / 2));
+    const update = () => setMaxDrag(Math.max(0, (el.getBoundingClientRect().width - knobWidth) / (twoWay ? 2 : 1)));
     update();
     const ro = new ResizeObserver(update);
     ro.observe(el);
     return () => ro.disconnect();
-  }, [knobWidth]);
+  }, [knobWidth, twoWay]);
 
-  // Tras aprobar: esperamos a que el padre entre en `busy` y vuelva a salir.
-  // Si salió de busy y la tarjeta sigue montada, es que FALLÓ → volvemos al centro.
+  // Tras aprobar: si el padre entró y salió de `busy` y seguimos montados = falló → reset.
   useEffect(() => {
     if (committed !== "right") return;
     if (busy) { sawBusy.current = true; return; }
@@ -65,11 +63,12 @@ export function SlideConfirm({
 
   const locked = disabled || busy || committed !== null;
   const progress = maxDrag > 0 ? Math.min(1, Math.abs(dragX) / maxDrag) : 0;
-  const dir: Dir | null = dragX > 4 ? "right" : dragX < -4 ? "left" : null;
+  const dir: Dir | null = dragX > 4 ? "right" : (twoWay && dragX < -4 ? "left" : null);
 
   const rubber = (raw: number) => {
+    const lo = twoWay ? -maxDrag : 0;
     if (raw > maxDrag) return maxDrag + (raw - maxDrag) * 0.2;
-    if (raw < -maxDrag) return -maxDrag + (raw + maxDrag) * 0.2;
+    if (raw < lo) return lo + (raw - lo) * 0.2;
     return raw;
   };
 
@@ -97,20 +96,17 @@ export function SlideConfirm({
     setCommitted(d);
     setDragX(d === "right" ? maxDrag : -maxDrag);
     if (d === "right") {
-      // Aprobar: queda fijo con spinner; el efecto de `busy` lo reseteará si falla.
-      onApprove();
+      onApprove(); // queda fijo con spinner; el efecto de `busy` lo resetea si falla
     } else {
-      // Rechazar: abre el modal de motivo y el slider vuelve al centro.
-      onReject();
+      onReject?.(); // abre el modal de motivo y vuelve al centro
       window.setTimeout(() => { setCommitted(null); setDragX(0); }, 300);
     }
   }
 
-  // Opacidad de cada zona: base tenue + sube con el progreso hacia ese lado.
   const rightOpacity = committed === "right" ? 1 : dir === "right" ? 0.25 + progress * 0.75 : 0.16;
   const leftOpacity = committed === "left" ? 1 : dir === "left" ? 0.25 + progress * 0.75 : 0.16;
   const trans = dragging ? "none" : "transform .28s cubic-bezier(.22,1,.36,1), opacity .2s ease";
-  const knobLeft = maxDrag + dragX; // centro en reposo (maxDrag), se mueve con dragX
+  const knobLeft = twoWay ? maxDrag + dragX : dragX; // centro (bidir) o desde la izq (oneWay)
 
   const knobBg = committed === "left" ? "var(--ds-color-red-200)"
     : committed === "right" ? "var(--ds-color-green-200)"
@@ -125,20 +121,23 @@ export function SlideConfirm({
         opacity: disabled ? 0.5 : 1,
       }}
     >
-      {/* Zona izquierda (rechazar / rojo) */}
-      <div style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: "50%", background: "var(--ds-color-red-100)", opacity: leftOpacity, transition: trans }} />
-      {/* Zona derecha (aprobar / verde) */}
-      <div style={{ position: "absolute", right: 0, top: 0, bottom: 0, width: "50%", background: "var(--ds-color-green-100)", opacity: rightOpacity, transition: trans }} />
+      {/* Zonas de color */}
+      {twoWay && (
+        <div style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: "50%", background: "var(--ds-color-red-100)", opacity: leftOpacity, transition: trans }} />
+      )}
+      <div style={{ position: "absolute", right: 0, top: 0, bottom: 0, width: twoWay ? "50%" : "100%", background: "var(--ds-color-green-100)", opacity: rightOpacity, transition: trans }} />
 
-      {/* Etiqueta izquierda */}
-      <div style={{
-        position: "absolute", left: 16, top: 0, bottom: 0, display: "flex", alignItems: "center", gap: 6,
-        color: "var(--ds-color-white)", fontWeight: 600, fontSize: 14,
-        opacity: committed === "right" ? 0 : committed === "left" ? 1 : dir === "left" ? 1 : 0.85, transition: trans, pointerEvents: "none",
-      }}>
-        <span aria-hidden style={{ fontSize: 18 }}>‹</span>{rejectLabel}
-      </div>
-      {/* Etiqueta derecha */}
+      {/* Etiqueta izquierda (rechazar) — solo bidireccional */}
+      {twoWay && (
+        <div style={{
+          position: "absolute", left: 16, top: 0, bottom: 0, display: "flex", alignItems: "center", gap: 6,
+          color: "var(--ds-color-white)", fontWeight: 600, fontSize: 14,
+          opacity: committed === "right" ? 0 : committed === "left" ? 1 : dir === "left" ? 1 : 0.85, transition: trans, pointerEvents: "none",
+        }}>
+          <span aria-hidden style={{ fontSize: 18 }}>‹</span>{rejectLabel}
+        </div>
+      )}
+      {/* Etiqueta derecha (aprobar) */}
       <div style={{
         position: "absolute", right: 16, top: 0, bottom: 0, display: "flex", alignItems: "center", gap: 6,
         color: dir === "right" || committed === "right" ? "var(--ds-color-black)" : "var(--ds-color-white)",
@@ -176,7 +175,6 @@ export function SlideConfirm({
         ) : committed === "left" ? (
           <span aria-hidden style={{ fontSize: 20, fontWeight: 700 }}>✕</span>
         ) : (
-          // Handle de arrastre: 3 barritas + animación de empujoncito en reposo.
           <span className={`stc-handle${!dragging ? " stc-grip" : ""}`} aria-hidden>
             <i /><i /><i />
           </span>
