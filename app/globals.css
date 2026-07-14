@@ -587,25 +587,27 @@ h1, h2, h3, h4, p { margin: 0; }
 .app-content { flex: 1; min-width: 0; }
 .app-nav {
   position: sticky; top: 65px; flex-shrink: 0;
-  width: 288px; height: calc(100vh - 65px); overflow-y: auto;
+  width: 288px; height: calc(100vh - 65px); overflow-y: auto; overflow-x: hidden;
   display: flex; flex-direction: column; gap: var(--ds-space-4);
   padding: var(--ds-space-6) var(--ds-space-5) var(--ds-space-6);
   background: #2a2a2a; /* columna oscura del DS RolesV2 (.rv-sidebar) */
+  transition: width .34s cubic-bezier(.22, 1, .36, 1);
 }
 .app-nav.is-collapsed { width: 112px; align-items: center; padding-left: var(--ds-space-4); padding-right: var(--ds-space-4); }
 .app-nav__item {
   display: flex; align-items: center; gap: var(--ds-space-3); width: 100%; height: 62px;
-  padding: 0 22px; border: 0; border-radius: 999px;
+  padding: 0 22px; border: 0; border-radius: 999px; overflow: hidden;
   background: var(--ds-color-black); color: var(--ds-color-white);
   font-family: inherit; font-size: var(--ds-font-size-body-md); font-weight: var(--ds-font-weight-semibold);
   cursor: pointer; white-space: nowrap; box-shadow: var(--ds-shadow-02-soft);
-  transition: box-shadow .12s, background .12s, color .12s;
+  transition: width .34s cubic-bezier(.22, 1, .36, 1), padding .34s cubic-bezier(.22, 1, .36, 1), gap .2s ease, box-shadow .12s, background .12s, color .12s;
 }
 .app-nav__item svg { flex-shrink: 0; }
 .app-nav__item:hover { box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.16); }
 .app-nav__item.is-active { background: var(--ds-color-green-100); color: var(--ds-color-black); }
-.app-nav.is-collapsed .app-nav__item { width: 62px; height: 62px; justify-content: center; padding: 0; }
-.app-nav.is-collapsed .app-nav__label { display: none; }
+.app-nav__label { overflow: hidden; white-space: nowrap; max-width: 200px; opacity: 1; transition: max-width .34s cubic-bezier(.22, 1, .36, 1), opacity .22s ease .1s; }
+.app-nav.is-collapsed .app-nav__item { width: 62px; height: 62px; justify-content: center; padding: 0; gap: 0; }
+.app-nav.is-collapsed .app-nav__label { max-width: 0; opacity: 0; transition: max-width .28s cubic-bezier(.22, 1, .36, 1), opacity .12s ease; }
 /* FAB de colapsar/expandir al pie del rail (estilo RolesV2 menu FAB): abajo-izq
    en expandido, centrado en colapsado; rota 90° al colapsar. */
 .app-nav__toggle {
@@ -616,6 +618,9 @@ h1, h2, h3, h4, p { margin: 0; }
 }
 .app-nav__toggle:hover { box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.16); }
 .app-nav__toggle.is-collapsed { transform: rotate(90deg); }
+@media (prefers-reduced-motion: reduce) {
+  .app-nav, .app-nav__item, .app-nav__label, .app-nav__toggle { transition: none; }
+}
 
 @media (max-width: 760px) {
   /* En móvil el rail pasa a fila horizontal scrollable bajo la barra superior. */
