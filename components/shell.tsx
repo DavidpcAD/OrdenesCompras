@@ -70,7 +70,16 @@ export function AppShell({ role, children }: { role: Role; children: React.React
   const router = useRouter();
   const pathname = usePathname();
   const [notifOpen, setNotifOpen] = useState(false);
-  const [navCollapsed, setNavCollapsed] = useState(true); // arranca colapsado (solo íconos), estilo RolesV2
+  // Estado colapsado del sidebar, PERSISTIDO en localStorage: al navegar el
+  // AppShell se re-monta, así que sin persistir se cerraría solo. Default colapsado.
+  const [navCollapsed, setNavCollapsed] = useState<boolean>(() =>
+    typeof window === "undefined" ? true : localStorage.getItem("adelante_oc_nav_collapsed") !== "0"
+  );
+  const toggleNav = () => setNavCollapsed((v) => {
+    const n = !v;
+    try { localStorage.setItem("adelante_oc_nav_collapsed", n ? "1" : "0"); } catch { /* noop */ }
+    return n;
+  });
   // Notificaciones relevantes para este rol (o sin rol específico).
   const notifsRol = notificaciones.filter((n) => !n.rol || n.rol === role);
   const noLeidas = notifsRol.filter((n) => !n.leida).length;
@@ -186,7 +195,7 @@ export function AppShell({ role, children }: { role: Role; children: React.React
               <IconLogout size={20} />
               <span className="app-nav__label">Salir</span>
             </button>
-            <button className={`app-nav__toggle${navCollapsed ? " is-collapsed" : ""}`} onClick={() => setNavCollapsed((v) => !v)}
+            <button className={`app-nav__toggle${navCollapsed ? " is-collapsed" : ""}`} onClick={toggleNav}
               aria-label={navCollapsed ? "Expandir menú" : "Colapsar menú"} title={navCollapsed ? "Expandir" : "Colapsar"}>
               <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><path d="M4 6h16M4 12h16M4 18h16" /></svg>
             </button>
