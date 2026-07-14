@@ -612,11 +612,12 @@ h1, h2, h3, h4, p { margin: 0; }
    en expandido, centrado en colapsado; rota 90° al colapsar. */
 .app-nav__salir:hover { color: var(--ds-color-red-100); box-shadow: 0 0 0 3px color-mix(in srgb, var(--ds-color-red-100) 30%, transparent); }
 .app-nav__toggle {
-  margin-top: var(--ds-space-2); width: 62px; height: 62px; flex-shrink: 0;
+  margin-top: var(--ds-space-2); align-self: flex-end; width: 62px; height: 62px; flex-shrink: 0;
   border: 0; border-radius: 999px; background: var(--ds-color-black); color: var(--ds-color-white);
   display: grid; place-items: center; cursor: pointer; box-shadow: var(--ds-shadow-02-soft);
   transition: transform .18s ease, box-shadow .12s;
 }
+.app-nav.is-collapsed .app-nav__toggle { align-self: center; }
 .app-nav__toggle:hover { box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.16); }
 .app-nav__toggle.is-collapsed { transform: rotate(90deg); }
 @media (prefers-reduced-motion: reduce) {
