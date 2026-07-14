@@ -190,23 +190,33 @@ export function DataTable<T>({
     const trs = filas.map((r) => `<tr>${cols.map((c) => `<td>${escH(valCelda(r, c))}</td>`).join("")}</tr>`).join("");
     const w = window.open("", "_blank");
     if (!w) return;
+    const fecha = new Intl.DateTimeFormat("es-CR", { dateStyle: "long", timeStyle: "short" }).format(new Date());
     w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${escH(titulo)}</title>
       <style>
-        *{font-family:-apple-system,Segoe UI,Roboto,sans-serif;box-sizing:border-box}
-        body{margin:32px;color:#1a1a1a}
-        h1{font-size:20px;margin:0 0 2px}
-        .meta{color:#888;font-size:12px;margin-bottom:18px}
+        *{font-family:-apple-system,Segoe UI,Roboto,Helvetica,sans-serif;box-sizing:border-box}
+        body{margin:34px;color:#1a1a1a}
+        .brand{display:flex;align-items:center;gap:10px;margin-bottom:18px}
+        .brand .mark{display:grid;place-items:center;width:38px;height:38px;border-radius:10px;background:#add010;color:#000;font-weight:800;font-size:22px;line-height:1}
+        .brand .name{font-weight:700;font-size:16px}
+        .head{display:flex;align-items:flex-end;justify-content:space-between;border-bottom:3px solid #add010;padding-bottom:12px;margin-bottom:16px}
+        h1{font-size:22px;margin:0}
+        .meta{color:#888;font-size:12px;text-align:right;line-height:1.5}
         table{border-collapse:collapse;width:100%;font-size:12px}
-        thead th{background:#111;color:#fff;text-align:left;padding:8px 10px}
+        thead th{background:#111;color:#fff;text-align:left;padding:9px 10px;font-weight:600}
         thead th:first-child{border-top-left-radius:8px}
         thead th:last-child{border-top-right-radius:8px}
         tbody td{padding:7px 10px;border-bottom:1px solid #eee}
         tbody tr:nth-child(even){background:#fafafa}
+        .foot{margin-top:16px;color:#aaa;font-size:10px;text-align:center}
         @media print{@page{margin:14mm}}
       </style></head><body>
-      <h1>${escH(titulo)}</h1>
-      <div class="meta">Compras Adelante · ${filas.length} registro(s)</div>
+      <div class="brand"><span class="mark">A</span><span class="name">Compras Adelante</span></div>
+      <div class="head">
+        <h1>${escH(titulo)}</h1>
+        <div class="meta">${escH(fecha)}<br>${filas.length} registro(s)</div>
+      </div>
       <table><thead><tr>${ths}</tr></thead><tbody>${trs}</tbody></table>
+      <div class="foot">Generado desde Compras Adelante</div>
       <script>window.onload=function(){window.print();}</script>
       </body></html>`);
     w.document.close();

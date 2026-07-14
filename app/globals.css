@@ -491,12 +491,15 @@ h1, h2, h3, h4, p { margin: 0; }
 .datefield__foot button:hover { background: var(--ds-color-surface); }
 
 /* Fila expandible: animación de altura (grid 0fr→1fr), estilo SelectionDropdown */
-.dt-exp-wrap { display: grid; grid-template-rows: 0fr; transition: grid-template-rows .28s cubic-bezier(.34, 1.4, .5, 1); }
+/* Despliegue de líneas suave ("mantequilla"): altura con ease suave (sin rebote)
+   + el contenido entra con fade y un leve deslizamiento. */
+.dt-exp-wrap { display: grid; grid-template-rows: 0fr; transition: grid-template-rows .4s cubic-bezier(.22, .61, .36, 1); }
 .dt-exp-wrap.is-open { grid-template-rows: 1fr; }
 .dt-exp-clip { overflow: hidden; }
-.dt-exp-body { padding: 10px 14px 14px 48px; background: color-mix(in srgb, var(--ds-color-surface) 55%, #fff); }
+.dt-exp-body { padding: 10px 14px 14px 48px; background: color-mix(in srgb, var(--ds-color-surface) 55%, #fff); opacity: 0; transform: translateY(-8px); transition: opacity .32s ease .06s, transform .4s cubic-bezier(.22, .61, .36, 1) .06s; }
+.dt-exp-wrap.is-open .dt-exp-body { opacity: 1; transform: none; }
 .dt-exp-row td { background: transparent; }
-@media (prefers-reduced-motion: reduce) { .dt-exp-wrap { transition: none; } }
+@media (prefers-reduced-motion: reduce) { .dt-exp-wrap, .dt-exp-body { transition: none; } .dt-exp-body { opacity: 1; transform: none; } }
 
 /* NavigationControls del DS: pill blanco con chevron (prev/next de la tabla) */
 .ds-navctrl {
