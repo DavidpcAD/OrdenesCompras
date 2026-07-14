@@ -711,6 +711,16 @@ h1, h2, h3, h4, p { margin: 0; }
 .link-btn { background: none; border: 0; color: var(--ds-color-green-200); font-weight: 600; cursor: pointer; font-size: var(--ds-font-size-label); padding: 0; }
 .icon-btn { background: none; border: 0; cursor: pointer; padding: var(--ds-space-2); border-radius: var(--ds-radius-md); color: var(--ds-color-gray-400); display: inline-grid; place-items: center; }
 .icon-btn:hover { background: var(--ds-color-gray-100); color: var(--ds-color-black); }
+/* Botón "Quitar" (remover línea): más grande y en rojo del DS, bien visible. */
+.icon-btn--quitar { width: 36px; height: 36px; font-size: 22px; line-height: 1; color: var(--ds-color-red-200); border-radius: var(--ds-radius-md); }
+.icon-btn--quitar:hover { background: var(--ds-color-red-100); color: var(--ds-color-red-200); }
+
+/* Botón cerrar del modal, estilo DS (cuadrado redondeado negro, ícono blanco). */
+.modal-close { display: inline-grid; place-items: center; flex-shrink: 0; width: 36px; height: 36px; border: 0; cursor: pointer;
+  border-radius: var(--ds-radius-md); background: var(--ds-color-black); color: var(--ds-color-white);
+  transition: box-shadow .15s ease, transform .1s ease; }
+.modal-close:hover { box-shadow: var(--ds-shadow-03-big); }
+.modal-close:active { transform: scale(.94); }
 /* Volver estilo DS (nav--overview): círculo blanco con sombra suave + chevron ‹,
    y el destino como etiqueta al lado. El "‹ " ya no va en el texto (lo pone ::before). */
 .back-link {

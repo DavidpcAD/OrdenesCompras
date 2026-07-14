@@ -46,8 +46,10 @@ const ROLE_META: Record<Role, { label: string; persona: string; home: string; na
     nav: [
       // Órdenes y Solicitudes son un mismo concepto cada uno, con dos vistas
       // (por documento / por línea) que se alternan con un toggle dentro de la página.
+      { href: "/proveeduria/dashboard", label: "Dashboard", icon: IconDashboard },
       { href: "/proveeduria/solicitudes", label: "Solicitudes", icon: IconList, alt: ["/proveeduria$"] },
       { href: "/proveeduria/ordenes", label: "Órdenes", icon: IconReceipt, alt: ["/proveeduria/pedidas"] },
+      { href: "/proveeduria/inventarios", label: "Inventarios", icon: IconBox },
     ],
   },
   aprobacion: {

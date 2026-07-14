@@ -183,7 +183,7 @@ export function Modal({ title, onClose, children, footer, wide }: {
       <div className={`modal ${wide ? "modal--wide" : ""}`} onClick={(e) => e.stopPropagation()}>
         <div className="row row--between" style={{ marginBottom: 16 }}>
           <h3 className="ds-subtitle-lg">{title}</h3>
-          <button className="icon-btn" onClick={onClose} aria-label="Cerrar"><IconClose /></button>
+          <button className="modal-close" onClick={onClose} aria-label="Cerrar"><IconClose size={18} /></button>
         </div>
         {children}
         {footer && <div className="row gap-3 mt-6" style={{ justifyContent: "flex-end" }}>{footer}</div>}

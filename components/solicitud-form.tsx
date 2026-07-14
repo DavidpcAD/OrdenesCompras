@@ -768,7 +768,7 @@ export function SolicitudForm({
                         style={{ width: 90, textAlign: "right", padding: "6px 10px" }} />
                     </td>
                     <td className="ds-muted">{a?.unidad ?? "—"}</td>
-                    <td><button className="icon-btn" onClick={() => removeLine(l.key)} aria-label="Quitar"><IconTrash /></button></td>
+                    <td><button className="icon-btn icon-btn--quitar" onClick={() => removeLine(l.key)} aria-label="Quitar" title="Quitar"><IconTrash size={18} /></button></td>
                   </tr>
                 );
               })}

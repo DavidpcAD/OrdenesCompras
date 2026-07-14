@@ -3,10 +3,10 @@
 import { AppShell } from "@/components/shell";
 import { InventariosView } from "@/components/inventarios-view";
 
-export default function InventariosPage() {
+export default function ProveeduriaInventariosPage() {
   return (
-    <AppShell role="ingenieria">
-      <InventariosView tablaKey="inventarios-ing" />
+    <AppShell role="proveeduria">
+      <InventariosView tablaKey="inventarios-prov" />
     </AppShell>
   );
 }

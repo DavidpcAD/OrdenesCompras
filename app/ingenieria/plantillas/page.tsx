@@ -222,7 +222,7 @@ function PlantillaEditor({ plantilla, wbs, items, usuario, onClose, onSaved }: {
                   <td><span className="ds-strong ds-body-sm">{l.code}</span> <span className="ds-muted">— {l.descripcion}</span></td>
                   <td className="ds-muted">{l.unidad ?? "—"}</td>
                   <td className="ds-num"><Input type="number" min={0} value={l.cantidad} onChange={(e) => setLinea(i, { cantidad: Number(e.target.value) })} style={{ width: 90, textAlign: "right", padding: "6px 10px" }} /></td>
-                  <td className="ds-num"><button className="icon-btn" title="Quitar" onClick={() => delLinea(i)}>×</button></td>
+                  <td className="ds-num"><button className="icon-btn icon-btn--quitar" title="Quitar" onClick={() => delLinea(i)}>×</button></td>
                 </tr>
               ))}
             </tbody>
