@@ -136,7 +136,7 @@ async function listAll(group: string, entity: string): Promise<any[]> {
   return out;
 }
 
-export type BcItem = { id: string; code: string; descripcion: string; unidad: string; lastDirectCost?: number; categoria?: string };
+export type BcItem = { id: string; code: string; descripcion: string; unidad: string; lastDirectCost?: number; categoria?: string; reorderPoint?: number; safetyStock?: number; reorderQty?: number };
 export type BcObra = { id: string; codigo: string; nombre: string };
 export type BcAlmacen = { codigo: string; nombre: string };
 
@@ -157,6 +157,9 @@ export async function bcItems(): Promise<BcItem[]> {
           unidad: i.BaseUnitOfMeasure ?? i.baseUnitOfMeasure ?? i.baseUnitOfMeasureCode ?? "UND",
           lastDirectCost: costCustom,
           categoria: catCustom,
+          reorderPoint: Number(i.reorderPoint ?? i.ReorderPoint ?? 0) || undefined,
+          safetyStock: Number(i.safetyStockQuantity ?? i.SafetyStockQuantity ?? 0) || undefined,
+          reorderQty: Number(i.reorderQuantity ?? i.ReorderQuantity ?? 0) || undefined,
         };
       });
     // Enriquecer con ÚLTIMO COSTO DIRECTO (precio de la última compra) y CATEGORÍA
@@ -237,6 +240,72 @@ export async function bcObras(): Promise<BcObra[]> {
     id: j.id ?? j.no ?? "",
     codigo: j.no ?? j.No ?? "",
     nombre: j.description ?? j.Description ?? j.no ?? "",
+  }));
+}
+
+// Lista paginada de una API custom con path+query ya armados (incluye $filter).
+// A diferencia de listAll (datos maestros, cache 5 min), aquí el caller decide
+// el cache vía `opts` (p.ej. no-store para stock, que cambia con cada recepción).
+async function listCustom(group: string, path: string, opts: RequestInit = { cache: "no-store" }): Promise<any[]> {
+  const cid = await getCompanyId();
+  let url: string | null = `${customRoot(group)}/companies(${cid})/${path}`;
+  const out: any[] = [];
+  let guard = 0;
+  while (url && guard++ < 50) {
+    const res = await bcFetch(url, opts);
+    if (!res.ok) throw new Error(`BC ${res.status} en ${url}: ${(await res.text()).slice(0, 250)}`);
+    const data: any = await res.json();
+    out.push(...(data.value ?? []));
+    url = data["@odata.nextLink"] ?? null;
+  }
+  return out;
+}
+
+// Escapa una comilla simple para un literal OData ('' = comilla dentro del string).
+function odataStr(v: string): string {
+  return v.replace(/'/g, "''");
+}
+
+export type BcExistencia = { itemNo: string; variantCode: string; locationCode: string; descripcion: string; cantidad: number; unidad: string };
+
+// Existencias (stock neto físico) por ubicación, vía la API custom Adelante
+// `inventoryByLocation` (page 50236, grupo inventory). cantidad = quantityOnHand
+// = SUM(Quantity) de TODOS los movimientos (inventario actual real). Fila por
+// variante (PK = itemNo+variantCode+locationCode). Requiere al menos itemNo o
+// locationCode (la API lo exige por performance). Convención: locationCode = N.º
+// de obra, así que "existencias de una obra" = filtrar por su locationCode.
+export async function bcExistencias(opts: { itemNo?: string; locationCode?: string }): Promise<BcExistencia[]> {
+  const itemNo = (opts.itemNo ?? "").trim();
+  const locationCode = (opts.locationCode ?? "").trim();
+  if (!itemNo && !locationCode) throw new Error("Se requiere itemNo o locationCode para consultar existencias.");
+  const conds: string[] = [];
+  if (itemNo) conds.push(`itemNo eq '${odataStr(itemNo)}'`);
+  if (locationCode) conds.push(`locationCode eq '${odataStr(locationCode)}'`);
+  const rows = await listCustom("inventory", `inventoryByLocation?$filter=${encodeURIComponent(conds.join(" and "))}`);
+  return rows.map((r) => ({
+    itemNo: r.itemNo ?? r.ItemNo ?? "",
+    variantCode: r.variantCode ?? r.VariantCode ?? "",
+    locationCode: r.locationCode ?? r.LocationCode ?? "",
+    descripcion: r.description ?? r.Description ?? "",
+    cantidad: Number(r.quantityOnHand ?? r.QuantityOnHand ?? 0) || 0,
+    unidad: r.unitOfMeasure ?? r.UnitOfMeasure ?? r.baseUnitOfMeasure ?? "",
+  }));
+}
+
+export type BcJobTask = { jobNo: string; jobTaskNo: string; descripcion: string; tipo: string };
+
+// Catálogo de tareas de obra (Job Task) vía la API custom Adelante `jobTasks`
+// (page 50154, grupo project). Filtrable por jobNo. Datos relativamente estables:
+// cache 5 min como el resto de maestros.
+export async function bcJobTasks(jobNo?: string): Promise<BcJobTask[]> {
+  const j = (jobNo ?? "").trim();
+  const query = j ? `?$filter=${encodeURIComponent(`jobNo eq '${odataStr(j)}'`)}` : "";
+  const rows = await listCustom("project", `jobTasks${query}`, { next: { revalidate: 300 } } as RequestInit);
+  return rows.map((t) => ({
+    jobNo: t.jobNo ?? t.JobNo ?? "",
+    jobTaskNo: t.jobTaskNo ?? t.JobTaskNo ?? "",
+    descripcion: t.description ?? t.Description ?? "",
+    tipo: t.jobTaskType ?? t.JobTaskType ?? "",
   }));
 }
 
