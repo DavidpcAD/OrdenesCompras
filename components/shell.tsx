@@ -29,7 +29,7 @@ type RoleAction = { href: string; label: string };
 
 const ROLE_META: Record<Role, { label: string; persona: string; home: string; nav: NavItem[]; action?: RoleAction; color: string }> = {
   ingenieria: {
-    label: "Ingeniería", persona: "Laura", home: "/ingenieria", color: "var(--ds-color-green-100)",
+    label: "Ingeniería", persona: "Laura", home: "/ingenieria/dashboard", color: "var(--ds-color-green-100)",
     nav: [
       { href: "/ingenieria/dashboard", label: "Dashboard", icon: IconDashboard },
       { href: "/ingenieria", label: "Mis solicitudes", icon: IconList },
@@ -42,7 +42,7 @@ const ROLE_META: Record<Role, { label: string; persona: string; home: string; na
     ],
   },
   proveeduria: {
-    label: "Proveeduría", persona: "Angie", home: "/proveeduria/solicitudes", color: "var(--ds-color-yellow)",
+    label: "Proveeduría", persona: "Angie", home: "/proveeduria/dashboard", color: "var(--ds-color-yellow)",
     action: { href: "/proveeduria/directa", label: "Compra directa" },
     nav: [
       // Órdenes y Solicitudes son un mismo concepto cada uno, con dos vistas

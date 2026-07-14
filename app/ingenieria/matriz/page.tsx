@@ -22,7 +22,7 @@ const LABEL: Record<string, string> = { ENTREGADO: "Entregado", COMPRADO: "Compr
 export default function MatrizPage() {
   const toast = useToast();
   const router = useRouter();
-  const { addPedido, pedidos, setPedidoEstado } = useStore();
+  const { addPedido, pedidos, setPedidoEstado, usuario } = useStore();
   // Armar/ver el pedido SIN salir de la matriz: modal con el formulario prellenado.
   const [armar, setArmar] = useState<{ idObra: number; obra: string; clasif: number; nombre: string } | null>(null);
   const [etapas, setEtapas] = useState<Etapa[]>([]); const [partidas, setPartidas] = useState<Partida[]>([]);
@@ -44,11 +44,22 @@ export default function MatrizPage() {
     })();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const etapaDeClas = (c: Clasif) => {
+  const partidaDeClas = (c: Clasif): Partida | null => {
     const sub = c.subPartidaId ? subpartidas.find((s) => s.id === c.subPartidaId) : undefined;
-    const p = partidas.find((x) => x.id === (c.partidaId ?? sub?.partidaId));
-    return p?.etapaId ?? null;
+    return partidas.find((x) => x.id === (c.partidaId ?? sub?.partidaId)) ?? null;
   };
+  const etapaDeClas = (c: Clasif) => partidaDeClas(c)?.etapaId ?? null;
+
+  // Recordar la etapa (especialidad) elegida por cada ingeniero: así, según quién
+  // entra, la matriz arranca en las clasificaciones que le corresponden.
+  useEffect(() => {
+    if (!usuario) return;
+    const saved = localStorage.getItem(`matriz_etapa_${usuario}`);
+    if (saved != null) setEtapaSel(saved);
+  }, [usuario]);
+  useEffect(() => {
+    if (usuario) localStorage.setItem(`matriz_etapa_${usuario}`, etapaSel);
+  }, [usuario, etapaSel]);
   const columnas = useMemo(() => clasifs.filter((c) => !etapaSel || String(etapaDeClas(c)) === etapaSel), [clasifs, partidas, subpartidas, etapaSel]); // eslint-disable-line react-hooks/exhaustive-deps
   // Estado de cada celda: se arma desde la vista SQL (celdas) Y desde los pedidos
   // del store (siempre frescos), quedándose con el estado de mayor avance. Así la
@@ -93,14 +104,13 @@ export default function MatrizPage() {
         </div>
 
         <Card className="mt-2">
-          <div className="grid-2">
-            <Field label="Etapa (columnas)">
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))", gap: 12 }}>
+            <Field label="Etapa · tu especialidad">
               <Select value={etapaSel} onChange={(e) => setEtapaSel(e.target.value)}>
                 <option value="">Todas las etapas</option>
                 {etapas.map((e) => <option key={e.id} value={e.id}>{e.codigo} · {e.nombre}</option>)}
               </Select>
             </Field>
-            <Field label="Buscar obra"><Input value={buscar} onChange={(e) => setBuscar(e.target.value)} placeholder="Código o nombre…" /></Field>
             <Field label="Área de costeo">
               <Select value={fArea} onChange={(e) => setFArea(e.target.value)}>
                 <option value="">Todas</option>{areas.map((a) => <option key={a} value={a}>{a}</option>)}
@@ -111,10 +121,12 @@ export default function MatrizPage() {
                 <option value="">Todos</option>{proyectos.map((p) => <option key={p} value={p}>{p}</option>)}
               </Select>
             </Field>
+            <Field label="Buscar obra"><Input value={buscar} onChange={(e) => setBuscar(e.target.value)} placeholder="Código o nombre…" /></Field>
           </div>
-          <div className="row gap-2 wrap mt-2">
+          <div className="row gap-2 wrap" style={{ alignItems: "center", marginTop: 14, paddingTop: 12, borderTop: "1.5px solid var(--ds-color-gray-100)" }}>
+            <span className="ds-label ds-muted" style={{ marginRight: 2 }}>Estados:</span>
             {(["ENTREGADO", "COMPRADO", "PEDIDO", "BORRADOR"] as const).map((k) => <Badge key={k} tone={TONO[k]}>{LABEL[k]}</Badge>)}
-            <span className="ds-muted ds-body-sm">· vacío = sin pedido ( + para armarlo )</span>
+            <span className="ds-muted ds-body-sm">· vacío = sin pedido ( <strong>+</strong> para armarlo )</span>
           </div>
         </Card>
 
@@ -127,7 +139,12 @@ export default function MatrizPage() {
                 <thead>
                   <tr>
                     <th style={{ width: 200, position: "sticky", left: 0, background: "var(--ds-color-white)", zIndex: 2 }}>Obra</th>
-                    {columnas.map((c) => <th key={c.id} style={{ width: 150, textAlign: "center" }}>{c.nombre}</th>)}
+                    {columnas.map((c) => { const par = partidaDeClas(c); return (
+                      <th key={c.id} style={{ width: 150, textAlign: "center", verticalAlign: "bottom" }}>
+                        {par && <div className="ds-body-sm ds-muted ds-truncate" title={par.nombre} style={{ fontWeight: 400, maxWidth: 150, margin: "0 auto" }}>{par.codigo ? `${par.codigo} · ` : ""}{par.nombre}</div>}
+                        <div className="ds-strong ds-body-sm">{c.nombre}</div>
+                      </th>
+                    ); })}
                     {/* columna espaciadora: absorbe el ancho sobrante para que las celdas no se estiren */}
                     <th aria-hidden style={{ width: "100%" }} />
                   </tr>
