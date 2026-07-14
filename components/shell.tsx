@@ -39,13 +39,13 @@ const ROLE_META: Record<Role, { label: string; persona: string; home: string; na
     ],
   },
   proveeduria: {
-    label: "Proveeduría", persona: "Angie", home: "/proveeduria/ordenes", color: "var(--ds-color-yellow)",
+    label: "Proveeduría", persona: "Angie", home: "/proveeduria/solicitudes", color: "var(--ds-color-yellow)",
     action: { href: "/proveeduria/directa", label: "Compra directa" },
     nav: [
       // Órdenes y Solicitudes son un mismo concepto cada uno, con dos vistas
       // (por documento / por línea) que se alternan con un toggle dentro de la página.
-      { href: "/proveeduria/ordenes", label: "Órdenes", icon: IconReceipt, alt: ["/proveeduria/pedidas"] },
       { href: "/proveeduria/solicitudes", label: "Solicitudes", icon: IconList, alt: ["/proveeduria$"] },
+      { href: "/proveeduria/ordenes", label: "Órdenes", icon: IconReceipt, alt: ["/proveeduria/pedidas"] },
     ],
   },
   aprobacion: {
