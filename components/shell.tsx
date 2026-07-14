@@ -9,7 +9,7 @@ import { formatDate } from "@/lib/helpers";
 import {
   IconBell, IconList, IconOptions, IconDuplicate, IconMatrix, IconTrack,
   IconReceipt, IconCheck, IconDelivery, IconFolder, IconPlus, IconLogout,
-  IconBox, IconWarning, IconWrench, IconEye,
+  IconBox, IconWarning, IconWrench, IconDashboard,
 } from "@/components/icons";
 
 const cap = (s: string) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : s);
@@ -38,7 +38,7 @@ const ROLE_META: Record<Role, { label: string; persona: string; home: string; na
       { href: "/ingenieria/seguimiento", label: "Seguimiento", icon: IconTrack },
       { href: "/ingenieria/inventarios", label: "Inventarios", icon: IconBox },
       { href: "/ingenieria/por-actividad", label: "Por actividad", icon: IconWrench },
-      { href: "/ingenieria/dashboard", label: "Dashboard", icon: IconEye },
+      { href: "/ingenieria/dashboard", label: "Dashboard", icon: IconDashboard },
     ],
   },
   proveeduria: {

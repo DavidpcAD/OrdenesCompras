@@ -28,6 +28,7 @@ export const IconWarning = ds("alert", 20);
 export const IconClose = ds("close", 18);
 export const IconCheck = ds("check", 18);
 export const IconEye = ds("open", 16);          // ver detalle
+export const IconDashboard = ds("home", 22);     // dashboard / panel
 // El DS no tiene campana ni logout → SVG propio claro (trazo) para que se entiendan.
 export const IconBell = ({ size = 20, ...p }: P) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" {...p}>
