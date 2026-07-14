@@ -582,46 +582,50 @@ h1, h2, h3, h4, p { margin: 0; }
 .topbar__identity .topbar__avatar { width: 30px; height: 30px; background: var(--ds-color-white); color: var(--ds-color-gray-500); font-size: var(--ds-font-size-body-sm); }
 .topbar__tabs { margin-left: var(--ds-space-4); }
 
-/* ── Layout: barra superior + rail lateral (nav) + contenido ── */
-.topbar__menu {
-  display: inline-grid; place-items: center; width: 40px; height: 40px; flex-shrink: 0;
-  border: 0; background: transparent; border-radius: var(--ds-radius-md); color: var(--ds-color-black);
-  cursor: pointer; transition: background .12s;
-}
-.topbar__menu:hover { background: var(--ds-color-gray-100); }
+/* ── Layout: barra superior + rail lateral OSCURO (estilo RolesV2) + contenido ── */
 .app-body { display: flex; align-items: flex-start; gap: 0; }
 .app-content { flex: 1; min-width: 0; }
 .app-nav {
-  position: sticky; top: 65px; align-self: flex-start; flex-shrink: 0;
-  width: 232px; max-height: calc(100vh - 65px); overflow-y: auto;
-  display: flex; flex-direction: column; gap: var(--ds-space-2);
-  padding: var(--ds-space-5) var(--ds-space-3);
+  position: sticky; top: 65px; flex-shrink: 0;
+  width: 244px; height: calc(100vh - 65px); overflow-y: auto;
+  display: flex; flex-direction: column; gap: var(--ds-space-3);
+  padding: var(--ds-space-6) var(--ds-space-4) var(--ds-space-5);
+  background: #2a2a2a; /* columna oscura del DS RolesV2 (.rv-sidebar) */
 }
-.app-nav.is-collapsed { width: 76px; }
+.app-nav.is-collapsed { width: 96px; align-items: center; padding-left: var(--ds-space-3); padding-right: var(--ds-space-3); }
 .app-nav__item {
   display: flex; align-items: center; gap: var(--ds-space-3); width: 100%;
-  padding: 14px var(--ds-space-4); border: 0; border-radius: var(--ds-radius-xl);
+  padding: 15px var(--ds-space-4); border: 0; border-radius: 999px;
   background: var(--ds-color-black); color: var(--ds-color-white);
   font-family: inherit; font-size: var(--ds-font-size-body-md); font-weight: var(--ds-font-weight-semibold);
-  cursor: pointer; white-space: nowrap; box-shadow: var(--ds-shadow-01);
-  transition: background .12s, color .12s, box-shadow .12s;
+  cursor: pointer; white-space: nowrap; box-shadow: var(--ds-shadow-02-soft);
+  transition: box-shadow .12s, background .12s, color .12s;
 }
 .app-nav__item svg { flex-shrink: 0; }
-.app-nav__item:hover { box-shadow: 0 0 0 4px var(--ds-color-gray-100), var(--ds-shadow-01); }
+.app-nav__item:hover { box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.15); }
 .app-nav__item.is-active { background: var(--ds-color-green-100); color: var(--ds-color-black); }
-.app-nav.is-collapsed .app-nav__item { justify-content: center; padding: 14px 0; }
+.app-nav.is-collapsed .app-nav__item { width: 56px; height: 56px; justify-content: center; padding: 0; }
 .app-nav.is-collapsed .app-nav__label { display: none; }
+/* FAB de colapsar/expandir al pie del rail (estilo RolesV2 menu FAB), rota al colapsar */
+.app-nav__toggle {
+  margin-top: auto; align-self: center; width: 56px; height: 56px; flex-shrink: 0;
+  border: 0; border-radius: 999px; background: var(--ds-color-black); color: var(--ds-color-white);
+  display: grid; place-items: center; cursor: pointer; box-shadow: var(--ds-shadow-02-soft);
+  transition: transform .18s ease, box-shadow .12s;
+}
+.app-nav__toggle:hover { box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.15); }
+.app-nav__toggle.is-collapsed { transform: rotate(90deg); }
 
 @media (max-width: 760px) {
   /* En móvil el rail pasa a fila horizontal scrollable bajo la barra superior. */
   .app-body { flex-direction: column; }
   .app-nav, .app-nav.is-collapsed {
-    position: static; flex-direction: row; width: 100%; max-height: none; overflow-x: auto; overflow-y: visible;
-    padding: var(--ds-space-3) var(--ds-space-4); gap: var(--ds-space-2);
-    background: var(--ds-color-white); box-shadow: var(--ds-shadow-02-soft);
+    position: static; flex-direction: row; align-items: center; width: 100%; height: auto;
+    overflow-x: auto; overflow-y: visible; padding: var(--ds-space-3) var(--ds-space-4); gap: var(--ds-space-2);
   }
-  .app-nav__item { width: auto; padding: 10px 16px; font-size: var(--ds-font-size-label); }
+  .app-nav__item, .app-nav.is-collapsed .app-nav__item { width: auto; height: auto; padding: 10px 16px; font-size: var(--ds-font-size-label); }
   .app-nav.is-collapsed .app-nav__label { display: inline; }
+  .app-nav__toggle { display: none; }
 }
 /* la acción primaria no lleva la sombra pesada del botón; queda como acción compacta */
 .topbar__action { box-shadow: var(--ds-shadow-01); }

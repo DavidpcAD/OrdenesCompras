@@ -110,11 +110,6 @@ export function AppShell({ role, children }: { role: Role; children: React.React
   return (
     <div className="app-shell">
       <header className="topbar">
-        {hasNav && (
-          <button className="topbar__menu" onClick={() => setNavCollapsed((v) => !v)} aria-label={navCollapsed ? "Expandir menú" : "Colapsar menú"} title="Menú">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><path d="M4 6h16M4 12h16M4 18h16" /></svg>
-          </button>
-        )}
         <Link href={meta.home} className="topbar__brand">
           <span className="topbar__logo">A</span>
           <span>Compras Adelante</span>
@@ -188,6 +183,10 @@ export function AppShell({ role, children }: { role: Role; children: React.React
                 </button>
               );
             })}
+            <button className={`app-nav__toggle${navCollapsed ? " is-collapsed" : ""}`} onClick={() => setNavCollapsed((v) => !v)}
+              aria-label={navCollapsed ? "Expandir menú" : "Colapsar menú"} title={navCollapsed ? "Expandir" : "Colapsar"}>
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><path d="M4 6h16M4 12h16M4 18h16" /></svg>
+            </button>
           </aside>
         )}
         <div className="app-content">{children}</div>
