@@ -72,7 +72,24 @@ export default function ProveeduriaSolicitudesPage() {
         </div>
 
         <div className="mt-6">
-          <DataTable data={base} columns={columns} tablaKey="solicitudes-prov" getRowId={(p) => p.id} onRowClick={(p) => router.push(`/proveeduria/solicitudes/${p.id}`)} vacio="No hay solicitudes que coincidan." />
+          <DataTable data={base} columns={columns} tablaKey="solicitudes-prov" getRowId={(p) => p.id} onRowClick={(p) => router.push(`/proveeduria/solicitudes/${p.id}`)} vacio="No hay solicitudes que coincidan."
+            renderExpanded={(p) => (
+              <table className="ds-table" style={{ boxShadow: "none", background: "transparent" }}>
+                <thead>
+                  <tr><th>Artículo</th><th>Variante</th><th className="ds-num">Cantidad</th><th>Unidad</th></tr>
+                </thead>
+                <tbody>
+                  {p.lineas.map((l) => (
+                    <tr key={l.id}>
+                      <td>{l.descripcion}</td>
+                      <td className="ds-muted ds-body-sm">{l.variantCode || "—"}</td>
+                      <td className="ds-num">{l.cantidad}</td>
+                      <td className="ds-muted">{l.unidad}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )} />
         </div>
       </main>
     </AppShell>

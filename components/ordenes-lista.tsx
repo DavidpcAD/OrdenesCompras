@@ -6,7 +6,7 @@ import type { ColumnDef } from "@tanstack/react-table";
 import { Badge, QtyRing } from "@/components/ui";
 import { DataTable } from "@/components/data-table";
 import { useStore } from "@/lib/store";
-import { money, formatDate, ordenBadge, ordenRecibidoPct, ordenSubtotal, ordenPedidos, ordenEsDirecta } from "@/lib/helpers";
+import { money, formatDate, ordenBadge, ordenRecibidoPct, ordenSubtotal, ordenPedidos, ordenEsDirecta, ordenLineaImporte, num } from "@/lib/helpers";
 import type { Orden } from "@/lib/types";
 
 // Lista de órdenes reutilizable (Proveeduría / Aprobación / Bodega), ahora sobre
@@ -55,6 +55,23 @@ export function OrdenesLista({
       getRowId={(o) => o.id}
       onRowClick={(o) => router.push(hrefDetalle(o.id))}
       vacio={vacio}
+      renderExpanded={(o) => (
+        <table className="ds-table" style={{ boxShadow: "none", background: "transparent" }}>
+          <thead>
+            <tr><th>Descripción</th><th className="ds-num">Cantidad</th><th className="ds-num">Precio</th><th className="ds-num">Importe</th></tr>
+          </thead>
+          <tbody>
+            {o.lineas.map((l) => (
+              <tr key={l.id}>
+                <td>{l.descripcion}{l.pedidoNumero && <div className="ds-body-sm ds-muted">{l.pedidoNumero}</div>}</td>
+                <td className="ds-num">{num.format(l.cantidad)} {l.unidad}</td>
+                <td className="ds-num">{money(l.precioUnitario, o.currencyCode)}</td>
+                <td className="ds-num ds-strong">{money(ordenLineaImporte(l), o.currencyCode)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
     />
   );
 }

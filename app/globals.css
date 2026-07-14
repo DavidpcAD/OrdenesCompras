@@ -390,6 +390,40 @@ h1, h2, h3, h4, p { margin: 0; }
 }
 .dt-check.is-checked { background: var(--ds-color-black); border-color: var(--ds-color-black); }
 
+/* ── DataTable: header oscuro con pills (estilo Prototipo/Usuarios) ── */
+.ds-table.dt-dark { border-collapse: separate; border-spacing: 0; }
+/* Combinadores de hijo directo: NO afectar tablas anidadas (líneas expandidas). */
+.ds-table.dt-dark > thead > tr > th { background: var(--ds-color-black); color: var(--ds-color-white); border: 0; padding: 5px 6px; white-space: nowrap; vertical-align: middle; }
+.ds-table.dt-dark > thead > tr > th:first-child { border-top-left-radius: 14px; border-bottom-left-radius: 14px; padding-left: 8px; }
+.ds-table.dt-dark > thead > tr > th:last-child { border-top-right-radius: 14px; border-bottom-right-radius: 14px; padding-right: 8px; }
+.ds-table.dt-dark > thead > tr > th.ds-num .dt-hpill { justify-content: flex-end; }
+.ds-table.dt-dark > thead > tr > th.dt-hx { width: 44px; }
+.ds-table.dt-dark > tbody > tr:first-child > td { padding-top: 14px; }
+
+.dt-hpill { display: inline-flex; align-items: center; gap: 2px; }
+.dt-hpill__label { display: inline-flex; align-items: center; gap: 6px; background: none; border: 0; color: inherit; font: inherit; font-weight: var(--ds-font-weight-semibold); cursor: pointer; padding: 8px 8px; border-radius: 999px; white-space: nowrap; transition: background .12s; }
+.dt-hpill__label:hover { background: rgba(255, 255, 255, 0.12); }
+.dt-hpill__sort { font-size: 10px; color: var(--ds-color-gray-300); }
+.dt-hpill__filter { position: relative; display: inline-grid; place-items: center; width: 28px; height: 28px; border-radius: 50%; border: 0; background: transparent; color: var(--ds-color-gray-300); cursor: pointer; transition: background .12s, color .12s; flex-shrink: 0; }
+.dt-hpill__filter:hover { background: rgba(255, 255, 255, 0.16); color: var(--ds-color-white); }
+.dt-hpill__filter.is-active { color: var(--ds-color-black); background: var(--ds-color-green-100); }
+.dt-hpill__filter.is-open { box-shadow: 0 0 0 2px var(--ds-color-green-100); }
+.dt-hpill__badge { position: absolute; top: -2px; right: -2px; min-width: 14px; height: 14px; padding: 0 3px; border-radius: 999px; background: var(--ds-color-green-100); color: #000; font-size: 9px; font-weight: 700; display: grid; place-items: center; }
+
+/* Botón ⇕ de expandir por fila */
+.dt-xcell { width: 44px; text-align: center; }
+.dt-exp-btn { display: grid; place-items: center; width: 30px; height: 30px; border-radius: 50%; border: 1.5px solid var(--ds-color-gray-200); background: var(--ds-color-white); color: var(--ds-color-gray-400); cursor: pointer; transition: background .15s, color .15s, border-color .15s; }
+.dt-exp-btn:hover { border-color: var(--ds-color-gray-300); color: var(--ds-color-black); }
+.dt-exp-btn.is-open { background: color-mix(in srgb, var(--ds-color-green-100) 18%, #fff); border-color: var(--ds-color-green-200); color: var(--ds-color-black); }
+
+/* Fila expandible: animación de altura (grid 0fr→1fr), estilo SelectionDropdown */
+.dt-exp-wrap { display: grid; grid-template-rows: 0fr; transition: grid-template-rows .28s cubic-bezier(.22, 1, .36, 1); }
+.dt-exp-wrap.is-open { grid-template-rows: 1fr; }
+.dt-exp-clip { overflow: hidden; }
+.dt-exp-body { padding: 10px 14px 14px 48px; background: color-mix(in srgb, var(--ds-color-surface) 55%, #fff); }
+.dt-exp-row td { background: transparent; }
+@media (prefers-reduced-motion: reduce) { .dt-exp-wrap { transition: none; } }
+
 /* Slide-to-confirm: handle de arrastre (3 barritas) + empujoncito en reposo */
 .stc-handle { display: inline-flex; align-items: center; gap: 3px; }
 .stc-handle i { width: 2.5px; height: 18px; border-radius: 2px; background: var(--ds-color-gray-300); }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   useReactTable, getCoreRowModel, getSortedRowModel, getFilteredRowModel, getPaginationRowModel,
   getFacetedRowModel, getFacetedUniqueValues, flexRender,
@@ -33,7 +33,7 @@ type VistaCfg = {
 type Vista = { id: number; nombre: string; config: VistaCfg; esPredeterminada: boolean };
 
 export function DataTable<T>({
-  data, columns, tablaKey, getRowId, onRowClick, rowClassName, vacio = "No hay registros.", modoInicial = "tabla",
+  data, columns, tablaKey, getRowId, onRowClick, rowClassName, vacio = "No hay registros.", modoInicial = "tabla", renderExpanded,
 }: {
   data: T[];
   columns: ColumnDef<T, any>[];
@@ -43,11 +43,15 @@ export function DataTable<T>({
   rowClassName?: (row: T) => string;
   vacio?: string;
   modoInicial?: "tabla" | "grid";
+  // Si se pasa, cada fila gana un botón ⇕ que despliega este contenido (p.ej. las líneas).
+  renderExpanded?: (row: T) => ReactNode;
 }) {
   const { usuario } = useStore();
   // Inyecta el filtro multi-selección a las columnas que no traigan uno propio.
   const cols = useMemo(() => columns.map((c) => (c.filterFn ? c : { ...c, filterFn: multiFilter })), [columns]);
   const [sorting, setSorting] = useState<SortingState>([]);
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const toggleExpanded = (id: string) => setExpanded((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
   const [filterCol, setFilterCol] = useState<string | null>(null);
   const [filterAnchor, setFilterAnchor] = useState<{ left: number; top: number }>({ left: 0, top: 0 });
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
@@ -214,68 +218,84 @@ export function DataTable<T>({
         /* Vista Tabla */
         <Card style={{ padding: 0, overflow: "hidden" }}>
           <div className="ds-table-wrap" style={{ boxShadow: "none", overflowX: "auto" }}>
-            <table className="ds-table">
+            <table className="ds-table dt-dark">
               <thead>
                 {table.getHeaderGroups().map((hg) => (
-                  <tr key={hg.id}>
+                  <tr key={hg.id} className="dt-headrow">
+                    {renderExpanded && <th className="dt-hx" aria-hidden />}
                     {hg.headers.map((h) => {
                       const meta = h.column.columnDef.meta as ColMeta | undefined;
                       const sorted = h.column.getIsSorted(); const canSort = h.column.getCanSort();
+                      const canFilter = h.column.getCanFilter();
+                      const activos = ((h.column.getFilterValue() as string[] | undefined) ?? []).length;
                       const isDragging = dragCol === h.column.id;
                       const isTarget = dragCol && dragCol !== h.column.id;
                       return (
                         <th
                           key={h.id}
                           className={meta?.num ? "ds-num" : ""}
-                          title="Clic para ordenar · arrastrá para mover la columna"
                           draggable
                           onDragStart={(e) => { setDragCol(h.column.id); e.dataTransfer.effectAllowed = "move"; }}
                           onDragOver={(e) => { if (isTarget) e.preventDefault(); }}
                           onDrop={(e) => { e.preventDefault(); if (dragCol) reorderCol(dragCol, h.column.id); setDragCol(null); }}
                           onDragEnd={() => setDragCol(null)}
-                          style={{
-                            cursor: "grab", userSelect: "none", whiteSpace: "nowrap",
-                            opacity: isDragging ? 0.4 : 1,
-                            boxShadow: isTarget ? "inset 2px 0 0 var(--ds-color-green-100)" : undefined,
-                          }}
-                          onClick={canSort ? h.column.getToggleSortingHandler() : undefined}
+                          style={{ opacity: isDragging ? 0.4 : 1, boxShadow: isTarget ? "inset 2px 0 0 var(--ds-color-green-100)" : undefined }}
                         >
-                          {h.isPlaceholder ? null : flexRender(h.column.columnDef.header, h.getContext())}
-                          {canSort && <span className="ds-muted" style={{ fontSize: 10 }}> {sorted === "asc" ? "▲" : sorted === "desc" ? "▼" : "↕"}</span>}
+                          <div className="dt-hpill">
+                            <button type="button" className="dt-hpill__label" title="Ordenar · arrastrá para mover"
+                              onClick={canSort ? h.column.getToggleSortingHandler() : undefined}>
+                              {h.isPlaceholder ? null : flexRender(h.column.columnDef.header, h.getContext())}
+                              {canSort && <span className="dt-hpill__sort" aria-hidden>{sorted === "asc" ? "▲" : sorted === "desc" ? "▼" : "↕"}</span>}
+                            </button>
+                            {canFilter && (
+                              <button type="button" className={`dt-hpill__filter${activos ? " is-active" : ""}${filterCol === h.column.id ? " is-open" : ""}`}
+                                title={activos ? `${activos} filtro(s)` : "Filtrar"}
+                                onClick={(e) => { e.stopPropagation(); abrirFiltro(h.column.id, e.currentTarget); }}>
+                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 5h18l-7 8v6l-4 2v-8z" /></svg>
+                                {activos > 0 && <span className="dt-hpill__badge">{activos}</span>}
+                              </button>
+                            )}
+                          </div>
                         </th>
                       );
                     })}
                   </tr>
                 ))}
-                <tr>
-                  {table.getVisibleLeafColumns().map((col) => {
-                    const activos = ((col.getFilterValue() as string[] | undefined) ?? []).length;
-                    return (
-                      <th key={col.id} style={{ padding: "4px 6px", fontWeight: 400 }}>
-                        {col.getCanFilter() ? (
-                          <button type="button" className={`dt-filter-btn${activos ? " is-active" : ""}${filterCol === col.id ? " is-open" : ""}`}
-                            onClick={(e) => { e.stopPropagation(); abrirFiltro(col.id, e.currentTarget); }}>
-                            <span className="dt-filter-btn__ico" aria-hidden>
-                              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 5h18l-7 8v6l-4 2v-8z" /></svg>
-                            </span>
-                            {activos ? `${activos} sel.` : "Filtrar"}
-                          </button>
-                        ) : null}
-                      </th>
-                    );
-                  })}
-                </tr>
               </thead>
               <tbody>
-                {rows.length === 0 && <tr><td colSpan={table.getVisibleLeafColumns().length}><div className="empty">{vacio}</div></td></tr>}
-                {rows.map((row) => (
-                  <tr key={row.id} className={[onRowClick ? "is-clickable" : "", rowClassName?.(row.original) ?? ""].filter(Boolean).join(" ")} onClick={onRowClick ? () => onRowClick(row.original) : undefined}>
-                    {row.getVisibleCells().map((cell) => {
-                      const meta = cell.column.columnDef.meta as ColMeta | undefined;
-                      return <td key={cell.id} className={meta?.num ? "ds-num" : ""}>{flexRender(cell.column.columnDef.cell, cell.getContext())}</td>;
-                    })}
-                  </tr>
-                ))}
+                {rows.length === 0 && <tr><td colSpan={table.getVisibleLeafColumns().length + (renderExpanded ? 1 : 0)}><div className="empty">{vacio}</div></td></tr>}
+                {rows.map((row) => {
+                  const open = expanded.has(row.id);
+                  return (
+                    <Fragment key={row.id}>
+                      <tr className={[onRowClick ? "is-clickable" : "", rowClassName?.(row.original) ?? ""].filter(Boolean).join(" ")} onClick={onRowClick ? () => onRowClick(row.original) : undefined}>
+                        {renderExpanded && (
+                          <td className="dt-xcell" onClick={(e) => e.stopPropagation()}>
+                            <button type="button" className={`dt-exp-btn${open ? " is-open" : ""}`} aria-expanded={open}
+                              title={open ? "Ocultar líneas" : "Ver líneas"} onClick={() => toggleExpanded(row.id)}>
+                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><path d="M8 9l4-4 4 4" /><path d="M16 15l-4 4-4-4" /></svg>
+                            </button>
+                          </td>
+                        )}
+                        {row.getVisibleCells().map((cell) => {
+                          const meta = cell.column.columnDef.meta as ColMeta | undefined;
+                          return <td key={cell.id} className={meta?.num ? "ds-num" : ""}>{flexRender(cell.column.columnDef.cell, cell.getContext())}</td>;
+                        })}
+                      </tr>
+                      {renderExpanded && (
+                        <tr className="dt-exp-row">
+                          <td colSpan={table.getVisibleLeafColumns().length + 1} style={{ padding: 0, border: 0 }}>
+                            <div className={`dt-exp-wrap${open ? " is-open" : ""}`}>
+                              <div className="dt-exp-clip">
+                                <div className="dt-exp-body">{open ? renderExpanded(row.original) : null}</div>
+                              </div>
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </Fragment>
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -353,3 +373,4 @@ function ColumnFilterPopover<T>({ col, label, anchor, onClose }: {
     </>
   );
 }
+
