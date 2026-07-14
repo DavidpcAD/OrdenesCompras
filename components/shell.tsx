@@ -70,6 +70,7 @@ export function AppShell({ role, children }: { role: Role; children: React.React
   const router = useRouter();
   const pathname = usePathname();
   const [notifOpen, setNotifOpen] = useState(false);
+  const [navCollapsed, setNavCollapsed] = useState(false);
   // Notificaciones relevantes para este rol (o sin rol específico).
   const notifsRol = notificaciones.filter((n) => !n.rol || n.rol === role);
   const noLeidas = notifsRol.filter((n) => !n.leida).length;
@@ -92,41 +93,32 @@ export function AppShell({ role, children }: { role: Role; children: React.React
   }
 
   const meta = ROLE_META[role];
+  const hasNav = meta.nav.length > 1;
+  // Cuál item del nav está activo (match más largo por href/alt).
+  const activeHref = meta.nav
+    .map((n) => {
+      let len = pathname.startsWith(n.href) ? n.href.length : 0;
+      for (const a of n.alt ?? []) {
+        if (a.endsWith("$")) { if (pathname === a.slice(0, -1)) len = Math.max(len, 1000); }
+        else if (pathname.startsWith(a)) len = Math.max(len, a.length);
+      }
+      return { href: n.href, len };
+    })
+    .filter((x) => x.len > 0)
+    .sort((a, b) => b.len - a.len)[0]?.href ?? meta.home;
 
   return (
     <div className="app-shell">
       <header className="topbar">
+        {hasNav && (
+          <button className="topbar__menu" onClick={() => setNavCollapsed((v) => !v)} aria-label={navCollapsed ? "Expandir menú" : "Colapsar menú"} title="Menú">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><path d="M4 6h16M4 12h16M4 18h16" /></svg>
+          </button>
+        )}
         <Link href={meta.home} className="topbar__brand">
           <span className="topbar__logo">A</span>
           <span>Compras Adelante</span>
         </Link>
-        {meta.nav.length > 1 && (() => {
-          const activeHref = meta.nav
-            .map((n) => {
-              let len = pathname.startsWith(n.href) ? n.href.length : 0;
-              for (const a of n.alt ?? []) {
-                if (a.endsWith("$")) { if (pathname === a.slice(0, -1)) len = Math.max(len, 1000); }
-                else if (pathname.startsWith(a)) len = Math.max(len, a.length);
-              }
-              return { href: n.href, len };
-            })
-            .filter((x) => x.len > 0)
-            .sort((a, b) => b.len - a.len)[0]?.href ?? meta.home;
-          return (
-            <nav className="topnav topbar__tabs" aria-label="Secciones">
-              {meta.nav.map((n) => {
-                const Icon = n.icon;
-                const active = activeHref === n.href;
-                return (
-                  <button key={n.href} className={`topnav__item ${active ? "is-active" : ""}`} onClick={() => router.push(n.href)} aria-current={active ? "page" : undefined}>
-                    <Icon size={18} />
-                    <span>{n.label}</span>
-                  </button>
-                );
-              })}
-            </nav>
-          );
-        })()}
         <div className="topbar__spacer" />
         <div className="topbar__user">
           {/* Acción primaria del rol — siempre visible */}
@@ -181,7 +173,25 @@ export function AppShell({ role, children }: { role: Role; children: React.React
           </button>
         </div>
       </header>
-      {children}
+      <div className="app-body">
+        {hasNav && (
+          <aside className={`app-nav${navCollapsed ? " is-collapsed" : ""}`} aria-label="Secciones">
+            {meta.nav.map((n) => {
+              const Icon = n.icon;
+              const active = activeHref === n.href;
+              return (
+                <button key={n.href} className={`app-nav__item${active ? " is-active" : ""}`}
+                  title={navCollapsed ? n.label : undefined}
+                  onClick={() => router.push(n.href)} aria-current={active ? "page" : undefined}>
+                  <Icon size={20} />
+                  <span className="app-nav__label">{n.label}</span>
+                </button>
+              );
+            })}
+          </aside>
+        )}
+        <div className="app-content">{children}</div>
+      </div>
     </div>
   );
 }
