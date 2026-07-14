@@ -33,6 +33,7 @@ const ROLE_META: Record<Role, { label: string; persona: string; home: string; na
     nav: [
       { href: "/ingenieria/dashboard", label: "Dashboard", icon: IconDashboard },
       { href: "/ingenieria", label: "Mis solicitudes", icon: IconList },
+      { href: "/ingenieria/devoluciones", label: "Devoluciones", icon: IconWarning },
       { href: "/ingenieria/matriz", label: "Matriz", icon: IconMatrix },
       { href: "/ingenieria/seguimiento", label: "Seguimiento", icon: IconTrack },
       { href: "/ingenieria/clasificaciones", label: "Clasificaciones", icon: IconOptions },
@@ -49,6 +50,7 @@ const ROLE_META: Record<Role, { label: string; persona: string; home: string; na
       { href: "/proveeduria/dashboard", label: "Dashboard", icon: IconDashboard },
       { href: "/proveeduria/solicitudes", label: "Solicitudes", icon: IconList, alt: ["/proveeduria$"] },
       { href: "/proveeduria/ordenes", label: "Órdenes", icon: IconReceipt, alt: ["/proveeduria/pedidas"] },
+      { href: "/proveeduria/devoluciones", label: "Devoluciones", icon: IconWarning },
       { href: "/proveeduria/inventarios", label: "Inventarios", icon: IconBox },
     ],
   },
@@ -57,6 +59,7 @@ const ROLE_META: Record<Role, { label: string; persona: string; home: string; na
     nav: [
       { href: "/aprobacion", label: "Por aprobar", icon: IconCheck },
       { href: "/aprobacion/todas", label: "Todas las órdenes", icon: IconReceipt },
+      { href: "/aprobacion/devoluciones", label: "Devoluciones", icon: IconWarning },
     ],
   },
   facturacion: {
@@ -65,6 +68,7 @@ const ROLE_META: Record<Role, { label: string; persona: string; home: string; na
       { href: "/facturacion", label: "Por recibir", icon: IconDelivery },
       { href: "/facturacion/todas", label: "Todas las órdenes", icon: IconReceipt },
       { href: "/facturacion/archivo", label: "Archivo", icon: IconFolder },
+      { href: "/facturacion/devoluciones", label: "Devoluciones", icon: IconWarning },
     ],
   },
 };
