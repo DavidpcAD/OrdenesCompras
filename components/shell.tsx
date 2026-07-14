@@ -159,13 +159,10 @@ export function AppShell({ role, children }: { role: Role; children: React.React
               </>
             )}
           </div>
-          <div className="topbar__identity" style={{ background: meta.color }}>
+          <div className="topbar__identity" style={{ background: "var(--ds-color-black)", color: "var(--ds-color-white)" }}>
             <span className="topbar__avatar">{(usuario ?? meta.persona).slice(0, 2).toUpperCase()}</span>
             <span>{cap(usuario ?? meta.persona)} · {meta.label}</span>
           </div>
-          <button className="icon-btn topbar__salir" title="Salir" aria-label="Salir" onClick={() => { setRole(null); setUsuario(null); router.replace("/"); }}>
-            <IconLogout size={18} /><span>Salir</span>
-          </button>
         </div>
       </header>
       <div className="app-body">
@@ -183,6 +180,12 @@ export function AppShell({ role, children }: { role: Role; children: React.React
                 </button>
               );
             })}
+            <button className="app-nav__item app-nav__salir" style={{ marginTop: "auto" }}
+              title={navCollapsed ? "Salir" : undefined}
+              onClick={() => { setRole(null); setUsuario(null); router.replace("/"); }}>
+              <IconLogout size={20} />
+              <span className="app-nav__label">Salir</span>
+            </button>
             <button className={`app-nav__toggle${navCollapsed ? " is-collapsed" : ""}`} onClick={() => setNavCollapsed((v) => !v)}
               aria-label={navCollapsed ? "Expandir menú" : "Colapsar menú"} title={navCollapsed ? "Expandir" : "Colapsar"}>
               <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><path d="M4 6h16M4 12h16M4 18h16" /></svg>

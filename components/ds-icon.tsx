@@ -45,7 +45,7 @@ export type IconName =
   | "duplicar";
 
 /** Alias backward-compatible. */
-const ALIASES: Record<string, string> = {
+export const ALIASES: Record<string, string> = {
   arrow:          "arrow-right",
   forward:        "arrow-right",
   "chevron-left": "back",
