@@ -30,18 +30,23 @@ export function OrdenDetalle({
   const [verFactura, setVerFactura] = useState<string | null>(null);
   const [relanzando, setRelanzando] = useState(false);
 
-  // Reintenta el Release en BC de un pedido YA creado (no duplica). Útil cuando el
-  // binding S2S del Sandbox parpadeó justo al aprobar y quedó en "Abierto".
+  // Reintenta el lanzamiento en BC de un pedido YA creado (no duplica). Ahora
+  // RE-SINCRONIZA las líneas (precio + variante) antes del Release, para que las
+  // correcciones hechas en la app después de crearlo (p.ej. el precio de un
+  // material sin historial) sí viajen a BC.
   async function reintentarLanzar() {
     if (!orden.bcNumber) return;
     setRelanzando(true);
     try {
-      const r = await fetch("/api/bc/release", {
+      const lineas = orden.lineas
+        .filter((l) => l.tipo === "articulo" && l.articuloId && l.cantidad > 0)
+        .map((l) => ({ itemNo: l.articuloId!, cantidad: l.cantidad, precio: l.precioUnitario || 0, descripcion: l.descripcion, variantCode: l.variantCode }));
+      const r = await fetch("/api/bc/relanzar", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ orderNo: orden.bcNumber }),
+        body: JSON.stringify({ orderNo: orden.bcNumber, lineas }),
       });
       const d = await r.json().catch(() => ({}));
-      if (r.ok) toast(`BC ${orden.bcNumber}: ${d.status ?? "lanzado"}`, "success");
+      if (r.ok) toast(`BC ${orden.bcNumber}: ${d.status ?? "lanzado"} (líneas sincronizadas)`, "success");
       else toast(`No se pudo lanzar en BC: ${d.error ?? r.status}`, "error");
     } catch (e: any) {
       toast(`No se pudo lanzar en BC: ${String(e?.message ?? e)}`, "error");
