@@ -645,6 +645,25 @@ export async function listWbs(): Promise<{ etapas: WbsEtapa[]; partidas: WbsPart
   };
 }
 
+// Etapas (especialidades) de un ingeniero, por username → dbo.UsuarioEtapa.
+// Defensiva: si la tabla aún no existe o el usuario no tiene mapeo, devuelve []
+// (la Matriz cae a "Todas las etapas" sin romperse).
+export async function etapasDeUsuario(username: string): Promise<number[]> {
+  const u = (username ?? "").trim();
+  if (!u) return [];
+  try {
+    const pool = await getPool();
+    const r = await pool.request().input("u", sql.NVarChar(256), u).query(
+      "SELECT ue.idEtapa FROM dbo.UsuarioEtapa ue " +
+      "JOIN dbo.Usuario us ON us.idUsuario = ue.idUsuario " +
+      "WHERE us.username = @u"
+    );
+    return r.recordset.map((x) => x.idEtapa as number).filter((n) => n != null);
+  } catch {
+    return []; // tabla no creada aún / sin mapeo
+  }
+}
+
 // Crea una clasificación (control del ingeniero) colgando de una partida O de una sub_partida.
 export async function createClasificacion(input: { nombre: string; partidaId?: number | null; subPartidaId?: number | null }): Promise<number> {
   const pool = await getPool();

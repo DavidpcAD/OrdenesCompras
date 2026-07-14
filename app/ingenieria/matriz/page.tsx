@@ -30,6 +30,7 @@ export default function MatrizPage() {
   const [obras, setObras] = useState<Obra[]>([]); const [celdas, setCeldas] = useState<Celda[]>([]);
   const [cargando, setCargando] = useState(true);
   const [etapaSel, setEtapaSel] = useState(""); const [fArea, setFArea] = useState(""); const [fProy, setFProy] = useState(""); const [buscar, setBuscar] = useState("");
+  const [misEtapas, setMisEtapas] = useState<number[]>([]);
 
   useEffect(() => {
     (async () => {
@@ -50,17 +51,30 @@ export default function MatrizPage() {
   };
   const etapaDeClas = (c: Clasif) => partidaDeClas(c)?.etapaId ?? null;
 
-  // Recordar la etapa (especialidad) elegida por cada ingeniero: así, según quién
-  // entra, la matriz arranca en las clasificaciones que le corresponden.
+  // Etapa (especialidad) del ingeniero desde SQL (dbo.UsuarioEtapa). Al entrar, la
+  // Matriz arranca en SUS etapas; si el ingeniero eligió otra vista antes, se respeta.
   useEffect(() => {
     if (!usuario) return;
-    const saved = localStorage.getItem(`matriz_etapa_${usuario}`);
-    if (saved != null) setEtapaSel(saved);
+    let vivo = true;
+    fetch(`/api/mi-etapa?username=${encodeURIComponent(usuario)}`)
+      .then((r) => r.json()).then((d) => {
+        if (!vivo) return;
+        const ids: number[] = Array.isArray(d?.etapaIds) ? d.etapaIds : [];
+        setMisEtapas(ids);
+        const saved = localStorage.getItem(`matriz_etapa_${usuario}`);
+        if (saved != null) setEtapaSel(saved);        // eligió antes → respetar
+        else if (ids.length) setEtapaSel("mine");      // por defecto: lo que le corresponde
+      }).catch(() => { /* sin mapeo → Todas */ });
+    return () => { vivo = false; };
   }, [usuario]);
   useEffect(() => {
     if (usuario) localStorage.setItem(`matriz_etapa_${usuario}`, etapaSel);
   }, [usuario, etapaSel]);
-  const columnas = useMemo(() => clasifs.filter((c) => !etapaSel || String(etapaDeClas(c)) === etapaSel), [clasifs, partidas, subpartidas, etapaSel]); // eslint-disable-line react-hooks/exhaustive-deps
+  const columnas = useMemo(() => clasifs.filter((c) => {
+    if (!etapaSel) return true;                                   // Todas
+    if (etapaSel === "mine") return misEtapas.includes(etapaDeClas(c) ?? -1); // mis etapas
+    return String(etapaDeClas(c)) === etapaSel;                   // una etapa puntual
+  }), [clasifs, partidas, subpartidas, etapaSel, misEtapas]); // eslint-disable-line react-hooks/exhaustive-deps
   // Estado de cada celda: se arma desde la vista SQL (celdas) Y desde los pedidos
   // del store (siempre frescos), quedándose con el estado de mayor avance. Así la
   // celda refleja al instante lo recién solicitado y sobrevive a recargas aunque la
@@ -108,6 +122,7 @@ export default function MatrizPage() {
             <Field label="Etapa · tu especialidad">
               <Select value={etapaSel} onChange={(e) => setEtapaSel(e.target.value)}>
                 <option value="">Todas las etapas</option>
+                {misEtapas.length > 0 && <option value="mine">Mis etapas ({misEtapas.length})</option>}
                 {etapas.map((e) => <option key={e.id} value={e.id}>{e.codigo} · {e.nombre}</option>)}
               </Select>
             </Field>
