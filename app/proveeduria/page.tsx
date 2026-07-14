@@ -2,8 +2,10 @@
 
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
+import type { ColumnDef } from "@tanstack/react-table";
 import { AppShell } from "@/components/shell";
 import { Badge, Button, Card, Modal, useToast } from "@/components/ui";
+import { DataTable } from "@/components/data-table";
 import { VistaToggle } from "@/components/vista-toggle";
 import { IconEye, IconReceipt, IconList } from "@/components/icons";
 import { useStore } from "@/lib/store";
@@ -64,39 +66,18 @@ export default function ProveeduriaMaterialesPage() {
   const [filtro, setFiltro] = useState<string>("all");
   const [pedFiltro, setPedFiltro] = useState("");
   const [previewId, setPreviewId] = useState<string | null>(null);
-  // Filtros por columna estilo Excel (una caja por columna)
-  const [colF, setColF] = useState<Record<string, string>>({});
-  const setCol = (k: string, v: string) => setColF((f) => ({ ...f, [k]: v }));
 
   const setRow = (id: string, patch: Partial<Row>) =>
     setRows((rs) => rs.map((r) => (r.pedidoLineaId === id ? { ...r, ...patch } : r)));
 
-  // Texto filtrable/buscable por columna (sirve para el filtro por columna y la búsqueda global)
-  const cellText = (r: Row, k: string): string => {
-    switch (k) {
-      case "pedido": return r.pedidoNumero;
-      case "articulo": return r.descripcion;
-      case "almacen": return r.almacen ?? "";
-      case "pend": return `${r.pendiente} ${r.unidad}`;
-      case "aordenar": return r.cantidad;
-      case "precio": return r.precio;
-      case "iva": return r.iva;
-      case "importe": return String(Number(r.cantidad) * Number(r.precio));
-      default: return "";
-    }
-  };
-  const COLS = ["pedido", "articulo", "almacen", "pend", "aordenar", "precio", "iva", "importe"];
-
-  const visibles = rows
-    .filter((r) => filtro === "all" || r.pedidoId === filtro)
-    .filter((r) => COLS.every((k) => { const v = (colF[k] ?? "").trim().toLowerCase(); return !v || cellText(r, k).toLowerCase().includes(v); }));
-
-  // Seleccionar todas las líneas VISIBLES (respeta filtros de columna)
-  const visiblesIds = visibles.map((r) => r.pedidoLineaId);
-  const allVisibleSel = visibles.length > 0 && visibles.every((r) => r.incluir);
-  const someVisibleSel = visibles.some((r) => r.incluir);
-  const toggleAllVisible = (check: boolean) =>
-    setRows((rs) => rs.map((r) => (visiblesIds.includes(r.pedidoLineaId) ? { ...r, incluir: check } : r)));
+  // Líneas del pedido elegido en el panel izquierdo (o todas). La DataTable maneja
+  // búsqueda, filtros por columna, columnas/vistas y exportar.
+  const dataTabla = rows.filter((r) => filtro === "all" || r.pedidoId === filtro);
+  const selIds = new Set(dataTabla.map((r) => r.pedidoLineaId));
+  const allSel = dataTabla.length > 0 && dataTabla.every((r) => r.incluir);
+  const someSel = dataTabla.some((r) => r.incluir);
+  const toggleAll = (check: boolean) =>
+    setRows((rs) => rs.map((r) => (selIds.has(r.pedidoLineaId) ? { ...r, incluir: check } : r)));
 
   const incluidas = rows.filter((r) => r.incluir && Number(r.cantidad) > 0);
   const seleccionPorPedido = (pid: string) => rows.filter((r) => r.pedidoId === pid && r.incluir).length;
@@ -127,6 +108,41 @@ export default function ProveeduriaMaterialesPage() {
   }
 
   const preview = previewId ? pedidos.find((p) => p.id === previewId) : null;
+
+  // Columnas de la DataTable. La selección y las cantidades editables (armado de
+  // orden por línea) viven como celdas personalizadas, así conserva ese flujo
+  // pero con el look/filtros/exportar de las demás tablas.
+  const stop = (e: React.MouseEvent) => e.stopPropagation();
+  const columns: ColumnDef<Row, any>[] = [
+    {
+      id: "sel", enableColumnFilter: false, enableSorting: false,
+      header: () => (
+        <input type="checkbox" className="ds-cbx" title="Seleccionar todas" aria-label="Seleccionar todas"
+          checked={allSel} ref={(el) => { if (el) el.indeterminate = someSel && !allSel; }}
+          onClick={stop} onChange={(e) => toggleAll(e.target.checked)} />
+      ),
+      cell: (c) => { const r = c.row.original; return (
+        <input type="checkbox" className="ds-cbx" checked={r.incluir} onClick={stop}
+          onChange={(e) => setRow(r.pedidoLineaId, { incluir: e.target.checked })} />
+      ); },
+    },
+    { id: "pedido", header: "Pedido", accessorFn: (r) => r.pedidoNumero, meta: { label: "Pedido" },
+      cell: (c) => { const r = c.row.original; return <span className="row gap-2" style={{ alignItems: "center" }}>{dot(r.tipo === "repuesto" ? "yellow" : "green")}<span className="ds-body-sm ds-strong">{r.pedidoNumero}</span></span>; } },
+    { id: "articulo", header: "Artículo", accessorFn: (r) => r.descripcion, meta: { label: "Artículo" },
+      cell: (c) => <div className="ds-truncate" title={c.getValue()} style={{ maxWidth: 280 }}>{c.getValue()}</div> },
+    { id: "obra", header: "Obra", accessorFn: (r) => r.almacen || "—", meta: { label: "Obra" },
+      cell: (c) => <span className="ds-muted ds-body-sm">{c.getValue()}</span> },
+    { id: "pend", header: "Pend.", accessorFn: (r) => r.pendiente, meta: { label: "Pend.", num: true }, enableColumnFilter: false,
+      cell: (c) => { const r = c.row.original; return <span className="ds-body-sm">{num.format(r.pendiente)} {r.unidad}</span>; } },
+    { id: "aordenar", header: "A ordenar", accessorFn: (r) => r.cantidad, meta: { label: "A ordenar", num: true }, enableColumnFilter: false, enableSorting: false,
+      cell: (c) => { const r = c.row.original; return <input className="ds-cell-input" type="number" min={0} max={r.pendiente} value={r.cantidad} style={{ width: 78 }} disabled={!r.incluir} onClick={stop} onChange={(e) => setRow(r.pedidoLineaId, { cantidad: e.target.value })} />; } },
+    { id: "precio", header: "Precio", accessorFn: (r) => r.precio, meta: { label: "Precio", num: true }, enableColumnFilter: false, enableSorting: false,
+      cell: (c) => { const r = c.row.original; return <input className="ds-cell-input" type="number" min={0} value={r.precio} style={{ width: 92 }} disabled={!r.incluir} onClick={stop} onChange={(e) => setRow(r.pedidoLineaId, { precio: e.target.value })} />; } },
+    { id: "iva", header: "IVA%", accessorFn: (r) => r.iva, meta: { label: "IVA%", num: true }, enableColumnFilter: false, enableSorting: false,
+      cell: (c) => { const r = c.row.original; return <input className="ds-cell-input" type="number" min={0} value={r.iva} style={{ width: 50 }} disabled={!r.incluir} onClick={stop} onChange={(e) => setRow(r.pedidoLineaId, { iva: e.target.value })} />; } },
+    { id: "importe", header: "Importe", accessorFn: (r) => Number(r.cantidad) * Number(r.precio), meta: { label: "Importe", num: true }, enableColumnFilter: false,
+      cell: (c) => <span className="ds-strong ds-body-sm">{money(Number(c.getValue()) || 0)}</span> },
+  ];
 
   return (
     <AppShell role="proveeduria">
@@ -185,71 +201,18 @@ export default function ProveeduriaMaterialesPage() {
             })}
           </div>
 
-          {/* líneas */}
-          <Card className="md-detail" style={{ padding: 0, overflow: "hidden" }}>
-            <div className="row row--between" style={{ padding: "14px 16px", borderBottom: "1.5px solid var(--ds-color-gray-100)" }}>
-              <span className="ds-label ds-muted">{visibles.length} línea(s){filtro !== "all" ? " del pedido" : ""}</span>
-            </div>
-            <div className="ds-table-wrap" style={{ boxShadow: "none" }}>
-              <table className="ds-table">
-                <thead>
-                  <tr>
-                    <th style={{ width: 36 }}>
-                      <input type="checkbox" className="ds-cbx" title="Seleccionar todas las líneas visibles" aria-label="Seleccionar todas"
-                        checked={allVisibleSel}
-                        ref={(el) => { if (el) el.indeterminate = someVisibleSel && !allVisibleSel; }}
-                        onChange={(e) => toggleAllVisible(e.target.checked)} />
-                    </th>
-                    <th>Pedido</th><th>Artículo</th><th>Obra</th>
-                    <th className="ds-num">Pend.</th><th className="ds-num">A ordenar</th>
-                    <th className="ds-num">Precio</th><th className="ds-num">IVA%</th><th className="ds-num">Importe</th>
-                  </tr>
-                  <tr>
-                    <th style={{ padding: "4px 8px" }}></th>
-                    {COLS.map((k, i) => (
-                      <th key={k} style={{ padding: "4px 6px", fontWeight: 400 }}>
-                        <input value={colF[k] ?? ""} placeholder="Filtrar…" onChange={(e) => setCol(k, e.target.value)}
-                          style={{ width: "100%", boxSizing: "border-box", borderRadius: 8, padding: "4px 8px", fontSize: 12, font: "inherit", border: "1.5px solid var(--ds-color-gray-100)", background: "var(--ds-color-white)", textAlign: i >= 3 ? "right" : "left" }} />
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {visibles.length === 0 && (
-                    <tr><td colSpan={9}><div className="empty">No hay líneas pendientes.</div></td></tr>
-                  )}
-                  {visibles.map((r) => {
-                    const importe = Number(r.cantidad) * Number(r.precio);
-                    return (
-                      <tr key={r.pedidoLineaId} className="is-clickable"
-                        style={{ background: r.incluir ? "color-mix(in srgb, var(--ds-color-green-100) 12%, #fff)" : undefined }}
-                        onClick={() => setRow(r.pedidoLineaId, { incluir: !r.incluir })}>
-                        <td onClick={(e) => e.stopPropagation()}>
-                          <input type="checkbox" className="ds-cbx" checked={r.incluir} onChange={(e) => setRow(r.pedidoLineaId, { incluir: e.target.checked })} />
-                        </td>
-                        <td><span className="row gap-2" style={{ alignItems: "center" }}>{dot(r.tipo === "repuesto" ? "yellow" : "green")}<span className="ds-body-sm ds-strong">{r.pedidoNumero}</span></span></td>
-                        <td><div className="ds-truncate" title={r.descripcion}>{r.descripcion}</div></td>
-                        <td className="ds-muted ds-body-sm">{r.almacen}</td>
-                        <td className="ds-num ds-body-sm">{num.format(r.pendiente)} {r.unidad}</td>
-                        <td className="ds-num" onClick={(e) => e.stopPropagation()}>
-                          <input className="ds-cell-input" type="number" min={0} max={r.pendiente} value={r.cantidad} style={{ width: 78 }}
-                            disabled={!r.incluir} onChange={(e) => setRow(r.pedidoLineaId, { cantidad: e.target.value })} />
-                        </td>
-                        <td className="ds-num" onClick={(e) => e.stopPropagation()}>
-                          <input className="ds-cell-input" type="number" min={0} value={r.precio} style={{ width: 92 }}
-                            disabled={!r.incluir} onChange={(e) => setRow(r.pedidoLineaId, { precio: e.target.value })} />
-                        </td>
-                        <td className="ds-num" onClick={(e) => e.stopPropagation()}>
-                          <input className="ds-cell-input" type="number" min={0} value={r.iva} style={{ width: 50 }}
-                            disabled={!r.incluir} onChange={(e) => setRow(r.pedidoLineaId, { iva: e.target.value })} />
-                        </td>
-                        <td className="ds-num ds-strong ds-body-sm">{money(importe || 0)}</td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
+          {/* líneas — misma DataTable que el resto, con celdas editables para armar la orden */}
+          <Card className="md-detail" style={{ padding: 16 }}>
+            <DataTable
+              data={dataTabla}
+              columns={columns}
+              tablaKey="prov-lineas"
+              titulo="Materiales solicitados"
+              getRowId={(r) => r.pedidoLineaId}
+              onRowClick={(r) => setRow(r.pedidoLineaId, { incluir: !r.incluir })}
+              rowClassName={(r) => (r.incluir ? "dt-row-incluida" : "")}
+              vacio="No hay líneas pendientes."
+            />
           </Card>
         </div>
         )}

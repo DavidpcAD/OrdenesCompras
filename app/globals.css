@@ -465,6 +465,8 @@ h1, h2, h3, h4, p { margin: 0; }
 .dt-export-btn:hover, .dt-export-btn.is-open { box-shadow: var(--ds-shadow-03-big); }
 .dt-export-btn:active { transform: translateY(1px); }
 .dt-export-ic { display: inline-grid; place-items: center; width: 42px; height: 24px; flex-shrink: 0; border-radius: 6px; background: var(--ds-color-black); color: var(--ds-color-white); font-size: 10px; font-weight: 700; letter-spacing: .5px; }
+/* Fila marcada para incluir en la orden (armador por línea). */
+.ds-table tr.dt-row-incluida > td { background: color-mix(in srgb, var(--ds-color-green-100) 12%, #fff); }
 
 /* Date picker DS (componente DateField) — calendario propio y bonito. */
 .datefield { position: relative; }
