@@ -47,6 +47,7 @@ export const IconTrack = ds("place", 18);       // seguimiento (ubicación)
 export const IconDelivery = ds("entrega", 18);
 export const IconFolder = ds("folder", 18);
 export const IconPlus = ds("plus", 18);
+export const IconEdit = ds("edit", 18);          // editar
 export const IconTable = ds("list", 16);        // vista tabla
 export const IconGrid = ds("cuadrillas", 16);   // vista grid
 

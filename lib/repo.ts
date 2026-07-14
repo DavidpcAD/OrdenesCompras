@@ -661,6 +661,23 @@ export async function createClasificacion(input: { nombre: string; partidaId?: n
   return ins.recordset[0].id as number;
 }
 
+// Actualiza una clasificación existente (nombre y padre). Mantiene el XOR
+// partida/sub-partida por el CHECK de la tabla. En AdelanteSBX solo hay partida.
+export async function updateClasificacion(id: number, input: { nombre: string; partidaId?: number | null; subPartidaId?: number | null }): Promise<void> {
+  const pool = await getPool();
+  const nombre = input.nombre.trim();
+  const partidaId = input.partidaId ?? null;
+  const subPartidaId = input.subPartidaId ?? null;
+  if (!nombre) throw new Error("Falta el nombre");
+  if ((partidaId == null) === (subPartidaId == null)) throw new Error("Indicá una partida O una sub-partida (una sola)");
+  await pool.request()
+    .input("id", sql.Int, id)
+    .input("nombre", sql.NVarChar(160), nombre)
+    .input("partidaId", sql.Int, partidaId)
+    .input("subPartidaId", sql.Int, subPartidaId)
+    .query("UPDATE dbo.clasificacion SET nombre=@nombre, partida_id=@partidaId, sub_partida_id=@subPartidaId WHERE id=@id AND activo=1");
+}
+
 // Crea una clasificación (sub_partida) bajo una partida; el código se autogenera
 // como <codigoPartida>.<siguiente>.
 export async function createSubPartida(input: { partidaId: number; nombre: string }): Promise<number> {
