@@ -36,6 +36,7 @@ export function SlideConfirm({
 }) {
   const twoWay = !oneWay;
   const containerRef = useRef<HTMLDivElement>(null);
+  const knobRef = useRef<HTMLDivElement>(null);
   const [maxDrag, setMaxDrag] = useState(0);
   const [dragX, setDragX] = useState(0);
   const [dragging, setDragging] = useState(false);
@@ -47,12 +48,17 @@ export function SlideConfirm({
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
-    const update = () => setMaxDrag(Math.max(0, (el.getBoundingClientRect().width - knobWidth) / (twoWay ? 2 : 1)));
+    const update = () => {
+      // oneWay: el knob lleva la etiqueta, así que su ancho es variable → lo medimos.
+      const kw = oneWay && knobRef.current ? knobRef.current.getBoundingClientRect().width : knobWidth;
+      setMaxDrag(Math.max(0, (el.getBoundingClientRect().width - kw) / (twoWay ? 2 : 1)));
+    };
     update();
     const ro = new ResizeObserver(update);
     ro.observe(el);
+    if (knobRef.current) ro.observe(knobRef.current);
     return () => ro.disconnect();
-  }, [knobWidth, twoWay]);
+  }, [knobWidth, twoWay, oneWay, approveLabel]);
 
   // Tras aprobar: si el padre entró y salió de `busy` y seguimos montados = falló → reset.
   useEffect(() => {
@@ -110,6 +116,7 @@ export function SlideConfirm({
 
   const knobBg = committed === "left" ? "var(--ds-color-red-200)"
     : committed === "right" ? "var(--ds-color-green-200)"
+    : oneWay ? "var(--ds-color-green-100)"   // DS "PEDIR": knob verde que desliza
     : "var(--ds-color-white)";
 
   return (
@@ -137,24 +144,32 @@ export function SlideConfirm({
           <span aria-hidden style={{ fontSize: 18 }}>‹</span>{rejectLabel}
         </div>
       )}
-      {/* Etiqueta derecha (aprobar) */}
-      <div style={{
-        position: "absolute", right: 16, top: 0, bottom: 0, display: "flex", alignItems: "center", gap: 6,
-        color: dir === "right" || committed === "right" ? "var(--ds-color-black)" : "var(--ds-color-white)",
-        fontWeight: 600, fontSize: 14,
-        opacity: committed === "left" ? 0 : committed === "right" ? 1 : dir === "right" ? 1 : 0.85, transition: trans, pointerEvents: "none",
-      }}>
-        {busy && committed === "right" ? "Lanzando…" : approveLabel}<span aria-hidden style={{ fontSize: 18 }}>›</span>
-      </div>
+      {/* Etiqueta derecha (aprobar) — solo bidireccional; en oneWay el label va en el knob */}
+      {twoWay && (
+        <div style={{
+          position: "absolute", right: 16, top: 0, bottom: 0, display: "flex", alignItems: "center", gap: 6,
+          color: dir === "right" || committed === "right" ? "var(--ds-color-black)" : "var(--ds-color-white)",
+          fontWeight: 600, fontSize: 14,
+          opacity: committed === "left" ? 0 : committed === "right" ? 1 : dir === "right" ? 1 : 0.85, transition: trans, pointerEvents: "none",
+        }}>
+          {busy && committed === "right" ? "Lanzando…" : approveLabel}<span aria-hidden style={{ fontSize: 18 }}>›</span>
+        </div>
+      )}
+      {/* oneWay: destino tenue a la derecha del track (como el DS) */}
+      {oneWay && !committed && (
+        <div aria-hidden style={{ position: "absolute", right: 22, top: 0, bottom: 0, display: "flex", alignItems: "center", color: "var(--ds-color-white)", opacity: 0.35, fontSize: 18, pointerEvents: "none" }}>›</div>
+      )}
 
       {/* Perilla */}
       <div
+        ref={knobRef}
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
         onPointerCancel={onPointerUp}
         style={{
-          position: "absolute", top: 5, bottom: 5, width: knobWidth,
+          position: "absolute", top: 5, bottom: 5, width: oneWay ? "auto" : knobWidth,
+          padding: oneWay ? "0 24px" : 0, whiteSpace: "nowrap",
           transform: `translateX(${knobLeft}px)`, transition: trans,
           borderRadius: (height - 10) / 2,
           background: knobBg,
@@ -165,7 +180,7 @@ export function SlideConfirm({
             : dragging
               ? "inset 0 0 0 1px rgba(0,0,0,.05), 0 8px 16px rgba(0,0,0,.28)"
               : "inset 0 0 0 1px rgba(0,0,0,.05), 0 2px 6px rgba(0,0,0,.22)",
-          color: committed ? "var(--ds-color-white)" : "var(--ds-color-gray-400)",
+          color: committed ? "var(--ds-color-white)" : oneWay ? "var(--ds-color-black)" : "var(--ds-color-gray-400)",
         }}
       >
         {busy && committed === "right" ? (
@@ -174,6 +189,10 @@ export function SlideConfirm({
           <span aria-hidden style={{ fontSize: 22, fontWeight: 700 }}>✓</span>
         ) : committed === "left" ? (
           <span aria-hidden style={{ fontSize: 20, fontWeight: 700 }}>✕</span>
+        ) : oneWay ? (
+          <span style={{ display: "flex", alignItems: "center", gap: 8, fontWeight: 700, fontSize: 14 }}>
+            {approveLabel}<span aria-hidden style={{ fontSize: 18 }}>›</span>
+          </span>
         ) : (
           <span className={`stc-handle${!dragging ? " stc-grip" : ""}`} aria-hidden>
             <i /><i /><i />

@@ -74,7 +74,7 @@ export default function AprobacionPage() {
           <div className="row row--between wrap gap-3 mt-6" style={{ alignItems: "center", padding: "10px 14px", borderRadius: 12, background: "color-mix(in srgb, var(--ds-color-green-100) 8%, #fff)", border: "1.5px solid var(--ds-color-gray-100)" }}>
             <div className="row gap-4 wrap" style={{ alignItems: "center" }}>
               <label className="row gap-2" style={{ alignItems: "center", cursor: "pointer" }}>
-                <input type="checkbox" checked={sel.size > 0 && sel.size === porAprobar.length}
+                <input type="checkbox" className="ds-cbx" checked={sel.size > 0 && sel.size === porAprobar.length}
                   ref={(el) => { if (el) el.indeterminate = sel.size > 0 && sel.size < porAprobar.length; }}
                   onChange={(e) => setSel(e.target.checked ? new Set(porAprobar.map((o) => o.id)) : new Set())} />
                 <span className="ds-body-sm ds-strong">Seleccionar todas ({porAprobar.length})</span>
@@ -120,7 +120,7 @@ export default function AprobacionPage() {
                       <span
                         onClick={(e) => { e.stopPropagation(); toggleSel(o.id); }}
                         style={{ display: "inline-flex", alignItems: "center" }}>
-                        <input type="checkbox" checked={sel.has(o.id)} onChange={() => toggleSel(o.id)} onClick={(e) => e.stopPropagation()} title="Seleccionar para aprobar en lote" style={{ width: 16, height: 16 }} />
+                        <input type="checkbox" className="ds-cbx" checked={sel.has(o.id)} onChange={() => toggleSel(o.id)} onClick={(e) => e.stopPropagation()} title="Seleccionar para aprobar en lote" />
                       </span>
                       <span className="ds-subtitle">{o.numero}</span>
                       <Badge tone="yellow">Pendiente de aprobación</Badge>

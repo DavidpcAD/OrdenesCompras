@@ -56,7 +56,7 @@ export default function ProvOrdenDetallePage() {
 
   return (
     <AppShell role="proveeduria">
-      <OrdenDetalle orden={orden} volverHref="/proveeduria/ordenes" volverLabel="‹ Volver a órdenes" acciones={acciones} solicitudHref={solicitudHref} />
+      <OrdenDetalle orden={orden} volverHref="/proveeduria/ordenes" volverLabel="Volver a órdenes" acciones={acciones} solicitudHref={solicitudHref} />
     </AppShell>
   );
 }

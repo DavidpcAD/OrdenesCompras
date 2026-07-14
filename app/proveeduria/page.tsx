@@ -195,7 +195,7 @@ export default function ProveeduriaMaterialesPage() {
                 <thead>
                   <tr>
                     <th style={{ width: 36 }}>
-                      <input type="checkbox" title="Seleccionar todas las líneas visibles" aria-label="Seleccionar todas"
+                      <input type="checkbox" className="ds-cbx" title="Seleccionar todas las líneas visibles" aria-label="Seleccionar todas"
                         checked={allVisibleSel}
                         ref={(el) => { if (el) el.indeterminate = someVisibleSel && !allVisibleSel; }}
                         onChange={(e) => toggleAllVisible(e.target.checked)} />
@@ -225,7 +225,7 @@ export default function ProveeduriaMaterialesPage() {
                         style={{ background: r.incluir ? "color-mix(in srgb, var(--ds-color-green-100) 12%, #fff)" : undefined }}
                         onClick={() => setRow(r.pedidoLineaId, { incluir: !r.incluir })}>
                         <td onClick={(e) => e.stopPropagation()}>
-                          <input type="checkbox" checked={r.incluir} onChange={(e) => setRow(r.pedidoLineaId, { incluir: e.target.checked })} />
+                          <input type="checkbox" className="ds-cbx" checked={r.incluir} onChange={(e) => setRow(r.pedidoLineaId, { incluir: e.target.checked })} />
                         </td>
                         <td><span className="row gap-2" style={{ alignItems: "center" }}>{dot(r.tipo === "repuesto" ? "yellow" : "green")}<span className="ds-body-sm ds-strong">{r.pedidoNumero}</span></span></td>
                         <td><div className="ds-truncate" title={r.descripcion}>{r.descripcion}</div></td>

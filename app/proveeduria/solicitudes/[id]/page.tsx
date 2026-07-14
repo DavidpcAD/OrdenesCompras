@@ -46,7 +46,7 @@ export default function ProveeduriaPedidoDetallePage() {
   return (
     <AppShell role="proveeduria">
       <main className="page">
-        <div className="back-link" onClick={() => router.push("/proveeduria/solicitudes")}>‹ Volver a solicitudes</div>
+        <div className="back-link" onClick={() => router.push("/proveeduria/solicitudes")}>Volver a solicitudes</div>
         <div className="page__head">
           <div className="page__title">
             <div className="row gap-3">

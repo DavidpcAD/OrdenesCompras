@@ -6,6 +6,7 @@ import * as XLSX from "xlsx";
 import { Button, Card, Field, Select, Textarea, useToast } from "@/components/ui";
 import { IconTrash, IconPlus } from "@/components/icons";
 import { Combobox } from "@/components/combobox";
+import { SlideConfirm } from "@/components/slide-confirm";
 import { useStore, type NewPedidoInput } from "@/lib/store";
 import type { Almacen, Articulo, Obra, Pedido, TipoSolicitud } from "@/lib/types";
 
@@ -776,12 +777,15 @@ export function SolicitudForm({
         </div>
       </Card>
 
-      <div className="row gap-3 mt-6" style={{ justifyContent: "flex-end" }}>
-        <Button variant="outline" onClick={onCancelar}>Cancelar</Button>
-        {guardarSecundario && textoBotonSecundario && (
-          <Button variant="outline" onClick={() => onGuardar(guardarSecundario)} disabled={!puedeGuardar || guardando}>{textoBotonSecundario}</Button>
-        )}
-        <Button onClick={() => onGuardar()} disabled={!puedeGuardar || guardando}>{guardando ? "Guardando…" : textoBoton}</Button>
+      {/* Acciones secundarias arriba; el "pedir" primario es un slide-to-confirm (DS). */}
+      <div className="mt-6" style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+        <div className="row gap-3" style={{ justifyContent: "flex-end" }}>
+          <Button variant="outline" onClick={onCancelar}>Cancelar</Button>
+          {guardarSecundario && textoBotonSecundario && (
+            <Button variant="outline" onClick={() => onGuardar(guardarSecundario)} disabled={!puedeGuardar || guardando}>{textoBotonSecundario}</Button>
+          )}
+        </div>
+        <SlideConfirm oneWay approveLabel={textoBoton} busy={guardando} disabled={!puedeGuardar} onApprove={() => onGuardar()} height={60} />
       </div>
     </>
   );

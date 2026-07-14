@@ -153,7 +153,7 @@ export default function RegistrarFacturaPage() {
   return (
     <AppShell role="facturacion">
       <main className="page page--wide">
-        <div className="back-link" onClick={() => router.push("/facturacion")}>‹ Volver a órdenes por recibir</div>
+        <div className="back-link" onClick={() => router.push("/facturacion")}>Volver a órdenes por recibir</div>
         <div className="page__head">
           <div className="page__title">
             <div className="row gap-3">
@@ -216,7 +216,7 @@ export default function RegistrarFacturaPage() {
                   const importe = importeRecibir(l);
                   return (
                     <tr key={l.id} className={pend > 0 && val < pend ? "row-pending" : ""}>
-                      <td className="ds-num"><input type="checkbox" checked={pend > 0 && val >= pend} disabled={pend <= 0} title="Marcar recibido completo" onChange={(e) => setRecibir((r) => ({ ...r, [l.id]: e.target.checked ? String(pend) : "0" }))} /></td>
+                      <td className="ds-num"><input type="checkbox" className="ds-cbx" checked={pend > 0 && val >= pend} disabled={pend <= 0} title="Marcar recibido completo" onChange={(e) => setRecibir((r) => ({ ...r, [l.id]: e.target.checked ? String(pend) : "0" }))} /></td>
                       <td>
                         {l.descripcion}
                         <div className="ds-body-sm ds-muted">

@@ -73,13 +73,13 @@ export default function EditarOrdenPage() {
     || orden.lineas.some((l) => l.cantidadRecibida > 0 || l.cantidadFacturada > 0);
   if (tieneRecepciones) {
     return <AppShell role="proveeduria"><main className="page">
-      <div className="back-link" onClick={() => router.push(`/proveeduria/ordenes/${id}`)}>‹ Volver a la orden</div>
+      <div className="back-link" onClick={() => router.push(`/proveeduria/ordenes/${id}`)}>Volver a la orden</div>
       <div className="empty" style={{ padding: "48px 16px" }}>Esta orden ya tiene recepciones registradas, así que no se puede editar: se perdería la trazabilidad de lo recibido y facturado.</div>
     </main></AppShell>;
   }
   if (orden.estado !== "abierto" && orden.estado !== "rechazado") {
     return <AppShell role="proveeduria"><main className="page">
-      <div className="back-link" onClick={() => router.push(`/proveeduria/ordenes/${id}`)}>‹ Volver a la orden</div>
+      <div className="back-link" onClick={() => router.push(`/proveeduria/ordenes/${id}`)}>Volver a la orden</div>
       <div className="empty" style={{ padding: "48px 16px" }}>Esta orden ya no se puede editar: solo se permite mientras está Abierta o Rechazada.</div>
     </main></AppShell>;
   }
@@ -111,7 +111,7 @@ export default function EditarOrdenPage() {
   return (
     <AppShell role="proveeduria">
       <main className="page page--wide" style={{ paddingBottom: 120 }}>
-        <div className="back-link" onClick={() => router.push(`/proveeduria/ordenes/${id}`)}>‹ Volver a la orden</div>
+        <div className="back-link" onClick={() => router.push(`/proveeduria/ordenes/${id}`)}>Volver a la orden</div>
         <div className="page__head">
           <div className="page__title">
             <div className="row gap-3"><h1 className="ds-heading">Editar {orden.numero}</h1><Badge tone="gray">Abierta</Badge></div>

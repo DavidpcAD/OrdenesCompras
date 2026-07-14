@@ -211,7 +211,7 @@ export default function ArmarOrdenPage() {
   return (
     <AppShell role="proveeduria">
       <main className="page page--wide" style={{ paddingBottom: 120 }}>
-        <div className="back-link" onClick={() => router.push("/proveeduria")}>‹ Volver a materiales</div>
+        <div className="back-link" onClick={() => router.push("/proveeduria")}>Volver a materiales</div>
         <div className="page__head">
           <div className="page__title">
             <h1 className="ds-heading">Armar orden de compra</h1>

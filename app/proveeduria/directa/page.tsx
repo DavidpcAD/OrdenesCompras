@@ -87,7 +87,7 @@ export default function OrdenDirectaPage() {
   return (
     <AppShell role="proveeduria">
       <main className="page page--wide" style={{ paddingBottom: 120 }}>
-        <div className="back-link" onClick={() => router.push("/proveeduria/ordenes")}>‹ Volver a órdenes</div>
+        <div className="back-link" onClick={() => router.push("/proveeduria/ordenes")}>Volver a órdenes</div>
         <div className="page__head">
           <div className="page__title">
             <div className="row gap-3"><h1 className="ds-heading">Nueva orden directa</h1><Badge tone="yellow">Directa</Badge></div>

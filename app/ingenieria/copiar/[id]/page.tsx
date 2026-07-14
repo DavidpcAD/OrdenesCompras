@@ -32,7 +32,7 @@ export default function CopiarSolicitudPage() {
   return (
     <AppShell role="ingenieria">
       <main className="page">
-        <div className="back-link" onClick={() => router.push(`/ingenieria/${id}`)}>‹ Volver a la solicitud</div>
+        <div className="back-link" onClick={() => router.push(`/ingenieria/${id}`)}>Volver a la solicitud</div>
         <div className="page__head">
           <div className="page__title">
             <h1 className="ds-heading">Copiar {pedido.numero}</h1>

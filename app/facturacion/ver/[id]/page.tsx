@@ -22,7 +22,7 @@ export default function BodegaOrdenDetallePage() {
 
   return (
     <AppShell role="facturacion">
-      <OrdenDetalle orden={orden} volverHref="/facturacion/todas" volverLabel="‹ Volver a órdenes" acciones={acciones} />
+      <OrdenDetalle orden={orden} volverHref="/facturacion/todas" volverLabel="Volver a órdenes" acciones={acciones} />
     </AppShell>
   );
 }

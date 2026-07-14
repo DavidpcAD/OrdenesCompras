@@ -181,7 +181,7 @@ export function DataTable<T>({
               return (
                 <div key={cid} className="row row--between gap-2" style={{ alignItems: "center", padding: "5px 8px", borderRadius: 8 }}>
                   <label className="row gap-2 ds-body-sm" style={{ alignItems: "center", cursor: "pointer" }}>
-                    <input type="checkbox" checked={col.getIsVisible()} onChange={col.getToggleVisibilityHandler()} /> {labelDe(cid)}
+                    <input type="checkbox" className="ds-cbx" checked={col.getIsVisible()} onChange={col.getToggleVisibilityHandler()} /> {labelDe(cid)}
                   </label>
                   <span className="row gap-1">
                     <button type="button" className="icon-btn" title="Subir" onClick={() => moveCol(cid, -1)}>↑</button>
@@ -291,7 +291,7 @@ export function DataTable<T>({
                           <td className="dt-xcell" onClick={(e) => e.stopPropagation()}>
                             <button type="button" className={`dt-exp-btn${open ? " is-open" : ""}`} aria-expanded={open}
                               title={open ? "Ocultar líneas" : "Ver líneas"} onClick={() => toggleExpanded(row.id)}>
-                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><path d="M8 9l4-4 4 4" /><path d="M16 15l-4 4-4-4" /></svg>
+                              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M6 9l6 6 6-6" /></svg>
                             </button>
                           </td>
                         )}

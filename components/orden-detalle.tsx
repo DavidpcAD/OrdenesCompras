@@ -14,7 +14,7 @@ import type { Orden } from "@/lib/types";
 export function OrdenDetalle({
   orden,
   volverHref,
-  volverLabel = "‹ Volver",
+  volverLabel = "Volver",
   acciones,
   solicitudHref,
 }: {

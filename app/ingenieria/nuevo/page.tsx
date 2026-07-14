@@ -14,7 +14,7 @@ export default function NuevaSolicitudPage() {
   return (
     <AppShell role="ingenieria">
       <main className="page">
-        <div className="back-link" onClick={() => router.push("/ingenieria")}>‹ Volver a solicitudes</div>
+        <div className="back-link" onClick={() => router.push("/ingenieria")}>Volver a solicitudes</div>
         <div className="page__head">
           <div className="page__title">
             <h1 className="ds-heading">Nueva solicitud</h1>

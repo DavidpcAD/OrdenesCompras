@@ -28,7 +28,7 @@ export default function PedidoDetallePage() {
   return (
     <AppShell role="ingenieria">
       <main className="page">
-        <div className="back-link" onClick={() => router.push("/ingenieria")}>‹ Volver a pedidos</div>
+        <div className="back-link" onClick={() => router.push("/ingenieria")}>Volver a pedidos</div>
         <div className="page__head">
           <div className="page__title">
             <div className="row gap-3">

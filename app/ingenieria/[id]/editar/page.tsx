@@ -22,7 +22,7 @@ export default function EditarSolicitudPage() {
     return (
       <AppShell role="ingenieria">
         <main className="page">
-          <div className="back-link" onClick={() => router.push(`/ingenieria/${id}`)}>‹ Volver al pedido</div>
+          <div className="back-link" onClick={() => router.push(`/ingenieria/${id}`)}>Volver al pedido</div>
           <div className="empty" style={{ padding: "48px 16px" }}>
             Este pedido ya no se puede editar: fue enviado a proveeduría o ya tiene orden de compra.
           </div>
@@ -44,7 +44,7 @@ export default function EditarSolicitudPage() {
   return (
     <AppShell role="ingenieria">
       <main className="page">
-        <div className="back-link" onClick={() => router.push(`/ingenieria/${id}`)}>‹ Volver al pedido</div>
+        <div className="back-link" onClick={() => router.push(`/ingenieria/${id}`)}>Volver al pedido</div>
         <div className="page__head">
           <div className="page__title">
             <h1 className="ds-heading">Editar {pedido.numero}</h1>

@@ -51,7 +51,7 @@ export default function AprobacionOrdenDetallePage() {
 
   return (
     <AppShell role="aprobacion">
-      <OrdenDetalle orden={orden} volverHref="/aprobacion/todas" volverLabel="‹ Volver a órdenes" acciones={acciones} />
+      <OrdenDetalle orden={orden} volverHref="/aprobacion/todas" volverLabel="Volver a órdenes" acciones={acciones} />
       {rechazarOpen && (
         <Modal title={`Rechazar ${orden.numero}`} onClose={() => setRechazarOpen(false)}
           footer={<><Button variant="outline" onClick={() => setRechazarOpen(false)}>Cancelar</Button><Button variant="red" onClick={confirmarRechazo}>Rechazar y devolver</Button></>}>
