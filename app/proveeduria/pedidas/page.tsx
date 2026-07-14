@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import type { ColumnDef } from "@tanstack/react-table";
 import { AppShell } from "@/components/shell";
-import { Badge, Button } from "@/components/ui";
+import { Badge } from "@/components/ui";
 import { DataTable } from "@/components/data-table";
 import { VistaToggle } from "@/components/vista-toggle";
 import { IconReceipt, IconList } from "@/components/icons";
@@ -79,7 +79,6 @@ export default function ProveeduriaLineasPedidasPage() {
               { label: "Por orden", href: "/proveeduria/ordenes", active: false, icon: <IconReceipt size={16} /> },
               { label: "Por línea", href: "/proveeduria/pedidas", active: true, icon: <IconList size={16} /> },
             ]} />
-            <Button variant="outline" onClick={() => base.length && window.print()}>Exportar PDF</Button>
           </div>
         </div>
 
@@ -91,7 +90,7 @@ export default function ProveeduriaLineasPedidasPage() {
         </div>
 
         <div className="mt-2">
-          <DataTable data={base} columns={columns} tablaKey="lineas-pedidas" vacio="No hay líneas que coincidan con el filtro." />
+          <DataTable data={base} columns={columns} tablaKey="lineas-pedidas" titulo="Líneas pedidas" vacio="No hay líneas que coincidan con el filtro." />
         </div>
       </main>
 

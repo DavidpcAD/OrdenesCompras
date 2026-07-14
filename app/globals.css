@@ -450,12 +450,21 @@ h1, h2, h3, h4, p { margin: 0; }
 /* Botón ⇕ de expandir por fila */
 .dt-xcell { width: 52px; text-align: center; }
 /* Expander estilo DS: cuadrado redondeado, blanco, sombra suave; el chevron rota al abrir (misma interacción que el prototipo). */
-.dt-exp-btn { display: inline-grid; place-items: center; width: 36px; height: 36px; border-radius: var(--ds-radius-lg); border: none; background: var(--ds-color-white); color: var(--ds-color-black); box-shadow: var(--ds-shadow-01); cursor: pointer; vertical-align: middle; transition: box-shadow .15s ease, background .15s ease; }
+/* Expander estilo DS (nav--overview "close/open"): círculo negro, chevron blanco
+   que rota al abrir. Compartido por la DataTable y por cualquier "expandir líneas". */
+.dt-exp-btn { display: inline-grid; place-items: center; width: 38px; height: 38px; border-radius: 50%; border: none; background: var(--ds-color-black); color: var(--ds-color-white); box-shadow: var(--ds-shadow-01); cursor: pointer; vertical-align: middle; transition: box-shadow .15s ease, transform .1s ease; }
 .dt-exp-btn svg { transition: transform .28s cubic-bezier(.34, 1.4, .5, 1); }
 .dt-exp-btn:hover { box-shadow: var(--ds-shadow-03-big); }
-.dt-exp-btn.is-open { background: var(--ds-color-surface); }
+.dt-exp-btn:active { transform: scale(.94); }
 .dt-exp-btn.is-open svg { transform: rotate(180deg); }
 @media (prefers-reduced-motion: reduce) { .dt-exp-btn svg { transition: none; } }
+
+/* Botón Exportar del toolbar (a la derecha) + chips CSV/PDF del menú. */
+.dt-export-btn { display: inline-flex; align-items: center; gap: 7px; min-height: 44px; padding: 0 18px; border-radius: var(--ds-radius-xl); border: 0; background: var(--ds-color-white); color: var(--ds-color-black); font: inherit; font-size: var(--ds-font-size-body-sm); font-weight: var(--ds-font-weight-semibold); cursor: pointer; box-shadow: var(--ds-shadow-01); transition: box-shadow .12s ease, transform .06s ease; }
+.dt-export-btn svg { color: var(--ds-color-green-200); }
+.dt-export-btn:hover, .dt-export-btn.is-open { box-shadow: var(--ds-shadow-03-big); }
+.dt-export-btn:active { transform: translateY(1px); }
+.dt-export-ic { display: inline-grid; place-items: center; width: 42px; height: 24px; flex-shrink: 0; border-radius: 6px; background: var(--ds-color-black); color: var(--ds-color-white); font-size: 10px; font-weight: 700; letter-spacing: .5px; }
 
 /* Fila expandible: animación de altura (grid 0fr→1fr), estilo SelectionDropdown */
 .dt-exp-wrap { display: grid; grid-template-rows: 0fr; transition: grid-template-rows .28s cubic-bezier(.34, 1.4, .5, 1); }

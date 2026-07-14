@@ -48,6 +48,7 @@ type Vista = { id: number; nombre: string; config: VistaCfg; esPredeterminada: b
 
 export function DataTable<T>({
   data, columns, tablaKey, getRowId, onRowClick, rowClassName, vacio = "No hay registros.", modoInicial = "tabla", renderExpanded,
+  titulo = "Reporte",
 }: {
   data: T[];
   columns: ColumnDef<T, any>[];
@@ -59,6 +60,9 @@ export function DataTable<T>({
   modoInicial?: "tabla" | "grid";
   // Si se pasa, cada fila gana un botón ⇕ que despliega este contenido (p.ej. las líneas).
   renderExpanded?: (row: T) => ReactNode;
+  // Título del reporte al exportar (CSV/PDF). El export usa las filas FILTRADAS
+  // y las columnas visibles, así que "filtrás en la app y descargás eso".
+  titulo?: string;
 }) {
   const { usuario } = useStore();
   // Inyecta el filtro multi-selección a las columnas que no traigan uno propio.
@@ -73,7 +77,7 @@ export function DataTable<T>({
   const [columnOrder, setColumnOrder] = useState<ColumnOrderState>(() => columns.map((c) => c.id!).filter(Boolean));
   const [globalFilter, setGlobalFilter] = useState("");
   const [pagination, setPagination] = useState<PaginationState>({ pageIndex: 0, pageSize: 50 });
-  const [panel, setPanel] = useState<null | "cols" | "vistas">(null);
+  const [panel, setPanel] = useState<null | "cols" | "vistas" | "export">(null);
   const [modo, setModo] = useState<"tabla" | "grid">(modoInicial);
 
   const table = useReactTable({
@@ -157,6 +161,57 @@ export function DataTable<T>({
   const labelDe = (colId: string) => (leaf.find((x) => x.id === colId)?.columnDef.meta as ColMeta | undefined)?.label ?? colId;
   const rows = table.getRowModel().rows;
 
+  // --- Exportar (CSV / PDF) — usa las filas FILTRADAS y las columnas visibles ---
+  const valCelda = (row: any, colId: string): string => {
+    try { const v = row.getValue(colId); if (v == null) return ""; return typeof v === "number" ? String(v) : String(v); }
+    catch { return ""; }
+  };
+  const colsExport = () => table.getVisibleLeafColumns().map((c) => c.id).filter(Boolean) as string[];
+  const filasExport = () => table.getFilteredRowModel().rows;
+
+  const exportCSV = () => {
+    const cols = colsExport();
+    const esc = (s: string) => (/[",\n\r;]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s);
+    const lineas = [cols.map((c) => esc(labelDe(c))).join(",")];
+    for (const r of filasExport()) lineas.push(cols.map((c) => esc(valCelda(r, c))).join(","));
+    const csv = "﻿" + lineas.join("\r\n"); // BOM: Excel respeta acentos
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = `${tablaKey || "reporte"}.csv`; a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const exportPDF = () => {
+    const cols = colsExport();
+    const escH = (s: string) => s.replace(/[&<>]/g, (m) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[m] as string));
+    const filas = filasExport();
+    const ths = cols.map((c) => `<th>${escH(labelDe(c))}</th>`).join("");
+    const trs = filas.map((r) => `<tr>${cols.map((c) => `<td>${escH(valCelda(r, c))}</td>`).join("")}</tr>`).join("");
+    const w = window.open("", "_blank");
+    if (!w) return;
+    w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${escH(titulo)}</title>
+      <style>
+        *{font-family:-apple-system,Segoe UI,Roboto,sans-serif;box-sizing:border-box}
+        body{margin:32px;color:#1a1a1a}
+        h1{font-size:20px;margin:0 0 2px}
+        .meta{color:#888;font-size:12px;margin-bottom:18px}
+        table{border-collapse:collapse;width:100%;font-size:12px}
+        thead th{background:#111;color:#fff;text-align:left;padding:8px 10px}
+        thead th:first-child{border-top-left-radius:8px}
+        thead th:last-child{border-top-right-radius:8px}
+        tbody td{padding:7px 10px;border-bottom:1px solid #eee}
+        tbody tr:nth-child(even){background:#fafafa}
+        @media print{@page{margin:14mm}}
+      </style></head><body>
+      <h1>${escH(titulo)}</h1>
+      <div class="meta">Compras Adelante · ${filas.length} registro(s)</div>
+      <table><thead><tr>${ths}</tr></thead><tbody>${trs}</tbody></table>
+      <script>window.onload=function(){window.print();}</script>
+      </body></html>`);
+    w.document.close();
+  };
+
   return (
     <>
       {/* Toolbar */}
@@ -170,6 +225,10 @@ export function DataTable<T>({
           </div>
           <Button variant="ghost" size="sm" onClick={() => setPanel(panel === "cols" ? null : "cols")}>Columnas</Button>
           <Button variant="ghost" size="sm" onClick={() => setPanel(panel === "vistas" ? null : "vistas")}>Vistas</Button>
+          <button type="button" className={`dt-export-btn${panel === "export" ? " is-open" : ""}`} onClick={() => setPanel(panel === "export" ? null : "export")} title="Exportar (CSV / PDF)">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3v12" /><path d="M7 10l5 5 5-5" /><path d="M5 21h14" /></svg>
+            Exportar
+          </button>
         </div>
 
         {panel && <div onClick={() => setPanel(null)} style={{ position: "fixed", inset: 0, zIndex: 30 }} />}
@@ -208,6 +267,19 @@ export function DataTable<T>({
             <div style={{ borderTop: "1.5px solid var(--ds-color-gray-100)", marginTop: 6, paddingTop: 8 }}>
               <Button variant="outline" size="sm" block onClick={guardarVista}>Guardar vista actual</Button>
             </div>
+          </Card>
+        )}
+        {panel === "export" && (
+          <Card flat style={{ position: "absolute", right: 0, top: "calc(100% + 8px)", zIndex: 31, width: 260, padding: 8 }}>
+            <div className="ds-label ds-muted" style={{ padding: "4px 8px 8px" }}>Descargar {table.getFilteredRowModel().rows.length} fila(s) filtradas</div>
+            <button type="button" className="dt-filter-row" onClick={() => { exportCSV(); setPanel(null); }}>
+              <span className="dt-export-ic" aria-hidden>CSV</span>
+              <span>Excel / CSV</span>
+            </button>
+            <button type="button" className="dt-filter-row" onClick={() => { exportPDF(); setPanel(null); }}>
+              <span className="dt-export-ic" aria-hidden>PDF</span>
+              <span>Reporte PDF</span>
+            </button>
           </Card>
         )}
       </div>

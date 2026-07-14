@@ -108,14 +108,8 @@ export default function AprobacionPage() {
                   <button type="button" onClick={() => toggleAbierto(o.id)} aria-expanded={open}
                     className="col" style={{ gap: 4, flex: "1 1 240px", minWidth: 200, background: "none", border: 0, padding: 0, textAlign: "left", cursor: "pointer" }}>
                     <div className="row gap-3" style={{ alignItems: "center" }}>
-                      <span aria-hidden style={{
-                        display: "grid", placeItems: "center", width: 30, height: 30, flexShrink: 0, borderRadius: "50%",
-                        border: "1.5px solid var(--ds-color-gray-200)",
-                        color: open ? "var(--ds-color-black)" : "var(--ds-color-gray-400)",
-                        background: open ? "color-mix(in srgb, var(--ds-color-green-100) 18%, #fff)" : "var(--ds-color-white)",
-                        transition: "background .15s, color .15s",
-                      }}>
-                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><path d="M8 9l4-4 4 4" /><path d="M16 15l-4 4-4-4" /></svg>
+                      <span className={`dt-exp-btn${open ? " is-open" : ""}`} style={{ flexShrink: 0 }} aria-hidden>
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M6 9l6 6 6-6" /></svg>
                       </span>
                       <span
                         onClick={(e) => { e.stopPropagation(); toggleSel(o.id); }}
@@ -128,13 +122,6 @@ export default function AprobacionPage() {
                     <span className="ds-muted ds-label">{o.proveedorNo ?? prov(o.proveedorId)?.code} · {o.proveedorNombre ?? prov(o.proveedorId)?.nombre} · {formatDate(o.fecha)}</span>
                     <span className="ds-muted ds-body-sm">{articulos.length} línea(s) · Total <span className="ds-strong">{money(total, o.currencyCode)}</span></span>
                   </button>
-                  <div style={{ flex: "1 1 320px", minWidth: 260, maxWidth: 460 }}>
-                    <SlideConfirm
-                      busy={aprobandoId === o.id}
-                      onApprove={() => aprobar(o)}
-                      onReject={() => { setMotivo(""); setRechObj({ id: o.id, numero: o.numero }); }}
-                    />
-                  </div>
                 </div>
 
                 {open && (
@@ -158,6 +145,16 @@ export default function AprobacionPage() {
                     </table>
                   </div>
                 )}
+
+                {/* Aprobar/Rechazar SIEMPRE al fondo de la tarjeta: al expandir queda
+                    debajo de las líneas (mejor en celular y en PC). */}
+                <div className="mt-3" style={{ maxWidth: 460, marginLeft: "auto" }}>
+                  <SlideConfirm
+                    busy={aprobandoId === o.id}
+                    onApprove={() => aprobar(o)}
+                    onReject={() => { setMotivo(""); setRechObj({ id: o.id, numero: o.numero }); }}
+                  />
+                </div>
               </Card>
             );
           })}
