@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { AppShell } from "@/components/shell";
 import { Badge, Button, Card, Field, Input, Modal, Select, useToast } from "@/components/ui";
 import { Combobox } from "@/components/combobox";
+import { IconEdit } from "@/components/icons";
 import { useStore } from "@/lib/store";
 
 type Etapa = { id: number; codigo: string; nombre: string };
@@ -55,6 +56,14 @@ export default function PlantillasPage() {
       if (fPartida && String(partida?.id) !== fPartida) return false;
       if (!q) return true;
       return pl.nombre.toLowerCase().includes(q) || (c?.nombre.toLowerCase().includes(q) ?? false);
+    }).sort((a, b) => {
+      // Ordenar por partida (código) → clasificación → nombre; sin clasificación al final.
+      const pa = ctxDeClas(clasDe(a.idClasificacion)).partida?.codigo ?? "￿";
+      const pb = ctxDeClas(clasDe(b.idClasificacion)).partida?.codigo ?? "￿";
+      if (pa !== pb) return pa.localeCompare(pb, "es", { numeric: true });
+      const ca = clasDe(a.idClasificacion)?.nombre ?? ""; const cb = clasDe(b.idClasificacion)?.nombre ?? "";
+      if (ca !== cb) return ca.localeCompare(cb, "es", { numeric: true });
+      return a.nombre.localeCompare(b.nombre, "es", { numeric: true });
     });
   }, [plantillas, buscar, fPartida, wbs]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -99,7 +108,10 @@ export default function PlantillasPage() {
               <Card key={pl.id} onClick={() => setEditor(pl)} style={{ cursor: "pointer" }}>
                 <div className="row row--between" style={{ alignItems: "flex-start" }}>
                   <span className="ds-strong">{pl.nombre}</span>
-                  <button className="icon-btn" title="Borrar" onClick={(ev) => { ev.stopPropagation(); borrar(pl); }}>×</button>
+                  <span className="row gap-1">
+                    <button className="icon-btn" title="Editar plantilla" aria-label="Editar" onClick={(ev) => { ev.stopPropagation(); setEditor(pl); }}><IconEdit size={15} /></button>
+                    <button className="icon-btn" title="Borrar" onClick={(ev) => { ev.stopPropagation(); borrar(pl); }}>×</button>
+                  </span>
                 </div>
                 <div className="row gap-2 wrap mt-2">
                   {etapa && <Badge tone="gray">{etapa.nombre}</Badge>}
@@ -150,6 +162,7 @@ function PlantillaEditor({ plantilla, wbs, items, usuario, onClose, onSaved }: {
     setQaCode(""); setQaQty("");
   }
   const delLinea = (i: number) => setLineas((L) => L.filter((_, idx) => idx !== i));
+  const setLinea = (i: number, patch: Partial<Linea>) => setLineas((L) => L.map((l, idx) => (idx === i ? { ...l, ...patch } : l)));
 
   async function guardar() {
     if (!nombre.trim()) { toast("Poné un nombre.", "error"); return; }
@@ -208,7 +221,7 @@ function PlantillaEditor({ plantilla, wbs, items, usuario, onClose, onSaved }: {
                 <tr key={i}>
                   <td><span className="ds-strong ds-body-sm">{l.code}</span> <span className="ds-muted">— {l.descripcion}</span></td>
                   <td className="ds-muted">{l.unidad ?? "—"}</td>
-                  <td className="ds-num">{l.cantidad}</td>
+                  <td className="ds-num"><Input type="number" min={0} value={l.cantidad} onChange={(e) => setLinea(i, { cantidad: Number(e.target.value) })} style={{ width: 90, textAlign: "right", padding: "6px 10px" }} /></td>
                   <td className="ds-num"><button className="icon-btn" title="Quitar" onClick={() => delLinea(i)}>×</button></td>
                 </tr>
               ))}
