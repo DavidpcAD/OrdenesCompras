@@ -365,6 +365,21 @@ export default function ArmarOrdenPage() {
                     <td className="ds-num"><button type="button" className="icon-btn" title="Quitar línea" onClick={() => removeRow(r.pedidoLineaId)}>×</button></td>
                   </tr>
                 ))}
+                {/* Cargos de producto también como líneas (igual que en BC). Se editan
+                    arriba en "Cargos de producto"; acá se muestran junto a los artículos. */}
+                {cargos.map((c, i) => cargoImporte(c) > 0 ? (
+                  <tr key={`cargo-${i}`} style={{ background: "color-mix(in srgb, var(--ds-color-yellow) 7%, #fff)" }}>
+                    <td><Badge tone="yellow">Cargo</Badge></td>
+                    <td><div className="ds-truncate" title={c.descripcion} style={{ maxWidth: 200 }}>{c.chargeNo ? `${c.chargeNo} · ` : ""}{c.descripcion}</div></td>
+                    <td className="ds-muted ds-body-sm">—</td>
+                    <td className="ds-num ds-body-sm">{c.cantidad}</td>
+                    <td className="ds-num ds-body-sm">{money(Number(c.precio) || 0, currency)}</td>
+                    <td className="ds-num ds-muted">—</td>
+                    <td className="ds-num ds-body-sm">13</td>
+                    <td className="ds-num ds-strong">{money(cargoImporte(c) || 0, currency)}</td>
+                    <td className="ds-num"><button type="button" className="icon-btn" title="Quitar cargo" onClick={() => removeCargo(i)}>×</button></td>
+                  </tr>
+                ) : null)}
               </tbody>
               {cargosTotal > 0 && (
                 <tfoot>
