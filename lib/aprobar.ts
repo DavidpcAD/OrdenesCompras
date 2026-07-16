@@ -18,10 +18,12 @@ export async function aprobarYLanzar(
   const lineasBc = orden.lineas
     .filter((l) => l.tipo === "articulo" && l.articuloId && l.cantidad > 0)
     .map((l) => ({ itemNo: l.articuloId!, cantidad: l.cantidad, precio: l.precioUnitario || 0, descripcion: l.descripcion, variantCode: l.variantCode }));
-  // Flete/transporte -> se manda a BC como Cargo de producto (Item Charge) para que
-  // el codeunit lo distribuya al costo de los artículos recibidos.
-  const cargo = orden.lineas.find((l) => l.tipo === "cargo" && (l.precioUnitario || 0) > 0);
-  const flete = cargo ? { monto: (cargo.precioUnitario || 0) * (cargo.cantidad || 1), descripcion: cargo.descripcion } : undefined;
+  // Cargos de producto (Item Charge): TODAS las líneas tipo "cargo" con precio, cada
+  // una con su tipo (chargeNo). El codeunit las distribuye por importe entre los
+  // artículos al registrar.
+  const cargos = orden.lineas
+    .filter((l) => l.tipo === "cargo" && (l.precioUnitario || 0) > 0)
+    .map((l) => ({ chargeNo: l.chargeNo, descripcion: l.descripcion, cantidad: l.cantidad || 1, precio: l.precioUnitario || 0 }));
 
   // Sin proveedor de BC o sin líneas: no hay nada que enviar a BC; se lanza local.
   if (!orden.proveedorNo || !lineasBc.length) {
@@ -47,7 +49,7 @@ export async function aprobarYLanzar(
       // BC, esas correcciones viajan a BC en vez de relanzar la versión vieja.
       res = await fetch("/api/bc/relanzar", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ orderNo: orden.bcNumber, lineas: lineasBc, flete }),
+        body: JSON.stringify({ orderNo: orden.bcNumber, lineas: lineasBc, cargos }),
       });
       d = await res.json().catch(() => ({}));
     } catch (e: any) {
@@ -67,7 +69,7 @@ export async function aprobarYLanzar(
     res = await fetch("/api/bc/lanzar", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ vendorNo: orden.proveedorNo, currencyCode: orden.currencyCode, locationCode: orden.almacenRecepcion || "ALM-GRAL", lineas: lineasBc, flete }),
+      body: JSON.stringify({ vendorNo: orden.proveedorNo, currencyCode: orden.currencyCode, locationCode: orden.almacenRecepcion || "ALM-GRAL", lineas: lineasBc, cargos }),
     });
     d = await res.json().catch(() => ({}));
   } catch (e: any) {

@@ -25,6 +25,10 @@ interface Row {
   tarea: string;
 }
 
+// Cargo de producto (Item Charge) a agregar a la orden: tipo (chargeNo del catálogo
+// BC), cantidad y precio. chargeNo "" = flete por defecto.
+interface Cargo { chargeNo: string; descripcion: string; cantidad: string; precio: string; }
+
 export default function ArmarOrdenPage() {
   const { pedidos, proveedores, ordenes, almacenes, borrador, createOrden, setOrdenEstado, setBorrador } = useStore();
   const router = useRouter();
@@ -32,7 +36,8 @@ export default function ArmarOrdenPage() {
 
   const [proveedorId, setProveedorId] = useState("");
   const [currency, setCurrency] = useState("");
-  const [flete, setFlete] = useState("");
+  const [cargos, setCargos] = useState<Cargo[]>([]);
+  const [itemCharges, setItemCharges] = useState<{ no: string; descripcion: string }[]>([]);
   const [almacen, setAlmacen] = useState("ALM-GRAL");
 
   // Proveedores en vivo desde Business Central (fallback al catálogo si BC falla).
@@ -45,6 +50,22 @@ export default function ArmarOrdenPage() {
   }, []);
   const catProv = bcProv ?? proveedores;
   const provSel = catProv.find((x) => x.id === proveedorId);
+
+  // Catálogo de Cargos de producto (Item Charge) de BC para el selector de cargos.
+  useEffect(() => {
+    fetch("/api/bc/itemcharges")
+      .then((r) => (r.ok ? r.json() : { itemCharges: [] }))
+      .then((d) => { if (Array.isArray(d.itemCharges)) setItemCharges(d.itemCharges); })
+      .catch(() => { /* sin BC: el selector cae a "Flete / transporte" */ });
+  }, []);
+  const addCargo = () => setCargos((cs) => [...cs, { chargeNo: "", descripcion: "FLETE / TRANSPORTE", cantidad: "1", precio: "" }]);
+  const setCargo = (i: number, patch: Partial<Cargo>) => setCargos((cs) => cs.map((c, idx) => (idx === i ? { ...c, ...patch } : c)));
+  const removeCargo = (i: number) => setCargos((cs) => cs.filter((_, idx) => idx !== i));
+  const onTipoCargo = (i: number, chargeNo: string) => {
+    const ic = itemCharges.find((x) => x.no === chargeNo);
+    setCargo(i, { chargeNo, descripcion: ic ? ic.descripcion : "FLETE / TRANSPORTE" });
+  };
+  const cargoImporte = (c: Cargo) => (Number(c.cantidad) || 0) * (Number(c.precio) || 0);
 
   // Catálogo de items de BC para agregar líneas manualmente a la orden.
   const [itemsBc, setItemsBc] = useState<{ code: string; descripcion: string; unidad: string; precioUltimo?: number }[]>([]);
@@ -155,7 +176,8 @@ export default function ArmarOrdenPage() {
 
   const calcImporte = (r: Row) => Number(r.cantidad) * Number(r.precio) * (1 - (Number(r.descuento) || 0) / 100);
   const subtotal = rows.reduce((s, r) => s + calcImporte(r), 0);
-  const fleteShare = (r: Row) => (subtotal > 0 && (Number(flete) || 0) > 0 ? (Number(flete) || 0) * calcImporte(r) / subtotal : 0);
+  const cargosTotal = cargos.reduce((s, c) => s + cargoImporte(c), 0);
+  const fleteShare = (r: Row) => (subtotal > 0 && cargosTotal > 0 ? cargosTotal * calcImporte(r) / subtotal : 0);
   const lastPrice = (r: Row) => {
     const bc = bcPrices[r.articuloId];
     if (typeof bc === "number") return bc;
@@ -164,8 +186,7 @@ export default function ArmarOrdenPage() {
     return proveedorId ? ultimoPrecioProveedor(ordenes, r.articuloId, proveedorId) : null;
   };
   const ivaTotal = rows.reduce((s, r) => s + calcImporte(r) * ((Number(r.iva) || 0) / 100), 0);
-  const fleteNum = Number(flete) || 0;
-  const total = subtotal + fleteNum + ivaTotal;
+  const total = subtotal + cargosTotal + ivaTotal;
   const pedidosDistintos = [...new Set(rows.map((r) => r.pedidoNumero))];
   const puedeCrear = !!proveedorId && rows.length > 0;
 
@@ -193,9 +214,11 @@ export default function ArmarOrdenPage() {
       precioUnitario: Number(r.precio), ivaPct: Number(r.iva) || 0, descuentoPct: Number(r.descuento) || 0,
       proyecto: r.proyecto || undefined, taskNo: r.tarea || undefined,
     }));
-    if (fleteNum > 0) {
-      ls.push({ tipo: "cargo", descripcion: "FLETE / TRANSPORTE", cantidad: 1, unidad: "UND",
-        almacen: rows[0].almacen, precioUnitario: fleteNum, ivaPct: 13 });
+    for (const c of cargos) {
+      if (cargoImporte(c) <= 0) continue;
+      ls.push({ tipo: "cargo", chargeNo: c.chargeNo || undefined, descripcion: c.descripcion || "CARGO",
+        cantidad: Number(c.cantidad) || 1, unidad: "UND", almacen: rows[0].almacen,
+        precioUnitario: Number(c.precio) || 0, ivaPct: 13 });
     }
     const orden = await createOrden({ proveedorId, proveedorNo: provSel?.code, proveedorNombre: provSel?.nombre, currencyCode: currency, almacenRecepcion: almacen, lineas: ls });
     if (aprobar) await setOrdenEstado(orden.id, "pendiente_aprobacion");
@@ -233,9 +256,6 @@ export default function ArmarOrdenPage() {
                 <option value="USD">USD (dólares)</option>
               </Select>
             </Field>
-            <Field label="Flete / transporte" help="Opcional, se distribuye al facturar">
-              <Input type="number" min={0} value={flete} onChange={(e) => setFlete(e.target.value)} placeholder="0" />
-            </Field>
             <Field label="Almacén de recepción" help="Dónde entra el material en BC (por defecto el General)">
               <Select value={almacen} onChange={(e) => setAlmacen(e.target.value)}>
                 {catAlm.map((a) => <option key={a.codigo} value={a.codigo}>{a.codigo} — {a.nombre}</option>)}
@@ -246,6 +266,41 @@ export default function ArmarOrdenPage() {
             <span className="ds-muted ds-label">Solicitudes en esta orden:</span>
             {pedidosDistintos.map((n) => <Badge key={n} tone="gray">{n}</Badge>)}
           </div>
+        </Card>
+
+        {/* Cargos de producto (Item Charge): Transporte, Seguro, etc. Se distribuyen
+            por importe entre los artículos al registrar en BC. */}
+        <Card className="mt-4">
+          <div className="row row--between wrap gap-3" style={{ alignItems: "center", marginBottom: cargos.length ? 12 : 0 }}>
+            <div className="col" style={{ gap: 2 }}>
+              <span className="ds-subtitle">Cargos de producto</span>
+              <span className="ds-muted ds-body-sm">Transporte, seguro, etc. Se reparten <strong>por importe</strong> entre los artículos.</span>
+            </div>
+            <Button variant="outline" size="sm" onClick={addCargo}>+ Agregar cargo</Button>
+          </div>
+          {cargos.length > 0 && (
+            <div className="ds-table-wrap" style={{ boxShadow: "none" }}>
+              <table className="ds-table">
+                <thead><tr><th>Tipo</th><th className="ds-num">Cantidad</th><th className="ds-num">Precio</th><th className="ds-num">Importe</th><th /></tr></thead>
+                <tbody>
+                  {cargos.map((c, i) => (
+                    <tr key={i}>
+                      <td style={{ minWidth: 220 }}>
+                        <Select value={c.chargeNo} onChange={(e) => onTipoCargo(i, e.target.value)}>
+                          <option value="">Flete / transporte</option>
+                          {itemCharges.map((ic) => <option key={ic.no} value={ic.no}>{ic.no} · {ic.descripcion}</option>)}
+                        </Select>
+                      </td>
+                      <td className="ds-num"><input className="ds-cell-input" type="number" min={0} value={c.cantidad} style={{ width: 72 }} onChange={(e) => setCargo(i, { cantidad: e.target.value })} /></td>
+                      <td className="ds-num"><input className="ds-cell-input" type="number" min={0} value={c.precio} style={{ width: 110 }} placeholder="0" onChange={(e) => setCargo(i, { precio: e.target.value })} /></td>
+                      <td className="ds-num ds-strong">{money(cargoImporte(c) || 0, currency)}</td>
+                      <td className="ds-num"><button type="button" className="icon-btn icon-btn--quitar" title="Quitar cargo" onClick={() => removeCargo(i)}>×</button></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </Card>
 
         <Card className="mt-4" style={{ padding: 0, overflow: "hidden" }}>
@@ -289,16 +344,16 @@ export default function ArmarOrdenPage() {
                     <td className="ds-num"><input className="ds-cell-input" type="number" min={0} value={r.iva} style={{ width: 64 }} onChange={(e) => setRow(r.pedidoLineaId, { iva: e.target.value })} /></td>
                     <td className="ds-num ds-strong">
                       {money(calcImporte(r) || 0, currency)}
-                      {fleteShare(r) > 0 && <div className="ds-body-sm ds-muted" style={{ fontWeight: 400 }}>+ flete {money(fleteShare(r), currency)}</div>}
+                      {fleteShare(r) > 0 && <div className="ds-body-sm ds-muted" style={{ fontWeight: 400 }}>+ cargos {money(fleteShare(r), currency)}</div>}
                     </td>
                     <td className="ds-num"><button type="button" className="icon-btn" title="Quitar línea" onClick={() => removeRow(r.pedidoLineaId)}>×</button></td>
                   </tr>
                 ))}
               </tbody>
-              {fleteNum > 0 && (
+              {cargosTotal > 0 && (
                 <tfoot>
                   <tr><td colSpan={9} className="ds-body-sm ds-muted" style={{ padding: "10px 16px", borderTop: "1.5px solid var(--ds-color-gray-100)" }}>
-                    El flete de {money(fleteNum, currency)} se reparte proporcional al importe de cada línea (mostrado como “+ flete”).
+                    Los cargos ({money(cargosTotal, currency)}) se reparten proporcional al importe de cada línea (mostrado como “+ cargos”).
                   </td></tr>
                 </tfoot>
               )}
@@ -309,7 +364,7 @@ export default function ArmarOrdenPage() {
         <div className="row mt-6" style={{ justifyContent: "flex-end" }}>
           <div className="totals" style={{ minWidth: 340 }}>
             <div className="totals__row"><span>Subtotal (excl. IVA)</span><span>{money(subtotal, currency)}</span></div>
-            <div className="totals__row"><span>Flete</span><span>{money(fleteNum, currency)}</span></div>
+            <div className="totals__row"><span>Cargos</span><span>{money(cargosTotal, currency)}</span></div>
             <div className="totals__row"><span>IVA</span><span>{money(ivaTotal, currency)}</span></div>
             <div className="totals__row totals__row--grand" style={{ gridColumn: "1 / -1" }}>
               <span>Total</span><span>{money(total, currency)}</span>

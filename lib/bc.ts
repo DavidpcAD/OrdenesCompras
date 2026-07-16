@@ -508,7 +508,11 @@ async function getStdLocationId(cid: string, code: string): Promise<string | nul
   return null;
 }
 
-export async function bcCrearPedido(input: { vendorNo: string; currencyCode?: string; locationCode?: string; lineas: NuevaLineaBc[]; flete?: { monto: number; descripcion?: string } }): Promise<{ number: string; id: string; omitidas: string[]; creadas: number; lineError?: string }> {
+// Cargo de producto (Item Charge) a agregar al pedido: tipo (chargeNo del catálogo
+// BC), cantidad y precio unitario. Sin chargeNo cae al flete por defecto (env).
+export type CargoBc = { chargeNo?: string; descripcion?: string; cantidad?: number; precio: number };
+
+export async function bcCrearPedido(input: { vendorNo: string; currencyCode?: string; locationCode?: string; lineas: NuevaLineaBc[]; cargos?: CargoBc[]; flete?: { monto: number; descripcion?: string } }): Promise<{ number: string; id: string; omitidas: string[]; creadas: number; lineError?: string }> {
   if (!input?.vendorNo) throw new Error("Falta el proveedor (vendorNo).");
   const lineas = (input.lineas ?? []).filter((l) => l.itemNo && l.cantidad > 0);
   if (!lineas.length) throw new Error("No hay líneas de material válidas para el pedido.");
@@ -550,16 +554,24 @@ export async function bcCrearPedido(input: { vendorNo: string; currencyCode?: st
       if (!lineError) lineError = `${l.itemNo}: BC ${resL.status} ${(await resL.text()).slice(0, 400)}`;
     }
   }
-  // 3) Flete como CARGO DE PRODUCTO (Item Charge). El codeunit AL lo distribuye a
-  // las líneas recibidas antes de registrar. El Nº de cargo es configurable.
-  if (input.flete && input.flete.monto > 0 && creadas > 0) {
-    const chargeNo = process.env.BC_ITEM_CHARGE_FLETE || "FLETE";
-    const chargeBody: Record<string, unknown> = {
-      lineType: "Charge (Item)", lineObjectNumber: chargeNo, quantity: 1,
-      directUnitCost: input.flete.monto, description: input.flete.descripcion || "FLETE / TRANSPORTE",
-    };
-    const resC = await bcFetch(`${stdRoot()}/companies(${cid})/purchaseOrders(${po.id})/purchaseOrderLines`, { method: "POST", headers: jsonHeaders, body: JSON.stringify(chargeBody), cache: "no-store" });
-    if (!resC.ok && !lineError) lineError = `flete (${chargeNo}): BC ${resC.status} ${(await resC.text()).slice(0, 300)}`;
+  // 3) CARGOS DE PRODUCTO (Item Charge): una línea por cargo elegido (Transporte,
+  // Seguro, etc.). El codeunit AL los distribuye POR IMPORTE entre los artículos
+  // antes de registrar. `cargos` es la vía nueva; `flete` se mantiene por compat.
+  const cargos: CargoBc[] = (input.cargos && input.cargos.length)
+    ? input.cargos
+    : (input.flete && input.flete.monto > 0 ? [{ descripcion: input.flete.descripcion, cantidad: 1, precio: input.flete.monto }] : []);
+  if (creadas > 0) {
+    for (const cg of cargos) {
+      const qty = cg.cantidad && cg.cantidad > 0 ? cg.cantidad : 1;
+      if (!(cg.precio > 0)) continue;
+      const chargeNo = cg.chargeNo || process.env.BC_ITEM_CHARGE_FLETE || "FLETE";
+      const chargeBody: Record<string, unknown> = {
+        lineType: "Charge (Item)", lineObjectNumber: chargeNo, quantity: qty,
+        directUnitCost: cg.precio, description: cg.descripcion || "CARGO / TRANSPORTE",
+      };
+      const resC = await bcFetch(`${stdRoot()}/companies(${cid})/purchaseOrders(${po.id})/purchaseOrderLines`, { method: "POST", headers: jsonHeaders, body: JSON.stringify(chargeBody), cache: "no-store" });
+      if (!resC.ok && !lineError) lineError = `cargo ${chargeNo}: BC ${resC.status} ${(await resC.text()).slice(0, 300)}`;
+    }
   }
   // Si NINGUNA línea entró, el pedido quedaría vacío en BC (y "no hay nada que
   // lanzar"). Borramos el encabezado huérfano y fallamos con el motivo real.
@@ -700,7 +712,7 @@ export async function bcFacturarRecibido(orderNo: string, vendorInvoiceNo: strin
 // Crea el Pedido en BC (queda Abierto) y lo LANZA enseguida -> "Lanzado".
 // Si el create funciona pero el release falla (p.ej. AdelantePO no publicado aún),
 // devuelve el pedido creado con released=false para que la UI avise sin romperse.
-export async function bcCrearYLanzarPedido(input: { vendorNo: string; currencyCode?: string; locationCode?: string; lineas: NuevaLineaBc[]; flete?: { monto: number; descripcion?: string } }):
+export async function bcCrearYLanzarPedido(input: { vendorNo: string; currencyCode?: string; locationCode?: string; lineas: NuevaLineaBc[]; cargos?: CargoBc[]; flete?: { monto: number; descripcion?: string } }):
   Promise<{ number: string; id: string; omitidas: string[]; creadas: number; lineError?: string; released: boolean; releaseError?: string }> {
   const { number, id, omitidas, creadas, lineError } = await bcCrearPedido(input);
   // Si NINGUNA línea entró a BC, no tiene sentido intentar lanzar (BC responde

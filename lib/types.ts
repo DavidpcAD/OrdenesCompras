@@ -138,6 +138,7 @@ export interface OrdenLinea {
   almacen: string;
   precioUnitario: number;
   ivaPct: number;
+  chargeNo?: string;         // N.º de Cargo de producto (Item Charge BC) — solo líneas tipo "cargo"
   descuentoPct?: number;     // descuento de línea
   proyecto?: string;         // obra / Job No.
   taskNo?: string;           // N.º tarea proyecto
