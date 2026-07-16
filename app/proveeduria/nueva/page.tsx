@@ -278,29 +278,31 @@ export default function ArmarOrdenPage() {
             </div>
             <Button variant="outline" size="sm" onClick={addCargo}>+ Agregar cargo</Button>
           </div>
-          {cargos.length > 0 && (
-            <div className="ds-table-wrap" style={{ boxShadow: "none" }}>
-              <table className="ds-table">
-                <thead><tr><th>Tipo</th><th className="ds-num">Cantidad</th><th className="ds-num">Precio</th><th className="ds-num">Importe</th><th /></tr></thead>
-                <tbody>
-                  {cargos.map((c, i) => (
-                    <tr key={i}>
-                      <td style={{ minWidth: 220 }}>
-                        <Select value={c.chargeNo} onChange={(e) => onTipoCargo(i, e.target.value)}>
-                          <option value="">Flete / transporte</option>
-                          {itemCharges.map((ic) => <option key={ic.no} value={ic.no}>{ic.no} · {ic.descripcion}</option>)}
-                        </Select>
-                      </td>
-                      <td className="ds-num"><input className="ds-cell-input" type="number" min={0} value={c.cantidad} style={{ width: 72 }} onChange={(e) => setCargo(i, { cantidad: e.target.value })} /></td>
-                      <td className="ds-num"><input className="ds-cell-input" type="number" min={0} value={c.precio} style={{ width: 110 }} placeholder="0" onChange={(e) => setCargo(i, { precio: e.target.value })} /></td>
-                      <td className="ds-num ds-strong">{money(cargoImporte(c) || 0, currency)}</td>
-                      <td className="ds-num"><button type="button" className="icon-btn icon-btn--quitar" title="Quitar cargo" onClick={() => removeCargo(i)}>×</button></td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+          {/* Filas (no tabla): así el desplegable de Tipo no lo recorta el overflow. */}
+          {cargos.map((c, i) => (
+            <div key={i} className="row gap-3 wrap" style={{ alignItems: "flex-end", padding: "12px 0", borderTop: "1.5px solid var(--ds-color-gray-100)" }}>
+              <div style={{ flex: "1 1 240px", minWidth: 200 }}>
+                <span className="ds-label ds-muted" style={{ display: "block", marginBottom: 4 }}>Tipo de cargo</span>
+                <Select value={c.chargeNo} onChange={(e) => onTipoCargo(i, e.target.value)}>
+                  <option value="">Flete / transporte</option>
+                  {itemCharges.map((ic) => <option key={ic.no} value={ic.no}>{ic.no} · {ic.descripcion}</option>)}
+                </Select>
+              </div>
+              <div>
+                <span className="ds-label ds-muted" style={{ display: "block", marginBottom: 4 }}>Cantidad</span>
+                <Input type="number" min={0} value={c.cantidad} style={{ width: 96 }} onChange={(e) => setCargo(i, { cantidad: e.target.value })} />
+              </div>
+              <div>
+                <span className="ds-label ds-muted" style={{ display: "block", marginBottom: 4 }}>Precio</span>
+                <Input type="number" min={0} value={c.precio} placeholder="0" style={{ width: 130 }} onChange={(e) => setCargo(i, { precio: e.target.value })} />
+              </div>
+              <div style={{ minWidth: 110, textAlign: "right" }}>
+                <span className="ds-label ds-muted" style={{ display: "block", marginBottom: 4 }}>Importe</span>
+                <span className="ds-strong">{money(cargoImporte(c) || 0, currency)}</span>
+              </div>
+              <button type="button" className="icon-btn icon-btn--quitar" title="Quitar cargo" style={{ marginBottom: 2 }} onClick={() => removeCargo(i)}>×</button>
             </div>
-          )}
+          ))}
         </Card>
 
         <Card className="mt-4" style={{ padding: 0, overflow: "hidden" }}>
