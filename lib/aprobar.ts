@@ -24,6 +24,8 @@ export async function aprobarYLanzar(
   const cargos = orden.lineas
     .filter((l) => l.tipo === "cargo" && (l.precioUnitario || 0) > 0)
     .map((l) => ({ chargeNo: l.chargeNo, descripcion: l.descripcion, cantidad: l.cantidad || 1, precio: l.precioUnitario || 0 }));
+  // Método de asignación del cargo (Amount|Weight|Volume|Equally). Uno por orden.
+  const metodoCargo = orden.lineas.find((l) => l.tipo === "cargo")?.chargeMethod || "Amount";
 
   // Sin proveedor de BC o sin líneas: no hay nada que enviar a BC; se lanza local.
   if (!orden.proveedorNo || !lineasBc.length) {
@@ -49,7 +51,7 @@ export async function aprobarYLanzar(
       // BC, esas correcciones viajan a BC en vez de relanzar la versión vieja.
       res = await fetch("/api/bc/relanzar", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ orderNo: orden.bcNumber, lineas: lineasBc, cargos }),
+        body: JSON.stringify({ orderNo: orden.bcNumber, lineas: lineasBc, cargos, metodo: metodoCargo }),
       });
       d = await res.json().catch(() => ({}));
     } catch (e: any) {
@@ -69,7 +71,7 @@ export async function aprobarYLanzar(
     res = await fetch("/api/bc/lanzar", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ vendorNo: orden.proveedorNo, currencyCode: orden.currencyCode, locationCode: orden.almacenRecepcion || "ALM-GRAL", lineas: lineasBc, cargos }),
+      body: JSON.stringify({ vendorNo: orden.proveedorNo, currencyCode: orden.currencyCode, locationCode: orden.almacenRecepcion || "ALM-GRAL", lineas: lineasBc, cargos, metodo: metodoCargo }),
     });
     d = await res.json().catch(() => ({}));
   } catch (e: any) {

@@ -712,7 +712,7 @@ export async function bcFacturarRecibido(orderNo: string, vendorInvoiceNo: strin
 // Crea el Pedido en BC (queda Abierto) y lo LANZA enseguida -> "Lanzado".
 // Si el create funciona pero el release falla (p.ej. AdelantePO no publicado aún),
 // devuelve el pedido creado con released=false para que la UI avise sin romperse.
-export async function bcCrearYLanzarPedido(input: { vendorNo: string; currencyCode?: string; locationCode?: string; lineas: NuevaLineaBc[]; cargos?: CargoBc[]; flete?: { monto: number; descripcion?: string } }):
+export async function bcCrearYLanzarPedido(input: { vendorNo: string; currencyCode?: string; locationCode?: string; lineas: NuevaLineaBc[]; cargos?: CargoBc[]; metodo?: string; flete?: { monto: number; descripcion?: string } }):
   Promise<{ number: string; id: string; omitidas: string[]; creadas: number; lineError?: string; released: boolean; releaseError?: string }> {
   const { number, id, omitidas, creadas, lineError } = await bcCrearPedido(input);
   // Si NINGUNA línea entró a BC, no tiene sentido intentar lanzar (BC responde
@@ -720,12 +720,36 @@ export async function bcCrearYLanzarPedido(input: { vendorNo: string; currencyCo
   if (creadas === 0) {
     return { number, id, omitidas, creadas, lineError, released: false, releaseError: lineError ?? "BC rechazó todas las líneas del pedido." };
   }
+  // Cargos con método distinto de importe: reasignar explícitamente (Igualmente/
+  // Peso/Volumen). El default "Amount" ya lo hace el codeunit al registrar, así que
+  // solo llamamos cuando el método NO es Amount. No debe tumbar el lanzamiento.
+  const met = (input.metodo ?? "").trim();
+  const hayCargos = (input.cargos && input.cargos.length) || (input.flete && input.flete.monto > 0);
+  if (hayCargos && met && met.toLowerCase() !== "amount") {
+    try { await bcAssignItemCharges(number, met); } catch (e) { console.warn(`BC asignar cargo (${met}) en ${number} falló:`, e); }
+  }
   try {
     await bcReleasePedido(number);
     return { number, id, omitidas, creadas, lineError, released: true };
   } catch (e: any) {
     return { number, id, omitidas, creadas, lineError, released: false, releaseError: String(e?.message ?? e) };
   }
+}
+
+// Sugerir/aplicar la asignación de los Cargos de producto de un pedido con un
+// método (Amount|Weight|Volume|Equally), vía el codeunit AdelantePO_AssignItemCharges.
+export async function bcAssignItemCharges(orderNo: string, metodo = "Amount"): Promise<string> {
+  if (!orderNo) throw new Error("Falta el número de pedido para asignar cargos.");
+  const cid = await getStdCompanyId();
+  const url = `${odataRoot()}/AdelantePO_AssignItemCharges?company=${encodeURIComponent(cid)}`;
+  const res = await bcFetch(url, {
+    method: "POST", cache: "no-store",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ orderNo, metodo }),
+  });
+  if (!res.ok) throw new Error(`BC asignar cargos ${res.status}: ${(await res.text()).slice(0, 250)}`);
+  const d: any = await res.json().catch(() => ({}));
+  return d?.value ?? "Asignado";
 }
 
 // Deep link al Pedido recién creado, en la lista de Pedidos de compra de BC.

@@ -37,6 +37,7 @@ export default function ArmarOrdenPage() {
   const [proveedorId, setProveedorId] = useState("");
   const [currency, setCurrency] = useState("");
   const [cargos, setCargos] = useState<Cargo[]>([]);
+  const [metodoAsig, setMetodoAsig] = useState("Amount"); // Amount|Weight|Volume|Equally
   const [itemCharges, setItemCharges] = useState<{ no: string; descripcion: string }[]>([]);
   const [almacen, setAlmacen] = useState("ALM-GRAL");
 
@@ -216,7 +217,7 @@ export default function ArmarOrdenPage() {
     }));
     for (const c of cargos) {
       if (cargoImporte(c) <= 0) continue;
-      ls.push({ tipo: "cargo", chargeNo: c.chargeNo || undefined, descripcion: c.descripcion || "CARGO",
+      ls.push({ tipo: "cargo", chargeNo: c.chargeNo || undefined, chargeMethod: metodoAsig, descripcion: c.descripcion || "CARGO",
         cantidad: Number(c.cantidad) || 1, unidad: "UND", almacen: rows[0].almacen,
         precioUnitario: Number(c.precio) || 0, ivaPct: 13 });
     }
@@ -274,9 +275,22 @@ export default function ArmarOrdenPage() {
           <div className="row row--between wrap gap-3" style={{ alignItems: "center", marginBottom: cargos.length ? 12 : 0 }}>
             <div className="col" style={{ gap: 2 }}>
               <span className="ds-subtitle">Cargos de producto</span>
-              <span className="ds-muted ds-body-sm">Transporte, seguro, etc. Se reparten <strong>por importe</strong> entre los artículos.</span>
+              <span className="ds-muted ds-body-sm">Transporte, seguro, etc. Se reparten entre los artículos según el método elegido.</span>
             </div>
-            <Button variant="outline" size="sm" onClick={addCargo}>+ Agregar cargo</Button>
+            <div className="row gap-3 wrap" style={{ alignItems: "flex-end" }}>
+              {cargos.length > 0 && (
+                <div>
+                  <span className="ds-label ds-muted" style={{ display: "block", marginBottom: 4 }}>Método de asignación</span>
+                  <Select value={metodoAsig} onChange={(e) => setMetodoAsig(e.target.value)}>
+                    <option value="Amount">Por importe</option>
+                    <option value="Equally">Igualmente</option>
+                    <option value="Weight">Por peso</option>
+                    <option value="Volume">Por volumen</option>
+                  </Select>
+                </div>
+              )}
+              <Button variant="outline" size="sm" onClick={addCargo}>+ Agregar cargo</Button>
+            </div>
           </div>
           {/* Filas (no tabla): así el desplegable de Tipo no lo recorta el overflow. */}
           {cargos.map((c, i) => (
