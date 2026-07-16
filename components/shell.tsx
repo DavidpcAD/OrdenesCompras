@@ -88,10 +88,6 @@ export function AppShell({ role, children }: { role: Role; children: React.React
     try { localStorage.setItem("adelante_oc_nav_collapsed", n ? "1" : "0"); } catch { /* noop */ }
     return n;
   });
-  // Hover "peek": el rail colapsado se abre solo al pasar/tocar; el toggle de arriba
-  // fija/colapsa. colapsado = estado visual efectivo.
-  const [navHover, setNavHover] = useState(false);
-  const colapsado = navCollapsed && !navHover;
   // Notificaciones relevantes para este rol (o sin rol específico).
   const notifsRol = notificaciones.filter((n) => !n.rol || n.rol === role);
   const noLeidas = notifsRol.filter((n) => !n.leida).length;
@@ -188,14 +184,13 @@ export function AppShell({ role, children }: { role: Role; children: React.React
       </header>
       <div className="app-body">
         {hasNav && (
-          <aside className={`app-nav${colapsado ? " is-collapsed" : ""}`} aria-label="Secciones"
-            onMouseEnter={() => setNavHover(true)} onMouseLeave={() => setNavHover(false)}>
-            {/* Toggle ARRIBA (como ControlUsuarios): fija/colapsa. El rail colapsado
-                además se abre solo al pasar el cursor (hover peek). */}
-            <button className={`app-nav__toggle${colapsado ? " is-collapsed" : ""}`} onClick={toggleNav}
-              aria-label={navCollapsed ? "Fijar menú abierto" : "Colapsar menú"} title={navCollapsed ? "Fijar abierto" : "Colapsar"}>
+          <aside className={`app-nav${navCollapsed ? " is-collapsed" : ""}`} aria-label="Secciones">
+            {/* Toggle ARRIBA (como ControlUsuarios): abre/cierra y queda fijo — no se
+                oculta solo mientras trabajás. */}
+            <button className={`app-nav__toggle${navCollapsed ? " is-collapsed" : ""}`} onClick={toggleNav}
+              aria-label={navCollapsed ? "Abrir menú" : "Cerrar menú"} title={navCollapsed ? "Abrir" : "Cerrar"}>
               <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
-                {colapsado ? <path d="M13 6l6 6-6 6M5 6l6 6-6 6" /> : <path d="M11 6l-6 6 6 6M19 6l-6 6 6 6" />}
+                {navCollapsed ? <path d="M13 6l6 6-6 6M5 6l6 6-6 6" /> : <path d="M11 6l-6 6 6 6M19 6l-6 6 6 6" />}
               </svg>
             </button>
             {meta.nav.map((n) => {
@@ -203,7 +198,7 @@ export function AppShell({ role, children }: { role: Role; children: React.React
               const active = activeHref === n.href;
               return (
                 <button key={n.href} className={`app-nav__item${active ? " is-active" : ""}`}
-                  title={colapsado ? n.label : undefined}
+                  title={navCollapsed ? n.label : undefined}
                   onClick={() => router.push(n.href)} aria-current={active ? "page" : undefined}>
                   <Icon size={20} />
                   <span className="app-nav__label">{n.label}</span>
@@ -211,7 +206,7 @@ export function AppShell({ role, children }: { role: Role; children: React.React
               );
             })}
             <button className="app-nav__item app-nav__salir" style={{ marginTop: "auto" }}
-              title={colapsado ? "Salir" : undefined}
+              title={navCollapsed ? "Salir" : undefined}
               onClick={() => { setRole(null); setUsuario(null); router.replace("/"); }}>
               <IconLogout size={20} />
               <span className="app-nav__label">Salir</span>
