@@ -685,18 +685,17 @@ h1, h2, h3, h4, p { margin: 0; }
 .app-nav__label { overflow: hidden; white-space: nowrap; max-width: 200px; opacity: 1; transition: max-width .34s cubic-bezier(.34, 1.4, .5, 1), opacity .22s ease .1s; }
 .app-nav.is-collapsed .app-nav__item { width: 62px; height: 62px; justify-content: center; padding: 0; gap: 0; }
 .app-nav.is-collapsed .app-nav__label { max-width: 0; opacity: 0; transition: max-width .28s cubic-bezier(.34, 1.4, .5, 1), opacity .12s ease; }
-/* FAB de colapsar/expandir al pie del rail (estilo RolesV2 menu FAB): abajo-izq
-   en expandido, centrado en colapsado; rota 90° al colapsar. */
 .app-nav__salir:hover { color: var(--ds-color-red-100); box-shadow: 0 0 0 3px color-mix(in srgb, var(--ds-color-red-100) 30%, transparent); }
+/* Toggle de colapsar/fijar ARRIBA del rail (chevrons « / »). El rail colapsado
+   se abre solo al pasar el cursor (hover peek, manejado en el shell). */
 .app-nav__toggle {
-  margin-top: var(--ds-space-2); align-self: flex-end; width: 62px; height: 62px; flex-shrink: 0;
-  border: 0; border-radius: 999px; background: var(--ds-color-black); color: var(--ds-color-white);
-  display: grid; place-items: center; cursor: pointer; box-shadow: var(--ds-shadow-02-soft);
-  transition: transform .18s ease, box-shadow .12s;
+  align-self: flex-end; width: 40px; height: 40px; flex-shrink: 0; margin-bottom: var(--ds-space-1);
+  border: 0; border-radius: 999px; background: rgba(255, 255, 255, 0.08); color: var(--ds-color-white);
+  display: grid; place-items: center; cursor: pointer;
+  transition: background .12s, box-shadow .12s;
 }
 .app-nav.is-collapsed .app-nav__toggle { align-self: center; }
-.app-nav__toggle:hover { box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.16); }
-.app-nav__toggle.is-collapsed { transform: rotate(90deg); }
+.app-nav__toggle:hover { background: rgba(255, 255, 255, 0.18); }
 @media (prefers-reduced-motion: reduce) {
   .app-nav, .app-nav__item, .app-nav__label, .app-nav__toggle { transition: none; }
 }

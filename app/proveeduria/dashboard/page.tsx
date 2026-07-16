@@ -33,10 +33,14 @@ export default function ProveeduriaDashboardPage() {
       const prov = proveedores.find((p) => p.id === o.proveedorId);
       const nombre = o.proveedorNombre || prov?.nombre || o.proveedorId || "(sin proveedor)";
       const currency = o.currencyCode || prov?.currencyCode || "";
-      if (!byProv.has(o.proveedorId)) {
-        byProv.set(o.proveedorId, { proveedorId: o.proveedorId, nombre, currency, nOrdenes: 0, pedido: 0, recibido: 0, pendiente: 0, pct: 0, lineas: [] });
+      // Agrupar por el MISMO proveedor aunque venga con distinto id (mock vs BC):
+      // clave = código de proveedor si hay, si no el nombre normalizado. Así no se
+      // repite "FERRETERIA EPA S.A" en dos filas.
+      const key = (o.proveedorNo?.trim()) || nombre.trim().toUpperCase().replace(/\s+/g, " ");
+      if (!byProv.has(key)) {
+        byProv.set(key, { proveedorId: key, nombre, currency, nOrdenes: 0, pedido: 0, recibido: 0, pendiente: 0, pct: 0, lineas: [] });
       }
-      const r = byProv.get(o.proveedorId)!;
+      const r = byProv.get(key)!;
       r.nOrdenes += 1;
       for (const l of o.lineas) {
         if (l.tipo !== "articulo") continue;
