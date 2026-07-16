@@ -178,7 +178,15 @@ export default function ArmarOrdenPage() {
   const calcImporte = (r: Row) => Number(r.cantidad) * Number(r.precio) * (1 - (Number(r.descuento) || 0) / 100);
   const subtotal = rows.reduce((s, r) => s + calcImporte(r), 0);
   const cargosTotal = cargos.reduce((s, c) => s + cargoImporte(c), 0);
-  const fleteShare = (r: Row) => (subtotal > 0 && cargosTotal > 0 ? cargosTotal * calcImporte(r) / subtotal : 0);
+  // Reparto de cargos por línea según el método. Peso/Volumen NO se previsualizan
+  // (no hay peso/volumen en la app; lo calcula BC al registrar).
+  const previewReparto = metodoAsig === "Amount" || metodoAsig === "Equally";
+  const fleteShare = (r: Row) => {
+    if (cargosTotal <= 0) return 0;
+    if (metodoAsig === "Equally") return rows.length ? cargosTotal / rows.length : 0;
+    if (metodoAsig === "Amount") return subtotal > 0 ? cargosTotal * calcImporte(r) / subtotal : 0;
+    return 0; // Weight / Volume → se calcula en BC
+  };
   const lastPrice = (r: Row) => {
     const bc = bcPrices[r.articuloId];
     if (typeof bc === "number") return bc;
@@ -384,7 +392,12 @@ export default function ArmarOrdenPage() {
               {cargosTotal > 0 && (
                 <tfoot>
                   <tr><td colSpan={9} className="ds-body-sm ds-muted" style={{ padding: "10px 16px", borderTop: "1.5px solid var(--ds-color-gray-100)" }}>
-                    Los cargos ({money(cargosTotal, currency)}) se reparten proporcional al importe de cada línea (mostrado como “+ cargos”).
+                    Los cargos ({money(cargosTotal, currency)}) se reparten {
+                      metodoAsig === "Equally" ? "en partes iguales entre las líneas"
+                      : metodoAsig === "Weight" ? "por peso (lo calcula BC al registrar; no se previsualiza acá)"
+                      : metodoAsig === "Volume" ? "por volumen (lo calcula BC al registrar; no se previsualiza acá)"
+                      : "proporcional al importe de cada línea"
+                    }{previewReparto ? " (mostrado como “+ cargos”)" : ""}.
                   </td></tr>
                 </tfoot>
               )}
