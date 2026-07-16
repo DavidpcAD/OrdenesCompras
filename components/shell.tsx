@@ -49,7 +49,7 @@ const ROLE_META: Record<Role, { label: string; persona: string; home: string; na
       // (por documento / por línea) que se alternan con un toggle dentro de la página.
       { href: "/proveeduria/dashboard", label: "Dashboard", icon: IconDashboard },
       { href: "/proveeduria/solicitudes", label: "Solicitudes", icon: IconList, alt: ["/proveeduria$"] },
-      { href: "/proveeduria/ordenes", label: "Órdenes", icon: IconReceipt, alt: ["/proveeduria/pedidas"] },
+      { href: "/proveeduria/ordenes", label: "Órdenes", icon: IconReceipt, alt: ["/proveeduria/pedidas", "/proveeduria/nueva", "/proveeduria/directa"] },
       { href: "/proveeduria/devoluciones", label: "Devoluciones", icon: IconWarning },
       { href: "/proveeduria/inventarios", label: "Inventarios", icon: IconBox },
     ],
@@ -122,7 +122,7 @@ export function AppShell({ role, children }: { role: Role; children: React.React
       return { href: n.href, len };
     })
     .filter((x) => x.len > 0)
-    .sort((a, b) => b.len - a.len)[0]?.href ?? meta.home;
+    .sort((a, b) => b.len - a.len)[0]?.href ?? "";  // sin match → no se marca ninguna (no cae al home)
 
   return (
     <div className="app-shell">
