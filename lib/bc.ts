@@ -309,6 +309,23 @@ export async function bcJobTasks(jobNo?: string): Promise<BcJobTask[]> {
   }));
 }
 
+export type BcItemCharge = { no: string; descripcion: string };
+
+// Catálogo de Cargos de producto (Item Charge, tabla BC 5800): Transporte,
+// Servicio de corte, Impuestos exterior, etc. Se usan al armar la orden para
+// agregar líneas tipo "Cargo (Prod.)". Custom API Adelante (grupo purchasing).
+// Defensiva: si aún no está publicada, devuelve [] (la UI cae a texto libre).
+export async function bcItemCharges(): Promise<BcItemCharge[]> {
+  try {
+    const rows = await listCustom("purchasing", "itemCharges", { next: { revalidate: 300 } } as RequestInit);
+    return rows
+      .map((r) => ({ no: r.no ?? r.No ?? r.number ?? "", descripcion: r.description ?? r.Description ?? "" }))
+      .filter((c) => c.no);
+  } catch {
+    return [];
+  }
+}
+
 // Almacenes/ubicaciones (tabla Location) por la API custom de Adelante
 // (api/adelante/inventory/v1.0/locations, page 50234). Se usan para elegir el
 // almacén de recepción al armar la orden. Cache de último bueno + fallback.
