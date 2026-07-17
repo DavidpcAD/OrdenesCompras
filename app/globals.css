@@ -614,7 +614,17 @@ h1, h2, h3, h4, p { margin: 0; }
 .ds-truncate { max-width: 280px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 /* sticky action bar (appears when there's a selection) */
-.action-bar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 45; background: #fff; box-shadow: 0 -4px 18px #0000001f; padding: var(--ds-space-3) var(--ds-space-6); animation: barUp .2s ease; }
+.action-bar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 45; background: #fff; box-shadow: 0 -4px 18px #0000001f; padding: var(--ds-space-3) var(--ds-space-6); animation: barUp .2s ease; transition: left .34s cubic-bezier(.34, 1.4, .5, 1); }
+/* No montar la barra de acciones sobre el sidebar: su borde izquierdo sigue el
+   ancho del rail (288px expandido / 112px colapsado). Sin nav o en móvil = full. */
+.app-body:has(.app-nav) .action-bar { left: 288px; }
+.app-body:has(.app-nav.is-collapsed) .action-bar { left: 112px; }
+@media (max-width: 760px) {
+  /* En móvil el rail va horizontal arriba → la barra ocupa todo el ancho.
+     Se repiten ambos selectores para empatar especificidad y ganar por orden. */
+  .app-body:has(.app-nav) .action-bar,
+  .app-body:has(.app-nav.is-collapsed) .action-bar { left: 0; }
+}
 .action-bar__inner { max-width: 1180px; margin: 0 auto; display: flex; align-items: center; justify-content: space-between; gap: var(--ds-space-4); flex-wrap: wrap; }
 @keyframes barUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
 
