@@ -66,6 +66,7 @@ const ROLE_META: Record<Role, { label: string; persona: string; home: string; na
     label: "Bodega", persona: "Kattya", home: "/facturacion", color: "var(--ds-color-red-100)",
     nav: [
       { href: "/facturacion", label: "Por recibir", icon: IconDelivery },
+      { href: "/facturacion/cargo", label: "Cargo sobre factura", icon: IconPlus },
       { href: "/facturacion/todas", label: "Todas las órdenes", icon: IconReceipt },
       { href: "/facturacion/archivo", label: "Archivo", icon: IconFolder },
       { href: "/facturacion/devoluciones", label: "Devoluciones", icon: IconWarning },

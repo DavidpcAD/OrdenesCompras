@@ -326,6 +326,56 @@ export async function bcItemCharges(): Promise<BcItemCharge[]> {
   }
 }
 
+export type BcPostedReceiptLine = {
+  documentNo: string;    // N.º de recepción registrada (albarán), p.ej. CR-000003
+  lineNo: number;        // N.º de línea dentro de la recepción
+  vendorNo: string;      // proveedor del material (Buy-from Vendor No.)
+  itemNo: string;        // artículo recibido
+  descripcion: string;
+  locationCode: string;
+  cantidad: number;      // cantidad recibida en la recepción
+  precioUnitario: number;
+  importe: number;       // importe de la línea (base del reparto "Por importe")
+  pesoBruto: number;     // Gross Weight (base del reparto "Por peso")
+  volumen: number;       // Unit Volume (base del reparto "Por volumen")
+  fecha: string;         // fecha de registro (posting date)
+};
+
+// Líneas de recepciones de compra YA REGISTRADAS (albaranes, tabla Purch. Rcpt.
+// Line 121), para asignarles un Cargo de producto que factura un TERCERO (caso
+// típico: el material lo facturó el proveedor, pero el transporte lo trajo y
+// factura otra empresa). Custom API Adelante `postedReceiptLines` (grupo
+// purchasing). Filtrable por proveedor del material, artículo y/o N.º de
+// recepción; exige al menos un filtro (performance). Propaga el error para que
+// el endpoint distinga "API no publicada" de "sin resultados".
+export async function bcPostedReceiptLines(opts: { vendorNo?: string; itemNo?: string; documentNo?: string }): Promise<BcPostedReceiptLine[]> {
+  const vendorNo = (opts.vendorNo ?? "").trim();
+  const itemNo = (opts.itemNo ?? "").trim();
+  const documentNo = (opts.documentNo ?? "").trim();
+  if (!vendorNo && !itemNo && !documentNo) throw new Error("Se requiere proveedor, artículo o N.º de recepción para buscar líneas de recepción.");
+  const conds: string[] = [];
+  if (vendorNo) conds.push(`buyFromVendorNo eq '${odataStr(vendorNo)}'`);
+  if (itemNo) conds.push(`no eq '${odataStr(itemNo)}'`);
+  if (documentNo) conds.push(`documentNo eq '${odataStr(documentNo)}'`);
+  const rows = await listCustom("purchasing", `postedReceiptLines?$filter=${encodeURIComponent(conds.join(" and "))}&$orderby=documentNo desc,lineNo`);
+  return rows
+    .map((r) => ({
+      documentNo: r.documentNo ?? r.DocumentNo ?? "",
+      lineNo: Number(r.lineNo ?? r.LineNo ?? 0) || 0,
+      vendorNo: r.buyFromVendorNo ?? r.BuyFromVendorNo ?? r.vendorNo ?? "",
+      itemNo: r.no ?? r.No ?? r.itemNo ?? "",
+      descripcion: r.description ?? r.Description ?? "",
+      locationCode: r.locationCode ?? r.LocationCode ?? "",
+      cantidad: Number(r.quantity ?? r.Quantity ?? 0) || 0,
+      precioUnitario: Number(r.directUnitCost ?? r.DirectUnitCost ?? 0) || 0,
+      importe: Number(r.lineAmount ?? r.LineAmount ?? r.amount ?? r.Amount ?? 0) || 0,
+      pesoBruto: Number(r.grossWeight ?? r.GrossWeight ?? 0) || 0,
+      volumen: Number(r.unitVolume ?? r.UnitVolume ?? 0) || 0,
+      fecha: r.postingDate ?? r.PostingDate ?? "",
+    }))
+    .filter((l) => l.documentNo && l.lineNo > 0);
+}
+
 // Almacenes/ubicaciones (tabla Location) por la API custom de Adelante
 // (api/adelante/inventory/v1.0/locations, page 50234). Se usan para elegir el
 // almacén de recepción al armar la orden. Cache de último bueno + fallback.
@@ -659,6 +709,7 @@ export async function bcRegistrarFactura(
   orderNo: string,
   vendorInvoiceNo: string,
   lines: { itemNo: string; qty: number; variantCode?: string }[],
+  postingDate = "", // fecha de registro (ISO yyyy-mm-dd). "" → BC usa la fecha del día
 ): Promise<string> {
   if (!orderNo) throw new Error("Falta el número de pedido de BC.");
   if (!vendorInvoiceNo) throw new Error("Falta el N.º de factura del proveedor.");
@@ -667,7 +718,7 @@ export async function bcRegistrarFactura(
   const res = await bcFetch(url, {
     method: "POST", cache: "no-store",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ orderNo, vendorInvoiceNo, linesJson: JSON.stringify(lines) }),
+    body: JSON.stringify({ orderNo, vendorInvoiceNo, linesJson: JSON.stringify(lines), postingDate }),
   });
   if (!res.ok) throw new Error(`BC registrar ${res.status}: ${(await res.text()).slice(0, 250)}`);
   const d: any = await res.json().catch(() => ({}));
@@ -677,14 +728,14 @@ export async function bcRegistrarFactura(
 // MODO 2 — Solo RECEPCIÓN (material llega bien, la factura queda en revisión).
 // Registra la recepción en BC (Receive=true, Invoice=false) vía AdelantePO_PostReceipt.
 // Mueve inventario/cantidad recibida sin tocar la factura ni el ledger del proveedor.
-export async function bcRecibir(orderNo: string, lines: { itemNo: string; qty: number; variantCode?: string }[]): Promise<string> {
+export async function bcRecibir(orderNo: string, lines: { itemNo: string; qty: number; variantCode?: string }[], postingDate = ""): Promise<string> {
   if (!orderNo) throw new Error("Falta el número de pedido de BC.");
   const cid = await getStdCompanyId();
   const url = `${odataRoot()}/AdelantePO_PostReceipt?company=${encodeURIComponent(cid)}`;
   const res = await bcFetch(url, {
     method: "POST", cache: "no-store",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ orderNo, linesJson: JSON.stringify(lines) }),
+    body: JSON.stringify({ orderNo, linesJson: JSON.stringify(lines), postingDate }),
   });
   if (!res.ok) throw new Error(`BC recibir ${res.status}: ${(await res.text()).slice(0, 250)}`);
   const d: any = await res.json().catch(() => ({}));
@@ -694,7 +745,7 @@ export async function bcRecibir(orderNo: string, lines: { itemNo: string; qty: n
 // MODO 2 — Solo FACTURA de lo ya recibido (Kattya revisa y registra después).
 // Factura en BC lo que estaba recibido-no-facturado (Receive=false, Invoice=true)
 // vía AdelantePO_PostInvoiceOfReceived.
-export async function bcFacturarRecibido(orderNo: string, vendorInvoiceNo: string, lines: { itemNo: string; qty: number; variantCode?: string }[]): Promise<string> {
+export async function bcFacturarRecibido(orderNo: string, vendorInvoiceNo: string, lines: { itemNo: string; qty: number; variantCode?: string }[], postingDate = ""): Promise<string> {
   if (!orderNo) throw new Error("Falta el número de pedido de BC.");
   if (!vendorInvoiceNo) throw new Error("Falta el N.º de factura del proveedor.");
   const cid = await getStdCompanyId();
@@ -702,7 +753,7 @@ export async function bcFacturarRecibido(orderNo: string, vendorInvoiceNo: strin
   const res = await bcFetch(url, {
     method: "POST", cache: "no-store",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ orderNo, vendorInvoiceNo, linesJson: JSON.stringify(lines) }),
+    body: JSON.stringify({ orderNo, vendorInvoiceNo, linesJson: JSON.stringify(lines), postingDate }),
   });
   if (!res.ok) throw new Error(`BC facturar ${res.status}: ${(await res.text()).slice(0, 250)}`);
   const d: any = await res.json().catch(() => ({}));
@@ -750,6 +801,59 @@ export async function bcAssignItemCharges(orderNo: string, metodo = "Amount"): P
   if (!res.ok) throw new Error(`BC asignar cargos ${res.status}: ${(await res.text()).slice(0, 250)}`);
   const d: any = await res.json().catch(() => ({}));
   return d?.value ?? "Asignado";
+}
+
+export type ReceiptLineRef = { documentNo: string; lineNo: number };
+
+// Registra en BC un Cargo de producto (flete/transporte facturado por un TERCERO)
+// contra líneas de recepciones YA REGISTRADAS. En un solo codeunit server-side
+// (AdelantePO_PostChargeOnReceipts) hace todo el flujo de las capturas: crea un
+// pedido de compra al proveedor del cargo con UNA sola línea "Cargo (Prod.)",
+// "trae" las líneas de recepción indicadas, sugiere el reparto con `metodo`, fija
+// el N.º de factura del proveedor y REGISTRA. Devuelve el nº de factura registrada.
+export async function bcPostChargeOnReceipts(input: {
+  chargeVendorNo: string;      // proveedor del cargo (transportista)
+  vendorInvoiceNo: string;     // N.º factura proveedor (obligatorio para registrar)
+  itemChargeNo?: string;       // tipo de cargo (Item Charge). Alias UI: chargeNo
+  chargeNo?: string;
+  chargeAmount?: number;       // importe TOTAL del cargo. Si no viene: precio × cantidad
+  cantidad?: number;
+  precio?: number;
+  metodo?: string;             // Amount | Equally | Weight | Volume
+  receiptLines: ReceiptLineRef[]; // líneas de recepción destino
+  documentDate?: string;       // fecha de emisión (ISO yyyy-mm-dd) → Posting/Document Date. "" = hoy
+  // NOTA: currencyCode lo resuelve BC por el proveedor del cargo (no se envía).
+}): Promise<string> {
+  const itemChargeNo = (input.itemChargeNo ?? input.chargeNo ?? "").trim();
+  const chargeAmount = (input.chargeAmount != null && input.chargeAmount > 0)
+    ? input.chargeAmount
+    : (input.precio ?? 0) * (input.cantidad && input.cantidad > 0 ? input.cantidad : 1);
+  if (!input.chargeVendorNo) throw new Error("Falta el proveedor del cargo.");
+  if (!input.vendorInvoiceNo) throw new Error("Falta el N.º de factura del proveedor.");
+  if (!itemChargeNo) throw new Error("Falta el tipo de cargo de producto.");
+  if (!(chargeAmount > 0)) throw new Error("El importe del cargo debe ser mayor que 0.");
+  const lines = (input.receiptLines ?? []).filter((l) => l.documentNo && l.lineNo > 0);
+  if (!lines.length) throw new Error("Seleccioná al menos una línea de recepción para asignar el cargo.");
+  const cid = await getStdCompanyId();
+  const url = `${odataRoot()}/AdelantePO_PostChargeOnReceipts?company=${encodeURIComponent(cid)}`;
+  // El JSON mapea 1:1 a los parámetros del codeunit: NO agregar campos de más.
+  const body = {
+    chargeVendorNo: input.chargeVendorNo,
+    itemChargeNo,
+    chargeAmount,
+    vendorInvoiceNo: input.vendorInvoiceNo,
+    metodo: (input.metodo ?? "Amount"),
+    receiptLinesJson: JSON.stringify(lines),
+    postingDate: input.documentDate ?? "", // "" → BC usa la fecha del día (Today)
+  };
+  const res = await bcFetch(url, {
+    method: "POST", cache: "no-store",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error(`BC cargo sobre recibido ${res.status}: ${(await res.text()).slice(0, 300)}`);
+  const d: any = await res.json().catch(() => ({}));
+  return d?.value ?? "Registrado";
 }
 
 // Deep link al Pedido recién creado, en la lista de Pedidos de compra de BC.

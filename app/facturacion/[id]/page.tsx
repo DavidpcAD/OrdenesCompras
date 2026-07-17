@@ -88,7 +88,7 @@ export default function RegistrarFacturaPage() {
         try {
           const r = await fetch("/api/bc/registrar", {
             method: "POST", headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ orderNo: orden!.bcNumber, vendorInvoiceNo: numeroFactura.trim(), lineas: bcLineas }),
+            body: JSON.stringify({ orderNo: orden!.bcNumber, vendorInvoiceNo: numeroFactura.trim(), lineas: bcLineas, postingDate: fechaRegistro }),
           });
           const d = await r.json().catch(() => ({}));
           if (r.ok) aviso = ` · registrada en BC (${d.postedNo ?? "OK"})`;
@@ -130,7 +130,7 @@ export default function RegistrarFacturaPage() {
         try {
           const r = await fetch("/api/bc/recibir", {
             method: "POST", headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ orderNo: orden!.bcNumber, lineas: bcLineas }),
+            body: JSON.stringify({ orderNo: orden!.bcNumber, lineas: bcLineas, postingDate: fechaRecepcion }),
           });
           const d = await r.json().catch(() => ({}));
           aviso = r.ok ? ` · recibido en BC (${d.receiptNo ?? "OK"})` : ` · NO se pudo recibir en BC: ${d.error ?? r.status}`;
