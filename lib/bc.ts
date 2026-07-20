@@ -771,6 +771,12 @@ export async function bcCrearYLanzarPedido(input: { vendorNo: string; currencyCo
   if (creadas === 0) {
     return { number, id, omitidas, creadas, lineError, released: false, releaseError: lineError ?? "BC rechazó todas las líneas del pedido." };
   }
+  // FORZAR EL PRECIO DE LA APP: al insertar la línea, la API estándar valida el
+  // N.º del artículo y autocompleta el "Direct Unit Cost" desde la ficha del ítem,
+  // PISANDO el precio que mandamos en el POST (si el ítem no tiene costo, lo deja
+  // en blanco → no se puede facturar). Re-sincronizamos con PATCH para que el
+  // precio NEGOCIADO en la app sea el que queda en BC. No debe tumbar el lanzamiento.
+  try { await bcResyncPedidoLines(number, input.lineas); } catch (e) { console.warn(`BC resync de precios en ${number} falló:`, e); }
   // Cargos con método distinto de importe: reasignar explícitamente (Igualmente/
   // Peso/Volumen). El default "Amount" ya lo hace el codeunit al registrar, así que
   // solo llamamos cuando el método NO es Amount. No debe tumbar el lanzamiento.
