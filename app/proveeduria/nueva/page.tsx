@@ -194,7 +194,10 @@ export default function ArmarOrdenPage() {
     if (it?.precioUltimo) return it.precioUltimo;
     return proveedorId ? ultimoPrecioProveedor(ordenes, r.articuloId, proveedorId) : null;
   };
-  const ivaTotal = rows.reduce((s, r) => s + calcImporte(r) * ((Number(r.iva) || 0) / 100), 0);
+  // El IVA se aplica a los materiales Y al flete/cargo (13%), igual que en BC. Antes
+  // el cargo quedaba sin IVA y el total no cuadraba con BC (faltaba el 13% del flete).
+  const ivaCargos = cargosTotal * 0.13;
+  const ivaTotal = rows.reduce((s, r) => s + calcImporte(r) * ((Number(r.iva) || 0) / 100), 0) + ivaCargos;
   const total = subtotal + cargosTotal + ivaTotal;
   const pedidosDistintos = [...new Set(rows.map((r) => r.pedidoNumero))];
   const puedeCrear = !!proveedorId && rows.length > 0;
