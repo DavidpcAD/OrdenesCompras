@@ -1,6 +1,7 @@
 "use client";
 
 import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import {
   useReactTable, getCoreRowModel, getSortedRowModel, getFilteredRowModel, getPaginationRowModel,
   getFacetedRowModel, getFacetedUniqueValues, flexRender,
@@ -439,12 +440,19 @@ function ColumnFilterPopover<T>({ col, label, anchor, onClose }: {
   // Hooks primero (siempre), luego la rama de fecha retorna antes de tocar `sel`
   // (para fecha el filtro es un objeto {from,to}, no un arreglo).
   const [q, setQ] = useState("");
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
   const opciones = useMemo(() => {
     if (isDateCol(col.columnDef)) return [] as string[];
     const set = new Set<string>();
     for (const k of col.getFacetedUniqueValues().keys()) { const s = asText(k); if (s !== "") set.add(s); }
     return Array.from(set).sort((a, b) => a.localeCompare(b, "es", { numeric: true }));
   }, [col]);
+
+  // Se portaliza a <body> para que el `position: fixed` quede anclado al
+  // viewport (no a un ancestro con transform, que lo hacía flotar fuera de la
+  // tabla). Requiere estar montado en cliente.
+  if (!mounted) return null;
 
   // Columna de fecha: filtro por rango (día / mes / año / rango libre).
   if (isDateCol(col.columnDef)) {
@@ -456,7 +464,7 @@ function ColumnFilterPopover<T>({ col, label, anchor, onClose }: {
     const iso = (dt: Date) => `${dt.getFullYear()}-${pad(dt.getMonth() + 1)}-${pad(dt.getDate())}`;
     const mesFrom = `${y}-${pad(m + 1)}-01`, mesTo = iso(new Date(y, m + 1, 0));
     const hoyIso = iso(hoy);
-    return (
+    return createPortal(
       <>
         <div className="dt-filter-scrim" onClick={onClose} />
         <div className="dt-filter-pop" style={{ left: anchor.left, top: anchor.top }} onClick={(e) => e.stopPropagation()}>
@@ -475,7 +483,8 @@ function ColumnFilterPopover<T>({ col, label, anchor, onClose }: {
             <button type="button" className="dt-date-clear" onClick={() => setRange({})}>Limpiar</button>
           </div>
         </div>
-      </>
+      </>,
+      document.body,
     );
   }
 
@@ -489,7 +498,7 @@ function ColumnFilterPopover<T>({ col, label, anchor, onClose }: {
     col.setFilterValue(next.size ? Array.from(next) : undefined);
   };
 
-  return (
+  return createPortal(
     <>
       <div className="dt-filter-scrim" onClick={onClose} />
       <div className="dt-filter-pop" style={{ left: anchor.left, top: anchor.top }} onClick={(e) => e.stopPropagation()}>
@@ -513,7 +522,8 @@ function ColumnFilterPopover<T>({ col, label, anchor, onClose }: {
           })}
         </div>
       </div>
-    </>
+    </>,
+    document.body,
   );
 }
 

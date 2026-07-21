@@ -28,8 +28,9 @@ export function OrdenesLista({
   const nombreProv = (o: Orden) => o.proveedorNombre ?? prov(o.proveedorId)?.nombre ?? "—";
 
   const [agrupar, setAgrupar] = useState(false);
-  const [colapsados, setColapsados] = useState<Set<string>>(new Set());
-  const toggleGrupo = (k: string) => setColapsados((s) => { const n = new Set(s); n.has(k) ? n.delete(k) : n.add(k); return n; });
+  // Proveedores colapsados por defecto: se abre uno para ver sus OC.
+  const [abiertos, setAbiertos] = useState<Set<string>>(new Set());
+  const toggleGrupo = (k: string) => setAbiertos((s) => { const n = new Set(s); n.has(k) ? n.delete(k) : n.add(k); return n; });
 
   const columns = useMemo<ColumnDef<Orden, any>[]>(() => [
     { id: "num", header: "N.º", accessorFn: (o) => o.numero, meta: { label: "N.º" }, cell: (c) => <span className="ds-strong">{c.getValue()}</span> },
@@ -117,7 +118,7 @@ export function OrdenesLista({
       ) : (
         <div className="col gap-3">
           {grupos.map((g) => {
-            const abierto = !colapsados.has(g.nombre);
+            const abierto = abiertos.has(g.nombre);
             return (
               <div key={g.nombre} className="ord-grp">
                 <button type="button" className={`ord-grp-head${abierto ? "" : " is-collapsed"}`} onClick={() => toggleGrupo(g.nombre)}>
