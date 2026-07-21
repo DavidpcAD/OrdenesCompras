@@ -82,7 +82,7 @@ export default function PlantillasPage() {
         <div className="page__head">
           <div className="page__title">
             <h1 className="ds-heading">Plantillas de pedido</h1>
-            <p className="ds-muted">Cada plantilla se asocia a una clasificación y trae sus líneas base. Ese amarre alimenta la matriz por obra.</p>
+            <p className="ds-muted">Cada plantilla trae sus líneas base. La clasificación es opcional: si la asignás, alimenta la matriz por obra; si no, la plantilla queda disponible para cualquier pedido.</p>
           </div>
           <Button onClick={() => setEditor("new")}>+ Nueva plantilla</Button>
         </div>
@@ -188,10 +188,9 @@ function PlantillaEditor({ plantilla, wbs, items, usuario, onClose, onSaved }: {
 
   async function guardar() {
     if (!nombre.trim()) { toast("Poné un nombre.", "error"); return; }
-    if (!idClas) { toast("Elegí la clasificación.", "error"); return; }
     setGuardando(true);
     try {
-      const body = { nombre: nombre.trim(), idClasificacion: Number(idClas), lineas, creadoPor: usuario, usuario };
+      const body = { nombre: nombre.trim(), idClasificacion: idClas ? Number(idClas) : null, lineas, creadoPor: usuario, usuario };
       const r = plantilla
         ? await fetch(`/api/plantillas/${plantilla.id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })
         : await fetch("/api/plantillas", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
@@ -203,7 +202,7 @@ function PlantillaEditor({ plantilla, wbs, items, usuario, onClose, onSaved }: {
 
   return (
     <Modal title={plantilla ? "Editar plantilla" : "Nueva plantilla de pedido"} onClose={onClose}
-      footer={<><Button variant="outline" onClick={onClose}>Cancelar</Button><Button onClick={guardar} disabled={guardando || !nombre.trim() || !idClas}>{guardando ? "Guardando…" : "Guardar plantilla"}</Button></>}>
+      footer={<><Button variant="outline" onClick={onClose}>Cancelar</Button><Button onClick={guardar} disabled={guardando || !nombre.trim()}>{guardando ? "Guardando…" : "Guardar plantilla"}</Button></>}>
       <div className="grid-2">
         <Field label="Nombre de la plantilla"><Input value={nombre} onChange={(e) => setNombre(e.target.value)} placeholder="Ej. Pisos porcelanato 60x120" /></Field>
         <Field label="Etapa">
@@ -216,9 +215,9 @@ function PlantillaEditor({ plantilla, wbs, items, usuario, onClose, onSaved }: {
             {partidasEt.map((p) => <option key={p.id} value={p.id}>{p.codigo} · {p.nombre}</option>)}
           </Select>
         </Field>
-        <Field label="Clasificación">
+        <Field label="Clasificación (opcional)">
           <Select value={idClas} onChange={(e) => setIdClas(e.target.value)}>
-            <option value="">{clasOpciones.length ? "Elegí la clasificación…" : "Sin clasificaciones en esta partida"}</option>
+            <option value="">Sin clasificación</option>
             {clasOpciones.map((c) => <option key={c.id} value={c.id}>{c.nombre}</option>)}
           </Select>
         </Field>
