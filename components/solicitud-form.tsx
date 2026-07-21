@@ -6,7 +6,6 @@ import * as XLSX from "xlsx";
 import { Button, Card, Field, Select, Textarea, useToast } from "@/components/ui";
 import { IconTrash, IconPlus } from "@/components/icons";
 import { Combobox } from "@/components/combobox";
-import { SlideConfirm } from "@/components/slide-confirm";
 import { useStore, type NewPedidoInput } from "@/lib/store";
 import type { Almacen, Articulo, Obra, Pedido, TipoSolicitud } from "@/lib/types";
 
@@ -589,22 +588,22 @@ export function SolicitudForm({
         </p>
 
         {(esMaterial || esStock) && (
-          <div style={{ marginBottom: 16, borderRadius: 14, border: "1.5px solid var(--ds-color-gray-100)", background: "color-mix(in srgb, var(--ds-color-green-100) 6%, #fff)", overflow: "hidden" }}>
+          <div className="tpl-panel" style={{ marginBottom: 16 }}>
             {/* Encabezado: título + acciones de Excel */}
-            <div className="row row--between wrap gap-2" style={{ alignItems: "center", padding: "10px 14px", borderBottom: "1.5px solid var(--ds-color-gray-100)", background: "color-mix(in srgb, var(--ds-color-green-100) 10%, #fff)" }}>
-              <span className="ds-strong ds-body-sm">{compact ? "Plantilla a usar" : "📋 Plantillas y Excel"}</span>
+            <div className="tpl-panel__head">
+              <span className="ds-strong ds-body-sm">{compact ? "Plantilla a usar" : "Plantillas y Excel"}</span>
               {!compact && (
               <div className="row gap-2" style={{ alignItems: "center" }}>
                 <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" style={{ display: "none" }}
                   onChange={(e) => { const f = e.target.files?.[0]; if (f) importarExcel(f); }} />
-                <Button variant="outline" onClick={descargarExcel}>⬇ Descargar Excel</Button>
-                <Button variant="outline" onClick={() => fileRef.current?.click()}>⬆ Importar Excel</Button>
+                <Button variant="outline" size="sm" onClick={descargarExcel}>⬇ Descargar Excel</Button>
+                <Button variant="outline" size="sm" onClick={() => fileRef.current?.click()}>⬆ Importar Excel</Button>
               </div>
               )}
             </div>
-            {/* Cuerpo: plantillas guardadas (tarjetas) + guardar */}
-            <div style={{ padding: 14 }}>
-              <div className="row row--between wrap gap-3" style={{ alignItems: "center", marginBottom: 12 }}>
+            {/* Cuerpo: filtros + guardar + tarjetas */}
+            <div className="tpl-panel__body">
+              <div className="row row--between wrap gap-3" style={{ alignItems: "center" }}>
                 <div className="row gap-2 wrap" style={{ alignItems: "center" }}>
                   <span className="ds-body-sm ds-strong">Plantillas guardadas</span>
                   {creadoresPlantillas.length > 1 && (
@@ -636,9 +635,9 @@ export function SolicitudForm({
                 </div>
                 {!compact && lineas.length > 0 && (
                   <div className="row gap-2" style={{ alignItems: "center" }}>
-                    <input className="ds-form-field__input" style={{ maxWidth: 210, height: 38 }} placeholder="Guardar estas líneas como plantilla…" value={nombrePlantilla}
+                    <input className="ds-form-field__input" style={{ maxWidth: 220, height: 38 }} placeholder="Guardar estas líneas como plantilla…" value={nombrePlantilla}
                       onChange={(e) => setNombrePlantilla(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") guardarComoPlantilla(); }} />
-                    <Button variant="outline" onClick={guardarComoPlantilla}>Guardar</Button>
+                    <Button variant="outline" size="sm" onClick={guardarComoPlantilla}>Guardar</Button>
                   </div>
                 )}
               </div>
@@ -648,7 +647,7 @@ export function SolicitudForm({
                     <div key={p.id} className={`tpl-card ${plantillaCargada === String(p.id) ? "is-active" : ""}`} role="button" tabIndex={0} title={`Cargar "${p.nombre}" (reemplaza las líneas)`}
                       onClick={() => cargarPlantilla(String(p.id))}
                       onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); cargarPlantilla(String(p.id)); } }}>
-                      <span className="tpl-card__name">{p.nombre}</span>
+                      <span className="tpl-card__name" title={p.nombre}>{p.nombre}</span>
                       <span className="tpl-card__meta">{p.lineas.length} ítem(s){filtroPlantilla === "*" && p.creadoPor ? ` · ${p.creadoPor}` : ""}</span>
                       {p.creadoPor === solicitante && (
                         <button type="button" className="tpl-card__del" title="Borrar plantilla"
@@ -777,15 +776,13 @@ export function SolicitudForm({
         </div>
       </Card>
 
-      {/* Acciones secundarias arriba; el "pedir" primario es un slide-to-confirm (DS). */}
-      <div className="mt-6" style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-        <div className="row gap-3" style={{ justifyContent: "flex-end" }}>
-          <Button variant="outline" onClick={onCancelar}>Cancelar</Button>
-          {guardarSecundario && textoBotonSecundario && (
-            <Button variant="outline" onClick={() => onGuardar(guardarSecundario)} disabled={!puedeGuardar || guardando}>{textoBotonSecundario}</Button>
-          )}
-        </div>
-        <SlideConfirm oneWay approveLabel={textoBoton} busy={guardando} disabled={!puedeGuardar} onApprove={() => onGuardar()} height={60} />
+      {/* Acciones: cancelar + (secundaria) + guardar (botón primario, escritorio). */}
+      <div className="row gap-3 mt-6" style={{ justifyContent: "flex-end", flexWrap: "wrap" }}>
+        <Button variant="outline" onClick={onCancelar}>Cancelar</Button>
+        {guardarSecundario && textoBotonSecundario && (
+          <Button variant="outline" onClick={() => onGuardar(guardarSecundario)} disabled={!puedeGuardar || guardando}>{textoBotonSecundario}</Button>
+        )}
+        <Button onClick={() => onGuardar()} disabled={!puedeGuardar || guardando}>{guardando ? "Guardando…" : textoBoton}</Button>
       </div>
     </>
   );
