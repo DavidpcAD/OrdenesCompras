@@ -562,7 +562,7 @@ async function getStdLocationId(cid: string, code: string): Promise<string | nul
 // BC), cantidad y precio unitario. Sin chargeNo cae al flete por defecto (env).
 export type CargoBc = { chargeNo?: string; descripcion?: string; cantidad?: number; precio: number };
 
-export async function bcCrearPedido(input: { vendorNo: string; currencyCode?: string; locationCode?: string; lineas: NuevaLineaBc[]; cargos?: CargoBc[]; flete?: { monto: number; descripcion?: string } }): Promise<{ number: string; id: string; omitidas: string[]; creadas: number; lineError?: string }> {
+export async function bcCrearPedido(input: { vendorNo: string; currencyCode?: string; locationCode?: string; lineas: NuevaLineaBc[]; cargos?: CargoBc[]; flete?: { monto: number; descripcion?: string } }): Promise<{ number: string; id: string; omitidas: string[]; creadas: number; lineError?: string; cargoError?: string; cargosCreados: number }> {
   if (!input?.vendorNo) throw new Error("Falta el proveedor (vendorNo).");
   const lineas = (input.lineas ?? []).filter((l) => l.itemNo && l.cantidad > 0);
   if (!lineas.length) throw new Error("No hay líneas de material válidas para el pedido.");
@@ -582,6 +582,8 @@ export async function bcCrearPedido(input: { vendorNo: string; currencyCode?: st
   // ciegas por qué no se agregaban las líneas). Devolvemos omitidas + primer error.
   const omitidas: string[] = [];
   let lineError: string | undefined;
+  let cargoError: string | undefined;
+  let cargosCreados = 0;
   let creadas = 0;
   // Almacén de recepción fijo (p.ej. ALM-GRAL): aunque Ingeniería pida para una
   // obra, el material entra siempre al almacén general. Configurable por env.
@@ -620,7 +622,8 @@ export async function bcCrearPedido(input: { vendorNo: string; currencyCode?: st
         directUnitCost: cg.precio, description: cg.descripcion || "CARGO / TRANSPORTE",
       };
       const resC = await bcFetch(`${stdRoot()}/companies(${cid})/purchaseOrders(${po.id})/purchaseOrderLines`, { method: "POST", headers: jsonHeaders, body: JSON.stringify(chargeBody), cache: "no-store" });
-      if (!resC.ok && !lineError) lineError = `cargo ${chargeNo}: BC ${resC.status} ${(await resC.text()).slice(0, 300)}`;
+      if (resC.ok) { cargosCreados++; }
+      else if (!cargoError) cargoError = `cargo ${chargeNo}: BC ${resC.status} ${(await resC.text()).slice(0, 400)}`;
     }
   }
   // Si NINGUNA línea entró, el pedido quedaría vacío en BC (y "no hay nada que
@@ -629,7 +632,7 @@ export async function bcCrearPedido(input: { vendorNo: string; currencyCode?: st
     try { await bcFetch(`${stdRoot()}/companies(${cid})/purchaseOrders(${po.id})`, { method: "DELETE", cache: "no-store" }); } catch { /* best effort */ }
     throw new Error(`BC rechazó todas las líneas del pedido — ${lineError ?? "sin detalle"}`);
   }
-  return { number: po.number ?? "", id: po.id ?? "", omitidas, creadas, lineError };
+  return { number: po.number ?? "", id: po.id ?? "", omitidas, creadas, lineError, cargoError, cargosCreados };
 }
 
 // Raíz OData V4 (para los web services de codeunit custom, p.ej. AdelantePO).
@@ -764,12 +767,12 @@ export async function bcFacturarRecibido(orderNo: string, vendorInvoiceNo: strin
 // Si el create funciona pero el release falla (p.ej. AdelantePO no publicado aún),
 // devuelve el pedido creado con released=false para que la UI avise sin romperse.
 export async function bcCrearYLanzarPedido(input: { vendorNo: string; currencyCode?: string; locationCode?: string; lineas: NuevaLineaBc[]; cargos?: CargoBc[]; metodo?: string; flete?: { monto: number; descripcion?: string } }):
-  Promise<{ number: string; id: string; omitidas: string[]; creadas: number; lineError?: string; released: boolean; releaseError?: string }> {
-  const { number, id, omitidas, creadas, lineError } = await bcCrearPedido(input);
+  Promise<{ number: string; id: string; omitidas: string[]; creadas: number; lineError?: string; cargoError?: string; cargosCreados?: number; released: boolean; releaseError?: string }> {
+  const { number, id, omitidas, creadas, lineError, cargoError, cargosCreados } = await bcCrearPedido(input);
   // Si NINGUNA línea entró a BC, no tiene sentido intentar lanzar (BC responde
   // "nothing to release"). Devolvemos released=false con el motivo real de la línea.
   if (creadas === 0) {
-    return { number, id, omitidas, creadas, lineError, released: false, releaseError: lineError ?? "BC rechazó todas las líneas del pedido." };
+    return { number, id, omitidas, creadas, lineError, cargoError, cargosCreados, released: false, releaseError: lineError ?? "BC rechazó todas las líneas del pedido." };
   }
   // FORZAR EL PRECIO DE LA APP: al insertar la línea, la API estándar valida el
   // N.º del artículo y autocompleta el "Direct Unit Cost" desde la ficha del ítem,
@@ -787,9 +790,9 @@ export async function bcCrearYLanzarPedido(input: { vendorNo: string; currencyCo
   }
   try {
     await bcReleasePedido(number);
-    return { number, id, omitidas, creadas, lineError, released: true };
+    return { number, id, omitidas, creadas, lineError, cargoError, cargosCreados, released: true };
   } catch (e: any) {
-    return { number, id, omitidas, creadas, lineError, released: false, releaseError: String(e?.message ?? e) };
+    return { number, id, omitidas, creadas, lineError, cargoError, cargosCreados, released: false, releaseError: String(e?.message ?? e) };
   }
 }
 
