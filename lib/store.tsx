@@ -85,6 +85,7 @@ interface StoreShape {
   // Notificaciones in-app
   notificaciones: Notificacion[];
   marcarNotifsLeidas: () => void;
+  marcarNotifLeida: (id: string) => void;
 
   // Planificación (Ingeniería)
   planCategorias: PlanCategoria[];
@@ -492,6 +493,8 @@ export function StoreProvider({ children, useApi }: { children: React.ReactNode;
     // ---------------- NOTIFICACIONES ----------------
     const marcarNotifsLeidas: StoreShape["marcarNotifsLeidas"] = () =>
       setData((d) => ({ ...d, notificaciones: d.notificaciones.map((n) => ({ ...n, leida: true })) }));
+    const marcarNotifLeida: StoreShape["marcarNotifLeida"] = (id) =>
+      setData((d) => ({ ...d, notificaciones: d.notificaciones.map((n) => (n.id === id ? { ...n, leida: true } : n)) }));
 
     // ---------------- PLANIFICACIÓN ----------------
     const addPlanCategoria: StoreShape["addPlanCategoria"] = (nombre) =>
@@ -516,7 +519,7 @@ export function StoreProvider({ children, useApi }: { children: React.ReactNode;
       pedidos: data.pedidos, ordenes: data.ordenes, recepciones: data.recepciones, movimientos: data.movimientos,
       addPedido, editPedido, updatePedido, setPedidoEstado, deletePedido,
       createOrden, updateOrden, setOrdenEstado, registrarRecepcion, facturarRecepcion, devolverPedido, devolverOrden, reset,
-      notificaciones: data.notificaciones, marcarNotifsLeidas,
+      notificaciones: data.notificaciones, marcarNotifsLeidas, marcarNotifLeida,
       planCategorias: data.planCategorias, planFilas: data.planFilas,
       addPlanCategoria, removePlanCategoria, addPlanFila, removePlanFila, setPlanCelda, cargarPlanificacion,
       planContexto, setPlanContexto,

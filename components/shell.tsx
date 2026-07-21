@@ -75,7 +75,7 @@ const ROLE_META: Record<Role, { label: string; persona: string; home: string; na
 };
 
 export function AppShell({ role, children }: { role: Role; children: React.ReactNode }) {
-  const { role: current, setRole, usuario, setUsuario, notificaciones, marcarNotifsLeidas, hydrated } = useStore();
+  const { role: current, setRole, usuario, setUsuario, notificaciones, marcarNotifsLeidas, marcarNotifLeida, hydrated } = useStore();
   const router = useRouter();
   const pathname = usePathname();
   const [notifOpen, setNotifOpen] = useState(false);
@@ -93,9 +93,9 @@ export function AppShell({ role, children }: { role: Role; children: React.React
   const notifsRol = notificaciones.filter((n) => !n.rol || n.rol === role);
   const noLeidas = notifsRol.filter((n) => !n.leida).length;
   function toggleNotif() {
-    const open = !notifOpen;
-    setNotifOpen(open);
-    if (open && noLeidas > 0) setTimeout(() => marcarNotifsLeidas(), 1200);
+    // Abrir el panel NO marca leídas: cada notificación queda resaltada (no leída)
+    // hasta que el usuario la abre (clic) o usa "Marcar todas como leídas".
+    setNotifOpen((o) => !o);
   }
 
   // guard: esperar a que el store lea el rol de localStorage (hydrated) para no
@@ -151,7 +151,11 @@ export function AppShell({ role, children }: { role: Role; children: React.React
                 <div className="notif-panel">
                   <div className="notif-panel__head">
                     <span className="notif-panel__title">Notificaciones</span>
-                    {noLeidas > 0 && <span className="notif-panel__count">{noLeidas} sin leer</span>}
+                    {noLeidas > 0 && (
+                      <button type="button" className="notif-panel__mark" onClick={() => marcarNotifsLeidas()}>
+                        {noLeidas} sin leer · Marcar todas
+                      </button>
+                    )}
                   </div>
                   {notifsRol.length === 0 ? (
                     <div className="notif-empty">
@@ -162,7 +166,7 @@ export function AppShell({ role, children }: { role: Role; children: React.React
                     <div className="notif-list">
                       {notifsRol.slice(0, 30).map((n) => (
                         <button key={n.id} className={`notif-item ${n.leida ? "" : "is-unread"}`}
-                          onClick={() => { setNotifOpen(false); if (n.href) router.push(n.href); }}>
+                          onClick={() => { marcarNotifLeida(n.id); setNotifOpen(false); if (n.href) router.push(n.href); }}>
                           <span className={`notif-item__icon notif-item__icon--${n.tipo}`}>{NOTIF_ICON[n.tipo]}</span>
                           <span className="notif-item__body">
                             <span className="notif-item__msg">{n.mensaje}</span>
