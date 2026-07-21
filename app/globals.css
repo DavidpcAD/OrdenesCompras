@@ -670,14 +670,13 @@ h1, h2, h3, h4, p { margin: 0; }
 /* ── Layout: barra superior + RIEL lateral (hover-expand overlay) + contenido ── */
 .app-body { display: flex; align-items: flex-start; gap: 0; }
 .app-content { flex: 1; min-width: 0; }
-/* El contenido reserva SOLO el ancho del riel (76px); la expansión va por encima. */
-.app-body:has(.app-nav) .app-content { margin-left: 76px; }
 
-/* Riel angosto de solo íconos (76px). Al pasar el mouse se expande a 264px POR
-   ENCIMA del contenido (fixed, no lo empuja) mostrando las etiquetas. Sin botón. */
+/* Riel angosto de solo íconos (76px) como OVERLAY: al pasar el mouse crece a 264px
+   POR ENCIMA del contenido (con sombra), sin mover las tarjetas. Sin botón.
+   El contenido reserva 76px fijos (margin-left) y no hace reflow al expandir. */
 .app-nav {
-  position: fixed; top: 65px; left: 0; bottom: 0; z-index: 50;
-  width: 76px; overflow: hidden;
+  position: fixed; left: 0; top: 65px; z-index: 46; flex-shrink: 0;
+  width: 76px; height: calc(100vh - 65px); overflow: hidden;
   display: flex; flex-direction: column; gap: var(--ds-space-3);
   padding: var(--ds-space-4) 14px;
   background: #2a2a2a; /* columna oscura del DS */
@@ -685,8 +684,11 @@ h1, h2, h3, h4, p { margin: 0; }
 }
 .app-nav:hover, .app-nav:focus-within {
   width: 264px; overflow-y: auto; overflow-x: hidden;
-  box-shadow: 10px 0 40px rgba(0, 0, 0, .35);
+  box-shadow: 0 10px 40px rgba(0, 0, 0, .35);
 }
+/* El contenido arranca después del riel (76px) y se queda quieto cuando el riel
+   se expande como overlay. */
+.app-body:has(.app-nav) .app-content { margin-left: 76px; }
 .app-nav__item {
   display: flex; align-items: center; gap: var(--ds-space-3);
   width: 100%; height: 50px; padding: 0; justify-content: center;
