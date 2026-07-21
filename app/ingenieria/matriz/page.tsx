@@ -149,19 +149,19 @@ export default function MatrizPage() {
           <div className="empty mt-6">{etapaSel ? "No hay clasificaciones en esta etapa." : "No hay clasificaciones."} Creá clasificaciones en el Maestro.</div>
         ) : (
           <Card className="mt-4" style={{ padding: 0, overflow: "hidden" }}>
-            <div className="ds-table-wrap" style={{ boxShadow: "none", overflowX: "auto" }}>
+            <div className="ds-table-wrap" style={{ boxShadow: "none", overflow: "auto", maxHeight: "calc(100vh - 240px)" }}>
               <table className="ds-table" style={{ tableLayout: "auto" }}>
                 <thead>
                   <tr>
-                    <th style={{ width: 200, position: "sticky", left: 0, background: "var(--ds-color-white)", zIndex: 2 }}>Obra</th>
+                    <th style={{ width: 200, position: "sticky", left: 0, top: 0, background: "var(--ds-color-white)", zIndex: 3 }}>Obra</th>
                     {columnas.map((c) => { const par = partidaDeClas(c); return (
-                      <th key={c.id} style={{ width: 150, textAlign: "center", verticalAlign: "bottom" }}>
+                      <th key={c.id} style={{ width: 150, textAlign: "center", verticalAlign: "bottom", position: "sticky", top: 0, background: "var(--ds-color-white)", zIndex: 2 }}>
                         {par && <div className="ds-body-sm ds-muted ds-truncate" title={par.nombre} style={{ fontWeight: 400, maxWidth: 150, margin: "0 auto" }}>{par.codigo ? `${par.codigo} · ` : ""}{par.nombre}</div>}
                         <div className="ds-strong ds-body-sm">{c.nombre}</div>
                       </th>
                     ); })}
                     {/* columna espaciadora: absorbe el ancho sobrante para que las celdas no se estiren */}
-                    <th aria-hidden style={{ width: "100%" }} />
+                    <th aria-hidden style={{ width: "100%", position: "sticky", top: 0, background: "var(--ds-color-white)", zIndex: 2 }} />
                   </tr>
                 </thead>
                 <tbody>
