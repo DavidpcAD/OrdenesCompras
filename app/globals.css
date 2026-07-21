@@ -536,9 +536,10 @@ h1, h2, h3, h4, p { margin: 0; }
 /* =====================  APP SHELL  ===================== */
 .app-shell { min-height: 100vh; display: flex; flex-direction: column; }
 .topbar {
-  position: sticky; top: 0; z-index: 30;
+  position: sticky; top: 0; z-index: 50; /* por encima del riel (46) para que no lo tape */
   background: var(--ds-color-white); box-shadow: var(--ds-shadow-02-soft);
   display: flex; align-items: center; gap: var(--ds-space-6);
+  min-height: 64px; box-sizing: border-box;
   padding: var(--ds-space-3) var(--ds-space-6);
 }
 .topbar__brand { display: flex; align-items: center; gap: var(--ds-space-3); font-weight: var(--ds-font-weight-semibold); font-size: var(--ds-font-size-subtitle); }
