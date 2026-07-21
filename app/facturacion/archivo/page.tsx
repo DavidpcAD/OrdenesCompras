@@ -63,7 +63,8 @@ export default function ArchivoPage() {
     { id: "orden", header: "Orden", accessorFn: (r) => ordenDe(r)?.numero ?? "—", meta: { label: "Orden" }, cell: (c) => c.getValue() },
     { id: "proveedor", header: "Proveedor", accessorFn: (r) => { const o = ordenDe(r); return (o ? (o.proveedorNombre ?? prov(o.proveedorId)?.nombre) : "") ?? "—"; }, meta: { label: "Proveedor" }, cell: (c) => c.getValue() },
     { id: "fecha", header: "Fecha registro", accessorFn: (r) => r.fechaRegistro, meta: { label: "Fecha registro" }, cell: (c) => formatDate(c.getValue()) },
-    { id: "total", header: "Total", accessorFn: (r) => r.total, meta: { label: "Total", num: true }, cell: (c) => money(c.getValue(), ordenDe(c.row.original)?.currencyCode) },
+    { id: "importe", header: "Importe", accessorFn: (r) => r.total, meta: { label: "Importe (excl. IVA)", num: true }, cell: (c) => money(c.getValue(), ordenDe(c.row.original)?.currencyCode) },
+    { id: "totalIva", header: "Total c/IVA", accessorFn: (r) => r.total * 1.13, meta: { label: "Total con IVA (13%)", num: true }, cell: (c) => <span className="ds-strong">{money(c.getValue(), ordenDe(c.row.original)?.currencyCode)}</span> },
     { id: "tipo", header: "Tipo", accessorFn: (r) => (r.parcial ? "Parcial" : "Completa"), meta: { label: "Tipo" }, cell: (c) => c.row.original.parcial ? <Badge tone="yellow">Parcial</Badge> : <Badge tone="green">Completa</Badge> },
   ], [ordenes, proveedores]); // eslint-disable-line react-hooks/exhaustive-deps
 

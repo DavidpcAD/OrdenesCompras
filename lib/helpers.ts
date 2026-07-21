@@ -57,12 +57,21 @@ export function money(amount: number, currencyCode?: string): string {
 
 export function formatDate(iso: string): string {
   if (!iso) return "—";
+  // Fechas "solo día" (YYYY-MM-DD) se formatean directo, SIN convertir zona horaria:
+  // new Date("2026-07-21") se parsea como UTC medianoche y en CR (UTC−6) mostraba el
+  // día anterior (20/07). Acá tomamos los dígitos tal cual → dd/mm/aaaa.
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso);
+  if (m) return `${m[3]}/${m[2]}/${m[1]}`;
   const d = new Date(iso);
-  return d.toLocaleDateString("es-CR", { day: "2-digit", month: "2-digit", year: "numeric" });
+  return isNaN(+d) ? "—" : d.toLocaleDateString("es-CR", { day: "2-digit", month: "2-digit", year: "numeric" });
 }
 
+// Fecha de HOY en local (no UTC): new Date().toISOString() daba la fecha UTC, que en
+// la tarde de CR ya es el día siguiente. Construimos la fecha local para que el
+// default coincida con el día real.
 export function todayISO(): string {
-  return new Date().toISOString().slice(0, 10);
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
 export function nowISO(): string {
