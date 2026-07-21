@@ -128,17 +128,21 @@ export function Tile({
   accent = "var(--ds-color-green-100)",
   onClick,
   active,
+  className = "",
+  style,
 }: {
   value: React.ReactNode;
   label: string;
   accent?: string;
   onClick?: () => void;
   active?: boolean;
+  className?: string;
+  style?: React.CSSProperties;
 }) {
-  const cls = ["tile", onClick ? "tile--clickable" : "", active ? "is-active" : ""].filter(Boolean).join(" ");
   if (onClick) {
+    const cls = ["tile", "tile--clickable", active ? "is-active" : "", className].filter(Boolean).join(" ");
     return (
-      <button type="button" className={cls} style={{ "--tile-accent": accent } as React.CSSProperties} onClick={onClick} aria-pressed={active}>
+      <button type="button" className={cls} style={{ "--tile-accent": accent, ...style } as React.CSSProperties} onClick={onClick} aria-pressed={active}>
         <div className="tile__accent" style={{ background: accent }} />
         <div className="tile__value">{value}</div>
         <div className="tile__label">{label}</div>
@@ -146,12 +150,24 @@ export function Tile({
     );
   }
   return (
-    <div className="tile">
+    <div className={["tile", className].filter(Boolean).join(" ")} style={style}>
       <div className="tile__accent" style={{ background: accent }} />
       <div className="tile__value">{value}</div>
       <div className="tile__label">{label}</div>
     </div>
   );
+}
+
+// ---------------------------------------------------------------- Skeleton
+// Barra "fantasma" con shimmer del DS para estados de carga. Pasá width/height
+// (px o cualquier unidad CSS). aria-hidden: es puramente visual.
+export function Skeleton({
+  width, height, radius, pill, className = "", style,
+}: {
+  width?: number | string; height?: number | string; radius?: number | string; pill?: boolean; className?: string; style?: React.CSSProperties;
+}) {
+  const cls = ["ds-skeleton", pill ? "ds-skeleton--pill" : "", className].filter(Boolean).join(" ");
+  return <span aria-hidden className={cls} style={{ width, height, borderRadius: radius, ...style }} />;
 }
 
 // ---------------------------------------------------------------- QtyRing

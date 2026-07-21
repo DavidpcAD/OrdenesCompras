@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import type { ColumnDef } from "@tanstack/react-table";
 import { DataTable } from "@/components/data-table";
+import { Skeleton } from "@/components/ui";
 import { useStore } from "@/lib/store";
 import { money, num } from "@/lib/helpers";
 
@@ -109,7 +110,7 @@ export function InventariosView({ tablaKey = "inventarios" }: { tablaKey?: strin
       meta: { label: "Stock (BC)", num: true }, enableColumnFilter: false,
       cell: (c) => {
         const a = c.row.original as Row;
-        if (stockEstado === "loading") return <span className="ds-muted">…</span>;
+        if (stockEstado === "loading") return <Skeleton width={54} height={13} />;
         if (stockEstado === "error") return <span className="ds-muted" title="Business Central no respondió">s/d</span>;
         const v = stockByItem[a.code]?.total ?? 0;
         return <span className="ds-strong" style={{ color: v > 0 ? "var(--ds-color-green-300)" : "var(--ds-color-gray-400)" }}>{num.format(v)} {a.unidad}</span>;
@@ -122,7 +123,16 @@ export function InventariosView({ tablaKey = "inventarios" }: { tablaKey?: strin
 
   // Desglose por almacén/variante al expandir la fila (solo ubicaciones con stock).
   const renderExpanded = (a: Row) => {
-    if (stockEstado === "loading") return <div className="ds-muted ds-body-sm" style={{ padding: "6px 2px" }}>Consultando existencias en Business Central…</div>;
+    if (stockEstado === "loading") return (
+      <div className="col gap-2" style={{ padding: "8px 2px" }}>
+        {[70, 55, 62].map((w, i) => (
+          <div key={i} className="row gap-4" style={{ alignItems: "center" }}>
+            <Skeleton width={`${w}%`} height={12} style={{ maxWidth: 260 }} />
+            <Skeleton width={40} height={12} />
+          </div>
+        ))}
+      </div>
+    );
     if (stockEstado === "error") return <div className="ds-body-sm" style={{ padding: "6px 2px", color: "var(--ds-color-red-200)" }}>No se pudo cargar el stock de BC. Puede que <code>inventoryByLocation</code> no esté publicado o no haya conexión.</div>;
     const det = (stockByItem[a.code]?.detalle ?? []).filter((e) => Number(e.cantidad) !== 0).sort((x, y) => y.cantidad - x.cantidad);
     if (!det.length) return <div className="ds-muted ds-body-sm" style={{ padding: "6px 2px" }}>Sin existencias en ninguna ubicación.</div>;
@@ -156,7 +166,7 @@ export function InventariosView({ tablaKey = "inventarios" }: { tablaKey?: strin
         </div>
       </div>
 
-      <div className="mt-4">
+      <div className="mt-4 ds-reveal">
         <DataTable data={rows} columns={columns} tablaKey={tablaKey} getRowId={(a) => a.code} renderExpanded={renderExpanded} vacio="Sin artículos en el catálogo." />
       </div>
     </main>

@@ -211,7 +211,7 @@ export default function CargoSobreFacturaPage() {
 
         {/* PASO 1 · Proveedor del cargo + su factura */}
         {paso === 0 && (
-          <Card>
+          <Card className="ds-reveal">
             <h3 className="ds-subtitle" style={{ marginBottom: 4 }}>Proveedor del cargo y factura</h3>
             <p className="ds-muted ds-body-sm" style={{ marginTop: 0, marginBottom: 16 }}>El proveedor que factura el cargo (transportista), no el del material.</p>
             <div className="grid-3">
@@ -238,7 +238,7 @@ export default function CargoSobreFacturaPage() {
 
         {/* PASO 2 · La línea de cargo */}
         {paso === 1 && (
-          <Card>
+          <Card className="ds-reveal">
             <h3 className="ds-subtitle" style={{ marginBottom: 16 }}>Cargo de producto</h3>
             <div className="row gap-3 wrap" style={{ alignItems: "flex-end" }}>
               <div style={{ flex: "1 1 260px", minWidth: 220 }}>
@@ -265,7 +265,7 @@ export default function CargoSobreFacturaPage() {
 
         {/* PASO 3 · Buscar y seleccionar líneas de recepción registradas */}
         {paso === 2 && (
-          <Card>
+          <Card className="ds-reveal">
             <h3 className="ds-subtitle" style={{ marginBottom: 4 }}>Líneas de la recepción a cargar</h3>
             <p className="ds-muted ds-body-sm" style={{ marginTop: 0, marginBottom: 16 }}>Buscá las líneas de la recepción ya registrada (albarán) a las que se les reparte el cargo.</p>
             <div className="row gap-3 wrap" style={{ alignItems: "flex-end" }}>
@@ -334,7 +334,7 @@ export default function CargoSobreFacturaPage() {
 
         {/* PASO 4 · Método de reparto + preview + registrar */}
         {paso === 3 && (
-          <Card>
+          <Card className="ds-reveal">
             <div className="row row--between wrap gap-3" style={{ alignItems: "center", marginBottom: 12 }}>
               <div className="col" style={{ gap: 2 }}>
                 <span className="ds-subtitle">Reparto del cargo</span>

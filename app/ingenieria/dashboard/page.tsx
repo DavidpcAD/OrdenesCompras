@@ -1,9 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { AppShell } from "@/components/shell";
-import { Button, Card, Tile } from "@/components/ui";
+import { Button, Card, Skeleton, Tile } from "@/components/ui";
 import { useStore } from "@/lib/store";
 import { num } from "@/lib/helpers";
 
@@ -114,10 +114,10 @@ export default function DashboardPage() {
         </div>
 
         <div className="tiles mt-2">
-          <Tile value={k.solic} label="Solicitudes" />
-          <Tile value={k.orden} label="Órdenes de compra" accent="var(--ds-color-yellow)" />
-          <Tile value={`${k.pct}%`} label="Recibido (global)" accent="var(--ds-color-green-200)" />
-          <Tile value={k.pend} label="Pendiente por recibir" accent="var(--ds-color-red-100)" />
+          <Tile value={k.solic} label="Solicitudes" className="ds-reveal" style={{ "--ds-reveal-i": 0 } as React.CSSProperties} />
+          <Tile value={k.orden} label="Órdenes de compra" accent="var(--ds-color-yellow)" className="ds-reveal" style={{ "--ds-reveal-i": 1 } as React.CSSProperties} />
+          <Tile value={`${k.pct}%`} label="Recibido (global)" accent="var(--ds-color-green-200)" className="ds-reveal" style={{ "--ds-reveal-i": 2 } as React.CSSProperties} />
+          <Tile value={k.pend} label="Pendiente por recibir" accent="var(--ds-color-red-100)" className="ds-reveal" style={{ "--ds-reveal-i": 3 } as React.CSSProperties} />
         </div>
 
         <div className="row row--between wrap gap-3" style={{ alignItems: "baseline", marginTop: 28 }}>
@@ -126,28 +126,44 @@ export default function DashboardPage() {
         </div>
 
         {invEstado === "loading" && (
-          <Card className="mt-2"><span className="ds-muted">Calculando faltantes contra el stock de Business Central…</span></Card>
+          <Card className="mt-2 ds-reveal" style={{ padding: 0, overflow: "hidden" }}>
+            <div style={{ padding: "12px 16px", borderBottom: "1.5px solid var(--ds-color-gray-100)" }}>
+              <Skeleton width={240} height={13} />
+            </div>
+            <div className="col" style={{ padding: "0 16px" }}>
+              {[0, 1, 2, 3].map((i) => (
+                <div key={i} className="row row--between gap-4" style={{ alignItems: "center", padding: "13px 0", borderBottom: "1px solid var(--ds-color-gray-100)" }}>
+                  <Skeleton width={`${46 - i * 4}%`} height={13} style={{ maxWidth: 340 }} />
+                  <div className="row gap-6" style={{ alignItems: "center" }}>
+                    <Skeleton width={40} height={13} />
+                    <Skeleton width={40} height={13} />
+                    <Skeleton width={64} height={30} pill />
+                  </div>
+                </div>
+              ))}
+            </div>
+          </Card>
         )}
         {invEstado === "error" && (
-          <Card className="mt-2" style={{ borderLeft: "4px solid var(--ds-color-red-100)" }}>
+          <Card className="mt-2 ds-reveal" style={{ borderLeft: "4px solid var(--ds-color-red-100)" }}>
             <div className="ds-strong">No se pudo consultar el stock de BC</div>
             <div className="ds-muted ds-body-sm" style={{ marginTop: 4 }}>Business Central no respondió o <code>inventoryByLocation</code> no está disponible en este entorno.</div>
           </Card>
         )}
         {invEstado === "ok" && !hayReorden && (
-          <Card className="mt-2" style={{ borderLeft: "4px solid var(--ds-color-yellow)" }}>
+          <Card className="mt-2 ds-reveal" style={{ borderLeft: "4px solid var(--ds-color-yellow)" }}>
             <div className="ds-strong">Ningún artículo tiene punto de reorden configurado en BC</div>
             <div className="ds-muted ds-body-sm" style={{ marginTop: 4 }}>Configurá el <strong>Punto de reorden</strong> (y opcionalmente la cantidad de reorden) en la ficha de cada ítem en Business Central para ver acá los materiales por reponer.</div>
           </Card>
         )}
         {invEstado === "ok" && hayReorden && faltantes.length === 0 && (
-          <Card className="mt-2" style={{ borderLeft: "4px solid var(--ds-color-green-200)" }}>
+          <Card className="mt-2 ds-reveal" style={{ borderLeft: "4px solid var(--ds-color-green-200)" }}>
             <div className="ds-strong">Todo cubierto ✅</div>
             <div className="ds-muted ds-body-sm" style={{ marginTop: 4 }}>Ningún material está por debajo de su punto de reorden (contando lo que ya está en camino).</div>
           </Card>
         )}
         {invEstado === "ok" && faltantes.length > 0 && (
-          <Card className="mt-2" style={{ padding: 0, overflow: "hidden" }}>
+          <Card className="mt-2 ds-reveal" style={{ padding: 0, overflow: "hidden" }}>
             <div className="ds-body-sm" style={{ padding: "12px 16px", borderBottom: "1.5px solid var(--ds-color-gray-100)", background: "color-mix(in srgb, var(--ds-color-red-100) 6%, #fff)" }}>
               <span className="ds-strong">{faltantes.length}</span> material(es) por debajo de su punto de reorden.
             </div>
