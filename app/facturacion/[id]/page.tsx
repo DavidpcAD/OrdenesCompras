@@ -116,6 +116,13 @@ export default function RegistrarFacturaPage() {
       } else if (!orden!.bcNumber) {
         aviso = " · (la orden no tiene N.º de BC, no se registró en BC)";
       }
+      // Si la orden va a BC pero BC NO confirmó, NO registramos localmente ni movemos
+      // la orden: queda "por recibir" para reintentar (solo avanza con éxito de BC).
+      if (orden!.bcNumber && bcLineas.length && !bcOk) {
+        toast(`No se registró: ${aviso.replace(/^ · /, "") || "BC no confirmó el movimiento"}. La orden queda por recibir para reintentar.`, "error");
+        setGuardando(false);
+        return;
+      }
       await registrarRecepcion({
         ordenId: orden!.id, numeroFactura: numeroFactura.trim(),
         fechaFactura, fechaRecepcion, fechaRegistro, total: totalFactura, lineas,
@@ -153,7 +160,7 @@ export default function RegistrarFacturaPage() {
       .map((l) => ({ itemNo: l.articuloId as string, qty: Number(recibir[l.id]), variantCode: l.variantCode }));
 
     setGuardando(true);
-    let aviso = "";
+    let aviso = ""; let bcOk = false;
     try {
       if (orden!.bcNumber && bcLineas.length) {
         try {
@@ -162,10 +169,17 @@ export default function RegistrarFacturaPage() {
             body: JSON.stringify({ orderNo: orden!.bcNumber, lineas: bcLineas, postingDate: fechaRecepcion }),
           });
           const d = await r.json().catch(() => ({}));
-          aviso = r.ok ? ` · recibido en BC (${d.receiptNo ?? "OK"})` : ` · NO se pudo recibir en BC: ${d.error ?? r.status}`;
+          if (r.ok) { aviso = ` · recibido en BC (${d.receiptNo ?? "OK"})`; bcOk = true; }
+          else aviso = ` · NO se pudo recibir en BC: ${d.error ?? r.status}`;
         } catch (e: any) { aviso = ` · BC no disponible: ${String(e?.message ?? e)}`; }
       } else if (!orden!.bcNumber) {
         aviso = " · (sin N.º de BC, no se recibió en BC)";
+      }
+      // Si va a BC pero BC no confirmó, no recibimos localmente: queda por recibir.
+      if (orden!.bcNumber && bcLineas.length && !bcOk) {
+        toast(`No se recibió: ${aviso.replace(/^ · /, "") || "BC no confirmó el movimiento"}. La orden queda por recibir para reintentar.`, "error");
+        setGuardando(false);
+        return;
       }
       await registrarRecepcion({
         ordenId: orden!.id, numeroFactura: "", fechaFactura, fechaRecepcion, fechaRegistro,
