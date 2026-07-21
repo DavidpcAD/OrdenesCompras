@@ -87,8 +87,15 @@ export default function RegistrarFacturaPage() {
     () => articulo.reduce((s, l) => s + importeRecibir(l), 0),
     [articulo, recibir]
   );
-  // el flete solo se factura cuando se completa la orden (regla de BC)
-  const fleteAplicado = completaOrden && cargo ? cargo.precioUnitario : 0;
+  // El flete ORIGINAL de la orden (el que puso proveeduría) va en la PRIMERA
+  // factura, repartido entre los materiales que se reciben en esa entrega — no
+  // espera a completar. En entregas siguientes ya está facturado: no se re-cobra
+  // (ahí, si el proveedor trae otro flete, Bodega lo agrega como cargo nuevo).
+  const nadaRecibidoAun = useMemo(
+    () => articulo.every((l) => (l.cantidadRecibida ?? 0) <= 1e-9),
+    [articulo]
+  );
+  const fleteAplicado = nadaRecibidoAun && cargo ? cargo.precioUnitario : 0;
   // Cargo de transporte de ESTA factura/viaje (lo agrega Bodega). Se suma a la
   // factura y se reparte en BC entre lo recibido según el método elegido.
   const cargoNuevoMonto = cargoOn ? (Number(cargoMonto) || 0) : 0;
@@ -139,7 +146,7 @@ export default function RegistrarFacturaPage() {
     const lineas = articulo
       .filter((l) => Number(recibir[l.id] || 0) > 0)
       .map((l) => ({ ordenLineaId: l.id, cantidadRecibida: Number(recibir[l.id]) }));
-    if (completaOrden && cargo) lineas.push({ ordenLineaId: cargo.id, cantidadRecibida: cargo.cantidad });
+    if (nadaRecibidoAun && cargo) lineas.push({ ordenLineaId: cargo.id, cantidadRecibida: cargo.cantidad });
     // Líneas para BC: cantidad recibida en esta factura por item (solo artículos).
     const bcLineas = articulo
       .filter((l) => Number(recibir[l.id] || 0) > 0 && l.articuloId)
@@ -361,7 +368,7 @@ export default function RegistrarFacturaPage() {
                     <td className="ds-num">{num.format(cargo.cantidad)}</td>
                     <td className="ds-num hide-mobile">{num.format(cargo.cantidadRecibida)}</td>
                     <td className="ds-num">—</td>
-                    <td className="ds-num">{completaOrden ? num.format(cargo.cantidad) : "—"}</td>
+                    <td className="ds-num">{nadaRecibidoAun ? num.format(cargo.cantidad) : "—"}</td>
                     <td className="ds-num ds-muted hide-mobile">{money(cargo.precioUnitario, orden.currencyCode)}</td>
                     <td className="ds-num ds-strong">{money(fleteAplicado, orden.currencyCode)}</td>
                   </tr>
@@ -371,18 +378,26 @@ export default function RegistrarFacturaPage() {
           </div>
         </Card>
 
-        {cargo && !completaOrden && (
+        {cargo && nadaRecibidoAun && !completaOrden && (
           <Card flat className="mt-4 ds-form-field--advertencia">
             <div className="row gap-3">
               <span style={{ color: "var(--ds-color-red-200)" }}><IconWarning /></span>
               <div>
-                <div className="ds-strong">El flete corresponde a toda la orden</div>
+                <div className="ds-strong">El flete de la orden se factura en esta entrega</div>
                 <p className="ds-label ds-muted">
-                  Como esta es una entrega parcial, el flete (cargo de producto) no se factura todavía: se aplica
-                  proporcionalmente solo cuando se recibe la orden completa. Las líneas faltantes quedan pendientes en rojo.
+                  Como es la primera recepción, el flete (cargo de producto) de la orden se reparte entre los materiales
+                  que estás recibiendo ahora. Las líneas faltantes quedan pendientes; si su factura trae otro transporte,
+                  lo agregás abajo como cargo nuevo.
                 </p>
               </div>
             </div>
+          </Card>
+        )}
+        {cargo && !nadaRecibidoAun && (
+          <Card flat className="mt-4">
+            <p className="ds-label ds-muted" style={{ margin: 0 }}>
+              El flete de la orden ya se facturó en la primera entrega. Si esta factura trae su propio transporte, agregalo abajo como cargo nuevo.
+            </p>
           </Card>
         )}
 
