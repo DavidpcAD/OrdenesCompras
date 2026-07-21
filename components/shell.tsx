@@ -79,16 +79,6 @@ export function AppShell({ role, children }: { role: Role; children: React.React
   const router = useRouter();
   const pathname = usePathname();
   const [notifOpen, setNotifOpen] = useState(false);
-  // Estado colapsado del sidebar, PERSISTIDO en localStorage: al navegar el
-  // AppShell se re-monta, así que sin persistir se cerraría solo. Default colapsado.
-  const [navCollapsed, setNavCollapsed] = useState<boolean>(() =>
-    typeof window === "undefined" ? true : localStorage.getItem("adelante_oc_nav_collapsed") !== "0"
-  );
-  const toggleNav = () => setNavCollapsed((v) => {
-    const n = !v;
-    try { localStorage.setItem("adelante_oc_nav_collapsed", n ? "1" : "0"); } catch { /* noop */ }
-    return n;
-  });
   // Notificaciones relevantes para este rol (o sin rol específico).
   const notifsRol = notificaciones.filter((n) => !n.rol || n.rol === role);
   const noLeidas = notifsRol.filter((n) => !n.leida).length;
@@ -189,31 +179,23 @@ export function AppShell({ role, children }: { role: Role; children: React.React
       </header>
       <div className="app-body">
         {hasNav && (
-          <aside className={`app-nav${navCollapsed ? " is-collapsed" : ""}`} aria-label="Secciones">
-            {/* Toggle ARRIBA (como ControlUsuarios): abre/cierra y queda fijo — no se
-                oculta solo mientras trabajás. */}
-            <button className={`app-nav__toggle${navCollapsed ? " is-collapsed" : ""}`} onClick={toggleNav}
-              aria-label={navCollapsed ? "Abrir menú" : "Cerrar menú"} title={navCollapsed ? "Abrir" : "Cerrar"}>
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
-                {navCollapsed ? <path d="M13 6l6 6-6 6M5 6l6 6-6 6" /> : <path d="M11 6l-6 6 6 6M19 6l-6 6 6 6" />}
-              </svg>
-            </button>
+          <aside className="app-nav" aria-label="Secciones">
             {meta.nav.map((n) => {
               const Icon = n.icon;
               const active = activeHref === n.href;
               return (
                 <button key={n.href} className={`app-nav__item${active ? " is-active" : ""}`}
-                  title={navCollapsed ? n.label : undefined}
+                  title={n.label}
                   onClick={() => router.push(n.href)} aria-current={active ? "page" : undefined}>
-                  <Icon size={20} />
+                  <span className="app-nav__ic"><Icon size={20} /></span>
                   <span className="app-nav__label">{n.label}</span>
                 </button>
               );
             })}
             <button className="app-nav__item app-nav__salir" style={{ marginTop: "auto" }}
-              title={navCollapsed ? "Salir" : undefined}
+              title="Salir"
               onClick={() => { setRole(null); setUsuario(null); router.replace("/"); }}>
-              <IconLogout size={20} />
+              <span className="app-nav__ic"><IconLogout size={20} /></span>
               <span className="app-nav__label">Salir</span>
             </button>
           </aside>

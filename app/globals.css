@@ -617,13 +617,11 @@ h1, h2, h3, h4, p { margin: 0; }
 .action-bar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 45; background: #fff; box-shadow: 0 -4px 18px #0000001f; padding: var(--ds-space-3) var(--ds-space-6); animation: barUp .2s ease; transition: left .34s cubic-bezier(.34, 1.4, .5, 1); }
 /* No montar la barra de acciones sobre el sidebar: su borde izquierdo sigue el
    ancho del rail (288px expandido / 112px colapsado). Sin nav o en móvil = full. */
-.app-body:has(.app-nav) .action-bar { left: 288px; }
-.app-body:has(.app-nav.is-collapsed) .action-bar { left: 112px; }
+/* El riel reserva 76px a la izquierda; la barra de acciones arranca ahí. */
+.app-body:has(.app-nav) .action-bar { left: 76px; }
 @media (max-width: 760px) {
-  /* En móvil el rail va horizontal arriba → la barra ocupa todo el ancho.
-     Se repiten ambos selectores para empatar especificidad y ganar por orden. */
-  .app-body:has(.app-nav) .action-bar,
-  .app-body:has(.app-nav.is-collapsed) .action-bar { left: 0; }
+  /* En móvil el rail va horizontal arriba → la barra ocupa todo el ancho. */
+  .app-body:has(.app-nav) .action-bar { left: 0; }
 }
 .action-bar__inner { max-width: 1180px; margin: 0 auto; display: flex; align-items: center; justify-content: space-between; gap: var(--ds-space-4); flex-wrap: wrap; }
 @keyframes barUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
@@ -669,57 +667,62 @@ h1, h2, h3, h4, p { margin: 0; }
 .topbar__identity .topbar__avatar { width: 30px; height: 30px; background: var(--ds-color-white); color: var(--ds-color-gray-500); font-size: var(--ds-font-size-body-sm); }
 .topbar__tabs { margin-left: var(--ds-space-4); }
 
-/* ── Layout: barra superior + rail lateral OSCURO (estilo RolesV2) + contenido ── */
+/* ── Layout: barra superior + RIEL lateral (hover-expand overlay) + contenido ── */
 .app-body { display: flex; align-items: flex-start; gap: 0; }
 .app-content { flex: 1; min-width: 0; }
+/* El contenido reserva SOLO el ancho del riel (76px); la expansión va por encima. */
+.app-body:has(.app-nav) .app-content { margin-left: 76px; }
+
+/* Riel angosto de solo íconos (76px). Al pasar el mouse se expande a 264px POR
+   ENCIMA del contenido (fixed, no lo empuja) mostrando las etiquetas. Sin botón. */
 .app-nav {
-  position: sticky; top: 65px; flex-shrink: 0;
-  width: 288px; height: calc(100vh - 65px); overflow-y: auto; overflow-x: hidden;
-  display: flex; flex-direction: column; gap: var(--ds-space-4);
-  padding: var(--ds-space-6) var(--ds-space-5) var(--ds-space-6);
-  background: #2a2a2a; /* columna oscura del DS RolesV2 (.rv-sidebar) */
-  transition: width .34s cubic-bezier(.34, 1.4, .5, 1);
+  position: fixed; top: 65px; left: 0; bottom: 0; z-index: 50;
+  width: 76px; overflow: hidden;
+  display: flex; flex-direction: column; gap: var(--ds-space-3);
+  padding: var(--ds-space-4) 14px;
+  background: #2a2a2a; /* columna oscura del DS */
+  transition: width .28s cubic-bezier(.34, 1.2, .5, 1), box-shadow .2s ease;
 }
-.app-nav.is-collapsed { width: 112px; align-items: center; padding-left: var(--ds-space-4); padding-right: var(--ds-space-4); }
+.app-nav:hover, .app-nav:focus-within {
+  width: 264px; overflow-y: auto; overflow-x: hidden;
+  box-shadow: 10px 0 40px rgba(0, 0, 0, .35);
+}
 .app-nav__item {
-  display: flex; align-items: center; gap: var(--ds-space-3); width: 100%; height: 62px;
-  padding: 0 22px; border: 0; border-radius: 999px; overflow: hidden;
+  display: flex; align-items: center; gap: var(--ds-space-3);
+  width: 100%; height: 50px; padding: 0; justify-content: center;
+  border: 0; border-radius: 999px; overflow: hidden;
   background: var(--ds-color-black); color: var(--ds-color-white);
   font-family: inherit; font-size: var(--ds-font-size-body-md); font-weight: var(--ds-font-weight-semibold);
   cursor: pointer; white-space: nowrap; box-shadow: var(--ds-shadow-02-soft);
-  transition: width .34s cubic-bezier(.34, 1.4, .5, 1), padding .34s cubic-bezier(.34, 1.4, .5, 1), gap .2s ease, box-shadow .12s, background .12s, color .12s;
+  transition: background .12s, color .12s, box-shadow .12s, padding .24s cubic-bezier(.34, 1.2, .5, 1);
 }
-.app-nav__item svg { flex-shrink: 0; }
+.app-nav:hover .app-nav__item, .app-nav:focus-within .app-nav__item { justify-content: flex-start; padding: 0 18px; }
+.app-nav__ic { display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; flex-shrink: 0; }
+.app-nav__ic svg { flex-shrink: 0; }
 .app-nav__item:hover { box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.16); }
 .app-nav__item.is-active { background: var(--ds-color-green-100); color: var(--ds-color-black); }
-.app-nav__label { overflow: hidden; white-space: nowrap; max-width: 200px; opacity: 1; transition: max-width .34s cubic-bezier(.34, 1.4, .5, 1), opacity .22s ease .1s; }
-.app-nav.is-collapsed .app-nav__item { width: 62px; height: 62px; justify-content: center; padding: 0; gap: 0; }
-.app-nav.is-collapsed .app-nav__label { max-width: 0; opacity: 0; transition: max-width .28s cubic-bezier(.34, 1.4, .5, 1), opacity .12s ease; }
-.app-nav__salir:hover { color: var(--ds-color-red-100); box-shadow: 0 0 0 3px color-mix(in srgb, var(--ds-color-red-100) 30%, transparent); }
-/* Toggle de colapsar/fijar ARRIBA del rail (chevrons « / »). El rail colapsado
-   se abre solo al pasar el cursor (hover peek, manejado en el shell). */
-.app-nav__toggle {
-  align-self: flex-end; width: 40px; height: 40px; flex-shrink: 0; margin-bottom: var(--ds-space-1);
-  border: 0; border-radius: 999px; background: rgba(255, 255, 255, 0.08); color: var(--ds-color-white);
-  display: grid; place-items: center; cursor: pointer;
-  transition: background .12s, box-shadow .12s;
+.app-nav__label {
+  overflow: hidden; white-space: nowrap; max-width: 0; opacity: 0;
+  transition: max-width .28s cubic-bezier(.34, 1.2, .5, 1), opacity .18s ease;
 }
-.app-nav.is-collapsed .app-nav__toggle { align-self: center; }
-.app-nav__toggle:hover { background: rgba(255, 255, 255, 0.18); }
+.app-nav:hover .app-nav__label, .app-nav:focus-within .app-nav__label { max-width: 200px; opacity: 1; }
+.app-nav__salir:hover { color: var(--ds-color-red-100); box-shadow: 0 0 0 3px color-mix(in srgb, var(--ds-color-red-100) 30%, transparent); }
 @media (prefers-reduced-motion: reduce) {
-  .app-nav, .app-nav__item, .app-nav__label, .app-nav__toggle { transition: none; }
+  .app-nav, .app-nav__item, .app-nav__label { transition: none; }
 }
 
 @media (max-width: 760px) {
-  /* En móvil el rail pasa a fila horizontal scrollable bajo la barra superior. */
+  /* En móvil: fila horizontal scrollable bajo la topbar (sin riel/hover). */
   .app-body { flex-direction: column; }
-  .app-nav, .app-nav.is-collapsed {
+  .app-body:has(.app-nav) .app-content { margin-left: 0; }
+  .app-nav {
     position: static; flex-direction: row; align-items: center; width: 100%; height: auto;
     overflow-x: auto; overflow-y: visible; padding: var(--ds-space-3) var(--ds-space-4); gap: var(--ds-space-2);
+    box-shadow: none;
   }
-  .app-nav__item, .app-nav.is-collapsed .app-nav__item { width: auto; height: auto; padding: 10px 16px; font-size: var(--ds-font-size-label); }
-  .app-nav.is-collapsed .app-nav__label { display: inline; }
-  .app-nav__toggle { display: none; }
+  .app-nav:hover { width: 100%; box-shadow: none; }
+  .app-nav__item, .app-nav:hover .app-nav__item { width: auto; height: auto; padding: 10px 16px; justify-content: center; font-size: var(--ds-font-size-label); }
+  .app-nav__label, .app-nav:hover .app-nav__label { max-width: none; opacity: 1; }
 }
 /* la acción primaria no lleva la sombra pesada del botón; queda como acción compacta */
 .topbar__action { box-shadow: var(--ds-shadow-01); }
