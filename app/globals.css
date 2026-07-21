@@ -900,6 +900,14 @@ h1, h2, h3, h4, p { margin: 0; }
 .tiles-3 { grid-template-columns: repeat(3, 1fr); }
 @media (max-width: 760px) { .tiles-3 { grid-template-columns: 1fr 1fr; } }
 
+/* ---- Órdenes agrupadas por proveedor ---- */
+.ord-grp { border: 1.5px solid var(--ds-color-gray-100); border-radius: var(--ds-radius-lg); background: var(--ds-color-white); overflow: hidden; }
+.ord-grp-head { display: flex; align-items: center; gap: 12px; width: 100%; padding: 12px 16px; border: 0; background: color-mix(in srgb, var(--ds-color-gray-100) 30%, #fff); cursor: pointer; font: inherit; text-align: left; transition: background .12s; }
+.ord-grp-head:hover { background: var(--ds-color-gray-100); }
+.ord-grp-head__chev { flex-shrink: 0; transition: transform .18s ease; }
+.ord-grp-head.is-collapsed .ord-grp-head__chev { transform: rotate(-90deg); }
+@media (prefers-reduced-motion: reduce) { .ord-grp-head__chev { transition: none; } }
+
 /* ============================================================
    Skeleton loading + motion (Adelante DS)
    ============================================================ */
