@@ -736,10 +736,21 @@ export async function bcRegistrarFactura(
   vendorInvoiceNo: string,
   lines: { itemNo: string; qty: number; variantCode?: string }[],
   postingDate = "", // fecha de registro (ISO yyyy-mm-dd). "" → BC usa la fecha del día
+  // Cargo de transporte de ESTA factura/viaje (opcional). Se agrega a la OC y se
+  // reparte entre lo que se recibe en este registro, según `metodo`.
+  cargo?: { itemChargeNo: string; descripcion?: string; monto: number; metodo?: string },
 ): Promise<string> {
   if (!orderNo) throw new Error("Falta el número de pedido de BC.");
   if (!vendorInvoiceNo) throw new Error("Falta el N.º de factura del proveedor.");
   const cid = await getStdCompanyId();
+  // Cargo de transporte por viaje: se agrega la línea de Cargo (Prod.) a la OC y se
+  // asigna con el método elegido ANTES de registrar (para que quede repartido en
+  // esta factura sobre lo recibido). Debe ir antes del PostInvoice.
+  if (cargo && cargo.itemChargeNo && cargo.monto > 0) {
+    await bcAddChargeLine(orderNo, cargo.itemChargeNo, cargo.descripcion || "Transporte", 1, cargo.monto);
+    try { await bcAssignItemCharges(orderNo, (cargo.metodo || "Amount").trim() || "Amount"); }
+    catch (e) { console.warn(`BC asignar cargo de transporte en ${orderNo} falló:`, e); }
+  }
   const url = `${odataRoot()}/AdelantePO_PostInvoice?company=${encodeURIComponent(cid)}`;
   const res = await bcFetch(url, {
     method: "POST", cache: "no-store",

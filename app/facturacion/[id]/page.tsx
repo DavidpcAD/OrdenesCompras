@@ -1,9 +1,9 @@
 "use client";
 
 import { useParams, useRouter } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { AppShell } from "@/components/shell";
-import { Badge, Button, Card, Field, Input, Modal, useToast } from "@/components/ui";
+import { Badge, Button, Card, Field, Input, Modal, Select, useToast } from "@/components/ui";
 import { IconWarning } from "@/components/icons";
 import { DateField } from "@/components/date-field";
 import { useStore } from "@/lib/store";
@@ -15,6 +15,15 @@ const MOTIVO_NC: { v: MotivoNC; label: string }[] = [
   { v: "menos_cantidad", label: "Menos cantidad" },
   { v: "danado", label: "Material dañado" },
 ];
+
+// Cómo reparte BC el cargo de producto entre las líneas recibidas.
+const METODOS_CARGO: { v: string; label: string }[] = [
+  { v: "Amount", label: "Por importe" },
+  { v: "Equally", label: "Equitativo (por línea)" },
+  { v: "Weight", label: "Por peso" },
+  { v: "Volume", label: "Por volumen" },
+];
+const IVA_CARGO = 0.13; // BC recalcula; esto es solo el estimado que se muestra.
 
 export default function RegistrarFacturaPage() {
   const { id } = useParams<{ id: string }>();
@@ -35,6 +44,18 @@ export default function RegistrarFacturaPage() {
     return init;
   });
   const [numeroFactura, setNumeroFactura] = useState("");
+  // Cargo de transporte de ESTA factura/viaje (opcional). Se agrega a la OC en BC
+  // y se reparte entre lo recibido según el método elegido.
+  const [cargoOn, setCargoOn] = useState(false);
+  const [cargoTipo, setCargoTipo] = useState("");
+  const [cargoMonto, setCargoMonto] = useState("");
+  const [cargoMetodo, setCargoMetodo] = useState("Amount");
+  const [itemCharges, setItemCharges] = useState<{ no: string; descripcion: string }[]>([]);
+  useEffect(() => {
+    fetch("/api/bc/itemcharges").then((r) => (r.ok ? r.json() : { itemCharges: [] }))
+      .then((d) => { const l = d.itemCharges ?? d.charges ?? d.value ?? []; if (Array.isArray(l)) setItemCharges(l.map((c: any) => ({ no: c.no ?? c.code ?? c.number, descripcion: c.descripcion ?? c.description ?? c.no }))); })
+      .catch(() => {});
+  }, []);
   const [fechaFactura, setFechaFactura] = useState(todayISO());
   const [fechaRegistro, setFechaRegistro] = useState(todayISO());
   const [fechaRecepcion, setFechaRecepcion] = useState(todayISO());
@@ -68,13 +89,18 @@ export default function RegistrarFacturaPage() {
   );
   // el flete solo se factura cuando se completa la orden (regla de BC)
   const fleteAplicado = completaOrden && cargo ? cargo.precioUnitario : 0;
-  const totalFactura = subtotalRecibido + fleteAplicado;
+  // Cargo de transporte de ESTA factura/viaje (lo agrega Bodega). Se suma a la
+  // factura y se reparte en BC entre lo recibido según el método elegido.
+  const cargoNuevoMonto = cargoOn ? (Number(cargoMonto) || 0) : 0;
+  const cargoNuevoDesc = itemCharges.find((c) => c.no === cargoTipo)?.descripcion || "Transporte";
+  const totalFactura = subtotalRecibido + fleteAplicado + cargoNuevoMonto;
   // IVA de la factura: por línea según su ivaPct + IVA del flete (BC aplica IVA
   // también al cargo). Así la app muestra el mismo total con IVA que BC.
   const ivaFactura = useMemo(
     () => articulo.reduce((s, l) => s + importeRecibir(l) * ((l.ivaPct ?? 0) / 100), 0)
-      + fleteAplicado * ((cargo?.ivaPct ?? 0) / 100),
-    [articulo, recibir, fleteAplicado, cargo] // eslint-disable-line react-hooks/exhaustive-deps
+      + fleteAplicado * ((cargo?.ivaPct ?? 0) / 100)
+      + cargoNuevoMonto * IVA_CARGO,
+    [articulo, recibir, fleteAplicado, cargo, cargoNuevoMonto] // eslint-disable-line react-hooks/exhaustive-deps
   );
   const totalConIva = totalFactura + ivaFactura;
   const algoRecibido = articulo.some((l) => Number(recibir[l.id] || 0) > 0);
@@ -107,6 +133,7 @@ export default function RegistrarFacturaPage() {
   async function registrar() {
     if (!numeroFactura.trim()) { toast("Ingresá el número de factura.", "error"); return; }
     if (!algoRecibido) { toast("Indicá al menos una cantidad a recibir.", "error"); return; }
+    if (cargoOn && !(cargoTipo && cargoNuevoMonto > 0)) { toast("Completá el tipo y el monto del cargo de transporte (o quitalo).", "error"); return; }
     const excede = articulo.find((l) => Number(recibir[l.id] || 0) > ordenLineaPendiente(l) + 1e-9);
     if (excede) { toast(`No podés recibir más de lo pendiente en "${excede.descripcion}".`, "error"); return; }
     const lineas = articulo
@@ -129,7 +156,10 @@ export default function RegistrarFacturaPage() {
         try {
           const r = await fetch("/api/bc/registrar", {
             method: "POST", headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ orderNo: orden!.bcNumber, vendorInvoiceNo: numeroFactura.trim(), lineas: bcLineas, postingDate: fechaRegistro }),
+            body: JSON.stringify({
+              orderNo: orden!.bcNumber, vendorInvoiceNo: numeroFactura.trim(), lineas: bcLineas, postingDate: fechaRegistro,
+              cargo: cargoOn && cargoTipo && cargoNuevoMonto > 0 ? { itemChargeNo: cargoTipo, descripcion: cargoNuevoDesc, monto: cargoNuevoMonto, metodo: cargoMetodo } : undefined,
+            }),
           });
           const d = await r.json().catch(() => ({}));
           if (r.ok) { aviso = ` · registrada en BC (${d.postedNo ?? "OK"})`; bcOk = true; }
@@ -356,10 +386,47 @@ export default function RegistrarFacturaPage() {
           </Card>
         )}
 
+        {/* Cargo de transporte de ESTE viaje/factura: se agrega a la OC en BC y se
+            reparte entre lo recibido. Para entregas parciales que traen su flete. */}
+        <Card className="mt-4">
+          <div className="row row--between wrap gap-2" style={{ alignItems: "center" }}>
+            <div>
+              <span className="ds-strong">Cargo de transporte de esta factura</span>
+              <p className="ds-label ds-muted" style={{ margin: "2px 0 0" }}>Si esta entrega trae su propio flete, agregalo acá: se registra en la orden de BC y se reparte entre las líneas que estás recibiendo.</p>
+            </div>
+            <label className="row gap-2" style={{ cursor: "pointer" }}>
+              <input type="checkbox" checked={cargoOn} onChange={(e) => setCargoOn(e.target.checked)} />
+              <span className="ds-label">Agregar cargo</span>
+            </label>
+          </div>
+          {cargoOn && (
+            <div className="grid-2 mt-3">
+              <Field label="Tipo de transporte">
+                <Select value={cargoTipo} onChange={(e) => setCargoTipo(e.target.value)}>
+                  <option value="">{itemCharges.length ? "Elegí el tipo…" : "Sin tipos de cargo (revisá BC)"}</option>
+                  {itemCharges.map((c) => <option key={c.no} value={c.no}>{c.no} · {c.descripcion}</option>)}
+                </Select>
+              </Field>
+              <Field label="Monto del transporte (sin IVA)">
+                <Input type="number" min={0} value={cargoMonto} onChange={(e) => setCargoMonto(e.target.value)} placeholder="0" />
+              </Field>
+              <Field label="Cómo se divide">
+                <Select value={cargoMetodo} onChange={(e) => setCargoMetodo(e.target.value)}>
+                  {METODOS_CARGO.map((m) => <option key={m.v} value={m.v}>{m.label}</option>)}
+                </Select>
+              </Field>
+              <div className="ds-body-sm ds-muted" style={{ alignSelf: "flex-end", paddingBottom: 8 }}>
+                Se reparte entre las {articulo.filter((l) => Number(recibir[l.id] || 0) > 0).length} línea(s) que recibís en esta factura.
+              </div>
+            </div>
+          )}
+        </Card>
+
         <div className="row row--between wrap gap-4 mt-6" style={{ alignItems: "flex-end" }}>
           <div className="totals" style={{ minWidth: 320 }}>
             <div className="totals__row"><span>Subtotal recibido</span><span>{money(subtotalRecibido, orden.currencyCode)}</span></div>
-            {fleteAplicado > 0 && <div className="totals__row"><span>Flete</span><span>{money(fleteAplicado, orden.currencyCode)}</span></div>}
+            {fleteAplicado > 0 && <div className="totals__row"><span>Flete (orden)</span><span>{money(fleteAplicado, orden.currencyCode)}</span></div>}
+            {cargoNuevoMonto > 0 && <div className="totals__row"><span>Transporte (esta factura)</span><span>{money(cargoNuevoMonto, orden.currencyCode)}</span></div>}
             <div className="totals__row"><span>IVA</span><span>{money(ivaFactura, orden.currencyCode)}</span></div>
             <div className="totals__row totals__row--grand" style={{ gridColumn: "1 / -1" }}>
               <span>Total factura (con IVA)</span><span>{money(totalConIva, orden.currencyCode)}</span>
