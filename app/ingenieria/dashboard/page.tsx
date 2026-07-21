@@ -1,107 +1,65 @@
 "use client";
 
-import Link from "next/link";
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useMemo } from "react";
+import { useRouter } from "next/navigation";
 import { AppShell } from "@/components/shell";
-import { Button, Card, Skeleton, Tile } from "@/components/ui";
+import { Badge, Card, Tile } from "@/components/ui";
 import { useStore } from "@/lib/store";
-import { num } from "@/lib/helpers";
+import { num, formatDate, destinoCodigo } from "@/lib/helpers";
+import type { PedidoEstado } from "@/lib/types";
 
-type ItemBc = { code: string; descripcion: string; unidad: string; reorderPoint?: number; safetyStock?: number; reorderQty?: number };
-type Existencia = { itemNo: string; cantidad: number };
-type InvEstado = "loading" | "ok" | "error";
+const PED_BADGE: Record<PedidoEstado, { label: string; tone: string }> = {
+  borrador: { label: "Borrador", tone: "gray" },
+  aprobado: { label: "Aprobada", tone: "green" },
+  en_orden: { label: "En orden", tone: "yellow" },
+  cerrado: { label: "Recibida", tone: "green" },
+  devuelto: { label: "Devuelta", tone: "red" },
+};
 
-// Dashboard de Ingeniería (pensado para quien pide material): estado de solicitudes
-// y órdenes + FALTANTES contra inventario (materiales bajo su punto de reorden en BC,
-// considerando lo que ya está en camino, con sugerencia de cuánto pedir).
+// Dashboard de Ingeniería, para quien PIDE materiales (Laura): estado de sus
+// solicitudes, los materiales que más pide y en qué obras. Todo con datos locales
+// (instantáneo, sin consultar el stock de BC).
 export default function DashboardPage() {
-  const { pedidos, ordenes } = useStore();
+  const { pedidos } = useStore();
+  const router = useRouter();
 
-  const k = useMemo(() => {
-    let ordCant = 0, recCant = 0;
-    for (const o of ordenes) for (const l of o.lineas) {
-      if (l.tipo !== "articulo") continue;
-      ordCant += l.cantidad; recCant += l.cantidadRecibida ?? 0;
+  const k = useMemo(() => ({
+    total: pedidos.length,
+    borradores: pedidos.filter((p) => p.estado === "borrador").length,
+    enProceso: pedidos.filter((p) => p.estado === "aprobado" || p.estado === "en_orden").length,
+    recibidas: pedidos.filter((p) => p.estado === "cerrado").length,
+  }), [pedidos]);
+
+  // Materiales que más pide (por cantidad total solicitada).
+  const topMateriales = useMemo(() => {
+    const m = new Map<string, { desc: string; cantidad: number; veces: number; unidad: string }>();
+    for (const p of pedidos) for (const l of p.lineas) {
+      const key = l.articuloId || l.descripcion;
+      const e = m.get(key) ?? { desc: l.descripcion, cantidad: 0, veces: 0, unidad: l.unidad };
+      e.cantidad += l.cantidad; e.veces += 1;
+      m.set(key, e);
     }
-    const pct = ordCant > 0 ? Math.round((recCant / ordCant) * 100) : 0;
-    return { solic: pedidos.length, orden: ordenes.length, pct, pend: Math.max(0, ordCant - recCant) };
-  }, [pedidos, ordenes]);
+    const arr = [...m.values()].sort((a, b) => b.cantidad - a.cantidad).slice(0, 8);
+    const max = arr.reduce((mx, x) => Math.max(mx, x.cantidad), 0) || 1;
+    return { arr, max };
+  }, [pedidos]);
 
-  // Lo que ya está pedido y falta recibir, por artículo (para no sugerir pedir de más).
-  const enCamino = useMemo(() => {
-    const m = new Map<string, number>();
-    for (const o of ordenes) for (const l of o.lineas) {
-      if (l.tipo === "articulo" && l.articuloId) m.set(l.articuloId, (m.get(l.articuloId) ?? 0) + Math.max(0, l.cantidad - (l.cantidadRecibida ?? 0)));
+  // Solicitudes por obra/destino.
+  const porObra = useMemo(() => {
+    const m = new Map<string, { obra: string; solic: number; lineas: number }>();
+    for (const p of pedidos) {
+      const key = destinoCodigo(p);
+      const e = m.get(key) ?? { obra: key, solic: 0, lineas: 0 };
+      e.solic += 1; e.lineas += p.lineas.length;
+      m.set(key, e);
     }
-    return m;
-  }, [ordenes]);
+    return [...m.values()].sort((a, b) => b.solic - a.solic).slice(0, 6);
+  }, [pedidos]);
 
-  // Catálogo de BC (con punto de reorden) + stock total por artículo (agregado por almacén).
-  const [items, setItems] = useState<ItemBc[] | null>(null);
-  const [stockByItem, setStockByItem] = useState<Record<string, number>>({});
-  const [invEstado, setInvEstado] = useState<InvEstado>("loading");
-
-  useEffect(() => {
-    fetch("/api/bc/items")
-      .then((r) => (r.ok ? r.json() : { items: [] }))
-      .then((d) => { if (Array.isArray(d.items)) setItems(d.items.map((i: any) => ({ code: i.code, descripcion: i.descripcion, unidad: i.unidad || "UND", reorderPoint: i.reorderPoint, safetyStock: i.safetyStock, reorderQty: i.reorderQty }))); else setItems([]); })
-      .catch(() => setItems([]));
-  }, []);
-
-  useEffect(() => {
-    let vivo = true;
-    (async () => {
-      setInvEstado("loading");
-      let locs: string[] = [];
-      try {
-        const r = await fetch("/api/bc/almacenes");
-        const d = await r.json().catch(() => ({}));
-        locs = Array.isArray(d.almacenes) ? d.almacenes.map((a: any) => a.codigo).filter(Boolean) : [];
-      } catch { /* sin BC */ }
-      if (!vivo) return;
-      if (!locs.length) { setInvEstado("error"); return; }
-      const map: Record<string, number> = {};
-      let i = 0, okAlguno = false;
-      const worker = async () => {
-        while (vivo && i < locs.length) {
-          const loc = locs[i++];
-          try {
-            const r = await fetch(`/api/bc/existencias?locationCode=${encodeURIComponent(loc)}`);
-            const d = await r.json().catch(() => ({}));
-            if (!r.ok) continue;
-            okAlguno = true;
-            for (const e of (d.existencias ?? []) as Existencia[]) {
-              if (!e.itemNo) continue;
-              map[e.itemNo] = (map[e.itemNo] ?? 0) + (Number(e.cantidad) || 0);
-            }
-          } catch { /* salta */ }
-        }
-      };
-      await Promise.all(Array.from({ length: Math.min(6, locs.length) }, worker));
-      if (!vivo) return;
-      setStockByItem(map);
-      setInvEstado(okAlguno ? "ok" : "error");
-    })();
-    return () => { vivo = false; };
-  }, []);
-
-  const hayReorden = useMemo(() => !!items && items.some((it) => (it.reorderPoint ?? 0) > 0), [items]);
-  const faltantes = useMemo(() => {
-    if (!items) return [];
-    return items
-      .filter((it) => (it.reorderPoint ?? 0) > 0)
-      .map((it) => {
-        const stock = stockByItem[it.code] ?? 0;
-        const camino = enCamino.get(it.code) ?? 0;
-        const proyectado = stock + camino;
-        const reorden = it.reorderPoint ?? 0;
-        const falta = reorden - proyectado;
-        const sugerido = (it.reorderQty ?? 0) > 0 ? Math.max(it.reorderQty!, Math.ceil(falta)) : Math.ceil(falta);
-        return { ...it, stock, camino, proyectado, reorden, falta, sugerido };
-      })
-      .filter((x) => x.falta > 0)
-      .sort((a, b) => a.proyectado / a.reorden - b.proyectado / b.reorden); // más críticos primero
-  }, [items, stockByItem, enCamino]);
+  const recientes = useMemo(
+    () => [...pedidos].sort((a, b) => (b.fecha || "").localeCompare(a.fecha || "")).slice(0, 6),
+    [pedidos]
+  );
 
   return (
     <AppShell role="ingenieria">
@@ -109,94 +67,94 @@ export default function DashboardPage() {
         <div className="page__head">
           <div className="page__title">
             <h1 className="ds-heading">Dashboard</h1>
-            <p className="ds-muted">Resumen de solicitudes, órdenes y recepción, y los materiales que conviene pedir según el inventario de Business Central.</p>
+            <p className="ds-muted">Tus solicitudes de material: estado, lo que más pedís y en qué obras.</p>
           </div>
         </div>
 
         <div className="tiles mt-2">
-          <Tile value={k.solic} label="Solicitudes" className="ds-reveal" style={{ "--ds-reveal-i": 0 } as React.CSSProperties} />
-          <Tile value={k.orden} label="Órdenes de compra" accent="var(--ds-color-yellow)" className="ds-reveal" style={{ "--ds-reveal-i": 1 } as React.CSSProperties} />
-          <Tile value={`${k.pct}%`} label="Recibido (global)" accent="var(--ds-color-green-200)" className="ds-reveal" style={{ "--ds-reveal-i": 2 } as React.CSSProperties} />
-          <Tile value={k.pend} label="Pendiente por recibir" accent="var(--ds-color-red-100)" className="ds-reveal" style={{ "--ds-reveal-i": 3 } as React.CSSProperties} />
+          <Tile value={k.total} label="Solicitudes" className="ds-reveal" style={{ "--ds-reveal-i": 0 } as React.CSSProperties} />
+          <Tile value={k.borradores} label="Borradores (por enviar)" accent="var(--ds-color-yellow)" className="ds-reveal" style={{ "--ds-reveal-i": 1 } as React.CSSProperties} />
+          <Tile value={k.enProceso} label="En proceso" accent="var(--ds-color-green-100)" className="ds-reveal" style={{ "--ds-reveal-i": 2 } as React.CSSProperties} />
+          <Tile value={k.recibidas} label="Recibidas" accent="var(--ds-color-green-200)" className="ds-reveal" style={{ "--ds-reveal-i": 3 } as React.CSSProperties} />
         </div>
 
-        <div className="row row--between wrap gap-3" style={{ alignItems: "baseline", marginTop: 28 }}>
-          <h2 className="ds-subtitle">Faltantes y sugerencia de reorden</h2>
-          {invEstado === "ok" && hayReorden && <span className="ds-muted ds-body-sm">Contra el stock real de BC + lo que ya está en camino.</span>}
-        </div>
-
-        {invEstado === "loading" && (
-          <Card className="mt-2 ds-reveal" style={{ padding: 0, overflow: "hidden" }}>
-            <div style={{ padding: "12px 16px", borderBottom: "1.5px solid var(--ds-color-gray-100)" }}>
-              <Skeleton width={240} height={13} />
-            </div>
-            <div className="col" style={{ padding: "0 16px" }}>
-              {[0, 1, 2, 3].map((i) => (
-                <div key={i} className="row row--between gap-4" style={{ alignItems: "center", padding: "13px 0", borderBottom: "1px solid var(--ds-color-gray-100)" }}>
-                  <Skeleton width={`${46 - i * 4}%`} height={13} style={{ maxWidth: 340 }} />
-                  <div className="row gap-6" style={{ alignItems: "center" }}>
-                    <Skeleton width={40} height={13} />
-                    <Skeleton width={40} height={13} />
-                    <Skeleton width={64} height={30} pill />
+        {/* Materiales que más pido */}
+        <Card className="mt-6 ds-reveal">
+          <h2 className="ds-subtitle" style={{ marginBottom: 4 }}>Materiales que más pedís</h2>
+          <p className="ds-muted ds-body-sm" style={{ marginTop: 0, marginBottom: 12 }}>Por cantidad total solicitada en todas tus solicitudes.</p>
+          {topMateriales.arr.length === 0 ? (
+            <div className="empty" style={{ padding: "12px 0" }}>Aún no hay solicitudes. Creá la primera en “Mis solicitudes”.</div>
+          ) : (
+            <div className="col">
+              {topMateriales.arr.map((m, i) => (
+                <div key={m.desc + i} className="col" style={{ gap: 6, padding: "10px 0", borderTop: i ? "1px solid var(--ds-color-gray-100)" : "none" }}>
+                  <div className="row row--between gap-3">
+                    <span className="ds-strong ds-truncate" title={m.desc} style={{ maxWidth: "70%" }}>{m.desc}</span>
+                    <span className="ds-strong" style={{ whiteSpace: "nowrap" }}>{num.format(m.cantidad)} {m.unidad}</span>
+                  </div>
+                  <div className="row gap-3" style={{ alignItems: "center" }}>
+                    <div style={{ flex: 1, height: 8, borderRadius: 999, background: "var(--ds-color-gray-100)", overflow: "hidden" }}>
+                      <div style={{ height: "100%", width: `${Math.round((m.cantidad / topMateriales.max) * 100)}%`, background: "var(--ds-color-green-100)", borderRadius: 999 }} />
+                    </div>
+                    <span className="ds-muted ds-body-sm" style={{ whiteSpace: "nowrap" }}>{m.veces} pedido{m.veces === 1 ? "" : "s"}</span>
                   </div>
                 </div>
               ))}
             </div>
+          )}
+        </Card>
+
+        <div className="grid-2 mt-4">
+          {/* Por obra */}
+          <Card className="ds-reveal">
+            <h2 className="ds-subtitle" style={{ marginBottom: 12 }}>Solicitudes por obra</h2>
+            {porObra.length === 0 ? (
+              <div className="empty" style={{ padding: "12px 0" }}>Sin datos.</div>
+            ) : (
+              <div className="ds-table-wrap" style={{ boxShadow: "none" }}>
+                <table className="ds-table">
+                  <thead><tr><th>Obra / destino</th><th className="ds-num">Solicitudes</th><th className="ds-num">Líneas</th></tr></thead>
+                  <tbody>
+                    {porObra.map((o) => (
+                      <tr key={o.obra}>
+                        <td className="ds-strong">{o.obra}</td>
+                        <td className="ds-num">{num.format(o.solic)}</td>
+                        <td className="ds-num ds-muted">{num.format(o.lineas)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </Card>
-        )}
-        {invEstado === "error" && (
-          <Card className="mt-2 ds-reveal" style={{ borderLeft: "4px solid var(--ds-color-red-100)" }}>
-            <div className="ds-strong">No se pudo consultar el stock de BC</div>
-            <div className="ds-muted ds-body-sm" style={{ marginTop: 4 }}>Business Central no respondió o <code>inventoryByLocation</code> no está disponible en este entorno.</div>
+
+          {/* Actividad reciente */}
+          <Card className="ds-reveal">
+            <h2 className="ds-subtitle" style={{ marginBottom: 12 }}>Actividad reciente</h2>
+            {recientes.length === 0 ? (
+              <div className="empty" style={{ padding: "12px 0" }}>Sin solicitudes todavía.</div>
+            ) : (
+              <div className="ds-table-wrap" style={{ boxShadow: "none" }}>
+                <table className="ds-table">
+                  <thead><tr><th>Solicitud</th><th>Fecha</th><th className="ds-num">Líneas</th><th>Estado</th></tr></thead>
+                  <tbody>
+                    {recientes.map((p) => {
+                      const b = PED_BADGE[p.estado] ?? { label: p.estado, tone: "gray" };
+                      return (
+                        <tr key={p.id} className="is-clickable" style={{ cursor: "pointer" }} onClick={() => router.push(`/ingenieria/${p.id}`)}>
+                          <td className="ds-strong">{p.numero}<div className="ds-body-sm ds-muted">{destinoCodigo(p)}</div></td>
+                          <td className="ds-body-sm">{formatDate(p.fecha)}</td>
+                          <td className="ds-num">{p.lineas.length}</td>
+                          <td><Badge tone={b.tone}>{b.label}</Badge></td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </Card>
-        )}
-        {invEstado === "ok" && !hayReorden && (
-          <Card className="mt-2 ds-reveal" style={{ borderLeft: "4px solid var(--ds-color-yellow)" }}>
-            <div className="ds-strong">Ningún artículo tiene punto de reorden configurado en BC</div>
-            <div className="ds-muted ds-body-sm" style={{ marginTop: 4 }}>Configurá el <strong>Punto de reorden</strong> (y opcionalmente la cantidad de reorden) en la ficha de cada ítem en Business Central para ver acá los materiales por reponer.</div>
-          </Card>
-        )}
-        {invEstado === "ok" && hayReorden && faltantes.length === 0 && (
-          <Card className="mt-2 ds-reveal" style={{ borderLeft: "4px solid var(--ds-color-green-200)" }}>
-            <div className="ds-strong">Todo cubierto ✅</div>
-            <div className="ds-muted ds-body-sm" style={{ marginTop: 4 }}>Ningún material está por debajo de su punto de reorden (contando lo que ya está en camino).</div>
-          </Card>
-        )}
-        {invEstado === "ok" && faltantes.length > 0 && (
-          <Card className="mt-2 ds-reveal" style={{ padding: 0, overflow: "hidden" }}>
-            <div className="ds-body-sm" style={{ padding: "12px 16px", borderBottom: "1.5px solid var(--ds-color-gray-100)", background: "color-mix(in srgb, var(--ds-color-red-100) 6%, #fff)" }}>
-              <span className="ds-strong">{faltantes.length}</span> material(es) por debajo de su punto de reorden.
-            </div>
-            <div className="ds-table-wrap" style={{ boxShadow: "none" }}>
-              <table className="ds-table">
-                <thead>
-                  <tr>
-                    <th>Material</th>
-                    <th className="ds-num">Stock</th>
-                    <th className="ds-num">En camino</th>
-                    <th className="ds-num">Reorden</th>
-                    <th className="ds-num">Falta</th>
-                    <th className="ds-num">Sugerido pedir</th>
-                    <th></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {faltantes.map((x) => (
-                    <tr key={x.code}>
-                      <td><span className="ds-strong">{x.code}</span> <span className="ds-muted">{x.descripcion}</span></td>
-                      <td className="ds-num" style={{ color: x.stock <= 0 ? "var(--ds-color-red-200)" : undefined }}>{num.format(x.stock)}</td>
-                      <td className="ds-num ds-muted">{x.camino > 0 ? num.format(x.camino) : "—"}</td>
-                      <td className="ds-num">{num.format(x.reorden)}</td>
-                      <td className="ds-num ds-strong" style={{ color: "var(--ds-color-red-200)" }}>{num.format(x.falta)}</td>
-                      <td className="ds-num ds-strong">{num.format(x.sugerido)} {x.unidad}</td>
-                      <td className="ds-num"><Link href="/ingenieria/nuevo"><Button variant="outline" size="sm">Pedir</Button></Link></td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </Card>
-        )}
+        </div>
       </main>
     </AppShell>
   );
