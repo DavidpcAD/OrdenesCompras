@@ -13,7 +13,8 @@ type SubPartida = { id: number; codigo: string; nombre: string; partidaId: numbe
 type Clasif = { id: number; nombre: string; partidaId: number | null; subPartidaId: number | null };
 type Wbs = { etapas: Etapa[]; partidas: Partida[]; subpartidas: SubPartida[]; clasificaciones: Clasif[] };
 type Linea = { code: string; descripcion?: string; cantidad: number; unidad?: string; obraCodigo?: string };
-type Plantilla = { id: number; nombre: string; creadoPor: string; idClasificacion: number | null; lineas: Linea[] };
+type TipoPlantilla = "general" | "bodega";
+type Plantilla = { id: number; nombre: string; creadoPor: string; idClasificacion: number | null; lineas: Linea[]; tipo?: TipoPlantilla };
 type ItemBc = { code: string; descripcion: string; unidad: string };
 
 export default function PlantillasPage() {
@@ -23,6 +24,7 @@ export default function PlantillasPage() {
   const [wbs, setWbs] = useState<Wbs>({ etapas: [], partidas: [], subpartidas: [], clasificaciones: [] });
   const [items, setItems] = useState<ItemBc[]>([]);
   const [buscar, setBuscar] = useState(""); const [fPartida, setFPartida] = useState("");
+  const [fTipo, setFTipo] = useState<"todas" | TipoPlantilla>("todas");
   const [editor, setEditor] = useState<Plantilla | "new" | null>(null);
 
   async function recargar() {
@@ -40,6 +42,9 @@ export default function PlantillasPage() {
       .catch(() => {});
   }, []);
 
+  // Bodega = sin amarre a clasificación. Compatibilidad: plantillas viejas sin tipo
+  // que no tengan clasificación se tratan como bodega.
+  const esBodega = (pl: Plantilla) => pl.tipo === "bodega" || (!pl.tipo && !pl.idClasificacion);
   const clasDe = (id: number | null) => wbs.clasificaciones.find((c) => c.id === id);
   const ctxDeClas = (c?: Clasif) => {
     if (!c) return { partida: undefined as Partida | undefined, etapa: undefined as Etapa | undefined, sub: undefined as SubPartida | undefined };
@@ -52,6 +57,7 @@ export default function PlantillasPage() {
   const visibles = useMemo(() => {
     const q = buscar.trim().toLowerCase();
     return plantillas.filter((pl) => {
+      if (fTipo !== "todas" && (fTipo === "bodega") !== esBodega(pl)) return false;
       const c = clasDe(pl.idClasificacion); const { partida } = ctxDeClas(c);
       if (fPartida && String(partida?.id) !== fPartida) return false;
       if (!q) return true;
@@ -65,7 +71,7 @@ export default function PlantillasPage() {
       if (ca !== cb) return ca.localeCompare(cb, "es", { numeric: true });
       return a.nombre.localeCompare(b.nombre, "es", { numeric: true });
     });
-  }, [plantillas, buscar, fPartida, wbs]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [plantillas, buscar, fPartida, fTipo, wbs]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function borrar(pl: Plantilla) {
     if (!confirm(`¿Borrar la plantilla "${pl.nombre}"?`)) return;
@@ -82,7 +88,7 @@ export default function PlantillasPage() {
         <div className="page__head">
           <div className="page__title">
             <h1 className="ds-heading">Plantillas de pedido</h1>
-            <p className="ds-muted">Cada plantilla trae sus líneas base. La clasificación es opcional: si la asignás, alimenta la matriz por obra; si no, la plantilla queda disponible para cualquier pedido.</p>
+            <p className="ds-muted"><strong>Generales</strong>: amarradas a etapa · partida · clasificación (alimentan la matriz por obra). <strong>Bodega</strong>: solo lista de materiales, sin clasificación.</p>
           </div>
           <Button onClick={() => setEditor("new")}>+ Nueva plantilla</Button>
         </div>
@@ -90,8 +96,15 @@ export default function PlantillasPage() {
         <Card className="mt-2">
           <div className="grid-2">
             <Field label="Buscar plantilla"><Input value={buscar} onChange={(e) => setBuscar(e.target.value)} placeholder="Nombre o clasificación…" /></Field>
+            <Field label="Tipo">
+              <Select value={fTipo} onChange={(e) => setFTipo(e.target.value as "todas" | TipoPlantilla)}>
+                <option value="todas">Todas</option>
+                <option value="general">Generales</option>
+                <option value="bodega">Bodega</option>
+              </Select>
+            </Field>
             <Field label="Partida">
-              <Select value={fPartida} onChange={(e) => setFPartida(e.target.value)}>
+              <Select value={fPartida} onChange={(e) => setFPartida(e.target.value)} disabled={fTipo === "bodega"}>
                 <option value="">Todas las partidas</option>
                 {wbs.partidas.map((p) => <option key={p.id} value={p.id}>{p.codigo} · {p.nombre}</option>)}
               </Select>
@@ -114,8 +127,9 @@ export default function PlantillasPage() {
                   </span>
                 </div>
                 <div className="row gap-2 wrap mt-2">
-                  {etapa && <Badge tone="gray">{etapa.nombre}</Badge>}
-                  {c ? <Badge tone="green">{c.nombre}</Badge> : <Badge tone="red">Sin clasificación</Badge>}
+                  <Badge tone={esBodega(pl) ? "yellow" : "green"}>{esBodega(pl) ? "Bodega" : "General"}</Badge>
+                  {!esBodega(pl) && etapa && <Badge tone="gray">{etapa.nombre}</Badge>}
+                  {!esBodega(pl) && (c ? <Badge tone="green">{c.nombre}</Badge> : <Badge tone="red">Sin clasificación</Badge>)}
                 </div>
                 <div className="ds-body-sm ds-muted mt-2">{pl.lineas.length} línea(s){partida ? ` · Partida ${partida.codigo}` : ""}</div>
               </Card>
@@ -144,6 +158,7 @@ function PlantillaEditor({ plantilla, wbs, items, usuario, onClose, onSaved }: {
   const partidasEt = wbs.partidas.filter((p) => String(p.etapaId) === etapaId);
   const [partidaId, setPartidaId] = useState(String(partInicial?.id ?? partidasEt[0]?.id ?? ""));
   const [idClas, setIdClas] = useState(plantilla?.idClasificacion ? String(plantilla.idClasificacion) : "");
+  const [tipo, setTipo] = useState<TipoPlantilla>(plantilla?.tipo ?? (plantilla && !plantilla.idClasificacion ? "bodega" : "general"));
   const [nombre, setNombre] = useState(plantilla?.nombre ?? "");
   const [lineas, setLineas] = useState<Linea[]>(plantilla?.lineas ?? []);
   const [qaCode, setQaCode] = useState(""); const [qaQty, setQaQty] = useState("");
@@ -188,9 +203,10 @@ function PlantillaEditor({ plantilla, wbs, items, usuario, onClose, onSaved }: {
 
   async function guardar() {
     if (!nombre.trim()) { toast("Poné un nombre.", "error"); return; }
+    if (tipo === "general" && !idClas) { toast("Elegí la clasificación (o cambiá a plantilla de bodega).", "error"); return; }
     setGuardando(true);
     try {
-      const body = { nombre: nombre.trim(), idClasificacion: idClas ? Number(idClas) : null, lineas, creadoPor: usuario, usuario };
+      const body = { nombre: nombre.trim(), tipo, idClasificacion: tipo === "bodega" ? null : (idClas ? Number(idClas) : null), lineas, creadoPor: usuario, usuario };
       const r = plantilla
         ? await fetch(`/api/plantillas/${plantilla.id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })
         : await fetch("/api/plantillas", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
@@ -202,9 +218,29 @@ function PlantillaEditor({ plantilla, wbs, items, usuario, onClose, onSaved }: {
 
   return (
     <Modal title={plantilla ? "Editar plantilla" : "Nueva plantilla de pedido"} onClose={onClose}
-      footer={<><Button variant="outline" onClick={onClose}>Cancelar</Button><Button onClick={guardar} disabled={guardando || !nombre.trim()}>{guardando ? "Guardando…" : "Guardar plantilla"}</Button></>}>
+      footer={<><Button variant="outline" onClick={onClose}>Cancelar</Button><Button onClick={guardar} disabled={guardando || !nombre.trim() || (tipo === "general" && !idClas)}>{guardando ? "Guardando…" : "Guardar plantilla"}</Button></>}>
+      {/* Tipo de plantilla: general (amarrada a clasificación) vs bodega (solo materiales) */}
+      <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
+        {([["general", "General", "Etapa · partida · clasificación"], ["bodega", "Bodega", "Solo lista de materiales"]] as const).map(([t, titulo, hint]) => {
+          const active = tipo === t;
+          return (
+            <button key={t} type="button" onClick={() => setTipo(t)}
+              style={{
+                flex: 1, textAlign: "left", cursor: "pointer", padding: "10px 14px", borderRadius: 10,
+                display: "flex", flexDirection: "column", gap: 2,
+                border: `1.5px solid ${active ? "var(--ds-color-black)" : "var(--ds-color-gray-100)"}`,
+                background: active ? "var(--ds-color-black)" : "var(--ds-color-white)",
+                color: active ? "var(--ds-color-white)" : "inherit",
+              }}>
+              <span className="ds-strong">{titulo}</span>
+              <span className="ds-body-sm" style={{ opacity: 0.75 }}>{hint}</span>
+            </button>
+          );
+        })}
+      </div>
       <div className="grid-2">
-        <Field label="Nombre de la plantilla"><Input value={nombre} onChange={(e) => setNombre(e.target.value)} placeholder="Ej. Pisos porcelanato 60x120" /></Field>
+        <Field label="Nombre de la plantilla"><Input value={nombre} onChange={(e) => setNombre(e.target.value)} placeholder={tipo === "bodega" ? "Ej. Reposición bodega general" : "Ej. Pisos porcelanato 60x120"} /></Field>
+        {tipo === "general" && <>
         <Field label="Etapa">
           <Select value={etapaId} onChange={(e) => { setEtapaId(e.target.value); const f = wbs.partidas.find((p) => String(p.etapaId) === e.target.value); setPartidaId(String(f?.id ?? "")); setIdClas(""); }}>
             {wbs.etapas.map((e) => <option key={e.id} value={e.id}>{e.codigo} · {e.nombre}</option>)}
@@ -215,12 +251,13 @@ function PlantillaEditor({ plantilla, wbs, items, usuario, onClose, onSaved }: {
             {partidasEt.map((p) => <option key={p.id} value={p.id}>{p.codigo} · {p.nombre}</option>)}
           </Select>
         </Field>
-        <Field label="Clasificación (opcional)">
+        <Field label="Clasificación">
           <Select value={idClas} onChange={(e) => setIdClas(e.target.value)}>
-            <option value="">Sin clasificación</option>
+            <option value="">{clasOpciones.length ? "Elegí la clasificación…" : "Sin clasificaciones en esta partida"}</option>
             {clasOpciones.map((c) => <option key={c.id} value={c.id}>{c.nombre}</option>)}
           </Select>
         </Field>
+        </>}
       </div>
 
       <div className="mt-4">
