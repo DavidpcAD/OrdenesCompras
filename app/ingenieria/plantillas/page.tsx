@@ -148,6 +148,28 @@ function PlantillaEditor({ plantilla, wbs, items, usuario, onClose, onSaved }: {
   const [lineas, setLineas] = useState<Linea[]>(plantilla?.lineas ?? []);
   const [qaCode, setQaCode] = useState(""); const [qaQty, setQaQty] = useState("");
   const [guardando, setGuardando] = useState(false);
+  // Stock actual en Business Central por material (código → total | null s/d | "…" cargando).
+  const [stockBc, setStockBc] = useState<Record<string, number | null | "loading">>({});
+  const codigosLineas = useMemo(() => [...new Set(lineas.map((l) => l.code).filter(Boolean))].join(","), [lineas]);
+  useEffect(() => {
+    const codes = codigosLineas ? codigosLineas.split(",") : [];
+    const faltan = codes.filter((c) => !(c in stockBc));
+    if (!faltan.length) return;
+    setStockBc((s) => { const n = { ...s }; for (const c of faltan) n[c] = "loading"; return n; });
+    let vivo = true;
+    Promise.all(faltan.map(async (c) => {
+      try {
+        const r = await fetch(`/api/bc/existencias?itemNo=${encodeURIComponent(c)}`);
+        const d = await r.json().catch(() => ({}));
+        const tot = r.ok && Array.isArray(d.existencias)
+          ? d.existencias.reduce((a: number, e: any) => a + (Number(e.cantidad) || 0), 0)
+          : null;
+        return [c, tot] as const;
+      } catch { return [c, null] as const; }
+    })).then((pares) => { if (vivo) setStockBc((s) => ({ ...s, ...Object.fromEntries(pares) })); });
+    return () => { vivo = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [codigosLineas]);
 
   // Clasificaciones bajo la partida elegida (directas o vía sus sub-partidas).
   const clasOpciones = useMemo(() => {
@@ -214,17 +236,27 @@ function PlantillaEditor({ plantilla, wbs, items, usuario, onClose, onSaved }: {
         </div>
         <div className="ds-table-wrap" style={{ boxShadow: "none", border: "1.5px solid var(--ds-color-gray-100)" }}>
           <table className="ds-table">
-            <thead><tr><th>Artículo</th><th>Unidad</th><th className="ds-num">Cantidad</th><th></th></tr></thead>
+            <thead><tr><th>Artículo</th><th>Unidad</th><th className="ds-num">Stock BC</th><th className="ds-num">Cantidad</th><th></th></tr></thead>
             <tbody>
-              {lineas.length === 0 && <tr><td colSpan={4}><div className="empty">Sin líneas. Agregá artículos.</div></td></tr>}
-              {lineas.map((l, i) => (
+              {lineas.length === 0 && <tr><td colSpan={5}><div className="empty">Sin líneas. Agregá artículos.</div></td></tr>}
+              {lineas.map((l, i) => {
+                const st = stockBc[l.code];
+                return (
                 <tr key={i}>
                   <td><span className="ds-strong ds-body-sm">{l.code}</span> <span className="ds-muted">— {l.descripcion}</span></td>
                   <td className="ds-muted">{l.unidad ?? "—"}</td>
+                  <td className="ds-num">
+                    {st === undefined || st === "loading"
+                      ? <span className="ds-muted">…</span>
+                      : st === null
+                        ? <span className="ds-muted" title="Sin conexión a Business Central">s/d</span>
+                        : <span className={st > 0 ? "ds-strong" : "ds-muted"}>{st.toLocaleString("es-CR")}</span>}
+                  </td>
                   <td className="ds-num"><Input type="number" min={0} value={l.cantidad} onChange={(e) => setLinea(i, { cantidad: Number(e.target.value) })} style={{ width: 90, textAlign: "right", padding: "6px 10px" }} /></td>
                   <td className="ds-num"><button className="icon-btn icon-btn--quitar" title="Quitar" onClick={() => delLinea(i)}>×</button></td>
                 </tr>
-              ))}
+                );
+              })}
             </tbody>
           </table>
         </div>
