@@ -459,6 +459,30 @@ export async function bcUltimoPrecioFacturado(itemNo: string, vendorNo: string):
   }
 }
 
+export type BcOrdenTotales = { subtotal: number; iva: number; total: number; currencyCode: string };
+
+// Totales del Pedido de compra CALCULADOS POR BC (fuente de verdad): subtotal
+// (excl. IVA, incluye cargos), IVA total y total con IVA. La app los MUESTRA tal
+// cual para que la orden se vea igual que en BC (en vez de recalcular y desalinearse).
+// Defensiva: null si BC no responde o el pedido no existe todavía.
+export async function bcOrdenTotales(orderNo: string): Promise<BcOrdenTotales | null> {
+  if (!orderNo) return null;
+  try {
+    const cid = await getStdCompanyId();
+    const filtro = `$filter=${encodeURIComponent(`number eq '${odataStr(orderNo)}'`)}&$select=totalAmountExcludingTax,totalTaxAmount,totalAmountIncludingTax,currencyCode&$top=1`;
+    const res = await bcFetch(`${stdRoot()}/companies(${cid})/purchaseOrders?${filtro}`, { cache: "no-store" });
+    if (!res.ok) return null;
+    const po = ((await res.json())?.value ?? [])[0];
+    if (!po) return null;
+    return {
+      subtotal: Number(po.totalAmountExcludingTax) || 0,
+      iva: Number(po.totalTaxAmount) || 0,
+      total: Number(po.totalAmountIncludingTax) || 0,
+      currencyCode: po.currencyCode || "",
+    };
+  } catch { return null; }
+}
+
 export type BcVariante = { code: string; descripcion: string; id?: string };
 
 // Resultado de cargar variantes. `disponible=false` significa que NO se pudo

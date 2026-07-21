@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Badge, Card, useToast } from "@/components/ui";
 import { OrderLinesTable } from "@/components/order-lines";
@@ -29,6 +29,17 @@ export function OrdenDetalle({
   const toast = useToast();
   const [verFactura, setVerFactura] = useState<string | null>(null);
   const [relanzando, setRelanzando] = useState(false);
+  // Totales calculados por BC (fuente de verdad). Se leen si la orden ya está en BC.
+  const [bcTot, setBcTot] = useState<{ subtotal: number; iva: number; total: number; currencyCode: string } | null>(null);
+  useEffect(() => {
+    if (!orden.bcNumber) { setBcTot(null); return; }
+    let vivo = true;
+    fetch(`/api/bc/orden-totales?orderNo=${encodeURIComponent(orden.bcNumber)}`)
+      .then((r) => (r.ok ? r.json() : { totales: null }))
+      .then((d) => { if (vivo && d?.totales) setBcTot(d.totales); })
+      .catch(() => { /* sin BC: se muestran los totales locales */ });
+    return () => { vivo = false; };
+  }, [orden.bcNumber]);
 
   // Reintenta el lanzamiento en BC de un pedido YA creado (no duplica). Ahora
   // RE-SINCRONIZA las líneas (precio + variante) antes del Release, para que las
@@ -108,10 +119,22 @@ export function OrdenDetalle({
 
       <div className="row mt-6" style={{ justifyContent: "flex-end" }}>
         <div className="totals" style={{ minWidth: 320 }}>
-          <div className="totals__row"><span>Subtotal artículos</span><span>{money(subtotal, orden.currencyCode)}</span></div>
-          <div className="totals__row"><span>Flete</span><span>{money(flete, orden.currencyCode)}</span></div>
-          <div className="totals__row"><span>IVA</span><span>{money(iva, orden.currencyCode)}</span></div>
-          <div className="totals__row totals__row--grand" style={{ gridColumn: "1 / -1" }}><span>Total orden</span><span>{money(subtotal + flete + iva, orden.currencyCode)}</span></div>
+          {bcTot ? (
+            <>
+              <div className="totals__row"><span>Subtotal (excl. IVA)</span><span>{money(bcTot.subtotal, bcTot.currencyCode || orden.currencyCode)}</span></div>
+              <div className="totals__row"><span>IVA</span><span>{money(bcTot.iva, bcTot.currencyCode || orden.currencyCode)}</span></div>
+              <div className="totals__row totals__row--grand" style={{ gridColumn: "1 / -1" }}><span>Total (con IVA)</span><span>{money(bcTot.total, bcTot.currencyCode || orden.currencyCode)}</span></div>
+              <div style={{ gridColumn: "1 / -1" }} className="ds-body-sm ds-muted">Totales calculados por Business Central ✓</div>
+            </>
+          ) : (
+            <>
+              <div className="totals__row"><span>Subtotal artículos</span><span>{money(subtotal, orden.currencyCode)}</span></div>
+              <div className="totals__row"><span>Flete</span><span>{money(flete, orden.currencyCode)}</span></div>
+              <div className="totals__row"><span>IVA (materiales)</span><span>{money(iva, orden.currencyCode)}</span></div>
+              <div className="totals__row totals__row--grand" style={{ gridColumn: "1 / -1" }}><span>Total orden</span><span>{money(subtotal + flete + iva, orden.currencyCode)}</span></div>
+              {orden.bcNumber && <div style={{ gridColumn: "1 / -1" }} className="ds-body-sm ds-muted">Estimado local · los totales definitivos los calcula BC.</div>}
+            </>
+          )}
         </div>
       </div>
 
