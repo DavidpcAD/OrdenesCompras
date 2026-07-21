@@ -69,6 +69,14 @@ export default function RegistrarFacturaPage() {
   // el flete solo se factura cuando se completa la orden (regla de BC)
   const fleteAplicado = completaOrden && cargo ? cargo.precioUnitario : 0;
   const totalFactura = subtotalRecibido + fleteAplicado;
+  // IVA de la factura: por línea según su ivaPct + IVA del flete (BC aplica IVA
+  // también al cargo). Así la app muestra el mismo total con IVA que BC.
+  const ivaFactura = useMemo(
+    () => articulo.reduce((s, l) => s + importeRecibir(l) * ((l.ivaPct ?? 0) / 100), 0)
+      + fleteAplicado * ((cargo?.ivaPct ?? 0) / 100),
+    [articulo, recibir, fleteAplicado, cargo] // eslint-disable-line react-hooks/exhaustive-deps
+  );
+  const totalConIva = totalFactura + ivaFactura;
   const algoRecibido = articulo.some((l) => Number(recibir[l.id] || 0) > 0);
   const fechasCoinciden = fechaFactura === fechaRegistro;
 
@@ -351,9 +359,10 @@ export default function RegistrarFacturaPage() {
         <div className="row row--between wrap gap-4 mt-6" style={{ alignItems: "flex-end" }}>
           <div className="totals" style={{ minWidth: 320 }}>
             <div className="totals__row"><span>Subtotal recibido</span><span>{money(subtotalRecibido, orden.currencyCode)}</span></div>
-            <div className="totals__row"><span>Flete</span><span>{money(fleteAplicado, orden.currencyCode)}</span></div>
+            {fleteAplicado > 0 && <div className="totals__row"><span>Flete</span><span>{money(fleteAplicado, orden.currencyCode)}</span></div>}
+            <div className="totals__row"><span>IVA</span><span>{money(ivaFactura, orden.currencyCode)}</span></div>
             <div className="totals__row totals__row--grand" style={{ gridColumn: "1 / -1" }}>
-              <span>Total factura</span><span>{money(totalFactura, orden.currencyCode)}</span>
+              <span>Total factura (con IVA)</span><span>{money(totalConIva, orden.currencyCode)}</span>
             </div>
             <div style={{ gridColumn: "1 / -1" }}>
               {completaOrden ? <Badge tone="green">Recepción completa</Badge> : <Badge tone="yellow">Recepción parcial — la orden queda abierta</Badge>}
@@ -376,7 +385,8 @@ export default function RegistrarFacturaPage() {
             </>}
           >
             <p className="ds-label">Factura del proveedor <span className="ds-strong">{orden.proveedorNombre ?? prov?.nombre}</span> por:</p>
-            <h2 className="ds-heading" style={{ margin: "8px 0 16px" }}>{money(totalFactura, orden.currencyCode)}</h2>
+            <h2 className="ds-heading" style={{ margin: "8px 0 4px" }}>{money(totalConIva, orden.currencyCode)}</h2>
+            <p className="ds-body-sm ds-muted" style={{ margin: "0 0 16px" }}>Subtotal {money(totalFactura, orden.currencyCode)} + IVA {money(ivaFactura, orden.currencyCode)}</p>
             <div className="ds-table-wrap" style={{ boxShadow: "none", border: "1.5px solid var(--ds-color-gray-100)" }}>
               <table className="ds-table">
                 <thead><tr><th>Concepto</th><th className="ds-num">Cant.</th><th className="ds-num">Importe</th></tr></thead>
