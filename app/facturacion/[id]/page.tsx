@@ -33,6 +33,8 @@ export default function RegistrarFacturaPage() {
   const [fechaRecepcion, setFechaRecepcion] = useState(todayISO());
   const [preview, setPreview] = useState(false);
   const [guardando, setGuardando] = useState(false);
+  // Confirmación de inventario (stock BC antes → después de registrar).
+  const [confirmInv, setConfirmInv] = useState<null | { itemNo: string; desc: string; antes: number | null; recibido: number; despues: number | null }[]>(null);
 
   // ¿esta recepción completa toda la orden?
   const completaOrden = useMemo(() => {
@@ -66,6 +68,20 @@ export default function RegistrarFacturaPage() {
     ? distribuirCargo(fleteAplicado, articulo.map((l) => ({ ...l, cantidad: Number(recibir[l.id] || 0) })))
     : {};
 
+  // Stock total (todas las ubicaciones) por artículo, desde BC — para confirmar
+  // el "antes → después" al registrar. null = BC no devolvió stock.
+  async function stockDeItems(items: string[]): Promise<Record<string, number | null>> {
+    const pares = await Promise.all(items.map(async (it) => {
+      try {
+        const r = await fetch(`/api/bc/existencias?itemNo=${encodeURIComponent(it)}`);
+        const d = await r.json().catch(() => ({}));
+        if (!r.ok || !Array.isArray(d.existencias)) return [it, null] as const;
+        return [it, d.existencias.reduce((s: number, e: any) => s + (Number(e.cantidad) || 0), 0)] as const;
+      } catch { return [it, null] as const; }
+    }));
+    return Object.fromEntries(pares);
+  }
+
   async function registrar() {
     if (!numeroFactura.trim()) { toast("Ingresá el número de factura.", "error"); return; }
     if (!algoRecibido) { toast("Indicá al menos una cantidad a recibir.", "error"); return; }
@@ -81,17 +97,20 @@ export default function RegistrarFacturaPage() {
       .map((l) => ({ itemNo: l.articuloId as string, qty: Number(recibir[l.id]), variantCode: l.variantCode }));
 
     setGuardando(true);
-    let aviso = "";
+    let aviso = ""; let bcOk = false;
+    const items = [...new Set(bcLineas.map((l) => l.itemNo))];
+    let antes: Record<string, number | null> = {};
     try {
       // Registrar (Recibir + Facturar) en BC con todos sus movimientos contables.
       if (orden!.bcNumber && bcLineas.length) {
+        antes = await stockDeItems(items); // stock ANTES de registrar
         try {
           const r = await fetch("/api/bc/registrar", {
             method: "POST", headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ orderNo: orden!.bcNumber, vendorInvoiceNo: numeroFactura.trim(), lineas: bcLineas, postingDate: fechaRegistro }),
           });
           const d = await r.json().catch(() => ({}));
-          if (r.ok) aviso = ` · registrada en BC (${d.postedNo ?? "OK"})`;
+          if (r.ok) { aviso = ` · registrada en BC (${d.postedNo ?? "OK"})`; bcOk = true; }
           else aviso = ` · NO se pudo registrar en BC: ${d.error ?? r.status}`;
         } catch (e: any) { aviso = ` · BC no disponible: ${String(e?.message ?? e)}`; }
       } else if (!orden!.bcNumber) {
@@ -103,7 +122,17 @@ export default function RegistrarFacturaPage() {
       });
       const falloBc = aviso.includes("NO se pudo") || aviso.includes("no disponible");
       toast(`Factura ${numeroFactura} registrada${completaOrden ? " — orden completada" : " (parcial)"}${aviso}`, falloBc ? "info" : "success");
-      router.push(`/facturacion`);
+      if (bcOk) {
+        // Stock DESPUÉS → mostramos la confirmación antes→después (el modal navega al cerrar).
+        const despues = await stockDeItems(items);
+        setConfirmInv(items.map((it) => {
+          const qty = bcLineas.filter((l) => l.itemNo === it).reduce((s, l) => s + l.qty, 0);
+          return { itemNo: it, desc: articulo.find((a) => a.articuloId === it)?.descripcion ?? it, antes: antes[it] ?? null, recibido: qty, despues: despues[it] ?? null };
+        }));
+        setGuardando(false);
+      } else {
+        router.push(`/facturacion`);
+      }
     } catch (e: any) {
       toast(String(e?.message ?? e), "error");
       setGuardando(false);
@@ -318,6 +347,39 @@ export default function RegistrarFacturaPage() {
             <p className="ds-body-sm ds-muted mt-4">
               Verificá que el total físico de la factura coincida. Fecha de registro: {fechaRegistro}
               {!fechasCoinciden && " — no coincide con la fecha de factura"}.
+            </p>
+          </Modal>
+        )}
+
+        {confirmInv && (
+          <Modal
+            title="Inventario actualizado en BC"
+            onClose={() => { setConfirmInv(null); router.push("/facturacion"); }}
+            footer={<Button onClick={() => { setConfirmInv(null); router.push("/facturacion"); }}>Listo</Button>}
+          >
+            <p className="ds-label">Stock en Business Central <span className="ds-strong">antes → después</span> de registrar esta factura:</p>
+            <div className="ds-table-wrap" style={{ boxShadow: "none", border: "1.5px solid var(--ds-color-gray-100)", marginTop: 8 }}>
+              <table className="ds-table">
+                <thead><tr><th>Artículo</th><th className="ds-num">Antes</th><th className="ds-num">Facturado</th><th className="ds-num">Después</th><th></th></tr></thead>
+                <tbody>
+                  {confirmInv.map((x) => {
+                    const sd = x.antes == null || x.despues == null;
+                    const ok = !sd && Math.abs((x.despues as number) - ((x.antes as number) + x.recibido)) < 1e-6;
+                    return (
+                      <tr key={x.itemNo}>
+                        <td>{x.desc}<div className="ds-body-sm ds-muted">{x.itemNo}</div></td>
+                        <td className="ds-num">{x.antes == null ? "—" : num.format(x.antes)}</td>
+                        <td className="ds-num ds-strong" style={{ color: "var(--ds-color-green-300)" }}>+{num.format(x.recibido)}</td>
+                        <td className="ds-num ds-strong">{x.despues == null ? "—" : num.format(x.despues)}</td>
+                        <td className="ds-num">{sd ? <span className="ds-muted" title="BC no devolvió stock">s/d</span> : ok ? "✅" : <span title="El cambio no coincide con lo facturado" style={{ color: "var(--ds-color-red-200)" }}>⚠️</span>}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+            <p className="ds-body-sm ds-muted mt-4">
+              El material entró al almacén de recepción{orden.almacenRecepcion ? <> <span className="ds-strong">{orden.almacenRecepcion}</span></> : ""}. Un ✅ confirma que el stock subió justo lo facturado.
             </p>
           </Modal>
         )}
