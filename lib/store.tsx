@@ -4,6 +4,7 @@ import React, { createContext, useContext, useEffect, useMemo, useState } from "
 import type {
   Almacen, Articulo, Maquina, Movimiento, Notificacion, Obra, Orden, OrdenLinea, Pedido, PedidoLinea,
   PlanCategoria, PlanFila, Proveedor, Recepcion, RecepcionLinea, Role, TipoSolicitud,
+  NotaCreditoLinea, MotivoNC,
 } from "./types";
 import * as seed from "./seed";
 import { nextNumero, nowISO, ordenEstaCompleta, PERSONA_POR_ROL, todayISO } from "./helpers";
@@ -82,6 +83,11 @@ interface StoreShape {
   devolverPedido: (id: string, motivo: string) => Promise<void>;
   devolverOrden: (id: string, motivo: string) => Promise<void>;
 
+  // Notas de crédito (Bodega): líneas de factura con problema para emitir NC.
+  notasCredito: NotaCreditoLinea[];
+  marcarNotasCredito: (ordenId: string, ordenNumero: string, proveedor: string | undefined, items: { ordenLineaId?: string; articuloNo?: string; descripcion: string; motivo: MotivoNC; cantidad: number; precioUnitario?: number; nota?: string }[]) => Promise<void>;
+  cargarNotasCredito: () => Promise<void>;
+
   // Notificaciones in-app
   notificaciones: Notificacion[];
   marcarNotifsLeidas: () => void;
@@ -150,6 +156,8 @@ export function StoreProvider({ children, useApi }: { children: React.ReactNode;
   const [planContexto, setPlanContexto] = useState<StoreShape["planContexto"]>(null);
   const [hydrated, setHydrated] = useState(false);
   const [cargando, setCargando] = useState(USE_API);
+  // Notas de crédito (aparte del bootstrap para no romper la carga si la tabla no existe).
+  const [notasCredito, setNotasCredito] = useState<NotaCreditoLinea[]>([]);
 
   // hidratación
   useEffect(() => {
@@ -490,6 +498,27 @@ export function StoreProvider({ children, useApi }: { children: React.ReactNode;
       });
     };
 
+    // ---------------- NOTAS DE CRÉDITO ----------------
+    const cargarNotasCredito: StoreShape["cargarNotasCredito"] = async () => {
+      if (!USE_API) return; // en mock viven en memoria
+      try { setNotasCredito(await api.listNotasCredito()); } catch { /* tabla puede no existir aún */ }
+    };
+    const marcarNotasCredito: StoreShape["marcarNotasCredito"] = async (ordenId, ordenNumero, proveedor, items) => {
+      const lineas = items.filter((it) => it.descripcion && it.cantidad > 0);
+      if (!lineas.length) return;
+      if (USE_API) {
+        await api.createNotasCredito({ idOrdenCompra: Number(ordenId), usuario: persona, lineas });
+        await cargarNotasCredito();
+        return;
+      }
+      const nuevas: NotaCreditoLinea[] = lineas.map((it) => ({
+        id: uid(), ordenId, ordenNumero, proveedor, ordenLineaId: it.ordenLineaId, articuloNo: it.articuloNo,
+        descripcion: it.descripcion, motivo: it.motivo, cantidad: it.cantidad, precioUnitario: it.precioUnitario,
+        nota: it.nota, fecha: nowISO(), estado: "pendiente",
+      }));
+      setNotasCredito((s) => [...nuevas, ...s]);
+    };
+
     // ---------------- NOTIFICACIONES ----------------
     const marcarNotifsLeidas: StoreShape["marcarNotifsLeidas"] = () =>
       setData((d) => ({ ...d, notificaciones: d.notificaciones.map((n) => ({ ...n, leida: true })) }));
@@ -519,6 +548,7 @@ export function StoreProvider({ children, useApi }: { children: React.ReactNode;
       pedidos: data.pedidos, ordenes: data.ordenes, recepciones: data.recepciones, movimientos: data.movimientos,
       addPedido, editPedido, updatePedido, setPedidoEstado, deletePedido,
       createOrden, updateOrden, setOrdenEstado, registrarRecepcion, facturarRecepcion, devolverPedido, devolverOrden, reset,
+      notasCredito, marcarNotasCredito, cargarNotasCredito,
       notificaciones: data.notificaciones, marcarNotifsLeidas, marcarNotifLeida,
       planCategorias: data.planCategorias, planFilas: data.planFilas,
       addPlanCategoria, removePlanCategoria, addPlanFila, removePlanFila, setPlanCelda, cargarPlanificacion,

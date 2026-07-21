@@ -8,12 +8,19 @@ import { IconWarning } from "@/components/icons";
 import { DateField } from "@/components/date-field";
 import { useStore } from "@/lib/store";
 import { money, distribuirCargo, num, ordenBadge, ordenLineaPendiente, ordenRecibidoPct, todayISO } from "@/lib/helpers";
+import type { MotivoNC } from "@/lib/types";
+
+const MOTIVO_NC: { v: MotivoNC; label: string }[] = [
+  { v: "precio_distinto", label: "Precio distinto" },
+  { v: "menos_cantidad", label: "Menos cantidad" },
+  { v: "danado", label: "Material dañado" },
+];
 
 export default function RegistrarFacturaPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
   const toast = useToast();
-  const { ordenes, proveedores, registrarRecepcion } = useStore();
+  const { ordenes, proveedores, registrarRecepcion, marcarNotasCredito } = useStore();
 
   const orden = ordenes.find((o) => o.id === id);
 
@@ -35,6 +42,13 @@ export default function RegistrarFacturaPage() {
   const [guardando, setGuardando] = useState(false);
   // Confirmación de inventario (stock BC antes → después de registrar).
   const [confirmInv, setConfirmInv] = useState<null | { itemNo: string; desc: string; antes: number | null; recibido: number; despues: number | null }[]>(null);
+  // Líneas marcadas para NOTA DE CRÉDITO (dañado / menos cantidad / precio distinto).
+  const [marcadas, setMarcadas] = useState<Record<string, { motivo: MotivoNC; cantidad: string; precio: string }>>({});
+  const marcarLinea = (l: { id: string; cantidad: number; precioUnitario: number }) =>
+    setMarcadas((m) => ({ ...m, [l.id]: { motivo: "precio_distinto", cantidad: String(recibir[l.id] || l.cantidad), precio: String(l.precioUnitario ?? "") } }));
+  const quitarMarca = (id: string) => setMarcadas((m) => { const n = { ...m }; delete n[id]; return n; });
+  const setMarca = (id: string, patch: Partial<{ motivo: MotivoNC; cantidad: string; precio: string }>) =>
+    setMarcadas((m) => ({ ...m, [id]: { ...m[id], ...patch } }));
 
   // ¿esta recepción completa toda la orden?
   const completaOrden = useMemo(() => {
@@ -127,6 +141,9 @@ export default function RegistrarFacturaPage() {
         ordenId: orden!.id, numeroFactura: numeroFactura.trim(),
         fechaFactura, fechaRecepcion, fechaRegistro, total: totalFactura, lineas,
       });
+      // Líneas marcadas → notas de crédito (no bloquea el registro).
+      const nc = articulo.filter((l) => marcadas[l.id]).map((l) => ({ ordenLineaId: l.id, articuloNo: l.articuloId, descripcion: l.descripcion, motivo: marcadas[l.id].motivo, cantidad: Number(marcadas[l.id].cantidad) || 0, precioUnitario: Number(marcadas[l.id].precio) || 0 }));
+      if (nc.length) { try { await marcarNotasCredito(orden!.id, orden!.numero, orden!.proveedorNombre ?? prov?.nombre, nc); } catch { /* no bloquear */ } }
       const falloBc = aviso.includes("NO se pudo") || aviso.includes("no disponible");
       toast(`Factura ${numeroFactura} registrada${completaOrden ? " — orden completada" : " (parcial)"}${aviso}`, falloBc ? "info" : "success");
       if (bcOk) {
@@ -185,6 +202,8 @@ export default function RegistrarFacturaPage() {
         ordenId: orden!.id, numeroFactura: "", fechaFactura, fechaRecepcion, fechaRegistro,
         total: subtotalRecibido, lineas, facturaEnRevision: true,
       });
+      const nc = articulo.filter((l) => marcadas[l.id]).map((l) => ({ ordenLineaId: l.id, articuloNo: l.articuloId, descripcion: l.descripcion, motivo: marcadas[l.id].motivo, cantidad: Number(marcadas[l.id].cantidad) || 0, precioUnitario: Number(marcadas[l.id].precio) || 0 }));
+      if (nc.length) { try { await marcarNotasCredito(orden!.id, orden!.numero, orden!.proveedorNombre ?? prov?.nombre, nc); } catch { /* no bloquear */ } }
       const falloBc = aviso.includes("NO se pudo") || aviso.includes("no disponible");
       toast(`Material recibido — factura EN REVISIÓN${aviso}`, falloBc ? "info" : "success");
       router.push(`/facturacion`);
@@ -266,6 +285,21 @@ export default function RegistrarFacturaPage() {
                         <div className="ds-body-sm ds-muted">
                           {[l.pedidoNumero, l.proyecto && `Proy. ${l.proyecto}`, l.taskNo && `Tarea ${l.taskNo}`, l.descuentoPct ? `−${l.descuentoPct}%` : null].filter(Boolean).join(" · ")}
                         </div>
+                        {marcadas[l.id] ? (
+                          <div className="col gap-2" style={{ marginTop: 8, padding: 8, borderRadius: 10, background: "color-mix(in srgb, var(--ds-color-red-100) 8%, #fff)", border: "1.5px solid color-mix(in srgb, var(--ds-color-red-100) 30%, #fff)" }}>
+                            <div className="row gap-2 wrap" style={{ alignItems: "center" }}>
+                              <span className="ds-body-sm ds-strong" style={{ color: "var(--ds-color-red-200)" }}>Nota de crédito:</span>
+                              <select className="ds-cell-input" value={marcadas[l.id].motivo} onChange={(e) => setMarca(l.id, { motivo: e.target.value as MotivoNC })} style={{ minWidth: 130 }}>
+                                {MOTIVO_NC.map((mo) => <option key={mo.v} value={mo.v}>{mo.label}</option>)}
+                              </select>
+                              <input className="ds-cell-input" type="number" min={0} style={{ width: 70 }} title="Cantidad afectada" value={marcadas[l.id].cantidad} onChange={(e) => setMarca(l.id, { cantidad: e.target.value })} placeholder="Cant." />
+                              <input className="ds-cell-input" type="number" min={0} style={{ width: 90 }} title="Precio unitario" value={marcadas[l.id].precio} onChange={(e) => setMarca(l.id, { precio: e.target.value })} placeholder="Precio unit." />
+                              <button type="button" className="link-btn" onClick={() => quitarMarca(l.id)}>Quitar</button>
+                            </div>
+                          </div>
+                        ) : (
+                          <button type="button" className="link-btn" style={{ marginTop: 4, color: "var(--ds-color-red-200)" }} onClick={() => marcarLinea(l)}>⚠ Marcar para nota de crédito</button>
+                        )}
                       </td>
                       <td className="ds-muted hide-mobile">{l.almacen}</td>
                       <td className="ds-num">{num.format(l.cantidad)} {l.unidad}</td>

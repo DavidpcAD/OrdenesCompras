@@ -1,5 +1,5 @@
 import { getPool, sql } from "./db";
-import type { Orden, OrdenLinea, Pedido, PedidoLinea, Recepcion, RecepcionLinea, Role } from "./types";
+import type { Orden, OrdenLinea, Pedido, PedidoLinea, Recepcion, RecepcionLinea, Role, NotaCreditoLinea } from "./types";
 
 /* ============================================================================
    Capa de acceso a datos (SQL Server) para Compras Adelante.
@@ -782,4 +782,62 @@ export async function deleteVista(id: number, usuario: string): Promise<void> {
   const pool = await getPool();
   await pool.request().input("id", sql.Int, id).input("usuario", sql.NVarChar(100), usuario)
     .query("UPDATE dbo.TablaVista SET esEliminada=1, fechaModificacion=SYSUTCDATETIME() WHERE id=@id AND usuario=@usuario");
+}
+
+/* ============================================================================
+   NOTAS DE CRÉDITO (Bodega) — líneas de factura recibida con problema (dañado /
+   menos cantidad / precio distinto) para emitir una nota de crédito.
+   Tabla dbo.NotaCreditoDet (ver sql/notas_credito.sql). Aislado del bootstrap.
+   ============================================================================ */
+export interface NewNotaCreditoDB {
+  idOrdenCompra: number;
+  usuario: string;
+  lineas: { ordenLineaId?: string; articuloNo?: string; descripcion: string; motivo: string; cantidad: number; precioUnitario?: number; nota?: string }[];
+}
+
+export async function createNotasCredito(input: NewNotaCreditoDB): Promise<number> {
+  const pool = await getPool();
+  let n = 0;
+  for (const l of input.lineas) {
+    if (!l.descripcion || !(l.cantidad > 0)) continue;
+    await pool.request()
+      .input("idOrdenCompra", sql.Int, input.idOrdenCompra)
+      .input("idOrdenCompraDet", sql.Int, l.ordenLineaId ? Number(l.ordenLineaId) : null)
+      .input("articuloNo", sql.NVarChar(40), l.articuloNo ?? null)
+      .input("descripcion", sql.NVarChar(200), l.descripcion)
+      .input("motivo", sql.NVarChar(30), l.motivo)
+      .input("cantidad", sql.Decimal(18, 4), l.cantidad)
+      .input("precioUnitario", sql.Decimal(18, 4), l.precioUnitario ?? null)
+      .input("nota", sql.NVarChar(300), l.nota ?? null)
+      .input("creadoPor", sql.NVarChar(100), input.usuario)
+      .query(`INSERT dbo.NotaCreditoDet (idOrdenCompra,idOrdenCompraDet,articuloNo,descripcion,motivo,cantidad,precioUnitario,nota,estado,esEliminada,fechaCreacion,creadoPor)
+              VALUES (@idOrdenCompra,@idOrdenCompraDet,@articuloNo,@descripcion,@motivo,@cantidad,@precioUnitario,@nota,'pendiente',0,getdate(),@creadoPor)`);
+    n++;
+  }
+  return n;
+}
+
+export async function listNotasCredito(): Promise<NotaCreditoLinea[]> {
+  const pool = await getPool();
+  const r = await pool.request().query(`
+    SELECT nc.idNotaCreditoDet, nc.idOrdenCompra, nc.idOrdenCompraDet, nc.articuloNo, nc.descripcion,
+           nc.motivo, nc.cantidad, nc.precioUnitario, nc.nota, nc.estado, nc.fechaCreacion, o.ordenNo
+    FROM dbo.NotaCreditoDet nc
+    LEFT JOIN dbo.OrdenCompra o ON o.idOrdenCompra = nc.idOrdenCompra
+    WHERE ISNULL(nc.esEliminada,0)=0
+    ORDER BY nc.fechaCreacion DESC`);
+  return r.recordset.map((x: any) => ({
+    id: String(x.idNotaCreditoDet),
+    ordenId: String(x.idOrdenCompra),
+    ordenNumero: x.ordenNo ?? "",
+    ordenLineaId: x.idOrdenCompraDet != null ? String(x.idOrdenCompraDet) : undefined,
+    articuloNo: x.articuloNo ?? undefined,
+    descripcion: x.descripcion ?? "",
+    motivo: x.motivo,
+    cantidad: Number(x.cantidad) || 0,
+    precioUnitario: x.precioUnitario != null ? Number(x.precioUnitario) : undefined,
+    nota: x.nota ?? undefined,
+    fecha: x.fechaCreacion instanceof Date ? x.fechaCreacion.toISOString() : String(x.fechaCreacion ?? ""),
+    estado: (x.estado ?? "pendiente") as NotaCreditoLinea["estado"],
+  }));
 }

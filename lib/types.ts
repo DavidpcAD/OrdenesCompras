@@ -188,6 +188,27 @@ export interface Recepcion {
   facturaEnRevision?: boolean;
 }
 
+// ============================ NOTAS DE CRÉDITO (Bodega · Kattya) ============
+// Líneas de una factura recibida que vienen MAL (dañado / menos cantidad / precio
+// distinto). El material se recibe igual, pero esas líneas se marcan para emitir
+// una NOTA DE CRÉDITO. Es DISTINTO de Devoluciones (que devuelve toda la OC/pedido).
+export type MotivoNC = "danado" | "menos_cantidad" | "precio_distinto";
+export interface NotaCreditoLinea {
+  id: string;
+  ordenId: string;
+  ordenNumero: string;
+  proveedor?: string;
+  ordenLineaId?: string;
+  articuloNo?: string;
+  descripcion: string;
+  motivo: MotivoNC;
+  cantidad: number;
+  precioUnitario?: number;
+  nota?: string;
+  fecha: string;                 // ISO
+  estado: "pendiente" | "resuelta";
+}
+
 // ============================ BITÁCORA / MOVIMIENTOS ========================
 export interface Movimiento {
   id: string;

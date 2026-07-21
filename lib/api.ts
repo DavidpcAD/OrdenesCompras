@@ -1,5 +1,5 @@
 // Cliente del front-end para las API routes (modo API).
-import type { Movimiento, Orden, Pedido, Recepcion } from "./types";
+import type { Movimiento, Orden, Pedido, Recepcion, NotaCreditoLinea } from "./types";
 
 export const USE_API = process.env.NEXT_PUBLIC_USE_API === "1";
 
@@ -43,4 +43,10 @@ export const api = {
   // MODO 2: registrar la factura de una recepción que estaba en revisión.
   setRecepcionFactura: (id: string, body: unknown): Promise<{ ok: true }> =>
     fetch(`/api/recepciones/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }).then(jsonOrThrow),
+
+  // Notas de crédito (líneas de factura con problema, para emitir NC).
+  createNotasCredito: (body: unknown): Promise<{ ok: true }> =>
+    fetch("/api/notas-credito", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }).then(jsonOrThrow),
+  listNotasCredito: (): Promise<NotaCreditoLinea[]> =>
+    fetch("/api/notas-credito").then(jsonOrThrow).then((d) => (d.notas ?? []) as NotaCreditoLinea[]),
 };
