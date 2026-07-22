@@ -70,7 +70,6 @@ const ROLE_META: Record<Role, { label: string; persona: string; home: string; na
       { href: "/facturacion/todas", label: "Todas las órdenes", icon: IconReceipt },
       { href: "/facturacion/archivo", label: "Archivo", icon: IconFolder },
       { href: "/facturacion/notas-credito", label: "Notas de crédito", icon: IconEdit },
-      { href: "/facturacion/devoluciones", label: "Devoluciones", icon: IconWarning },
     ],
   },
 };
