@@ -624,8 +624,18 @@ export function SolicitudForm({
                     <Combobox items={plantillasVisibles} value={plantillaCargada}
                       onChange={(k) => cargarPlantilla(k)}
                       getKey={(p) => String(p.id)}
-                      getLabel={(p) => `${p.nombre} · ${p.lineas.length} ítem(s) · ${esBodegaPl(p) ? "Bodega" : "General"}`}
+                      getLabel={(p) => `${p.nombre} · ${p.lineas.length} ítem(s)`}
                       getSearch={(p) => `${p.nombre} ${p.creadoPor ?? ""}`}
+                      groupBy={(p) => (esBodegaPl(p) ? "Bodega" : "General")}
+                      renderItem={(p) => (
+                        <span className="combo__row">
+                          <span className="combo__row-main">
+                            <span className="ds-strong">{p.nombre}</span>
+                            <span className="ds-body-sm ds-muted">{p.lineas.length} ítem(s){filtroPlantilla === "*" && p.creadoPor ? ` · ${p.creadoPor}` : ""}</span>
+                          </span>
+                          <span className={`combo__tag combo__tag--${esBodegaPl(p) ? "bodega" : "general"}`}>{esBodegaPl(p) ? "Bodega" : "General"}</span>
+                        </span>
+                      )}
                       placeholder="Elegí una plantilla…" />
                   </div>
                   {creadoresPlantillas.length > 1 && (

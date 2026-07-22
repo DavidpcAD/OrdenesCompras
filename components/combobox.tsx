@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 
 // Selector con buscador (un solo valor). El menú se renderiza en un PORTAL con
@@ -14,6 +14,8 @@ export function Combobox<T>({
   getKey,
   getLabel,
   getSearch,
+  renderItem,
+  groupBy,
   placeholder = "Buscar…",
   max = 50,
   minChars = 0,
@@ -24,6 +26,10 @@ export function Combobox<T>({
   getKey: (t: T) => string;
   getLabel: (t: T) => string;
   getSearch?: (t: T) => string;
+  // Contenido personalizado de cada fila del menú (si no, usa getLabel).
+  renderItem?: (t: T) => ReactNode;
+  // Si se pasa, agrupa las opciones bajo encabezados de sección.
+  groupBy?: (t: T) => string;
   placeholder?: string;
   max?: number;
   // Mínimo de caracteres para mostrar opciones. Con 0 (default) al abrir muestra
@@ -73,16 +79,29 @@ export function Combobox<T>({
       onMouseDown={(e) => e.preventDefault()}
     >
       {filtered.length === 0 && <div className="combo__empty">{below ? "Escribí para buscar…" : q ? "Sin coincidencias." : "No hay opciones."}</div>}
-      {filtered.map((i) => (
-        <button
-          key={getKey(i)}
-          type="button"
-          className={`combo__item ${getKey(i) === value ? "is-active" : ""}`}
-          onMouseDown={(e) => { e.preventDefault(); onChange(getKey(i), i); setOpen(false); }}
-        >
-          {getLabel(i)}
-        </button>
-      ))}
+      {(() => {
+        const renderOpt = (i: T) => (
+          <button
+            key={getKey(i)}
+            type="button"
+            className={`combo__item ${getKey(i) === value ? "is-active" : ""}`}
+            onMouseDown={(e) => { e.preventDefault(); onChange(getKey(i), i); setOpen(false); }}
+          >
+            {renderItem ? renderItem(i) : getLabel(i)}
+          </button>
+        );
+        if (!groupBy) return filtered.map(renderOpt);
+        // Agrupa preservando el orden de aparición de cada grupo.
+        const orden: string[] = [];
+        const map = new Map<string, T[]>();
+        for (const i of filtered) { const g = groupBy(i); if (!map.has(g)) { map.set(g, []); orden.push(g); } map.get(g)!.push(i); }
+        return orden.map((g) => (
+          <div key={g} className="combo__group-wrap">
+            <div className="combo__group">{g} · {map.get(g)!.length}</div>
+            {map.get(g)!.map(renderOpt)}
+          </div>
+        ));
+      })()}
       {matched.length > max && <div className="combo__more">Mostrando {max} de {matched.length} · escribí para filtrar</div>}
     </div>,
     document.body
