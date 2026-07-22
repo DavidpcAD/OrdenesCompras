@@ -1,4 +1,5 @@
 import crypto from "crypto";
+import bcrypt from "bcryptjs";
 import { getPool, sql } from "./db";
 import type { Role } from "./types";
 
@@ -34,6 +35,10 @@ function moduloDeRol(idRol: number, nombre: string): Role | undefined {
 // dependencias extra. Si las claves fueran bcrypt habría que agregar bcryptjs.
 function passwordOk(input: string, stored: string): boolean {
   if (!stored) return false;
+  // bcrypt (así guarda las claves ControlUsuarios): hash empieza con $2a/$2b/$2y.
+  if (/^\$2[aby]?\$/.test(stored)) {
+    try { return bcrypt.compareSync(input, stored); } catch { return false; }
+  }
   if (input === stored) return true;
   const hex = crypto.createHash("sha256").update(input).digest("hex");
   if (hex.toLowerCase() === stored.toLowerCase()) return true;
