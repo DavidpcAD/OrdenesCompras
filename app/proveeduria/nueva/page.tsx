@@ -344,7 +344,7 @@ export default function ArmarOrdenPage() {
                 {rows.map((r) => (
                   <tr key={r.pedidoLineaId}>
                     <td className="ds-body-sm ds-strong">{r.pedidoNumero}</td>
-                    <td><div className="ds-truncate" title={r.descripcion} style={{ maxWidth: 200 }}>{r.descripcion}</div></td>
+                    <td><div className="ds-truncate" title={`${r.articuloId} — ${r.descripcion}`} style={{ maxWidth: 260 }}><span className="ds-strong ds-body-sm">{r.articuloId}</span> <span className="ds-muted">— {r.descripcion}</span></div></td>
                     <td className="ds-muted ds-body-sm">{r.almacen}</td>
                     <td className="ds-num"><input className="ds-cell-input" type="number" min={0} value={r.cantidad} style={{ width: 70 }} onChange={(e) => setRow(r.pedidoLineaId, { cantidad: e.target.value })} /></td>
                     <td className="ds-num">
@@ -450,7 +450,7 @@ export default function ArmarOrdenPage() {
                   {lineasDispFiltradas.map(({ p, l, pend }) => (
                     <tr key={l.id}>
                       <td className="ds-body-sm ds-strong">{p.numero}</td>
-                      <td><div className="ds-truncate" style={{ maxWidth: 260 }} title={l.descripcion}>{l.descripcion}</div></td>
+                      <td><div className="ds-truncate" style={{ maxWidth: 260 }} title={`${l.articuloId} — ${l.descripcion}`}><span className="ds-strong ds-body-sm">{l.articuloId}</span> <span className="ds-muted">— {l.descripcion}</span></div></td>
                       <td className="ds-muted ds-body-sm">{l.almacen || p.obraCodigo || "—"}</td>
                       <td className="ds-num">{pend} {l.unidad}</td>
                       <td className="ds-num"><Button variant="outline" size="sm" onClick={() => agregarDeSolicitud(p, l, pend)}>Agregar</Button></td>

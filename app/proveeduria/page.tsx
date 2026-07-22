@@ -128,20 +128,14 @@ export default function ProveeduriaMaterialesPage() {
     },
     { id: "pedido", header: "Pedido", accessorFn: (r) => r.pedidoNumero, meta: { label: "Pedido" },
       cell: (c) => { const r = c.row.original; return <span className="row gap-2" style={{ alignItems: "center" }}>{dot(r.tipo === "repuesto" ? "yellow" : "green")}<span className="ds-body-sm ds-strong">{r.pedidoNumero}</span></span>; } },
-    { id: "articulo", header: "Artículo", accessorFn: (r) => r.descripcion, meta: { label: "Artículo" },
-      cell: (c) => <div className="ds-truncate" title={c.getValue()} style={{ maxWidth: 280 }}>{c.getValue()}</div> },
+    { id: "articulo", header: "Artículo", accessorFn: (r) => `${r.articuloId} ${r.descripcion}`, meta: { label: "Artículo" },
+      cell: (c) => { const r = c.row.original; return <div className="ds-truncate" title={`${r.articuloId} — ${r.descripcion}`} style={{ maxWidth: 320 }}><span className="ds-strong ds-body-sm">{r.articuloId}</span> <span className="ds-muted">— {r.descripcion}</span></div>; } },
     { id: "obra", header: "Obra", accessorFn: (r) => r.almacen || "—", meta: { label: "Obra" },
       cell: (c) => <span className="ds-muted ds-body-sm">{c.getValue()}</span> },
     { id: "pend", header: "Pend.", accessorFn: (r) => r.pendiente, meta: { label: "Pend.", num: true }, enableColumnFilter: false,
       cell: (c) => { const r = c.row.original; return <span className="ds-body-sm">{num.format(r.pendiente)} {r.unidad}</span>; } },
     { id: "aordenar", header: "A ordenar", accessorFn: (r) => r.cantidad, meta: { label: "A ordenar", num: true }, enableColumnFilter: false, enableSorting: false,
       cell: (c) => { const r = c.row.original; return <input className="ds-cell-input" type="number" min={0} max={r.pendiente} value={r.cantidad} style={{ width: 78 }} disabled={!r.incluir} onClick={stop} onChange={(e) => setRow(r.pedidoLineaId, { cantidad: e.target.value })} />; } },
-    { id: "precio", header: "Precio", accessorFn: (r) => r.precio, meta: { label: "Precio", num: true }, enableColumnFilter: false, enableSorting: false,
-      cell: (c) => { const r = c.row.original; return <input className="ds-cell-input" type="number" min={0} value={r.precio} style={{ width: 92 }} disabled={!r.incluir} onClick={stop} onChange={(e) => setRow(r.pedidoLineaId, { precio: e.target.value })} />; } },
-    { id: "iva", header: "IVA%", accessorFn: (r) => r.iva, meta: { label: "IVA%", num: true }, enableColumnFilter: false, enableSorting: false,
-      cell: (c) => { const r = c.row.original; return <input className="ds-cell-input" type="number" min={0} value={r.iva} style={{ width: 50 }} disabled={!r.incluir} onClick={stop} onChange={(e) => setRow(r.pedidoLineaId, { iva: e.target.value })} />; } },
-    { id: "importe", header: "Importe", accessorFn: (r) => Number(r.cantidad) * Number(r.precio), meta: { label: "Importe", num: true }, enableColumnFilter: false,
-      cell: (c) => <span className="ds-strong ds-body-sm">{money(Number(c.getValue()) || 0)}</span> },
   ];
 
   return (
@@ -225,9 +219,7 @@ export default function ProveeduriaMaterialesPage() {
           <div className="action-bar__inner">
             <div className="row gap-4 wrap">
               <span className="ds-strong">{incluidas.length} línea(s)</span>
-              <span className="ds-muted">de {pedidosDistintos} pedido(s)</span>
-              <span className="ds-muted">·</span>
-              <span className="ds-strong">{money(subtotal)}</span>
+              <span className="ds-muted">de {pedidosDistintos} pedido(s) · los precios se ponen al armar la orden</span>
             </div>
             <div className="row gap-3">
               <button className="link-btn" onClick={() => setRows((rs) => rs.map((r) => ({ ...r, incluir: false })))}>Limpiar</button>
