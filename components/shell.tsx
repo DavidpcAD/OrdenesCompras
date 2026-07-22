@@ -133,7 +133,7 @@ export function AppShell({ role, children }: { role: Role; children: React.React
               ruido en el resto de pantallas; ahí se usa desde el sidebar). */}
           {meta.action && pathname === meta.home && (
             <button className="ds-btn ds-btn--green ds-btn--sm topbar__action" onClick={() => router.push(meta.action!.href)}>
-              <IconPlus size={18} /><span>{meta.action.label}</span>
+              <IconPlus size={20} /><span>{meta.action.label}</span>
             </button>
           )}
           {/* Campanita de notificaciones */}

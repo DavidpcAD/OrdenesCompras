@@ -114,7 +114,7 @@ export default function ArchivoPage() {
         )}
 
         <h3 className="ds-subtitle mt-6" style={{ marginBottom: 12 }}>Facturas registradas</h3>
-        <DataTable data={registradas} columns={columns} tablaKey="recepciones" getRowId={(r) => r.id} onRowClick={(r) => router.push(`/facturacion/recepcion/${r.id}`)} vacio="Sin facturas registradas." />
+        <DataTable data={registradas} columns={columns} tablaKey="recepciones" buscarPlaceholder="Buscar por N.º de factura o proveedor…" getRowId={(r) => r.id} onRowClick={(r) => router.push(`/facturacion/recepcion/${r.id}`)} vacio="Sin facturas registradas." />
 
         {facObj && (
           <Modal title={`Registrar factura · ${ordenDe(facObj)?.numero ?? ""}`} onClose={() => setFacObj(null)}

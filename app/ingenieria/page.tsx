@@ -88,7 +88,7 @@ export default function IngenieriaPage() {
         </div>
 
         <div ref={listaRef} className="mt-6" style={{ scrollMarginTop: 80 }}>
-          <DataTable data={base} columns={columns} tablaKey="solicitudes-ing" getRowId={(p) => p.id} onRowClick={(p) => router.push(`/ingenieria/${p.id}`)} rowClassName={(p) => (p.estado === "borrador" ? "row-borrador" : "")} vacio={pedidos.length === 0 ? "Aún no hay solicitudes. Creá la primera." : "Ninguna solicitud coincide."} />
+          <DataTable data={base} columns={columns} tablaKey="solicitudes-ing" buscarPlaceholder="Buscar por N.º, material u obra…" getRowId={(p) => p.id} onRowClick={(p) => router.push(`/ingenieria/${p.id}`)} rowClassName={(p) => (p.estado === "borrador" ? "row-borrador" : "")} vacio={pedidos.length === 0 ? "Aún no hay solicitudes. Creá la primera." : "Ninguna solicitud coincide."} />
         </div>
       </main>
     </AppShell>

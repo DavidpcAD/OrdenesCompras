@@ -66,7 +66,7 @@ export function DevolucionesView({ role }: { role: Role }) {
           <p className="ds-muted">{desc}</p>
         </div></div>
         <div className="mt-4">
-          <DataTable data={items} columns={columns} tablaKey={`devoluciones-${role}`} titulo="Devoluciones"
+          <DataTable data={items} columns={columns} tablaKey={`devoluciones-${role}`} titulo="Devoluciones" buscarPlaceholder="Buscar por material, orden o proveedor…"
             getRowId={(d) => `${d.tipo}-${d.id}`} onRowClick={(d) => { if (d.href) router.push(d.href); }}
             vacio="No hay devoluciones pendientes." />
         </div>

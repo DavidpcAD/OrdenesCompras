@@ -49,7 +49,7 @@ export default function SeguimientoPage() {
           </div>
         </div>
         <div className="mt-4">
-          <DataTable data={filas} columns={columns} tablaKey="seguimiento" getRowId={(f) => f.key} onRowClick={(f) => router.push(`/ingenieria/${f.pedidoId}`)} vacio="No hay líneas para mostrar." />
+          <DataTable data={filas} columns={columns} tablaKey="seguimiento" buscarPlaceholder="Buscar por material, pedido u obra…" getRowId={(f) => f.key} onRowClick={(f) => router.push(`/ingenieria/${f.pedidoId}`)} vacio="No hay líneas para mostrar." />
         </div>
       </main>
     </AppShell>

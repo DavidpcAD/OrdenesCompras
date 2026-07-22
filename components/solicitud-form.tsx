@@ -712,10 +712,10 @@ export function SolicitudForm({
           <table className="ds-table">
             <thead>
               <tr>
-                <th style={{ minWidth: 260 }}>{esRepuesto ? "Repuesto" : "Artículo"}</th>
-                {esMaterial && <th>Obra</th>}
-                <th>Variante</th>
-                <th className="ds-num">Cantidad</th><th>Unidad</th><th></th>
+                <th style={{ width: 300 }}>{esRepuesto ? "Repuesto" : "Artículo"}</th>
+                {esMaterial && <th style={{ width: 240 }}>Obra</th>}
+                <th style={{ width: 220 }}>Variante</th>
+                <th className="ds-num" style={{ width: 110 }}>Cantidad</th><th style={{ width: 90 }}>Unidad</th><th style={{ width: 48 }}></th>
               </tr>
             </thead>
             <tbody>
@@ -725,7 +725,7 @@ export function SolicitudForm({
                 const obraId = catObras.find((o) => o.codigo === l.obraCodigo)?.id ?? "";
                 return (
                   <tr key={l.key}>
-                    <td><span className="ds-strong">{a?.code}</span> <span className="ds-muted">— {a?.descripcion}</span></td>
+                    <td style={{ maxWidth: 300 }}><div className="ds-truncate" title={`${a?.code} — ${a?.descripcion}`}><span className="ds-strong">{a?.code}</span> <span className="ds-muted">— {a?.descripcion}</span></div></td>
                     {esMaterial && (
                       <td style={{ minWidth: 220 }}>
                         {obraParam ? (

@@ -115,7 +115,7 @@ export default function ProveeduriaDashboardPage() {
 
         <h2 className="ds-subtitle" style={{ marginTop: 28 }}>Por proveedor</h2>
         <div className="mt-2">
-          <DataTable data={filas} columns={columns} tablaKey="dash-prov" getRowId={(r) => r.proveedorId} renderExpanded={renderExpanded} vacio="Todavía no hay órdenes de compra." />
+          <DataTable data={filas} columns={columns} tablaKey="dash-prov" buscarPlaceholder="Buscar proveedor…" getRowId={(r) => r.proveedorId} renderExpanded={renderExpanded} vacio="Todavía no hay órdenes de compra." />
         </div>
       </main>
     </AppShell>

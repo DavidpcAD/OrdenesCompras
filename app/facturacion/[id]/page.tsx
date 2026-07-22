@@ -302,8 +302,8 @@ export default function RegistrarFacturaPage() {
           <div className="row row--between" style={{ padding: "12px 16px", borderBottom: "1.5px solid var(--ds-color-gray-100)" }}>
             <span className="ds-label ds-muted">{articulo.length} línea(s) de artículo</span>
             <div className="row gap-3">
-              <button className="link-btn" onClick={() => setRecibir(Object.fromEntries(articulo.map((l) => [l.id, String(ordenLineaPendiente(l))])))}>Recibir todo</button>
-              <button className="link-btn" onClick={() => setRecibir(Object.fromEntries(articulo.map((l) => [l.id, "0"])))}>Recibir nada</button>
+              <button className="link-btn" title="Poner en 'a recibir' toda la cantidad pendiente de cada línea" onClick={() => setRecibir(Object.fromEntries(articulo.map((l) => [l.id, String(ordenLineaPendiente(l))])))}>Recibir todo lo pendiente</button>
+              <button className="link-btn" title="Dejar en 0 las cantidades a recibir" onClick={() => setRecibir(Object.fromEntries(articulo.map((l) => [l.id, "0"])))}>Limpiar cantidades</button>
             </div>
           </div>
           <div className="ds-table-wrap" style={{ boxShadow: "none" }}>

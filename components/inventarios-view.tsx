@@ -167,7 +167,7 @@ export function InventariosView({ tablaKey = "inventarios" }: { tablaKey?: strin
       </div>
 
       <div className="mt-4 ds-reveal">
-        <DataTable data={rows} columns={columns} tablaKey={tablaKey} getRowId={(a) => a.code} renderExpanded={renderExpanded} vacio="Sin artículos en el catálogo." />
+        <DataTable data={rows} columns={columns} tablaKey={tablaKey} buscarPlaceholder="Buscar por código o descripción…" getRowId={(a) => a.code} renderExpanded={renderExpanded} vacio="Sin artículos en el catálogo." />
       </div>
     </main>
   );

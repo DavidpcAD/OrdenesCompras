@@ -353,9 +353,15 @@ export default function ArmarOrdenPage() {
                         const lp = lastPrice(r);
                         if (lp == null) return <div className="ds-body-sm ds-muted">sin historial</div>;
                         const up = Number(r.precio) > lp, down = Number(r.precio) < lp;
-                        return <div className="ds-body-sm" style={{ color: up ? "var(--ds-color-red-200)" : down ? "var(--ds-color-green-200)" : "var(--ds-color-gray-400)" }}>
-                          últ. {money(lp, currency)} {up ? "↑" : down ? "↓" : "="}
-                        </div>;
+                        const igual = !up && !down;
+                        return (
+                          <button type="button" className="link-btn ds-body-sm"
+                            title={igual ? "Precio igual al último" : "Usar este último precio"}
+                            onClick={() => setRow(r.pedidoLineaId, { precio: String(lp) })}
+                            style={{ color: up ? "var(--ds-color-red-200)" : down ? "var(--ds-color-green-200)" : "var(--ds-color-gray-400)", cursor: igual ? "default" : "pointer" }}>
+                            últ. {money(lp, currency)} {up ? "↑" : down ? "↓" : "="}
+                          </button>
+                        );
                       })()}
                     </td>
                     <td className="ds-num"><input className="ds-cell-input" type="number" min={0} max={100} value={r.descuento} style={{ width: 64 }} onChange={(e) => setRow(r.pedidoLineaId, { descuento: e.target.value })} /></td>

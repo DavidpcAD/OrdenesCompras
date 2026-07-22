@@ -109,6 +109,7 @@ export function OrdenesLista({
           data={ordenes}
           columns={columns}
           tablaKey="ordenes"
+          buscarPlaceholder="Buscar por N.º de orden o proveedor…"
           getRowId={(o) => o.id}
           onRowClick={(o) => router.push(hrefDetalle(o.id))}
           vacio={vacio}

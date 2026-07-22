@@ -208,6 +208,7 @@ export default function ProveeduriaMaterialesPage() {
               columns={columns}
               tablaKey="prov-lineas"
               titulo="Materiales solicitados"
+              buscarPlaceholder="Buscar por material, pedido u obra…"
               getRowId={(r) => r.pedidoLineaId}
               onRowClick={(r) => setRow(r.pedidoLineaId, { incluir: !r.incluir })}
               rowClassName={(r) => (r.incluir ? "dt-row-incluida" : "")}
