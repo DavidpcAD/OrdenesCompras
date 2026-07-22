@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { useStore } from "@/lib/store";
 import { Button } from "@/components/ui";
+import { IconEye } from "@/components/icons";
 import { ROLE_META } from "@/components/shell";
 
 export default function LoginPage() {
@@ -11,8 +12,10 @@ export default function LoginPage() {
   const router = useRouter();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  const [showPw, setShowPw] = useState(false);
   const [error, setError] = useState("");
   const [cargando, setCargando] = useState(false);
+  const [ayudaPw, setAyudaPw] = useState(false);
 
   async function entrar() {
     if (!username.trim() || !password) { setError("Ingresá usuario y contraseña."); return; }
@@ -56,9 +59,23 @@ export default function LoginPage() {
           </div>
           <div className="ds-form-field">
             <label className="ds-form-field__label">Contraseña</label>
-            <input id="pw" className="ds-form-field__input" type="password" value={password}
-              placeholder="••••••••" onChange={(e) => setPassword(e.target.value)}
-              onKeyDown={(e) => { if (e.key === "Enter") entrar(); }} />
+            <div style={{ position: "relative" }}>
+              <input id="pw" className="ds-form-field__input" type={showPw ? "text" : "password"} value={password}
+                placeholder="••••••••" onChange={(e) => setPassword(e.target.value)} style={{ paddingRight: 46 }}
+                onKeyDown={(e) => { if (e.key === "Enter") entrar(); }} />
+              <button type="button" onClick={() => setShowPw((v) => !v)} aria-label={showPw ? "Ocultar contraseña" : "Ver contraseña"} title={showPw ? "Ocultar contraseña" : "Ver contraseña"}
+                style={{ position: "absolute", right: 14, top: "50%", transform: "translateY(-50%)", background: "none", border: 0, cursor: "pointer", color: showPw ? "var(--ds-color-green-200)" : "var(--ds-color-gray-500)", display: "inline-flex", padding: 4 }}>
+                <IconEye size={18} />
+              </button>
+            </div>
+            <button type="button" className="link-btn ds-body-sm" style={{ marginTop: 6, alignSelf: "flex-start" }} onClick={() => setAyudaPw((v) => !v)}>
+              ¿Olvidaste tu contraseña?
+            </button>
+            {ayudaPw && (
+              <p className="ds-body-sm ds-muted" style={{ marginTop: 4 }}>
+                Escribí a <strong>TI (davidpc@adelante.cr)</strong> para restablecerla.
+              </p>
+            )}
           </div>
         </div>
 

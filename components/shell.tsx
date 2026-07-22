@@ -65,7 +65,7 @@ const ROLE_META: Record<Role, { label: string; persona: string; home: string; na
   facturacion: {
     label: "Bodega", persona: "Kattya", home: "/facturacion", color: "var(--ds-color-red-100)",
     nav: [
-      { href: "/facturacion", label: "Por recibir", icon: IconDelivery },
+      { href: "/facturacion", label: "Órdenes por recibir", icon: IconDelivery },
       { href: "/facturacion/cargo", label: "Cargo sobre factura", icon: IconPlus },
       { href: "/facturacion/todas", label: "Todas las órdenes", icon: IconReceipt },
       { href: "/facturacion/archivo", label: "Archivo", icon: IconFolder },
@@ -125,8 +125,9 @@ export function AppShell({ role, children }: { role: Role; children: React.React
         </Link>
         <div className="topbar__spacer" />
         <div className="topbar__user">
-          {/* Acción primaria del rol — siempre visible */}
-          {meta.action && (
+          {/* Acción primaria del rol — solo en el dashboard del rol (hace mucho
+              ruido en el resto de pantallas; ahí se usa desde el sidebar). */}
+          {meta.action && pathname === meta.home && (
             <button className="ds-btn ds-btn--green ds-btn--sm topbar__action" onClick={() => router.push(meta.action!.href)}>
               <IconPlus size={18} /><span>{meta.action.label}</span>
             </button>

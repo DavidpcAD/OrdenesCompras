@@ -166,6 +166,7 @@ h1, h2, h3, h4, p { margin: 0; }
   font-size: var(--ds-font-size-label);
   line-height: var(--ds-line-height-label);
   color: var(--ds-color-black);
+  font-weight: var(--ds-font-weight-semibold);
   padding-left: var(--ds-space-2);
 }
 .ds-form-field__input-wrap { position: relative; display: flex; align-items: center; }
