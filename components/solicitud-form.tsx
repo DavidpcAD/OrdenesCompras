@@ -162,6 +162,8 @@ export function SolicitudForm({
   const [varMap, setVarMap] = useState<Record<string, { variantes: Variante[]; disponible: boolean }>>({});
   const varPromises = useRef<Map<string, Promise<{ variantes: Variante[]; disponible: boolean }>>>(new Map());
   const codeDeLinea = (l: DraftLine) => catArticulos.find((a) => a.id === l.articuloId)?.code ?? "";
+  // Stock actual en BC por material (solo pedidos a bodega/stock): código → total | null | "loading".
+  const [stockBc, setStockBc] = useState<Record<string, number | null | "loading">>({});
   function getVariantes(code: string): Promise<{ variantes: Variante[]; disponible: boolean }> {
     if (!code) return Promise.resolve({ variantes: [], disponible: true });
     const cached = varPromises.current.get(code);
@@ -528,6 +530,26 @@ export function SolicitudForm({
   const esRepuesto = tipo === "repuesto";
   const esStock = tipo === "stock";
 
+  // Pedidos a bodega (stock): traer el stock actual en BC de cada material de la lista.
+  const codigosStock = esStock ? [...new Set(lineas.map(codeDeLinea).filter(Boolean))].join(",") : "";
+  useEffect(() => {
+    const codes = codigosStock ? codigosStock.split(",") : [];
+    const faltan = codes.filter((c) => !(c in stockBc));
+    if (!faltan.length) return;
+    setStockBc((s) => { const n = { ...s }; faltan.forEach((c) => { n[c] = "loading"; }); return n; });
+    let vivo = true;
+    Promise.all(faltan.map(async (c) => {
+      try {
+        const r = await fetch(`/api/bc/existencias?itemNo=${encodeURIComponent(c)}`);
+        const d = await r.json().catch(() => ({}));
+        const tot = r.ok && Array.isArray(d.existencias) ? d.existencias.reduce((a: number, e: any) => a + (Number(e.cantidad) || 0), 0) : null;
+        return [c, tot] as const;
+      } catch { return [c, null] as const; }
+    })).then((pares) => { if (vivo) setStockBc((s) => ({ ...s, ...Object.fromEntries(pares) })); });
+    return () => { vivo = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [codigosStock]);
+
   return (
     <>
       {planContexto && (
@@ -694,11 +716,12 @@ export function SolicitudForm({
                 <th style={{ width: 300 }}>{esRepuesto ? "Repuesto" : "Artículo"}</th>
                 {esMaterial && <th style={{ width: 240 }}>Obra</th>}
                 <th style={{ width: 220 }}>Variante</th>
+                {esStock && <th className="ds-num" style={{ width: 110 }}>Stock BC</th>}
                 <th className="ds-num" style={{ width: 110 }}>Cantidad</th><th style={{ width: 90 }}>Unidad</th><th style={{ width: 48 }}></th>
               </tr>
             </thead>
             <tbody>
-              {lineas.length === 0 && (<tr><td colSpan={esMaterial ? 6 : 5}><div className="empty" style={{ padding: "28px 0" }}>Todavía no agregaste {esRepuesto ? "repuestos" : "materiales"}.</div></td></tr>)}
+              {lineas.length === 0 && (<tr><td colSpan={esMaterial || esStock ? 6 : 5}><div className="empty" style={{ padding: "28px 0" }}>Todavía no agregaste {esRepuesto ? "repuestos" : "materiales"}.</div></td></tr>)}
               {lineas.map((l) => {
                 const a = catArticulos.find((x) => x.id === l.articuloId);
                 const obraId = catObras.find((o) => o.codigo === l.obraCodigo)?.id ?? "";
@@ -729,6 +752,18 @@ export function SolicitudForm({
                         );
                       })()}
                     </td>
+                    {esStock && (() => {
+                      const st = stockBc[a?.code ?? ""];
+                      return (
+                        <td className="ds-num">
+                          {st === undefined || st === "loading"
+                            ? <span className="ds-muted">…</span>
+                            : st === null
+                              ? <span className="ds-muted" title="Sin conexión a Business Central">s/d</span>
+                              : <span className={st > 0 ? "ds-strong" : "ds-muted"}>{st.toLocaleString("es-CR")}</span>}
+                        </td>
+                      );
+                    })()}
                     <td className="ds-num">
                       <input className="ds-form-field__input" type="number" min={0} value={l.cantidad}
                         onChange={(e) => setLineCantidad(l.key, e.target.value)}
