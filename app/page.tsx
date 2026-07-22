@@ -4,7 +4,6 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { useStore } from "@/lib/store";
 import { Button } from "@/components/ui";
-import { IconEye } from "@/components/icons";
 import { ROLE_META } from "@/components/shell";
 
 export default function LoginPage() {
@@ -65,7 +64,13 @@ export default function LoginPage() {
                 onKeyDown={(e) => { if (e.key === "Enter") entrar(); }} />
               <button type="button" onClick={() => setShowPw((v) => !v)} aria-label={showPw ? "Ocultar contraseña" : "Ver contraseña"} title={showPw ? "Ocultar contraseña" : "Ver contraseña"}
                 style={{ position: "absolute", right: 14, top: "50%", transform: "translateY(-50%)", background: "none", border: 0, cursor: "pointer", color: showPw ? "var(--ds-color-green-200)" : "var(--ds-color-gray-500)", display: "inline-flex", padding: 4 }}>
-                <IconEye size={18} />
+                {showPw ? (
+                  // ojo tachado (ocultar)
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 3l18 18" /><path d="M10.6 10.6a3 3 0 0 0 4.2 4.2" /><path d="M9.4 5A10.9 10.9 0 0 1 12 4.7c6.5 0 10 7.3 10 7.3a17.7 17.7 0 0 1-3 3.9" /><path d="M6.3 6.6A17.6 17.6 0 0 0 2 12s3.5 7.3 10 7.3a10.8 10.8 0 0 0 3.3-.5" /></svg>
+                ) : (
+                  // ojo (ver)
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M2 12s3.5-7.3 10-7.3S22 12 22 12s-3.5 7.3-10 7.3S2 12 2 12Z" /><circle cx="12" cy="12" r="3" /></svg>
+                )}
               </button>
             </div>
             <button type="button" className="link-btn ds-body-sm" style={{ marginTop: 6, alignSelf: "flex-start" }} onClick={() => setAyudaPw((v) => !v)}>
