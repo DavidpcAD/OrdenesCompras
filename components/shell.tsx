@@ -119,10 +119,14 @@ export function AppShell({ role, children }: { role: Role; children: React.React
   return (
     <div className="app-shell">
       <header className="topbar">
-        <Link href={meta.home} className="topbar__brand">
-          <span className="topbar__logo">A</span>
-          <span>Compras Adelante</span>
-        </Link>
+        {/* Con riel presente, la marca vive en el tope del riel oscuro. Sin riel,
+            se muestra acá en el encabezado. */}
+        {!hasNav && (
+          <Link href={meta.home} className="topbar__brand">
+            <span className="topbar__logo">A</span>
+            <span>Compras Adelante</span>
+          </Link>
+        )}
         <div className="topbar__spacer" />
         <div className="topbar__user">
           {/* Acción primaria del rol — solo en el dashboard del rol (hace mucho
@@ -182,6 +186,10 @@ export function AppShell({ role, children }: { role: Role; children: React.React
       <div className="app-body">
         {hasNav && (
           <aside className="app-nav" aria-label="Secciones">
+            <Link href={meta.home} className="app-nav__brand" title="Compras Adelante">
+              <span className="topbar__logo">A</span>
+              <span className="app-nav__brand-name">Compras Adelante</span>
+            </Link>
             {meta.nav.map((n) => {
               const Icon = n.icon;
               const active = activeHref === n.href;

@@ -571,7 +571,8 @@ h1, h2, h3, h4, p { margin: 0; }
 /* =====================  APP SHELL  ===================== */
 .app-shell { min-height: 100vh; display: flex; flex-direction: column; }
 .topbar {
-  position: sticky; top: 0; z-index: 50; /* por encima del riel (46) para que no lo tape */
+  position: sticky; top: 0; z-index: 50;
+  margin-left: 76px; /* queda al lado del riel oscuro (76px), no encima */
   background: var(--ds-color-white); box-shadow: var(--ds-shadow-02-soft);
   display: flex; align-items: center; gap: var(--ds-space-6);
   min-height: 64px; box-sizing: border-box;
@@ -711,13 +712,20 @@ h1, h2, h3, h4, p { margin: 0; }
    POR ENCIMA del contenido (con sombra), sin mover las tarjetas. Sin botón.
    El contenido reserva 76px fijos (margin-left) y no hace reflow al expandir. */
 .app-nav {
-  position: fixed; left: 0; top: 65px; z-index: 46; flex-shrink: 0;
-  width: 76px; height: calc(100vh - 65px); overflow: hidden;
+  position: fixed; left: 0; top: 0; z-index: 52; flex-shrink: 0;
+  width: 76px; height: 100vh; overflow: hidden;
   display: flex; flex-direction: column; gap: var(--ds-space-3);
   padding: var(--ds-space-4) 14px;
-  background: #2a2a2a; /* columna oscura del DS */
+  background: #2a2a2a; /* columna oscura del DS, de altura completa */
   transition: width .28s cubic-bezier(.34, 1.2, .5, 1), box-shadow .2s ease;
 }
+/* Logo/marca en el tope del riel (se expande igual que los ítems). */
+.app-nav__brand { display: flex; align-items: center; gap: 0; height: 40px; padding: 0; margin-bottom: var(--ds-space-2); color: #fff; text-decoration: none; overflow: hidden; }
+.app-nav:hover .app-nav__brand, .app-nav:focus-within .app-nav__brand { gap: var(--ds-space-3); padding: 0 6px; }
+.app-nav__brand .topbar__logo { flex-shrink: 0; margin: 0 auto; }
+.app-nav:hover .app-nav__brand .topbar__logo, .app-nav:focus-within .app-nav__brand .topbar__logo { margin: 0; }
+.app-nav__brand-name { overflow: hidden; white-space: nowrap; max-width: 0; opacity: 0; font-weight: var(--ds-font-weight-semibold); transition: max-width .28s cubic-bezier(.34,1.2,.5,1), opacity .18s ease; }
+.app-nav:hover .app-nav__brand-name, .app-nav:focus-within .app-nav__brand-name { max-width: 180px; opacity: 1; }
 .app-nav:hover, .app-nav:focus-within {
   width: 264px; overflow-y: auto; overflow-x: hidden;
   box-shadow: 0 10px 40px rgba(0, 0, 0, .35);
@@ -751,6 +759,8 @@ h1, h2, h3, h4, p { margin: 0; }
 
 @media (max-width: 760px) {
   /* En móvil: fila horizontal scrollable bajo la topbar (sin riel/hover). */
+  .topbar { margin-left: 0; }
+  .app-nav__brand { display: none; }
   .app-body { flex-direction: column; }
   .app-body:has(.app-nav) .app-content { margin-left: 0; }
   .app-nav {
