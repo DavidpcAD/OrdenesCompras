@@ -61,7 +61,8 @@ export async function aprobarYLanzar(
       return { ok: false, tone: "error", message: `No se lanzó ${orden.bcNumber} en BC: ${d.error || `HTTP ${res.status}`}. La orden queda pendiente.` };
     }
     await setOrdenEstado(orden.id, "lanzado", { bcNumber: orden.bcNumber });
-    return { ok: true, tone: "success", message: `${orden.bcNumber} aprobada y lanzada en BC` };
+    const avisoCargoRe = d.cargoError ? ` · ⚠️ el cargo NO se agregó a BC: ${d.cargoError}` : "";
+    return { ok: !d.cargoError, tone: d.cargoError ? "error" : "success", message: `${orden.bcNumber} aprobada y lanzada en BC${avisoCargoRe}` };
   }
 
   // Primer intento: crear el pedido en BC y lanzarlo.

@@ -640,7 +640,14 @@ export async function bcCrearPedido(input: { vendorNo: string; currencyCode?: st
     for (const cg of cargos) {
       const qty = cg.cantidad && cg.cantidad > 0 ? cg.cantidad : 1;
       if (!(cg.precio > 0)) continue;
-      const chargeNo = cg.chargeNo || process.env.BC_ITEM_CHARGE_FLETE || "FLETE";
+      // El tipo (Item Charge) debe ser un código REAL de BC. Antes caía a "FLETE",
+      // que no existe → 404 y la orden quedaba sin flete. Si no hay tipo válido, se
+      // omite el cargo y se reporta (no se inventa un código).
+      const chargeNo = (cg.chargeNo || process.env.BC_ITEM_CHARGE_FLETE || "").trim();
+      if (!chargeNo) {
+        if (!cargoError) cargoError = "El cargo no tiene tipo (Item Charge). Elegí el tipo de cargo y reintentá.";
+        continue;
+      }
       try {
         await bcAddChargeLine(po.number, chargeNo, cg.descripcion || "CARGO / TRANSPORTE", qty, cg.precio);
         cargosCreados++;

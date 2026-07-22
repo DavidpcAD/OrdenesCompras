@@ -15,12 +15,16 @@ export async function POST(req: Request) {
       await bcResyncPedidoLines(orderNo, lineas);
     }
     // Cargos de producto: agregar la línea vía codeunit (idempotente por itemChargeNo),
-    // así re-aprobar una orden que se creó sin el cargo lo completa. No debe tumbar.
+    // así re-aprobar una orden que se creó sin el cargo lo completa. No debe tumbar,
+    // pero SÍ reporta el error (antes se tragaba y quedaba lanzada sin flete).
+    let cargoError: string | undefined;
     if (Array.isArray(cargos)) {
       for (const cg of cargos) {
         if (!(cg?.precio > 0)) continue;
-        const chargeNo = cg.chargeNo || process.env.BC_ITEM_CHARGE_FLETE || "FLETE";
-        try { await bcAddChargeLine(orderNo, chargeNo, cg.descripcion || "CARGO / TRANSPORTE", cg.cantidad || 1, cg.precio); } catch { /* idempotente; no tumbar el relanzamiento */ }
+        const chargeNo = (cg.chargeNo || process.env.BC_ITEM_CHARGE_FLETE || "").trim();
+        if (!chargeNo) { if (!cargoError) cargoError = "El cargo no tiene tipo (Item Charge). Elegí el tipo y reintentá."; continue; }
+        try { await bcAddChargeLine(orderNo, chargeNo, cg.descripcion || "CARGO / TRANSPORTE", cg.cantidad || 1, cg.precio); }
+        catch (e: any) { if (!cargoError) cargoError = `cargo ${chargeNo}: ${String(e?.message ?? e)}`; }
       }
     }
     // Reasignar cargos si el método no es "por importe" (Amount ya es automático).
@@ -29,7 +33,7 @@ export async function POST(req: Request) {
       try { await bcAssignItemCharges(orderNo, met); } catch { /* no debe tumbar el relanzamiento */ }
     }
     const status = await bcReleasePedido(orderNo);
-    return NextResponse.json({ ok: true, status });
+    return NextResponse.json({ ok: true, status, cargoError });
   } catch (e: any) {
     return NextResponse.json({ ok: false, error: String(e?.message ?? e) }, { status: 502 });
   }

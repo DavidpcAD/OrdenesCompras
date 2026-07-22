@@ -204,6 +204,11 @@ export default function ArmarOrdenPage() {
   // "Guardar como abierta": solo registra la orden local como borrador/abierta.
   async function crear(aprobar: boolean) {
     if (!puedeCrear) { toast("Seleccioná un proveedor.", "error"); return; }
+    // Todo cargo con importe debe tener un TIPO válido (Item Charge de BC). Sin tipo,
+    // BC rechaza el cargo (404) y la orden queda lanzada SIN el flete. Se bloquea acá.
+    if (cargos.some((c) => cargoImporte(c) > 0 && !c.chargeNo)) {
+      toast("Elegí el tipo de cargo (transporte) antes de continuar. Sin tipo, BC no acepta el flete.", "error"); return;
+    }
     // Precio obligatorio para enviar a aprobación: ninguna línea puede ir a BC en 0.
     if (aprobar) {
       const sinPrecio = rows.filter((r) => !(Number(r.precio) > 0)).length;
