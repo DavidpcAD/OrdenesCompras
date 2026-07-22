@@ -329,8 +329,8 @@ h1, h2, h3, h4, p { margin: 0; }
 /* Toolbar del DataTable: mismos alto, redondeo y tamaño de letra en los controles */
 .dt-toolbar { align-items: center; }
 .dt-toolbar .ds-form-field__input { height: 40px; }
-.dt-toolbar .segmented { min-height: 40px; align-items: center; border-radius: var(--ds-radius-lg); }
-.dt-toolbar .segmented__btn { display: inline-flex; align-items: center; font-size: var(--ds-font-size-label); border-radius: var(--ds-radius-md); }
+.dt-toolbar .segmented { min-height: 40px; align-items: center; border-radius: var(--ds-radius-xl); }
+.dt-toolbar .segmented__btn { display: inline-flex; align-items: center; font-size: var(--ds-font-size-label); border-radius: var(--ds-radius-lg); }
 .dt-toolbar .ds-btn--sm { min-height: 40px; font-size: var(--ds-font-size-label); border-radius: var(--ds-radius-lg); }
 
 /* Toggle de vista (Por orden/Por línea): rótulo + segmentado con íconos, separado
@@ -662,8 +662,8 @@ h1, h2, h3, h4, p { margin: 0; }
 @keyframes barUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
 
 /* segmented control */
-.segmented { display: inline-flex; background: var(--ds-color-gray-100); border-radius: var(--ds-radius-lg); padding: 4px; gap: 4px; }
-.segmented__btn { padding: 8px 16px; border-radius: var(--ds-radius-md); border: 0; background: transparent; font-family: inherit; font-weight: var(--ds-font-weight-semibold); font-size: var(--ds-font-size-label); color: var(--ds-color-gray-500); cursor: pointer; transition: background-color .12s, color .12s; }
+.segmented { display: inline-flex; background: var(--ds-color-gray-100); border-radius: var(--ds-radius-xl); padding: 4px; gap: 4px; }
+.segmented__btn { padding: 8px 16px; border-radius: var(--ds-radius-lg); border: 0; background: transparent; font-family: inherit; font-weight: var(--ds-font-weight-semibold); font-size: var(--ds-font-size-label); color: var(--ds-color-gray-500); cursor: pointer; transition: background-color .12s, color .12s; }
 .segmented__btn.is-active { background: #fff; color: #000; box-shadow: var(--ds-shadow-02-soft); }
 
 /* Filtros de estado como "chips" (pills con contador) — lenguaje visual distinto
@@ -725,7 +725,7 @@ h1, h2, h3, h4, p { margin: 0; }
    se expande como overlay. */
 .app-body:has(.app-nav) .app-content { margin-left: 76px; }
 .app-nav__item {
-  display: flex; align-items: center; gap: var(--ds-space-3);
+  display: flex; align-items: center; gap: 0;
   width: 100%; height: 50px; padding: 0; justify-content: center;
   border: 0; border-radius: 999px; overflow: hidden;
   background: var(--ds-color-black); color: var(--ds-color-white);
@@ -733,7 +733,7 @@ h1, h2, h3, h4, p { margin: 0; }
   cursor: pointer; white-space: nowrap; box-shadow: var(--ds-shadow-02-soft);
   transition: background .12s, color .12s, box-shadow .12s, padding .24s cubic-bezier(.34, 1.2, .5, 1);
 }
-.app-nav:hover .app-nav__item, .app-nav:focus-within .app-nav__item { justify-content: flex-start; padding: 0 18px; }
+.app-nav:hover .app-nav__item, .app-nav:focus-within .app-nav__item { justify-content: flex-start; padding: 0 18px; gap: var(--ds-space-3); }
 .app-nav__ic { display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; flex-shrink: 0; }
 .app-nav__ic svg { flex-shrink: 0; }
 .app-nav__item:hover { box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.16); }

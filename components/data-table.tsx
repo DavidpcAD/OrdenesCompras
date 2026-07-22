@@ -8,7 +8,7 @@ import {
   type Column, type ColumnDef, type FilterFn, type SortingState, type ColumnFiltersState, type VisibilityState, type ColumnOrderState, type PaginationState,
 } from "@tanstack/react-table";
 import { Button, Card, Input, Select } from "@/components/ui";
-import { IconTable, IconGrid } from "@/components/icons";
+import { IconTable } from "@/components/icons";
 import { useStore } from "@/lib/store";
 
 // Texto plano de un valor de celda (para opciones y comparación de filtro).
@@ -49,7 +49,7 @@ type Vista = { id: number; nombre: string; config: VistaCfg; esPredeterminada: b
 
 export function DataTable<T>({
   data, columns, tablaKey, getRowId, onRowClick, rowClassName, vacio = "No hay registros.", modoInicial = "tabla", renderExpanded,
-  titulo = "Reporte",
+  titulo = "Reporte", buscarPlaceholder = "Buscar en la tabla…",
 }: {
   data: T[];
   columns: ColumnDef<T, any>[];
@@ -64,6 +64,8 @@ export function DataTable<T>({
   // Título del reporte al exportar (CSV/PDF). El export usa las filas FILTRADAS
   // y las columnas visibles, así que "filtrás en la app y descargás eso".
   titulo?: string;
+  // Placeholder de la barra de búsqueda: ideal pasar un ejemplo de lo que se busca.
+  buscarPlaceholder?: string;
 }) {
   const { usuario } = useStore();
   // Inyecta el filtro multi-selección a las columnas que no traigan uno propio.
@@ -227,19 +229,21 @@ export function DataTable<T>({
     <>
       {/* Toolbar */}
       <div className="row row--between wrap gap-3 dt-toolbar" style={{ marginBottom: 14, alignItems: "center", position: "relative" }}>
-        <Input value={globalFilter} onChange={(e) => setGlobalFilter(e.target.value)} placeholder="Buscar…" style={{ maxWidth: 300 }} />
+        <Input value={globalFilter} onChange={(e) => setGlobalFilter(e.target.value)} placeholder={buscarPlaceholder} style={{ flex: "1 1 340px", minWidth: 220, maxWidth: 560 }} />
         <div className="row gap-2" style={{ alignItems: "center" }}>
-          <span className="ds-muted ds-body-sm">{table.getFilteredRowModel().rows.length}</span>
           <div className="segmented">
             <button type="button" className={`segmented__btn ${modo === "tabla" ? "is-active" : ""}`} onClick={() => setModo("tabla")}><IconTable size={15} />Tabla</button>
-            <button type="button" className={`segmented__btn ${modo === "grid" ? "is-active" : ""}`} onClick={() => setModo("grid")}><IconGrid size={15} />Grid</button>
+            <button type="button" className={`segmented__btn ${modo === "grid" ? "is-active" : ""}`} onClick={() => setModo("grid")}>
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" aria-hidden><rect x="3" y="3" width="8" height="8" rx="1.5" /><rect x="13" y="3" width="8" height="8" rx="1.5" /><rect x="3" y="13" width="8" height="8" rx="1.5" /><rect x="13" y="13" width="8" height="8" rx="1.5" /></svg>
+              Grid
+            </button>
           </div>
           <Button variant="ghost" size="sm" onClick={() => setPanel(panel === "cols" ? null : "cols")}>Columnas</Button>
           <Button variant="ghost" size="sm" onClick={() => setPanel(panel === "vistas" ? null : "vistas")}>Vistas</Button>
-          <button type="button" className={`dt-export-btn${panel === "export" ? " is-open" : ""}`} onClick={() => setPanel(panel === "export" ? null : "export")} title="Exportar (CSV / PDF)">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3v12" /><path d="M7 10l5 5 5-5" /><path d="M5 21h14" /></svg>
+          <Button variant="ghost" size="sm" className={panel === "export" ? "is-active" : ""} onClick={() => setPanel(panel === "export" ? null : "export")} title="Exportar (CSV / PDF)">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: 6 }}><path d="M12 3v12" /><path d="M7 10l5 5 5-5" /><path d="M5 21h14" /></svg>
             Exportar
-          </button>
+          </Button>
         </div>
 
         {panel && <div onClick={() => setPanel(null)} style={{ position: "fixed", inset: 0, zIndex: 30 }} />}
