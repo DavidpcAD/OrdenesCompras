@@ -69,7 +69,7 @@ export default function ArchivoPage() {
   ], [ordenes, proveedores]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
-    <AppShell role="facturacion">
+    <AppShell role="contabilidad">
       <main className="page page--wide">
         <div className="page__head">
           <div className="page__title">

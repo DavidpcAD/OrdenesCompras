@@ -184,7 +184,7 @@ export default function CargoSobreFacturaPage() {
   }
 
   return (
-    <AppShell role="facturacion">
+    <AppShell role="contabilidad">
       <main className="page page--wide" style={{ paddingBottom: 120 }}>
         <div className="back-link" onClick={() => router.push("/facturacion")}>Volver a órdenes por recibir</div>
         <div className="page__head">

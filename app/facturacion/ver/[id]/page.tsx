@@ -13,7 +13,7 @@ export default function BodegaOrdenDetallePage() {
 
   const orden = ordenes.find((o) => o.id === id);
   if (!orden) {
-    return <AppShell role="facturacion"><main className="page"><div className="empty">Orden no encontrada.</div></main></AppShell>;
+    return <AppShell role="contabilidad"><main className="page"><div className="empty">Orden no encontrada.</div></main></AppShell>;
   }
 
   const acciones = orden.estado === "lanzado" ? (
@@ -21,7 +21,7 @@ export default function BodegaOrdenDetallePage() {
   ) : null;
 
   return (
-    <AppShell role="facturacion">
+    <AppShell role="contabilidad">
       <OrdenDetalle orden={orden} volverHref="/facturacion/todas" volverLabel="Volver a órdenes" acciones={acciones} />
     </AppShell>
   );

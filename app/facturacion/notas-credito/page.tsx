@@ -33,7 +33,7 @@ export default function NotasCreditoPage() {
   const totalNC = pend.reduce((s, n) => s + (n.precioUnitario ?? 0) * n.cantidad, 0);
 
   return (
-    <AppShell role="facturacion">
+    <AppShell role="contabilidad">
       <main className="page page--wide">
         <div className="page__head">
           <div className="page__title">

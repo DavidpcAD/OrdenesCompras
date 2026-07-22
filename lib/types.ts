@@ -17,7 +17,7 @@
 // ============================================================================
 
 // nota: la ruta interna 'facturacion' se muestra como "Bodega" (Kattya) en la UI
-export type Role = "ingenieria" | "proveeduria" | "aprobacion" | "facturacion";
+export type Role = "ingenieria" | "proveeduria" | "aprobacion" | "facturacion" | "contabilidad";
 
 export type LineType = "articulo" | "cargo"; // 'cargo' = flete / cargo de producto
 export type TipoSolicitud = "material" | "repuesto" | "stock"; // stock = compra para bodega/inventario

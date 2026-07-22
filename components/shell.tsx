@@ -63,13 +63,20 @@ const ROLE_META: Record<Role, { label: string; persona: string; home: string; na
     ],
   },
   facturacion: {
-    label: "Bodega", persona: "Kattya", home: "/facturacion", color: "var(--ds-color-red-100)",
+    // Bodega (ej. Pedro): recibe el material. Interfaz mínima — solo lo por recibir.
+    label: "Bodega", persona: "Pedro", home: "/facturacion", color: "var(--ds-color-red-100)",
     nav: [
       { href: "/facturacion", label: "Órdenes por recibir", icon: IconDelivery },
+    ],
+  },
+  contabilidad: {
+    // Contabilidad (ej. Kathya): notas de crédito, cargos de tercero, consulta y archivo.
+    label: "Contabilidad", persona: "Kattya", home: "/facturacion/notas-credito", color: "var(--ds-color-gray-300)",
+    nav: [
+      { href: "/facturacion/notas-credito", label: "Notas de crédito", icon: IconEdit },
       { href: "/facturacion/cargo", label: "Cargo sobre factura", icon: IconPlus },
       { href: "/facturacion/todas", label: "Todas las órdenes", icon: IconReceipt },
       { href: "/facturacion/archivo", label: "Archivo", icon: IconFolder },
-      { href: "/facturacion/notas-credito", label: "Notas de crédito", icon: IconEdit },
     ],
   },
 };
