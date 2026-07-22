@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useMemo } from "react";
+import React, { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AppShell } from "@/components/shell";
 import { Badge, Card } from "@/components/ui";
@@ -37,20 +37,25 @@ function MiniBars({ values }: { values: number[] }) {
   );
 }
 
-// Barra horizontal simple (material / obra).
-function BarRow({ label, right, sub, value, max, i }: { label: string; right: string; sub?: string; value: number; max: number; i: number }) {
+// Barra horizontal (material / obra) con ranking opcional.
+function BarRow({ label, right, sub, value, max, i, rank }: { label: string; right: string; sub?: string; value: number; max: number; i: number; rank?: number }) {
   const pct = max > 0 ? Math.max(3, Math.round((value / max) * 100)) : 0;
   return (
-    <div className="col" style={{ gap: 6, padding: "9px 0", borderTop: i ? "1px solid var(--ds-color-gray-100)" : "none" }}>
-      <div className="row row--between gap-3">
-        <span className="ds-strong ds-truncate" title={label} style={{ maxWidth: "68%" }}>{label}</span>
+    <div className="col" style={{ gap: 7, padding: "11px 0", borderTop: i ? "1px solid var(--ds-color-gray-100)" : "none" }}>
+      <div className="row row--between gap-3" style={{ alignItems: "center" }}>
+        <span className="row gap-2" style={{ alignItems: "center", minWidth: 0 }}>
+          {rank != null && (
+            <span style={{ flexShrink: 0, width: 22, height: 22, borderRadius: 999, background: "var(--ds-color-gray-100)", color: "var(--ds-color-gray-500)", fontSize: 12, fontWeight: 600, display: "inline-flex", alignItems: "center", justifyContent: "center" }}>{rank}</span>
+          )}
+          <span className="ds-strong ds-truncate" title={label}>{label}</span>
+        </span>
         <span className="ds-strong" style={{ whiteSpace: "nowrap" }}>{right}</span>
       </div>
       <div className="row gap-3" style={{ alignItems: "center" }}>
-        <div style={{ flex: 1, height: 8, borderRadius: 999, background: "var(--ds-color-gray-100)", overflow: "hidden" }}>
-          <div style={{ height: "100%", width: `${pct}%`, background: "var(--ds-color-green-100)", borderRadius: 999 }} />
+        <div style={{ flex: 1, height: 9, borderRadius: 999, background: "var(--ds-color-gray-100)", overflow: "hidden" }}>
+          <div style={{ height: "100%", width: `${pct}%`, background: "linear-gradient(90deg, var(--ds-color-green-100), var(--ds-color-green-200))", borderRadius: 999 }} />
         </div>
-        {sub && <span className="ds-muted ds-body-sm" style={{ whiteSpace: "nowrap" }}>{sub}</span>}
+        {sub && <span className="ds-muted ds-body-sm" style={{ whiteSpace: "nowrap", minWidth: 62, textAlign: "right" }}>{sub}</span>}
       </div>
     </div>
   );
@@ -140,9 +145,24 @@ export default function DashboardPage() {
   const lineasPromedio = kpi.total > 0 ? (kpi.lineas / kpi.total) : 0;
 
   const recientes = useMemo(
-    () => [...pedidos].sort((a, b) => (b.fecha || "").localeCompare(a.fecha || "")).slice(0, 5),
+    () => [...pedidos].sort((a, b) => (b.fecha || "").localeCompare(a.fecha || "")).slice(0, 8),
     [pedidos]
   );
+
+  // Materiales distintos (todos, para el drill-down del KPI).
+  const materialesDistintos = useMemo(() => {
+    const m = new Map<string, { desc: string; cantidad: number; veces: number; unidad: string }>();
+    for (const p of pedidos) for (const l of p.lineas) {
+      const key = l.articuloId || l.descripcion;
+      const e = m.get(key) ?? { desc: l.descripcion, cantidad: 0, veces: 0, unidad: l.unidad };
+      e.cantidad += l.cantidad; e.veces += 1; m.set(key, e);
+    }
+    const arr = [...m.values()].sort((a, b) => b.veces - a.veces || b.cantidad - a.cantidad);
+    return { arr, max: arr.reduce((mx, x) => Math.max(mx, x.veces), 0) || 1 };
+  }, [pedidos]);
+
+  // KPI seleccionado → panel de detalle (drill-down).
+  const [kpiSel, setKpiSel] = useState<"solicitudes" | "lineas" | "materiales" | "obras">("solicitudes");
 
   return (
     <AppShell role="ingenieria">
@@ -155,31 +175,78 @@ export default function DashboardPage() {
         </div>
 
         <div className="ana-kpis mt-2">
-          <Card className="ana-kpi ds-reveal" style={{ "--ds-reveal-i": 0 } as React.CSSProperties}>
-            <span className="ana-kpi__label">Solicitudes</span>
-            <span className="ana-kpi__value">{kpi.total}</span>
-            <span className="ana-kpi__sub">{kpi.materiales} materiales distintos</span>
-            <MiniBars values={semanal.map((w) => w.count)} />
-          </Card>
-          <Card className="ana-kpi ds-reveal" style={{ "--ds-reveal-i": 1 } as React.CSSProperties}>
-            <span className="ana-kpi__label">Conversión a pedido</span>
-            <span className="ana-kpi__value">{tasaAtendidas}%</span>
-            <span className="ana-kpi__sub">Aprobadas, en orden o recibidas</span>
-            <MiniBars values={estados.c.map((e) => e.count)} />
-          </Card>
-          <Card className="ana-kpi ds-reveal" style={{ "--ds-reveal-i": 2 } as React.CSSProperties}>
-            <span className="ana-kpi__label">Líneas por solicitud</span>
-            <span className="ana-kpi__value">{lineasPromedio.toFixed(1)}</span>
-            <span className="ana-kpi__sub">{kpi.lineas} líneas totales</span>
-            <MiniBars values={porMes.arr.map((m) => m.count)} />
-          </Card>
-          <Card className="ana-kpi ds-reveal" style={{ "--ds-reveal-i": 3 } as React.CSSProperties}>
-            <span className="ana-kpi__label">Obras activas</span>
-            <span className="ana-kpi__value">{kpi.obras}</span>
-            <span className="ana-kpi__sub">Top carga por destino</span>
-            <MiniBars values={porObra.arr.map((o) => o.solic)} />
-          </Card>
+          {([
+            { k: "solicitudes", label: "Solicitudes", value: kpi.total, sub: `${tasaAtendidas}% con pedido`, bars: semanal.map((w) => w.count) },
+            { k: "lineas", label: "Líneas pedidas", value: kpi.lineas, sub: `${lineasPromedio.toFixed(1)} por solicitud`, bars: porMes.arr.map((m) => m.count) },
+            { k: "materiales", label: "Materiales distintos", value: kpi.materiales, sub: "Tocá para ver el detalle", bars: topMateriales.arr.map((m) => m.cantidad) },
+            { k: "obras", label: "Obras activas", value: kpi.obras, sub: "Carga por destino", bars: porObra.arr.map((o) => o.solic) },
+          ] as const).map((c, i) => (
+            <button key={c.k} type="button" onClick={() => setKpiSel(c.k)}
+              className={`ana-kpi ds-card ds-reveal${kpiSel === c.k ? " is-selected" : ""}`}
+              aria-pressed={kpiSel === c.k} style={{ "--ds-reveal-i": i, textAlign: "left", cursor: "pointer" } as React.CSSProperties}>
+              <span className="ana-kpi__label">{c.label}</span>
+              <span className="ana-kpi__value">{c.value}</span>
+              <span className="ana-kpi__sub">{c.sub}</span>
+              <MiniBars values={c.bars} />
+            </button>
+          ))}
         </div>
+
+        {/* Drill-down del KPI seleccionado */}
+        <Card className="mt-4 ana-panel">
+          {kpiSel === "solicitudes" && (<>
+            <h2 className="ds-subtitle" style={{ marginBottom: 8 }}>Solicitudes recientes</h2>
+            {recientes.length === 0 ? <div className="empty" style={{ padding: "12px 0" }}>Sin solicitudes todavía.</div> : (
+              <div className="col">
+                {recientes.map((p, i) => {
+                  const e = ESTADOS.find((x) => x.key === p.estado);
+                  return (
+                    <div key={p.id} className="row row--between gap-3 is-clickable" style={{ cursor: "pointer", padding: "10px 0", borderTop: i ? "1px solid var(--ds-color-gray-100)" : "none" }} onClick={() => router.push(`/ingenieria/${p.id}`)}>
+                      <div className="col" style={{ gap: 2 }}>
+                        <span className="ds-strong" style={{ whiteSpace: "nowrap" }}>{p.numero}</span>
+                        <span className="ds-muted ds-body-sm">{destinoCodigo(p)} · {formatDate(p.fecha)} · {p.lineas.length} línea{p.lineas.length === 1 ? "" : "s"}</span>
+                      </div>
+                      <Badge tone={e?.tone ?? "gray"}>{e?.label ?? p.estado}</Badge>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </>)}
+          {kpiSel === "lineas" && (<>
+            <h2 className="ds-subtitle" style={{ marginBottom: 4 }}>Materiales que más pedís</h2>
+            <p className="ds-muted ds-body-sm" style={{ marginTop: 0, marginBottom: 8 }}>Por cantidad total solicitada.</p>
+            {topMateriales.arr.length === 0 ? <div className="empty" style={{ padding: "12px 0" }}>Aún no hay solicitudes.</div> : (
+              <div className="col">
+                {topMateriales.arr.map((m, i) => (
+                  <BarRow key={m.desc + i} i={i} rank={i + 1} label={m.desc} right={`${num.format(m.cantidad)} ${m.unidad}`} sub={`${m.veces} pedido${m.veces === 1 ? "" : "s"}`} value={m.cantidad} max={topMateriales.max} />
+                ))}
+              </div>
+            )}
+          </>)}
+          {kpiSel === "materiales" && (<>
+            <h2 className="ds-subtitle" style={{ marginBottom: 4 }}>Materiales distintos</h2>
+            <p className="ds-muted ds-body-sm" style={{ marginTop: 0, marginBottom: 8 }}>Ordenados por cuántas veces los pedís.</p>
+            {materialesDistintos.arr.length === 0 ? <div className="empty" style={{ padding: "12px 0" }}>Sin datos.</div> : (
+              <div className="col">
+                {materialesDistintos.arr.slice(0, 12).map((m, i) => (
+                  <BarRow key={m.desc + i} i={i} rank={i + 1} label={m.desc} right={`${m.veces} vez${m.veces === 1 ? "" : "ces"}`} sub={`${num.format(m.cantidad)} ${m.unidad}`} value={m.veces} max={materialesDistintos.max} />
+                ))}
+                {materialesDistintos.arr.length > 12 && <p className="ds-muted ds-body-sm" style={{ marginTop: 8 }}>+{materialesDistintos.arr.length - 12} más</p>}
+              </div>
+            )}
+          </>)}
+          {kpiSel === "obras" && (<>
+            <h2 className="ds-subtitle" style={{ marginBottom: 8 }}>Solicitudes por obra</h2>
+            {porObra.arr.length === 0 ? <div className="empty" style={{ padding: "12px 0" }}>Sin datos.</div> : (
+              <div className="col">
+                {porObra.arr.map((o, i) => (
+                  <BarRow key={o.obra} i={i} rank={i + 1} label={o.obra} right={`${o.solic} solic.`} sub={`${o.lineas} línea${o.lineas === 1 ? "" : "s"}`} value={o.solic} max={porObra.max} />
+                ))}
+              </div>
+            )}
+          </>)}
+        </Card>
 
         <div className="grid-2 mt-4">
           <Card className="ds-reveal ana-panel" style={{ "--ds-reveal-i": 4 } as React.CSSProperties}>
@@ -218,56 +285,6 @@ export default function DashboardPage() {
           </Card>
         </div>
 
-        <div className="grid-2 mt-4">
-          <Card className="ds-reveal ana-panel" style={{ "--ds-reveal-i": 6 } as React.CSSProperties}>
-            <h2 className="ds-subtitle" style={{ marginBottom: 4 }}>Materiales que más pedís</h2>
-            <p className="ds-muted ds-body-sm" style={{ marginTop: 0, marginBottom: 8 }}>Por cantidad total solicitada.</p>
-            {topMateriales.arr.length === 0 ? (
-              <div className="empty" style={{ padding: "12px 0" }}>Aún no hay solicitudes. Creá la primera en Mis solicitudes.</div>
-            ) : (
-              <div className="col">
-                {topMateriales.arr.map((m, i) => (
-                  <BarRow key={m.desc + i} i={i} label={m.desc} right={`${num.format(m.cantidad)} ${m.unidad}`} sub={`${m.veces} pedido${m.veces === 1 ? "" : "s"}`} value={m.cantidad} max={topMateriales.max} />
-                ))}
-              </div>
-            )}
-          </Card>
-
-          <Card className="ds-reveal ana-panel" style={{ "--ds-reveal-i": 7 } as React.CSSProperties}>
-            <h2 className="ds-subtitle" style={{ marginBottom: 8 }}>Solicitudes por obra</h2>
-            {porObra.arr.length === 0 ? (
-              <div className="empty" style={{ padding: "12px 0" }}>Sin datos.</div>
-            ) : (
-              <div className="col">
-                {porObra.arr.map((o, i) => (
-                  <BarRow key={o.obra} i={i} label={o.obra} right={`${o.solic} solic.`} sub={`${o.lineas} línea${o.lineas === 1 ? "" : "s"}`} value={o.solic} max={porObra.max} />
-                ))}
-              </div>
-            )}
-          </Card>
-        </div>
-
-        <Card className="mt-4 ds-reveal ana-panel" style={{ "--ds-reveal-i": 8 } as React.CSSProperties}>
-          <h2 className="ds-subtitle" style={{ marginBottom: 8 }}>Últimas solicitudes</h2>
-          {recientes.length === 0 ? (
-            <div className="empty" style={{ padding: "12px 0" }}>Sin solicitudes todavía.</div>
-          ) : (
-            <div className="col">
-              {recientes.map((p, i) => {
-                const e = ESTADOS.find((x) => x.key === p.estado);
-                return (
-                  <div key={p.id} className="row row--between gap-3 is-clickable" style={{ cursor: "pointer", padding: "10px 0", borderTop: i ? "1px solid var(--ds-color-gray-100)" : "none" }} onClick={() => router.push(`/ingenieria/${p.id}`)}>
-                    <div className="col" style={{ gap: 2 }}>
-                      <span className="ds-strong">{p.numero}</span>
-                      <span className="ds-muted ds-body-sm">{destinoCodigo(p)} · {formatDate(p.fecha)} · {p.lineas.length} línea{p.lineas.length === 1 ? "" : "s"}</span>
-                    </div>
-                    <Badge tone={e?.tone ?? "gray"}>{e?.label ?? p.estado}</Badge>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </Card>
       </main>
     </AppShell>
   );

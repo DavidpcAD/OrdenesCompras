@@ -195,7 +195,6 @@ export function SolicitudForm({
   const [plantillas, setPlantillas] = useState<Plantilla[]>([]);
   const [nombrePlantilla, setNombrePlantilla] = useState("");
   const [filtroPlantilla, setFiltroPlantilla] = useState<string>(""); // "" = todas; o creadoPor
-  const [buscarPlantilla, setBuscarPlantilla] = useState("");
   const [plantillaCargada, setPlantillaCargada] = useState<string>("");
   const [obraTodas, setObraTodas] = useState("");
   // Filtros de plantillas por etapa/partida (cuando hay muchas). Requiere el WBS.
@@ -440,15 +439,6 @@ export function SolicitudForm({
     setLineas((ls) => ls.map((l) => ({ ...l, obraCodigo: o.codigo, obraNombre: o.nombre })));
     toast(`Obra ${o.codigo} aplicada a las ${lineas.length} línea(s).`, "success");
   }
-  async function borrarPlantilla(id: number) {
-    try {
-      const r = await fetch(`/api/plantillas/${id}?usuario=${encodeURIComponent(solicitante)}`, { method: "DELETE" });
-      if (!r.ok) throw new Error("No se pudo borrar");
-      await recargarPlantillas();
-    } catch (e: any) {
-      toast(`No se pudo borrar la plantilla: ${String(e?.message ?? e)}`, "error");
-    }
-  }
   const plantillasVisibles = plantillas
     // En contexto de una clasificación (Matriz), SOLO las plantillas de esa clasificación.
     .filter((p) => idClasificacion == null || Number(p.idClasificacion) === Number(idClasificacion))
@@ -461,7 +451,7 @@ export function SolicitudForm({
       if (fPartidaPl && String(partida?.id) !== fPartidaPl) return false;
       return true;
     })
-    .filter((p) => { const q = buscarPlantilla.trim().toLowerCase(); return !q || p.nombre.toLowerCase().includes(q); });
+    ;
   const creadoresPlantillas = useMemo(
     () => Array.from(new Set(plantillas.map((p) => p.creadoPor).filter(Boolean))).sort(),
     [plantillas]
@@ -612,10 +602,6 @@ export function SolicitudForm({
                       <button type="button" className={filtroPlantilla === "*" ? "is-active" : ""} onClick={() => setFiltroPlantilla("*")}>Todas</button>
                     </div>
                   )}
-                  {plantillas.length > 4 && (
-                    <input className="ds-form-field__input" style={{ maxWidth: 180, height: 34 }} placeholder="Buscar plantilla…"
-                      value={buscarPlantilla} onChange={(e) => setBuscarPlantilla(e.target.value)} />
-                  )}
                   {!compact && wbs.etapas.length > 0 && (
                     <>
                       <div style={{ minWidth: 150 }}>
@@ -641,23 +627,26 @@ export function SolicitudForm({
                   </div>
                 )}
               </div>
-              {plantillasVisibles.length > 0 ? (
-                <div className="tpl-cards">
-                  {plantillasVisibles.map((p) => (
-                    <div key={p.id} className={`tpl-card ${plantillaCargada === String(p.id) ? "is-active" : ""}`} role="button" tabIndex={0} title={`Cargar "${p.nombre}" (reemplaza las líneas)`}
-                      onClick={() => cargarPlantilla(String(p.id))}
-                      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); cargarPlantilla(String(p.id)); } }}>
-                      <span className="tpl-card__name" title={p.nombre}>{p.nombre}</span>
-                      <span className="tpl-card__meta">{p.lineas.length} ítem(s){filtroPlantilla === "*" && p.creadoPor ? ` · ${p.creadoPor}` : ""}</span>
-                      {p.creadoPor === solicitante && (
-                        <button type="button" className="tpl-card__del" title="Borrar plantilla"
-                          onClick={(e) => { e.stopPropagation(); borrarPlantilla(p.id); }}>×</button>
-                      )}
-                    </div>
-                  ))}
+              {plantillas.length > 0 ? (
+                <div className="row gap-3 wrap mt-3" style={{ alignItems: "center" }}>
+                  <div style={{ flex: "1 1 320px", minWidth: 240 }}>
+                    <Combobox items={plantillasVisibles} value={plantillaCargada}
+                      onChange={(k) => cargarPlantilla(k)}
+                      getKey={(p) => String(p.id)}
+                      getLabel={(p) => `${p.nombre} · ${p.lineas.length} ítem(s)${filtroPlantilla === "*" && p.creadoPor ? ` · ${p.creadoPor}` : ""}`}
+                      getSearch={(p) => `${p.nombre} ${p.creadoPor ?? ""}`}
+                      placeholder="Elegí una plantilla…" />
+                  </div>
+                  {plantillaCargada && (
+                    <span className="row gap-2" style={{ alignItems: "center" }}>
+                      <span className="ds-body-sm ds-muted">Cargada ✓</span>
+                      <Button variant="ghost" size="sm" onClick={() => { setPlantillaCargada(""); setLineas([]); }}>Quitar</Button>
+                    </span>
+                  )}
+                  <span className="ds-body-sm ds-muted">{plantillasVisibles.length} disponible{plantillasVisibles.length === 1 ? "" : "s"} · se gestionan en Plantillas</span>
                 </div>
               ) : (
-                <p className="ds-body-sm ds-muted" style={{ margin: 0 }}>
+                <p className="ds-body-sm ds-muted" style={{ margin: "8px 0 0" }}>
                   {idClasificacion != null
                     ? "No hay plantillas para esta clasificación todavía. Buscá el material abajo y agregalo."
                     : "No hay plantillas guardadas todavía. Agregá materiales abajo y guardá la lista, o descargá el Excel para armarla en tu compu."}

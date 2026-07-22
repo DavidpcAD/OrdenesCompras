@@ -986,8 +986,19 @@ h1, h2, h3, h4, p { margin: 0; }
 .ana-kpi {
   position: relative;
   overflow: hidden;
+  display: flex; flex-direction: column; gap: 4px;
   border: 1.5px solid color-mix(in srgb, var(--ds-color-gray-100) 85%, #fff);
+  font: inherit; width: 100%;
+  transition: border-color .12s ease, box-shadow .15s ease, transform .06s ease;
 }
+button.ana-kpi { cursor: pointer; }
+button.ana-kpi:hover { box-shadow: var(--ds-shadow-03-big); }
+button.ana-kpi:active { transform: translateY(1px); }
+.ana-kpi.is-selected {
+  border-color: var(--ds-color-green-200);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--ds-color-green-100) 55%, #fff), var(--ds-shadow-01);
+}
+.ana-kpi.is-selected::after { background: color-mix(in srgb, var(--ds-color-green-100) 26%, #fff); }
 .ana-kpi::after {
   content: "";
   position: absolute;
