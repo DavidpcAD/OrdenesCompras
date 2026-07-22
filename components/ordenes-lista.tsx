@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { ColumnDef } from "@tanstack/react-table";
-import { Badge, QtyRing } from "@/components/ui";
+import { Badge, ProgressBar } from "@/components/ui";
 import { DataTable } from "@/components/data-table";
 import { IconChevronDown } from "@/components/icons";
 import { useStore } from "@/lib/store";
@@ -48,7 +48,7 @@ export function OrdenesLista({
       id: "recibido", header: "Recibido", accessorFn: (o) => ordenRecibidoPct(o), meta: { label: "Recibido" }, enableColumnFilter: false,
       cell: (c) => {
         const o = c.row.original;
-        return <div className="row gap-3"><QtyRing recibida={o.lineas.reduce((s, l) => s + l.cantidadRecibida, 0)} total={o.lineas.reduce((s, l) => s + l.cantidad, 0)} /><span className="ds-body-sm ds-muted">{ordenRecibidoPct(o)}%</span></div>;
+        return <ProgressBar compact value={o.lineas.reduce((s, l) => s + l.cantidadRecibida, 0)} total={o.lineas.reduce((s, l) => s + l.cantidad, 0)} />;
       },
     },
     { id: "estado", header: "Estado", accessorFn: (o) => ordenBadge(o.estado).label, meta: { label: "Estado" }, cell: (c) => { const b = ordenBadge(c.row.original.estado); return <Badge tone={b.tone}>{b.label}</Badge>; } },
@@ -83,15 +83,16 @@ export function OrdenesLista({
     return [...map.entries()]
       .map(([nombre, ords]) => {
         const totales = new Map<string, number>();
-        let rec = 0, tot = 0;
+        let rec = 0, tot = 0, completas = 0;
         for (const o of ords) {
           const cur = o.currencyCode || "CRC";
           totales.set(cur, (totales.get(cur) ?? 0) + ordenSubtotal(o));
           rec += o.lineas.reduce((a, l) => a + l.cantidadRecibida, 0);
           tot += o.lineas.reduce((a, l) => a + l.cantidad, 0);
+          if (ordenRecibidoPct(o) >= 100) completas += 1;
         }
         const ordsSort = [...ords].sort((a, b) => (b.fecha || "").localeCompare(a.fecha || ""));
-        return { nombre, ords: ordsSort, totales: [...totales.entries()], rec, tot };
+        return { nombre, ords: ordsSort, totales: [...totales.entries()], rec, tot, completas };
       })
       .sort((a, b) => a.nombre.localeCompare(b.nombre));
   }, [ordenes, proveedores]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -123,9 +124,12 @@ export function OrdenesLista({
               <div key={g.nombre} className="ord-grp">
                 <button type="button" className={`ord-grp-head${abierto ? "" : " is-collapsed"}`} onClick={() => toggleGrupo(g.nombre)}>
                   <IconChevronDown size={18} className="ord-grp-head__chev" />
-                  <span className="ds-strong">{g.nombre}</span>
-                  <span className="ds-muted ds-body-sm">{g.ords.length} orden{g.ords.length === 1 ? "" : "es"}</span>
-                  <span style={{ marginLeft: "auto" }} className="ds-strong">
+                  <span className="ord-grp-head__main">
+                    <span className="ds-strong">{g.nombre}</span>
+                    <span className="ord-grp-head__meta ds-body-sm ds-muted">{g.ords.length} OC{g.ords.length === 1 ? "" : "s"} · {g.completas} completada{g.completas === 1 ? "" : "s"}</span>
+                  </span>
+                  <span className="ord-grp-head__prog"><ProgressBar compact value={g.rec} total={g.tot} /></span>
+                  <span className="ord-grp-head__total ds-strong">
                     {g.totales.map(([cur, sum], i) => <span key={cur}>{i > 0 ? " · " : ""}{money(sum, cur)}</span>)}
                   </span>
                 </button>
@@ -144,7 +148,7 @@ export function OrdenesLista({
                               <td><div className="row gap-2 wrap">{dir && <Badge tone="yellow">Directa</Badge>}{peds.slice(0, 2).map((n) => <Badge key={n} tone="gray">{n}</Badge>)}{peds.length > 2 && <span className="ds-muted ds-body-sm">+{peds.length - 2}</span>}</div></td>
                               <td className="ds-body-sm">{formatDate(o.fecha)}</td>
                               <td className="ds-num ds-strong">{money(ordenSubtotal(o), o.currencyCode)}</td>
-                              <td><div className="row gap-2"><QtyRing recibida={o.lineas.reduce((s, l) => s + l.cantidadRecibida, 0)} total={o.lineas.reduce((s, l) => s + l.cantidad, 0)} /><span className="ds-body-sm ds-muted">{ordenRecibidoPct(o)}%</span></div></td>
+                              <td><ProgressBar compact value={o.lineas.reduce((s, l) => s + l.cantidadRecibida, 0)} total={o.lineas.reduce((s, l) => s + l.cantidad, 0)} /></td>
                               <td><Badge tone={b.tone}>{b.label}</Badge></td>
                             </tr>
                           );

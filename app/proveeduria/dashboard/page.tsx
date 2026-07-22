@@ -3,7 +3,7 @@
 import { useMemo } from "react";
 import type { ColumnDef } from "@tanstack/react-table";
 import { AppShell } from "@/components/shell";
-import { Tile, Badge, QtyRing } from "@/components/ui";
+import { Tile, ProgressBar } from "@/components/ui";
 import { DataTable } from "@/components/data-table";
 import { useStore } from "@/lib/store";
 import { money, num } from "@/lib/helpers";
@@ -73,7 +73,7 @@ export default function ProveeduriaDashboardPage() {
     { id: "pedido", header: "Pedido", accessorFn: (r) => r.pedido, meta: { label: "Pedido", num: true }, enableColumnFilter: false, cell: (c) => money(c.getValue(), c.row.original.currency) },
     { id: "recibido", header: "Entregado", accessorFn: (r) => r.recibido, meta: { label: "Entregado", num: true }, enableColumnFilter: false, cell: (c) => money(c.getValue(), c.row.original.currency) },
     { id: "pendiente", header: "Pendiente", accessorFn: (r) => r.pendiente, meta: { label: "Pendiente", num: true }, enableColumnFilter: false, cell: (c) => { const v = Number(c.getValue()); return <span className="ds-strong" style={{ color: v > 0 ? "var(--ds-color-red-200)" : "inherit" }}>{money(v, c.row.original.currency)}</span>; } },
-    { id: "pct", header: "% entregado", accessorFn: (r) => r.pct, meta: { label: "% entregado", num: true }, enableColumnFilter: false, cell: (c) => { const r = c.row.original; return <div className="row gap-2" style={{ alignItems: "center", justifyContent: "flex-end" }}><QtyRing recibida={r.recibido} total={r.pedido} /><span className="ds-body-sm ds-muted">{r.pct}%</span></div>; } },
+    { id: "pct", header: "% entregado", accessorFn: (r) => r.pct, meta: { label: "% entregado", num: true }, enableColumnFilter: false, cell: (c) => { const r = c.row.original; return <div className="row" style={{ justifyContent: "flex-end" }}><ProgressBar compact value={r.recibido} total={r.pedido} /></div>; } },
   ], []);
 
   const renderExpanded = (r: ProvRow) => (

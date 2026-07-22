@@ -252,6 +252,40 @@ h1, h2, h3, h4, p { margin: 0; }
   position: relative; z-index: 1; font-size: var(--ds-font-size-body-sm); font-weight: var(--ds-font-weight-semibold);
 }
 
+/* =====================  LINEAR PROGRESS  ===================== */
+.ds-progress {
+  --ds-progress: 0%;
+  --ds-progress-tone: var(--ds-color-green-100);
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 118px;
+}
+.ds-progress__track {
+  width: 84px;
+  height: 10px;
+  border-radius: 999px;
+  background: var(--ds-color-gray-100);
+  overflow: hidden;
+}
+.ds-progress__fill {
+  display: block;
+  width: var(--ds-progress);
+  height: 100%;
+  background: var(--ds-progress-tone);
+  border-radius: inherit;
+}
+.ds-progress__pct {
+  font-size: var(--ds-font-size-body-sm);
+  color: var(--ds-color-gray-500);
+  font-variant-numeric: tabular-nums;
+  font-weight: var(--ds-font-weight-semibold);
+  min-width: 36px;
+  text-align: right;
+}
+.ds-progress--compact { min-width: 104px; }
+.ds-progress--compact .ds-progress__track { width: 70px; height: 8px; }
+
 /* =====================  TABLE  ===================== */
 .ds-table-wrap { width: 100%; overflow-x: auto; border-radius: var(--ds-radius-lg); background: var(--ds-color-white); box-shadow: var(--ds-shadow-01); }
 .ds-table { width: 100%; border-collapse: collapse; font-size: var(--ds-font-size-label); }
@@ -907,12 +941,86 @@ h1, h2, h3, h4, p { margin: 0; }
 @media (max-width: 760px) { .tiles-3 { grid-template-columns: 1fr 1fr; } }
 
 /* ---- Órdenes agrupadas por proveedor ---- */
-.ord-grp { border: 1.5px solid var(--ds-color-gray-100); border-radius: var(--ds-radius-lg); background: var(--ds-color-white); overflow: hidden; }
-.ord-grp-head { display: flex; align-items: center; gap: 12px; width: 100%; padding: 12px 16px; border: 0; background: color-mix(in srgb, var(--ds-color-gray-100) 30%, #fff); cursor: pointer; font: inherit; text-align: left; transition: background .12s; }
-.ord-grp-head:hover { background: var(--ds-color-gray-100); }
+.ord-grp {
+  border: 1.5px solid var(--ds-color-gray-100);
+  border-radius: var(--ds-radius-lg);
+  background: var(--ds-color-white);
+  overflow: hidden;
+  box-shadow: var(--ds-shadow-01);
+}
+.ord-grp-head {
+  display: grid;
+  grid-template-columns: auto minmax(200px, 1fr) auto auto;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 14px 16px;
+  border: 0;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--ds-color-gray-100) 24%, #fff), #fff);
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+  transition: background .12s;
+}
+.ord-grp-head:hover { background: color-mix(in srgb, var(--ds-color-green-100) 9%, #fff); }
 .ord-grp-head__chev { flex-shrink: 0; transition: transform .18s ease; }
+.ord-grp-head__main { display: flex; flex-direction: column; min-width: 0; }
+.ord-grp-head__meta { margin-top: 2px; }
+.ord-grp-head__prog { justify-self: end; }
+.ord-grp-head__total { justify-self: end; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .ord-grp-head.is-collapsed .ord-grp-head__chev { transform: rotate(-90deg); }
 @media (prefers-reduced-motion: reduce) { .ord-grp-head__chev { transition: none; } }
+@media (max-width: 960px) {
+  .ord-grp-head { grid-template-columns: auto 1fr; }
+  .ord-grp-head__prog { grid-column: 2; justify-self: start; }
+  .ord-grp-head__total { grid-column: 2; justify-self: start; }
+}
+
+/* ---- Dashboard analytics (Ingeniería) ---- */
+.ana-kpis {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--ds-space-4);
+}
+.ana-kpi {
+  position: relative;
+  overflow: hidden;
+  border: 1.5px solid color-mix(in srgb, var(--ds-color-gray-100) 85%, #fff);
+}
+.ana-kpi::after {
+  content: "";
+  position: absolute;
+  right: -24px;
+  top: -24px;
+  width: 90px;
+  height: 90px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--ds-color-green-100) 14%, #fff);
+}
+.ana-kpi__label { color: var(--ds-color-gray-500); font-size: var(--ds-font-size-body-sm); z-index: 1; }
+.ana-kpi__value { font-size: 34px; line-height: 1.05; font-weight: var(--ds-font-weight-semibold); z-index: 1; }
+.ana-kpi__sub { color: var(--ds-color-gray-400); font-size: var(--ds-font-size-body-sm); z-index: 1; }
+.ana-kpi > * { position: relative; }
+.ana-mini-bars {
+  margin-top: 10px;
+  display: grid;
+  grid-template-columns: repeat(8, minmax(0, 1fr));
+  align-items: end;
+  gap: 5px;
+  height: 52px;
+}
+.ana-mini-bars span {
+  background: linear-gradient(180deg, var(--ds-color-green-100), var(--ds-color-green-200));
+  border-radius: 4px 4px 0 0;
+}
+.ana-panel { border: 1.5px solid color-mix(in srgb, var(--ds-color-gray-100) 85%, #fff); }
+
+@media (max-width: 1180px) {
+  .ana-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 760px) {
+  .ana-kpis { grid-template-columns: 1fr; }
+}
 
 /* ============================================================
    Skeleton loading + motion (Adelante DS)

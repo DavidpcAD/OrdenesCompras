@@ -3,7 +3,7 @@
 import React, { useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { AppShell } from "@/components/shell";
-import { Badge, Card, Tile } from "@/components/ui";
+import { Badge, Card } from "@/components/ui";
 import { useStore } from "@/lib/store";
 import { num, formatDate, destinoCodigo } from "@/lib/helpers";
 import type { PedidoEstado } from "@/lib/types";
@@ -17,6 +17,25 @@ const ESTADOS: { key: PedidoEstado; label: string; color: string; tone: string }
   { key: "cerrado", label: "Recibida", color: "var(--ds-color-green-100)", tone: "green" },
   { key: "devuelto", label: "Devuelta", color: "var(--ds-color-red-100)", tone: "red" },
 ];
+
+function weekStartISO(d: Date): string {
+  const x = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  const dow = x.getDay();
+  const mondayOffset = (dow + 6) % 7;
+  x.setDate(x.getDate() - mondayOffset);
+  return `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, "0")}-${String(x.getDate()).padStart(2, "0")}`;
+}
+
+function MiniBars({ values }: { values: number[] }) {
+  const max = values.reduce((mx, v) => Math.max(mx, v), 0) || 1;
+  return (
+    <div className="ana-mini-bars" aria-hidden>
+      {values.map((v, i) => (
+        <span key={i} style={{ height: `${Math.max(8, Math.round((v / max) * 48))}px` }} />
+      ))}
+    </div>
+  );
+}
 
 // Barra horizontal simple (material / obra).
 function BarRow({ label, right, sub, value, max, i }: { label: string; right: string; sub?: string; value: number; max: number; i: number }) {
@@ -94,6 +113,32 @@ export default function DashboardPage() {
     return { arr, max: arr.reduce((mx, x) => Math.max(mx, x.count), 0) || 1 };
   }, [pedidos]);
 
+  const semanal = useMemo(() => {
+    const now = new Date();
+    const weeks: { key: string; label: string; count: number }[] = [];
+    for (let i = 7; i >= 0; i -= 1) {
+      const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() - i * 7);
+      const key = weekStartISO(d);
+      weeks.push({ key, label: key.slice(5), count: 0 });
+    }
+    const idx = new Map<string, number>(weeks.map((w, i) => [w.key, i]));
+    for (const p of pedidos) {
+      if (!p.fecha) continue;
+      const w = weekStartISO(new Date(`${p.fecha}T00:00:00`));
+      const i = idx.get(w);
+      if (i != null) weeks[i].count += 1;
+    }
+    return weeks;
+  }, [pedidos]);
+
+  const tasaAtendidas = useMemo(() => {
+    if (pedidos.length === 0) return 0;
+    const atendidas = pedidos.filter((p) => p.estado === "aprobado" || p.estado === "en_orden" || p.estado === "cerrado").length;
+    return Math.round((atendidas / pedidos.length) * 100);
+  }, [pedidos]);
+
+  const lineasPromedio = kpi.total > 0 ? (kpi.lineas / kpi.total) : 0;
+
   const recientes = useMemo(
     () => [...pedidos].sort((a, b) => (b.fecha || "").localeCompare(a.fecha || "")).slice(0, 5),
     [pedidos]
@@ -105,21 +150,40 @@ export default function DashboardPage() {
         <div className="page__head">
           <div className="page__title">
             <h1 className="ds-heading">Dashboard</h1>
-            <p className="ds-muted">Tus solicitudes de material en números: estado, tendencia, lo que más pedís y en qué obras.</p>
+            <p className="ds-muted">Vista ejecutiva de solicitudes: pipeline, ritmo de carga y materiales críticos.</p>
           </div>
         </div>
 
-        <div className="tiles mt-2">
-          <Tile value={kpi.total} label="Solicitudes" className="ds-reveal" style={{ "--ds-reveal-i": 0 } as React.CSSProperties} />
-          <Tile value={kpi.lineas} label="Líneas pedidas" accent="var(--ds-color-yellow)" className="ds-reveal" style={{ "--ds-reveal-i": 1 } as React.CSSProperties} />
-          <Tile value={kpi.materiales} label="Materiales distintos" accent="var(--ds-color-green-100)" className="ds-reveal" style={{ "--ds-reveal-i": 2 } as React.CSSProperties} />
-          <Tile value={kpi.obras} label="Obras" accent="var(--ds-color-green-200)" className="ds-reveal" style={{ "--ds-reveal-i": 3 } as React.CSSProperties} />
+        <div className="ana-kpis mt-2">
+          <Card className="ana-kpi ds-reveal" style={{ "--ds-reveal-i": 0 } as React.CSSProperties}>
+            <span className="ana-kpi__label">Solicitudes</span>
+            <span className="ana-kpi__value">{kpi.total}</span>
+            <span className="ana-kpi__sub">{kpi.materiales} materiales distintos</span>
+            <MiniBars values={semanal.map((w) => w.count)} />
+          </Card>
+          <Card className="ana-kpi ds-reveal" style={{ "--ds-reveal-i": 1 } as React.CSSProperties}>
+            <span className="ana-kpi__label">Conversión a pedido</span>
+            <span className="ana-kpi__value">{tasaAtendidas}%</span>
+            <span className="ana-kpi__sub">Aprobadas, en orden o recibidas</span>
+            <MiniBars values={estados.c.map((e) => e.count)} />
+          </Card>
+          <Card className="ana-kpi ds-reveal" style={{ "--ds-reveal-i": 2 } as React.CSSProperties}>
+            <span className="ana-kpi__label">Líneas por solicitud</span>
+            <span className="ana-kpi__value">{lineasPromedio.toFixed(1)}</span>
+            <span className="ana-kpi__sub">{kpi.lineas} líneas totales</span>
+            <MiniBars values={porMes.arr.map((m) => m.count)} />
+          </Card>
+          <Card className="ana-kpi ds-reveal" style={{ "--ds-reveal-i": 3 } as React.CSSProperties}>
+            <span className="ana-kpi__label">Obras activas</span>
+            <span className="ana-kpi__value">{kpi.obras}</span>
+            <span className="ana-kpi__sub">Top carga por destino</span>
+            <MiniBars values={porObra.arr.map((o) => o.solic)} />
+          </Card>
         </div>
 
         <div className="grid-2 mt-4">
-          {/* Estado de solicitudes — barra segmentada + leyenda */}
-          <Card className="ds-reveal">
-            <h2 className="ds-subtitle" style={{ marginBottom: 12 }}>Estado de solicitudes</h2>
+          <Card className="ds-reveal ana-panel" style={{ "--ds-reveal-i": 4 } as React.CSSProperties}>
+            <h2 className="ds-subtitle" style={{ marginBottom: 12 }}>Pipeline de solicitudes</h2>
             <div style={{ display: "flex", height: 16, borderRadius: 999, overflow: "hidden", background: "var(--ds-color-gray-100)" }}>
               {estados.c.map((e) => e.count > 0 && (
                 <div key={e.key} title={`${e.label}: ${e.count}`} style={{ width: `${(e.count / estados.total) * 100}%`, background: e.color }} />
@@ -136,9 +200,8 @@ export default function DashboardPage() {
             </div>
           </Card>
 
-          {/* Actividad por mes — barras verticales */}
-          <Card className="ds-reveal">
-            <h2 className="ds-subtitle" style={{ marginBottom: 12 }}>Solicitudes por mes</h2>
+          <Card className="ds-reveal ana-panel" style={{ "--ds-reveal-i": 5 } as React.CSSProperties}>
+            <h2 className="ds-subtitle" style={{ marginBottom: 12 }}>Actividad mensual</h2>
             {porMes.arr.length === 0 ? (
               <div className="empty" style={{ padding: "12px 0" }}>Sin datos.</div>
             ) : (
@@ -155,24 +218,22 @@ export default function DashboardPage() {
           </Card>
         </div>
 
-        {/* Materiales que más pido — barras horizontales */}
-        <Card className="mt-4 ds-reveal">
-          <h2 className="ds-subtitle" style={{ marginBottom: 4 }}>Materiales que más pedís</h2>
-          <p className="ds-muted ds-body-sm" style={{ marginTop: 0, marginBottom: 8 }}>Por cantidad total solicitada.</p>
-          {topMateriales.arr.length === 0 ? (
-            <div className="empty" style={{ padding: "12px 0" }}>Aún no hay solicitudes. Creá la primera en “Mis solicitudes”.</div>
-          ) : (
-            <div className="col">
-              {topMateriales.arr.map((m, i) => (
-                <BarRow key={m.desc + i} i={i} label={m.desc} right={`${num.format(m.cantidad)} ${m.unidad}`} sub={`${m.veces} pedido${m.veces === 1 ? "" : "s"}`} value={m.cantidad} max={topMateriales.max} />
-              ))}
-            </div>
-          )}
-        </Card>
-
         <div className="grid-2 mt-4">
-          {/* Por obra — barras horizontales */}
-          <Card className="ds-reveal">
+          <Card className="ds-reveal ana-panel" style={{ "--ds-reveal-i": 6 } as React.CSSProperties}>
+            <h2 className="ds-subtitle" style={{ marginBottom: 4 }}>Materiales que más pedís</h2>
+            <p className="ds-muted ds-body-sm" style={{ marginTop: 0, marginBottom: 8 }}>Por cantidad total solicitada.</p>
+            {topMateriales.arr.length === 0 ? (
+              <div className="empty" style={{ padding: "12px 0" }}>Aún no hay solicitudes. Creá la primera en Mis solicitudes.</div>
+            ) : (
+              <div className="col">
+                {topMateriales.arr.map((m, i) => (
+                  <BarRow key={m.desc + i} i={i} label={m.desc} right={`${num.format(m.cantidad)} ${m.unidad}`} sub={`${m.veces} pedido${m.veces === 1 ? "" : "s"}`} value={m.cantidad} max={topMateriales.max} />
+                ))}
+              </div>
+            )}
+          </Card>
+
+          <Card className="ds-reveal ana-panel" style={{ "--ds-reveal-i": 7 } as React.CSSProperties}>
             <h2 className="ds-subtitle" style={{ marginBottom: 8 }}>Solicitudes por obra</h2>
             {porObra.arr.length === 0 ? (
               <div className="empty" style={{ padding: "12px 0" }}>Sin datos.</div>
@@ -184,30 +245,29 @@ export default function DashboardPage() {
               </div>
             )}
           </Card>
-
-          {/* Últimas solicitudes — lista compacta */}
-          <Card className="ds-reveal">
-            <h2 className="ds-subtitle" style={{ marginBottom: 8 }}>Últimas solicitudes</h2>
-            {recientes.length === 0 ? (
-              <div className="empty" style={{ padding: "12px 0" }}>Sin solicitudes todavía.</div>
-            ) : (
-              <div className="col">
-                {recientes.map((p, i) => {
-                  const e = ESTADOS.find((x) => x.key === p.estado);
-                  return (
-                    <div key={p.id} className="row row--between gap-3 is-clickable" style={{ cursor: "pointer", padding: "10px 0", borderTop: i ? "1px solid var(--ds-color-gray-100)" : "none" }} onClick={() => router.push(`/ingenieria/${p.id}`)}>
-                      <div className="col" style={{ gap: 2 }}>
-                        <span className="ds-strong">{p.numero}</span>
-                        <span className="ds-muted ds-body-sm">{destinoCodigo(p)} · {formatDate(p.fecha)} · {p.lineas.length} línea{p.lineas.length === 1 ? "" : "s"}</span>
-                      </div>
-                      <Badge tone={e?.tone ?? "gray"}>{e?.label ?? p.estado}</Badge>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </Card>
         </div>
+
+        <Card className="mt-4 ds-reveal ana-panel" style={{ "--ds-reveal-i": 8 } as React.CSSProperties}>
+          <h2 className="ds-subtitle" style={{ marginBottom: 8 }}>Últimas solicitudes</h2>
+          {recientes.length === 0 ? (
+            <div className="empty" style={{ padding: "12px 0" }}>Sin solicitudes todavía.</div>
+          ) : (
+            <div className="col">
+              {recientes.map((p, i) => {
+                const e = ESTADOS.find((x) => x.key === p.estado);
+                return (
+                  <div key={p.id} className="row row--between gap-3 is-clickable" style={{ cursor: "pointer", padding: "10px 0", borderTop: i ? "1px solid var(--ds-color-gray-100)" : "none" }} onClick={() => router.push(`/ingenieria/${p.id}`)}>
+                    <div className="col" style={{ gap: 2 }}>
+                      <span className="ds-strong">{p.numero}</span>
+                      <span className="ds-muted ds-body-sm">{destinoCodigo(p)} · {formatDate(p.fecha)} · {p.lineas.length} línea{p.lineas.length === 1 ? "" : "s"}</span>
+                    </div>
+                    <Badge tone={e?.tone ?? "gray"}>{e?.label ?? p.estado}</Badge>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </Card>
       </main>
     </AppShell>
   );

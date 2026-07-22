@@ -190,6 +190,31 @@ export function QtyRing({ recibida, total }: { recibida: number; total: number }
   );
 }
 
+// ---------------------------------------------------------------- ProgressBar
+// Variante lineal para progreso (evita el "anillo" cuando ocupa demasiado foco).
+export function ProgressBar({
+  value,
+  total,
+  compact,
+}: {
+  value: number;
+  total: number;
+  compact?: boolean;
+}) {
+  const pct = total > 0 ? Math.max(0, Math.min(100, Math.round((value / total) * 100))) : 0;
+  const tone = pct >= 100 ? "var(--ds-color-green-100)" : pct > 0 ? "var(--ds-color-yellow)" : "var(--ds-color-gray-300)";
+  return (
+    <span
+      className={`ds-progress ${compact ? "ds-progress--compact" : ""}`}
+      title={`${value} de ${total}`}
+      style={{ "--ds-progress": `${pct}%`, "--ds-progress-tone": tone } as React.CSSProperties}
+    >
+      <span className="ds-progress__track"><span className="ds-progress__fill" /></span>
+      <span className="ds-progress__pct">{pct}%</span>
+    </span>
+  );
+}
+
 // ---------------------------------------------------------------- Modal
 export function Modal({ title, onClose, children, footer, wide }: {
   title: string; onClose: () => void; children: React.ReactNode; footer?: React.ReactNode; wide?: boolean;
