@@ -591,45 +591,12 @@ export function SolicitudForm({
               </div>
               )}
             </div>
-            {/* Cuerpo: filtros + guardar + tarjetas */}
+            {/* Cuerpo: picker limpio + pie discreto (contador · guardar) */}
             <div className="tpl-panel__body">
-              <div className="row row--between wrap gap-3" style={{ alignItems: "center" }}>
-                <div className="row gap-2 wrap" style={{ alignItems: "center" }}>
-                  <span className="ds-body-sm ds-strong">Plantillas guardadas</span>
-                  {creadoresPlantillas.length > 1 && (
-                    <div className="seg-mini">
-                      <button type="button" className={filtroPlantilla === solicitante ? "is-active" : ""} onClick={() => setFiltroPlantilla(solicitante)}>Mías</button>
-                      <button type="button" className={filtroPlantilla === "*" ? "is-active" : ""} onClick={() => setFiltroPlantilla("*")}>Todas</button>
-                    </div>
-                  )}
-                  {!compact && wbs.etapas.length > 0 && (
-                    <>
-                      <div style={{ minWidth: 150 }}>
-                        <Select value={fEtapaPl} onChange={(e) => { setFEtapaPl(e.target.value); setFPartidaPl(""); }}>
-                          <option value="">Todas las etapas</option>
-                          {wbs.etapas.map((et) => <option key={et.id} value={et.id}>{et.codigo} · {et.nombre}</option>)}
-                        </Select>
-                      </div>
-                      <div style={{ minWidth: 170 }}>
-                        <Select value={fPartidaPl} onChange={(e) => setFPartidaPl(e.target.value)}>
-                          <option value="">Todas las partidas</option>
-                          {partidasDeEtapaPl.map((p) => <option key={p.id} value={p.id}>{p.codigo} · {p.nombre}</option>)}
-                        </Select>
-                      </div>
-                    </>
-                  )}
-                </div>
-                {!compact && lineas.length > 0 && (
-                  <div className="row gap-2" style={{ alignItems: "center" }}>
-                    <input className="ds-form-field__input" style={{ maxWidth: 220, height: 38 }} placeholder="Guardar estas líneas como plantilla…" value={nombrePlantilla}
-                      onChange={(e) => setNombrePlantilla(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") guardarComoPlantilla(); }} />
-                    <Button variant="outline" size="sm" onClick={guardarComoPlantilla}>Guardar</Button>
-                  </div>
-                )}
-              </div>
-              {plantillas.length > 0 ? (
-                <div className="row gap-3 wrap mt-3" style={{ alignItems: "center" }}>
-                  <div style={{ flex: "1 1 320px", minWidth: 240 }}>
+              {plantillas.length > 0 && (
+                <div className="row gap-3 wrap" style={{ alignItems: "flex-end" }}>
+                  <div style={{ flex: "1 1 340px", minWidth: 240 }}>
+                    <label className="ds-label ds-muted" style={{ display: "block", marginBottom: 4 }}>Usar una plantilla</label>
                     <Combobox items={plantillasVisibles} value={plantillaCargada}
                       onChange={(k) => cargarPlantilla(k)}
                       getKey={(p) => String(p.id)}
@@ -637,21 +604,31 @@ export function SolicitudForm({
                       getSearch={(p) => `${p.nombre} ${p.creadoPor ?? ""}`}
                       placeholder="Elegí una plantilla…" />
                   </div>
-                  {plantillaCargada && (
-                    <span className="row gap-2" style={{ alignItems: "center" }}>
-                      <span className="ds-body-sm ds-muted">Cargada ✓</span>
-                      <Button variant="ghost" size="sm" onClick={() => { setPlantillaCargada(""); setLineas([]); }}>Quitar</Button>
-                    </span>
+                  {creadoresPlantillas.length > 1 && (
+                    <div className="seg-mini" style={{ marginBottom: 2 }}>
+                      <button type="button" className={filtroPlantilla === solicitante ? "is-active" : ""} onClick={() => setFiltroPlantilla(solicitante)}>Mías</button>
+                      <button type="button" className={filtroPlantilla === "*" ? "is-active" : ""} onClick={() => setFiltroPlantilla("*")}>Todas</button>
+                    </div>
                   )}
-                  <span className="ds-body-sm ds-muted">{plantillasVisibles.length} disponible{plantillasVisibles.length === 1 ? "" : "s"} · se gestionan en Plantillas</span>
+                  {plantillaCargada && (
+                    <Button variant="ghost" size="sm" style={{ marginBottom: 2 }} onClick={() => { setPlantillaCargada(""); setLineas([]); }}>Quitar plantilla</Button>
+                  )}
                 </div>
-              ) : (
-                <p className="ds-body-sm ds-muted" style={{ margin: "8px 0 0" }}>
-                  {idClasificacion != null
-                    ? "No hay plantillas para esta clasificación todavía. Buscá el material abajo y agregalo."
-                    : "No hay plantillas guardadas todavía. Agregá materiales abajo y guardá la lista, o descargá el Excel para armarla en tu compu."}
-                </p>
               )}
+              <div className="row row--between wrap gap-2" style={{ alignItems: "center" }}>
+                <span className="ds-body-sm ds-muted">
+                  {plantillas.length > 0
+                    ? `${plantillaCargada ? "Cargada ✓ · " : ""}${plantillasVisibles.length} plantilla${plantillasVisibles.length === 1 ? "" : "s"} · se gestionan en Plantillas`
+                    : "No hay plantillas guardadas. Armá la lista abajo y guardala como plantilla."}
+                </span>
+                {!compact && lineas.length > 0 && (
+                  <div className="row gap-2" style={{ alignItems: "center" }}>
+                    <input className="ds-form-field__input" style={{ maxWidth: 260, height: 36 }} placeholder="Guardar estas líneas como plantilla…" value={nombrePlantilla}
+                      onChange={(e) => setNombrePlantilla(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") guardarComoPlantilla(); }} />
+                    <Button variant="outline" size="sm" onClick={guardarComoPlantilla}>Guardar</Button>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         )}
