@@ -85,7 +85,8 @@ a { color: inherit; text-decoration: none; }
 h1, h2, h3, h4, p { margin: 0; }
 
 /* ---- Typography helpers ---- */
-.ds-heading { font-size: var(--ds-font-size-heading); line-height: var(--ds-line-height-heading); font-weight: var(--ds-font-weight-semibold); }
+.ds-heading { font-size: var(--ds-font-size-heading); line-height: var(--ds-line-height-heading); font-weight: var(--ds-font-weight-semibold); overflow-wrap: anywhere; }
+@media (max-width: 640px) { .ds-heading { font-size: clamp(24px, 7vw, var(--ds-font-size-heading)); } }
 .ds-subtitle-lg { font-size: var(--ds-font-size-subtitle-lg); line-height: var(--ds-line-height-subtitle); font-weight: var(--ds-font-weight-semibold); }
 .ds-subtitle { font-size: var(--ds-font-size-subtitle); line-height: var(--ds-line-height-subtitle); font-weight: var(--ds-font-weight-semibold); }
 .ds-label { font-size: var(--ds-font-size-label); line-height: var(--ds-line-height-label); }

@@ -311,10 +311,10 @@ export default function RegistrarFacturaPage() {
               <thead>
                 <tr>
                   <th style={{ width: 32 }}></th><th>Artículo</th><th className="hide-mobile">Almacén</th>
-                  <th className="ds-num">Ordenado</th><th className="ds-num hide-mobile">Ya recib.</th>
+                  <th className="ds-num hide-mobile">Ordenado</th><th className="ds-num hide-mobile">Ya recib.</th>
                   <th className="ds-num">Pend.</th><th className="ds-num">A recibir</th>
                   <th className="ds-num hide-mobile">Precio</th>
-                  <th className="ds-num">A facturar</th>
+                  <th className="ds-num hide-mobile">A facturar</th>
                 </tr>
               </thead>
               <tbody>
@@ -347,7 +347,7 @@ export default function RegistrarFacturaPage() {
                         )}
                       </td>
                       <td className="ds-muted hide-mobile">{l.almacen}</td>
-                      <td className="ds-num">{num.format(l.cantidad)} {l.unidad}</td>
+                      <td className="ds-num hide-mobile">{num.format(l.cantidad)} {l.unidad}</td>
                       <td className="ds-num hide-mobile">{num.format(l.cantidadRecibida)}</td>
                       <td className="ds-num">{pend > 0 ? <span className="ds-pending-text">{num.format(pend)}</span> : "0"}</td>
                       <td className="ds-num">
@@ -356,7 +356,7 @@ export default function RegistrarFacturaPage() {
                           onChange={(e) => { const v = e.target.value; if (v === "") return setRecibir((r) => ({ ...r, [l.id]: "" })); const n = Math.max(0, Math.min(Number(v) || 0, pend)); setRecibir((r) => ({ ...r, [l.id]: String(n) })); }} />
                       </td>
                       <td className="ds-num ds-muted hide-mobile">{money(l.precioUnitario, orden.currencyCode)}</td>
-                      <td className="ds-num ds-strong">{money(importe || 0, orden.currencyCode)}</td>
+                      <td className="ds-num ds-strong hide-mobile">{money(importe || 0, orden.currencyCode)}</td>
                     </tr>
                   );
                 })}
@@ -365,12 +365,12 @@ export default function RegistrarFacturaPage() {
                     <td></td>
                     <td><Badge tone="yellow">Cargo</Badge> {cargo.descripcion}</td>
                     <td className="ds-muted hide-mobile">{cargo.almacen}</td>
-                    <td className="ds-num">{num.format(cargo.cantidad)}</td>
+                    <td className="ds-num hide-mobile">{num.format(cargo.cantidad)}</td>
                     <td className="ds-num hide-mobile">{num.format(cargo.cantidadRecibida)}</td>
                     <td className="ds-num">—</td>
                     <td className="ds-num">{nadaRecibidoAun ? num.format(cargo.cantidad) : "—"}</td>
                     <td className="ds-num ds-muted hide-mobile">{money(cargo.precioUnitario, orden.currencyCode)}</td>
-                    <td className="ds-num ds-strong">{money(fleteAplicado, orden.currencyCode)}</td>
+                    <td className="ds-num ds-strong hide-mobile">{money(fleteAplicado, orden.currencyCode)}</td>
                   </tr>
                 )}
               </tbody>
