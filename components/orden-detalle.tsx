@@ -3,6 +3,7 @@
 import { Fragment, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Badge, Card, useToast } from "@/components/ui";
+import { IconChevronDown } from "@/components/icons";
 import { OrderLinesTable } from "@/components/order-lines";
 import { Timeline } from "@/components/timeline";
 import { useStore } from "@/lib/store";
@@ -157,7 +158,12 @@ export function OrdenDetalle({
                         <td>{formatDate(r.fechaRegistro)}</td>
                         <td className="ds-num">{money(r.total, orden.currencyCode)}</td>
                         <td>{r.parcial ? <Badge tone="yellow">Parcial</Badge> : <Badge tone="green">Completa</Badge>}</td>
-                        <td className="ds-num ds-muted">{abierto ? "▾ ocultar" : "› ver"}</td>
+                        <td className="ds-num ds-muted">
+                          <span className="row gap-1" style={{ justifyContent: "flex-end", alignItems: "center" }}>
+                            {abierto ? "ocultar" : "ver"}
+                            <IconChevronDown size={16} style={{ transform: abierto ? "rotate(180deg)" : "none", transition: "transform .15s ease" }} />
+                          </span>
+                        </td>
                       </tr>
                       {abierto && (
                         <tr>

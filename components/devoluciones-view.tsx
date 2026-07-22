@@ -68,7 +68,7 @@ export function DevolucionesView({ role }: { role: Role }) {
         <div className="mt-4">
           <DataTable data={items} columns={columns} tablaKey={`devoluciones-${role}`} titulo="Devoluciones"
             getRowId={(d) => `${d.tipo}-${d.id}`} onRowClick={(d) => { if (d.href) router.push(d.href); }}
-            vacio="No hay devoluciones pendientes. 🎉" />
+            vacio="No hay devoluciones pendientes." />
         </div>
       </main>
     </AppShell>

@@ -50,7 +50,7 @@ export default function IngenieriaPage() {
   ), [pedidos, filtro]);
 
   const columns = useMemo<ColumnDef<Pedido, any>[]>(() => [
-    { id: "num", header: "N.º", accessorFn: (p) => p.numero, meta: { label: "N.º" }, cell: (c) => <span className="ds-strong">{c.getValue()}</span> },
+    { id: "num", header: "N.º", accessorFn: (p) => p.numero, meta: { label: "N.º" }, cell: (c) => <span className="ds-strong" style={{ whiteSpace: "nowrap" }}>{c.getValue()}</span> },
     { id: "tipo", header: "Tipo", accessorFn: (p) => tipoSolicitudBadge(p.tipoSolicitud).label, meta: { label: "Tipo" }, cell: (c) => { const t = tipoSolicitudBadge(c.row.original.tipoSolicitud); return <Badge tone={t.tone}>{t.label}</Badge>; } },
     { id: "destino", header: "Destino", accessorFn: (p) => `${destCodigo(p)} ${destNombre(p)}`.trim(), meta: { label: "Destino" }, cell: (c) => { const p = c.row.original; return <div><div className="ds-strong ds-body-sm">{destCodigo(p)}</div>{destNombre(p) && <div className="ds-muted ds-body-sm ds-truncate" style={{ maxWidth: 160 }} title={destNombre(p)}>{destNombre(p)}</div>}</div>; } },
     { id: "comentario", header: "Comentario", accessorFn: (p) => p.notas ?? "", meta: { label: "Comentario" }, cell: (c) => <div className="ds-body-sm ds-muted ds-truncate" style={{ maxWidth: 220 }} title={c.getValue()}>{c.getValue() || "—"}</div> },
