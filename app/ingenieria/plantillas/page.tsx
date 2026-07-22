@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { AppShell } from "@/components/shell";
-import { Badge, Button, Card, Field, Input, Modal, Select, useToast } from "@/components/ui";
+import { Badge, Button, Card, ConfirmDialog, Field, Input, Modal, Select, useToast } from "@/components/ui";
 import { Combobox } from "@/components/combobox";
 import { IconEdit } from "@/components/icons";
 import { useStore } from "@/lib/store";
@@ -26,6 +26,7 @@ export default function PlantillasPage() {
   const [buscar, setBuscar] = useState(""); const [fPartida, setFPartida] = useState("");
   const [fTipo, setFTipo] = useState<"todas" | TipoPlantilla>("todas");
   const [editor, setEditor] = useState<Plantilla | "new" | null>(null);
+  const [aBorrar, setABorrar] = useState<Plantilla | null>(null);
 
   async function recargar() {
     try {
@@ -74,12 +75,12 @@ export default function PlantillasPage() {
   }, [plantillas, buscar, fPartida, fTipo, wbs]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function borrar(pl: Plantilla) {
-    if (!confirm(`¿Borrar la plantilla "${pl.nombre}"?`)) return;
     try {
       const r = await fetch(`/api/plantillas/${pl.id}?usuario=${encodeURIComponent(usuario ?? "")}`, { method: "DELETE" });
       if (!r.ok) throw new Error("No se pudo borrar");
       toast("Plantilla borrada", "success"); recargar();
     } catch (e: any) { toast(String(e?.message ?? e), "error"); }
+    finally { setABorrar(null); }
   }
 
   return (
@@ -123,7 +124,7 @@ export default function PlantillasPage() {
                   <span className="ds-strong">{pl.nombre}</span>
                   <span className="row gap-1">
                     <button className="icon-btn" title="Editar plantilla" aria-label="Editar" onClick={(ev) => { ev.stopPropagation(); setEditor(pl); }}><IconEdit size={15} /></button>
-                    <button className="icon-btn" title="Borrar" onClick={(ev) => { ev.stopPropagation(); borrar(pl); }}>×</button>
+                    <button className="icon-btn" title="Borrar" onClick={(ev) => { ev.stopPropagation(); setABorrar(pl); }}>×</button>
                   </span>
                 </div>
                 <div className="row gap-2 wrap mt-2">
@@ -140,6 +141,16 @@ export default function PlantillasPage() {
         {editor && (
           <PlantillaEditor plantilla={editor === "new" ? null : editor} wbs={wbs} items={items} usuario={usuario ?? ""}
             onClose={() => setEditor(null)} onSaved={() => { setEditor(null); recargar(); }} />
+        )}
+
+        {aBorrar && (
+          <ConfirmDialog
+            title="Borrar plantilla"
+            message={<>¿Seguro que querés borrar la plantilla <strong>{aBorrar.nombre}</strong>? Esta acción no se puede deshacer.</>}
+            confirmLabel="Sí, borrar"
+            onConfirm={() => borrar(aBorrar)}
+            onCancel={() => setABorrar(null)}
+          />
         )}
       </main>
     </AppShell>

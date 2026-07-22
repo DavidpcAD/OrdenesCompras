@@ -233,6 +233,27 @@ export function Modal({ title, onClose, children, footer, wide }: {
   );
 }
 
+// ---------------------------------------------------------------- ConfirmDialog
+// Overlay de confirmación (reemplaza window.confirm) para acciones destructivas.
+// Evita eliminaciones accidentales con un paso explícito.
+export function ConfirmDialog({
+  title = "¿Confirmar?", message, confirmLabel = "Eliminar", cancelLabel = "Cancelar",
+  tone = "red", onConfirm, onCancel,
+}: {
+  title?: string; message: React.ReactNode; confirmLabel?: string; cancelLabel?: string;
+  tone?: "red" | "green"; onConfirm: () => void; onCancel: () => void;
+}) {
+  return (
+    <Modal title={title} onClose={onCancel}
+      footer={<>
+        <Button variant="outline" onClick={onCancel}>{cancelLabel}</Button>
+        <Button variant={tone} onClick={onConfirm}>{confirmLabel}</Button>
+      </>}>
+      <p className="ds-body" style={{ lineHeight: 1.5 }}>{message}</p>
+    </Modal>
+  );
+}
+
 // ---------------------------------------------------------------- Toast
 type Toast = { id: number; text: string; tone: "success" | "error" | "info" };
 const ToastCtx = createContext<(text: string, tone?: Toast["tone"]) => void>(() => {});

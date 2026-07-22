@@ -7,7 +7,7 @@ import {
   getFacetedRowModel, getFacetedUniqueValues, flexRender,
   type Column, type ColumnDef, type FilterFn, type SortingState, type ColumnFiltersState, type VisibilityState, type ColumnOrderState, type PaginationState,
 } from "@tanstack/react-table";
-import { Button, Card, Input, Select } from "@/components/ui";
+import { Button, Card, ConfirmDialog, Input, Select } from "@/components/ui";
 import { IconTable } from "@/components/icons";
 import { useStore } from "@/lib/store";
 
@@ -82,6 +82,7 @@ export function DataTable<T>({
   const [pagination, setPagination] = useState<PaginationState>({ pageIndex: 0, pageSize: 50 });
   const [panel, setPanel] = useState<null | "cols" | "vistas" | "export">(null);
   const [modo, setModo] = useState<"tabla" | "grid">(modoInicial);
+  const [vistaABorrar, setVistaABorrar] = useState<Vista | null>(null);
 
   const table = useReactTable({
     data, columns: cols,
@@ -138,8 +139,8 @@ export function DataTable<T>({
     } catch { alert("No se pudo guardar la vista."); }
   }
   async function borrarVista(v: Vista) {
-    if (!window.confirm(`¿Borrar la vista "${v.nombre}"?`)) return;
     try { await fetch(`/api/vistas/${v.id}?usuario=${encodeURIComponent(usuario ?? "")}`, { method: "DELETE" }); await cargarVistas(); } catch { /* noop */ }
+    finally { setVistaABorrar(null); }
   }
   function resetVista() {
     setColumnOrder(columns.map((c) => c.id!).filter(Boolean)); setColumnVisibility({}); setSorting([]);
@@ -276,7 +277,7 @@ export function DataTable<T>({
             {vistas.map((v) => (
               <div key={v.id} className="row row--between gap-2" style={{ alignItems: "center", padding: "5px 8px" }}>
                 <button type="button" className="link-btn" onClick={() => aplicarVista(v)} style={{ textAlign: "left" }}>{v.nombre}{v.esPredeterminada ? " ★" : ""}</button>
-                <button type="button" className="icon-btn" title="Borrar" onClick={() => borrarVista(v)}>×</button>
+                <button type="button" className="icon-btn" title="Borrar" onClick={() => setVistaABorrar(v)}>×</button>
               </div>
             ))}
             <div style={{ borderTop: "1.5px solid var(--ds-color-gray-100)", marginTop: 6, paddingTop: 8 }}>
@@ -298,6 +299,16 @@ export function DataTable<T>({
           </Card>
         )}
       </div>
+
+      {vistaABorrar && (
+        <ConfirmDialog
+          title="Borrar vista"
+          message={<>¿Borrar la vista <strong>{vistaABorrar.nombre}</strong>?</>}
+          confirmLabel="Sí, borrar"
+          onConfirm={() => borrarVista(vistaABorrar)}
+          onCancel={() => setVistaABorrar(null)}
+        />
+      )}
 
       {/* Vista Grid (tarjetas) */}
       {modo === "grid" ? (
