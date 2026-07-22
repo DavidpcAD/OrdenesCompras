@@ -183,6 +183,8 @@ export interface Recepcion {
   total: number;
   lineas: RecepcionLinea[];
   parcial: boolean;
+  // Quién recibió/registró la recepción (hay varios en bodega). Es creadoPor en BD.
+  recibidoPor?: string;
   // MODO 2: material recibido pero la factura quedó EN REVISIÓN (aún sin registrar).
   // Se deriva de numeroFactura vacío; Kattya la registra después (bcFacturarRecibido).
   facturaEnRevision?: boolean;
