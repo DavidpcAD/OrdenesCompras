@@ -3,8 +3,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import * as XLSX from "xlsx";
-import { Button, Card, Field, Select, Textarea, useToast } from "@/components/ui";
-import { IconTrash, IconPlus } from "@/components/icons";
+import { Badge, Button, Card, Field, Modal, Select, Textarea, useToast } from "@/components/ui";
+import { IconTrash, IconPlus, IconChevronDown } from "@/components/icons";
 import { Combobox } from "@/components/combobox";
 import { useStore, type NewPedidoInput } from "@/lib/store";
 import type { Almacen, Articulo, Obra, Pedido, TipoSolicitud } from "@/lib/types";
@@ -17,7 +17,7 @@ const SOLICITANTES = ["Laura Ureña", "Loana", "Michael Thames", "Roger Solano"]
 
 // ---- Plantillas (persistidas en SQL: dbo.PlantillaSolicitud) ----
 type PlantillaLinea = { code: string; cantidad: number; obraCodigo: string };
-type Plantilla = { id: number; nombre: string; creadoPor: string; idClasificacion?: number | null; lineas: PlantillaLinea[] };
+type Plantilla = { id: number; nombre: string; creadoPor: string; idClasificacion?: number | null; tipo?: "general" | "bodega"; lineas: PlantillaLinea[] };
 // WBS para filtrar plantillas por etapa/partida.
 type WbsNodo = { id: number; codigo: string; nombre: string };
 type WbsPartida = { id: number; codigo: string; nombre: string; etapaId: number | null };
@@ -196,6 +196,8 @@ export function SolicitudForm({
   const [nombrePlantilla, setNombrePlantilla] = useState("");
   const [filtroPlantilla, setFiltroPlantilla] = useState<string>(""); // "" = todas; o creadoPor
   const [plantillaCargada, setPlantillaCargada] = useState<string>("");
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [buscarPl, setBuscarPl] = useState("");
   const [obraTodas, setObraTodas] = useState("");
   // Filtros de plantillas por etapa/partida (cuando hay muchas). Requiere el WBS.
   const [fEtapaPl, setFEtapaPl] = useState("");
@@ -451,7 +453,9 @@ export function SolicitudForm({
       if (fPartidaPl && String(partida?.id) !== fPartidaPl) return false;
       return true;
     })
-    ;
+    .filter((p) => { const q = buscarPl.trim().toLowerCase(); return !q || p.nombre.toLowerCase().includes(q); });
+  // Bodega = sin amarre a clasificación (compatibilidad con filas viejas sin tipo).
+  const esBodegaPl = (p: Plantilla) => p.tipo === "bodega" || (!p.tipo && p.idClasificacion == null);
   const creadoresPlantillas = useMemo(
     () => Array.from(new Set(plantillas.map((p) => p.creadoPor).filter(Boolean))).sort(),
     [plantillas]
@@ -597,19 +601,18 @@ export function SolicitudForm({
                 <div className="row gap-3 wrap" style={{ alignItems: "flex-end" }}>
                   <div style={{ flex: "1 1 340px", minWidth: 240 }}>
                     <label className="ds-label ds-muted" style={{ display: "block", marginBottom: 4 }}>Usar una plantilla</label>
-                    <Combobox items={plantillasVisibles} value={plantillaCargada}
-                      onChange={(k) => cargarPlantilla(k)}
-                      getKey={(p) => String(p.id)}
-                      getLabel={(p) => `${p.nombre} · ${p.lineas.length} ítem(s)${filtroPlantilla === "*" && p.creadoPor ? ` · ${p.creadoPor}` : ""}`}
-                      getSearch={(p) => `${p.nombre} ${p.creadoPor ?? ""}`}
-                      placeholder="Elegí una plantilla…" />
+                    {(() => {
+                      const cargada = plantillas.find((p) => String(p.id) === plantillaCargada);
+                      return (
+                        <button type="button" className="tpl-pick" onClick={() => { setBuscarPl(""); setPickerOpen(true); }}>
+                          <span className={cargada ? "ds-strong" : "ds-muted"} style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                            {cargada ? `${cargada.nombre} · ${cargada.lineas.length} ítem(s)` : "Elegí una plantilla…"}
+                          </span>
+                          <IconChevronDown size={18} />
+                        </button>
+                      );
+                    })()}
                   </div>
-                  {creadoresPlantillas.length > 1 && (
-                    <div className="seg-mini" style={{ marginBottom: 2 }}>
-                      <button type="button" className={filtroPlantilla === solicitante ? "is-active" : ""} onClick={() => setFiltroPlantilla(solicitante)}>Mías</button>
-                      <button type="button" className={filtroPlantilla === "*" ? "is-active" : ""} onClick={() => setFiltroPlantilla("*")}>Todas</button>
-                    </div>
-                  )}
                   {plantillaCargada && (
                     <Button variant="ghost" size="sm" style={{ marginBottom: 2 }} onClick={() => { setPlantillaCargada(""); setLineas([]); }}>Quitar plantilla</Button>
                   )}
@@ -631,6 +634,34 @@ export function SolicitudForm({
               </div>
             </div>
           </div>
+        )}
+
+        {pickerOpen && (
+          <Modal title="Elegí una plantilla" onClose={() => setPickerOpen(false)}>
+            <div className="row row--between wrap gap-2" style={{ alignItems: "center", marginBottom: 12 }}>
+              <input className="ds-form-field__input" autoFocus placeholder="Buscar plantilla por nombre…" value={buscarPl}
+                onChange={(e) => setBuscarPl(e.target.value)} style={{ flex: "1 1 220px", minWidth: 180, height: 42 }} />
+              {creadoresPlantillas.length > 1 && (
+                <div className="seg-mini">
+                  <button type="button" className={filtroPlantilla === solicitante ? "is-active" : ""} onClick={() => setFiltroPlantilla(solicitante)}>Mías</button>
+                  <button type="button" className={filtroPlantilla === "*" ? "is-active" : ""} onClick={() => setFiltroPlantilla("*")}>Todas</button>
+                </div>
+              )}
+            </div>
+            <div className="col" style={{ gap: 6, maxHeight: 420, overflowY: "auto" }}>
+              {plantillasVisibles.length === 0 ? (
+                <div className="empty" style={{ padding: "24px 0" }}>No hay plantillas que coincidan.</div>
+              ) : plantillasVisibles.map((p) => (
+                <button key={p.id} type="button" className="tpl-opt" onClick={() => { cargarPlantilla(String(p.id)); setPickerOpen(false); }}>
+                  <span className="col" style={{ gap: 2, minWidth: 0 }}>
+                    <span className="ds-strong ds-truncate" title={p.nombre}>{p.nombre}</span>
+                    <span className="ds-body-sm ds-muted">{p.lineas.length} ítem(s){filtroPlantilla === "*" && p.creadoPor ? ` · ${p.creadoPor}` : ""}</span>
+                  </span>
+                  <Badge tone={esBodegaPl(p) ? "yellow" : "green"}>{esBodegaPl(p) ? "Bodega" : "General"}</Badge>
+                </button>
+              ))}
+            </div>
+          </Modal>
         )}
 
         <div className="qa-box">

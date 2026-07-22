@@ -886,6 +886,13 @@ h1, h2, h3, h4, p { margin: 0; }
   background: color-mix(in srgb, var(--ds-color-gray-100) 35%, #fff);
 }
 .tpl-panel__body { display: flex; flex-direction: column; gap: 12px; padding: 14px; }
+/* Disparador tipo select que abre el popup de plantillas */
+.tpl-pick { display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%; min-height: 48px; padding: 0 16px; border: 1.5px solid var(--ds-color-gray-200); border-radius: var(--ds-radius-xl); background: var(--ds-color-white); font: inherit; font-size: var(--ds-font-size-body); color: var(--ds-color-black); cursor: pointer; text-align: left; transition: border-color .12s ease; }
+.tpl-pick:hover { border-color: var(--ds-color-gray-300); }
+.tpl-pick > span:first-child { min-width: 0; }
+/* Fila de opción dentro del popup */
+.tpl-opt { display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; padding: 11px 14px; border: 1.5px solid var(--ds-color-gray-100); border-radius: var(--ds-radius-lg); background: var(--ds-color-white); font: inherit; cursor: pointer; text-align: left; transition: background-color .12s ease, border-color .12s ease; }
+.tpl-opt:hover { background: color-mix(in srgb, var(--ds-color-green-100) 12%, #fff); border-color: var(--ds-color-green-100); }
 .tpl-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(172px, 1fr)); gap: 10px; }
 .tpl-card {
   position: relative; display: flex; flex-direction: column; gap: 3px;
