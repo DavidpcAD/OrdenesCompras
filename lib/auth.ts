@@ -68,10 +68,18 @@ export async function autenticar(
   let role: Role | undefined;
   let idRol = 0;
   let rolNombre = "";
+  // Un usuario puede tener roles en varias apps (p.ej. Kathya: "Contabilidad" en
+  // Compras y "Facturador Bodega" en Administración). Elegimos por PRIORIDAD para
+  // que el rol específico de Compras gane (Contabilidad sobre Bodega, etc.), en vez
+  // de tomar el primero que aparezca.
+  const PRIORIDAD: Role[] = ["contabilidad", "aprobacion", "proveeduria", "ingenieria", "facturacion"];
+  let best: { role: Role; idRol: number; nombre: string } | null = null;
   for (const x of rr.recordset) {
     const m = moduloDeRol(x.idRol, x.nombre);
-    if (m) { role = m; idRol = x.idRol; rolNombre = x.nombre; break; }
+    if (!m) continue;
+    if (!best || PRIORIDAD.indexOf(m) < PRIORIDAD.indexOf(best.role)) best = { role: m, idRol: x.idRol, nombre: x.nombre };
   }
+  if (best) { role = best.role; idRol = best.idRol; rolNombre = best.nombre; }
   if (!role) return { ok: false, error: "Tu usuario no tiene un rol con acceso a este sistema." };
 
   return { ok: true, user: { username: row.username, nombre: row.username, role, idRol, rolNombre } };
