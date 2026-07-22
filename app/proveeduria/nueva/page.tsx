@@ -125,27 +125,6 @@ export default function ArmarOrdenPage() {
     return () => { cancel = true; };
   }, [proveedorId, itemIdsKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Prellenar el precio con el ÚLTIMO precio de compra (costo directo del item)
-  // en las líneas que vengan sin precio. No pisa lo que el comprador ya escribió.
-  useEffect(() => {
-    if (!itemsBc.length) return;
-    setRows((rs) => rs.map((r) => {
-      if (Number(r.precio) > 0) return r;
-      const it = itemsBc.find((x) => x.code === r.articuloId);
-      return it?.precioUltimo ? { ...r, precio: String(it.precioUltimo) } : r;
-    }));
-  }, [itemsBc]);
-
-  // Prellenar también con el último precio de BC (por si el catálogo de items no
-  // trae costo pero lastprice sí). No pisa lo que el comprador ya escribió.
-  useEffect(() => {
-    setRows((rs) => rs.map((r) => {
-      if (Number(r.precio) > 0) return r;
-      const p = bcPrices[r.articuloId];
-      return typeof p === "number" && p > 0 ? { ...r, precio: String(p) } : r;
-    }));
-  }, [bcPrices]);
-
   const setRow = (id: string, patch: Partial<Row>) =>
     setRows((rs) => rs.map((r) => (r.pedidoLineaId === id ? { ...r, ...patch } : r)));
   const removeRow = (id: string) => setRows((rs) => rs.filter((r) => r.pedidoLineaId !== id));
@@ -194,6 +173,18 @@ export default function ArmarOrdenPage() {
     if (it?.precioUltimo) return it.precioUltimo;
     return proveedorId ? ultimoPrecioProveedor(ordenes, r.articuloId, proveedorId) : null;
   };
+  // Prellenar el precio con el ÚLTIMO precio mostrado (que incluye el historial de
+  // órdenes de la app al mismo proveedor), para las líneas que sigan en 0. Antes
+  // solo se prellenaba desde BC/catálogo; si el ítem nunca se compró en BC (solo se
+  // cotizó en la app), quedaba en 0 aunque el hint "últ. ₡…" sí lo mostraba.
+  useEffect(() => {
+    setRows((rs) => rs.map((r) => {
+      if (Number(r.precio) > 0) return r;
+      const lp = lastPrice(r);
+      return typeof lp === "number" && lp > 0 ? { ...r, precio: String(lp) } : r;
+    }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bcPrices, itemsBc, proveedorId, ordenes]);
   // El IVA se aplica a los materiales Y al flete/cargo (13%), igual que en BC. Antes
   // el cargo quedaba sin IVA y el total no cuadraba con BC (faltaba el 13% del flete).
   const ivaCargos = cargosTotal * 0.13;
