@@ -196,7 +196,7 @@ export function SolicitudForm({
   // ---- plantillas (SQL) ----
   const [plantillas, setPlantillas] = useState<Plantilla[]>([]);
   const [nombrePlantilla, setNombrePlantilla] = useState("");
-  const [filtroPlantilla, setFiltroPlantilla] = useState<string>(""); // "" = todas; o creadoPor
+  const [fTipoPl, setFTipoPl] = useState<"todas" | "general" | "bodega">("todas");
   const [plantillaCargada, setPlantillaCargada] = useState<string>("");
   const [obraTodas, setObraTodas] = useState("");
   // Filtros de plantillas por etapa/partida (cuando hay muchas). Requiere el WBS.
@@ -263,7 +263,6 @@ export function SolicitudForm({
   }, [obraParam, catObras, lineas, tipo]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // por defecto, cada quien ve las suyas
-  useEffect(() => { if (solicitante && filtroPlantilla === "") setFiltroPlantilla(solicitante); }, [solicitante]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const q = qaQuery.trim().toLowerCase();
   const sugerencias = useMemo(() => {
@@ -444,7 +443,7 @@ export function SolicitudForm({
   const plantillasVisibles = plantillas
     // En contexto de una clasificación (Matriz), SOLO las plantillas de esa clasificación.
     .filter((p) => idClasificacion == null || Number(p.idClasificacion) === Number(idClasificacion))
-    .filter((p) => (filtroPlantilla && filtroPlantilla !== "*" ? p.creadoPor === filtroPlantilla : true))
+    .filter((p) => { if (fTipoPl === "todas") return true; const bod = p.tipo === "bodega" || (!p.tipo && p.idClasificacion == null); return (fTipoPl === "bodega") === bod; })
     // Filtros por etapa/partida (para acotar cuando hay muchas plantillas).
     .filter((p) => {
       if (!fEtapaPl && !fPartidaPl) return true;
@@ -456,10 +455,6 @@ export function SolicitudForm({
     ;
   // Bodega = sin amarre a clasificación (compatibilidad con filas viejas sin tipo).
   const esBodegaPl = (p: Plantilla) => p.tipo === "bodega" || (!p.tipo && p.idClasificacion == null);
-  const creadoresPlantillas = useMemo(
-    () => Array.from(new Set(plantillas.map((p) => p.creadoPor).filter(Boolean))).sort(),
-    [plantillas]
-  );
   function cambiarTipo(t: TipoSolicitud) {
     if (t === tipo) return;
     setTipo(t); setLineas([]); setMaquinaId(""); setAlmacenStock(""); setObraTodas("");
@@ -631,19 +626,18 @@ export function SolicitudForm({
                         <span className="combo__row">
                           <span className="combo__row-main">
                             <span className="ds-strong">{p.nombre}</span>
-                            <span className="ds-body-sm ds-muted">{p.lineas.length} ítem(s){filtroPlantilla === "*" && p.creadoPor ? ` · ${p.creadoPor}` : ""}</span>
+                            <span className="ds-body-sm ds-muted">{p.lineas.length} ítem(s){p.creadoPor && p.creadoPor !== solicitante ? ` · ${p.creadoPor}` : ""}</span>
                           </span>
                           <span className={`combo__tag combo__tag--${esBodegaPl(p) ? "bodega" : "general"}`}>{esBodegaPl(p) ? "Bodega" : "General"}</span>
                         </span>
                       )}
                       placeholder="Elegí una plantilla…" />
                   </div>
-                  {creadoresPlantillas.length > 1 && (
-                    <div className="seg-mini" style={{ marginBottom: 2 }}>
-                      <button type="button" className={filtroPlantilla === solicitante ? "is-active" : ""} onClick={() => setFiltroPlantilla(solicitante)}>Mías</button>
-                      <button type="button" className={filtroPlantilla === "*" ? "is-active" : ""} onClick={() => setFiltroPlantilla("*")}>Todas</button>
-                    </div>
-                  )}
+                  <div className="seg-mini" style={{ marginBottom: 2 }}>
+                    <button type="button" className={fTipoPl === "todas" ? "is-active" : ""} onClick={() => setFTipoPl("todas")}>Todas</button>
+                    <button type="button" className={fTipoPl === "general" ? "is-active" : ""} onClick={() => setFTipoPl("general")}>General</button>
+                    <button type="button" className={fTipoPl === "bodega" ? "is-active" : ""} onClick={() => setFTipoPl("bodega")}>Bodega</button>
+                  </div>
                   {plantillaCargada && (
                     <Button variant="ghost" size="sm" style={{ marginBottom: 2 }} onClick={() => { setPlantillaCargada(""); setLineas([]); }}>Quitar</Button>
                   )}
