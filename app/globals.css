@@ -289,13 +289,17 @@ h1, h2, h3, h4, p { margin: 0; }
 
 /* =====================  TABLE  ===================== */
 .ds-table-wrap { width: 100%; overflow-x: auto; border-radius: var(--ds-radius-lg); background: var(--ds-color-white); box-shadow: var(--ds-shadow-01); }
-.ds-table { width: 100%; border-collapse: collapse; font-size: var(--ds-font-size-label); }
+.ds-table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: var(--ds-font-size-label); }
+/* Encabezado oscuro redondeado — mismo estilo en TODAS las tablas (como el DataTable). */
 .ds-table thead th {
-  text-align: left; padding: var(--ds-space-4) var(--ds-space-4);
-  color: var(--ds-color-gray-500); font-weight: var(--ds-font-weight-semibold);
-  border-bottom: 1.5px solid var(--ds-color-gray-100); white-space: nowrap;
+  text-align: left; padding: 12px 14px;
+  color: var(--ds-color-white); background: var(--ds-color-black); font-weight: var(--ds-font-weight-semibold);
+  white-space: nowrap;
 }
-.ds-table tbody td { padding: var(--ds-space-3) var(--ds-space-4); border-bottom: 1px solid var(--ds-color-gray-100); vertical-align: middle; }
+.ds-table thead th:first-child { border-top-left-radius: 12px; border-bottom-left-radius: 12px; }
+.ds-table thead th:last-child { border-top-right-radius: 12px; border-bottom-right-radius: 12px; }
+.ds-table tbody tr:first-child td { padding-top: 14px; }
+.ds-table tbody td { padding: var(--ds-space-3) var(--ds-space-4); border-bottom: 1px solid var(--ds-color-gray-100); vertical-align: middle; transition: background-color .12s ease; }
 .ds-table tbody tr:last-child td { border-bottom: 0; }
 .ds-table tbody tr.is-clickable { cursor: pointer; transition: background-color .12s ease; }
 .ds-table tbody tr.is-clickable:hover { background: var(--ds-color-gray-100); }
