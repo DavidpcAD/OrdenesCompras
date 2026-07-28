@@ -22,14 +22,14 @@ export function DevolucionesView({ role }: { role: Role }) {
 
   const items = useMemo<Dev[]>(() => {
     const out: Dev[] = [];
-    const verSolicitudes = role === "ingenieria" || role === "proveeduria";
-    const verOrdenes = role === "proveeduria" || role === "aprobacion" || role === "facturacion";
+    const verSolicitudes = role === "proveeduria";
+    const verOrdenes = role === "proveeduria" || role === "facturacion";
     if (verSolicitudes) {
       for (const p of pedidos.filter((p) => p.estado === "devuelto")) {
         out.push({
           id: p.id, tipo: "Solicitud", numero: p.numero, contra: destinoLabel(p),
           motivo: (p.notas ?? "").replace(/^↩\s*Devuelto:\s*/i, "").split(" · ")[0] || "—",
-          fecha: p.fecha, href: role === "ingenieria" ? `/ingenieria/${p.id}` : `/proveeduria/solicitudes/${p.id}`,
+          fecha: p.fecha, href: `/proveeduria/solicitudes/${p.id}`,
         });
       }
     }
@@ -38,7 +38,7 @@ export function DevolucionesView({ role }: { role: Role }) {
         out.push({
           id: o.id, tipo: "Orden", numero: o.numero, contra: o.proveedorNombre ?? o.proveedorNo ?? "—",
           motivo: o.motivoRechazo ?? "—", fecha: o.fecha,
-          href: role === "aprobacion" ? `/aprobacion/${o.id}` : role === "proveeduria" ? `/proveeduria/ordenes/${o.id}` : "",
+          href: role === "proveeduria" ? `/proveeduria/ordenes/${o.id}` : "",
         });
       }
     }
@@ -53,9 +53,7 @@ export function DevolucionesView({ role }: { role: Role }) {
     { id: "fecha", header: "Fecha", accessorFn: (d) => d.fecha, meta: { label: "Fecha", date: true }, cell: (c) => formatDate(c.getValue()) },
   ], []);
 
-  const desc = role === "ingenieria" ? "Solicitudes que Proveeduría te devolvió para corregir. Entrá a una para editarla y reenviarla."
-    : role === "proveeduria" ? "Órdenes que Aprobación rechazó (corregí y relanzá) y solicitudes que devolviste a Ingeniería."
-    : role === "aprobacion" ? "Órdenes que rechazaste y devolviste a Proveeduría, con su motivo."
+  const desc = role === "proveeduria" ? "Órdenes que Aprobación rechazó (corregí y relanzá) y solicitudes que devolviste a Ingeniería."
     : "Órdenes rechazadas por Aprobación (solo lectura).";
 
   return (

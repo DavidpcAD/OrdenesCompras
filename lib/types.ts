@@ -17,7 +17,10 @@
 // ============================================================================
 
 // nota: la ruta interna 'facturacion' se muestra como "Bodega" (Kattya) en la UI
-export type Role = "ingenieria" | "proveeduria" | "aprobacion" | "facturacion" | "contabilidad";
+// Módulos con acceso a ESTA app. Ingeniería y Aprobación viven en la app de
+// producción; acá solo Proveeduría (arma órdenes), Bodega (recibe) y
+// Contabilidad (notas de crédito).
+export type Role = "proveeduria" | "facturacion" | "contabilidad";
 
 export type LineType = "articulo" | "cargo"; // 'cargo' = flete / cargo de producto
 export type TipoSolicitud = "material" | "repuesto" | "stock"; // stock = compra para bodega/inventario
@@ -71,7 +74,7 @@ export interface Notificacion {
   mensaje: string;
   fecha: string;       // ISO
   leida: boolean;
-  rol?: Role;          // a qué rol le interesa (opcional)
+  rol?: string;        // a qué rol le interesa (opcional; puede referir a roles de la otra app)
   href?: string;       // a dónde llevar al hacer click
 }
 
@@ -222,6 +225,6 @@ export interface Movimiento {
   estadoNuevo?: string;
   detalle?: string;
   usuario: string;
-  rol: Role;
+  rol: string;                  // actor del historial; puede ser un rol que ya no vive en esta app (ej. "aprobacion")
   fecha: string;                // ISO datetime
 }

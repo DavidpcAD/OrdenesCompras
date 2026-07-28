@@ -4,13 +4,10 @@ import { getPool, sql } from "./db";
 import type { Role } from "./types";
 
 // idRol (dbo.Rol) -> módulo de la app. Los roles no listados NO tienen acceso.
-//   1 Administrador      -> aprobación (aprobador, ej. Luis Roberto)
-//   3 Ingeniero Residente-> ingeniería (ej. Laura)
+// Ingeniería y Aprobación se manejan en la app de producción, no acá.
 //   5 Proveeduría        -> proveeduría (ej. Angie)
 //   6 Facturador Bodega  -> bodega (recibe, ej. Pedro)
 const ROL_A_MODULO: Record<number, Role> = {
-  1: "aprobacion",
-  3: "ingenieria",
   5: "proveeduria",
   6: "facturacion",
 };
@@ -25,9 +22,7 @@ function moduloDeRol(idRol: number, nombre: string): Role | undefined {
   if (n.includes("contab")) return "contabilidad";
   if (ROL_A_MODULO[idRol]) return ROL_A_MODULO[idRol];
   if (n.includes("bodeg") || n.includes("factur") || n.includes("recib")) return "facturacion";
-  if (n.includes("ingenier") || n.includes("resident")) return "ingenieria";
   if (n.includes("proveed") || n.includes("compra")) return "proveeduria";
-  if (n.includes("aprob") || n.includes("admin")) return "aprobacion";
   return undefined;
 }
 
@@ -77,7 +72,7 @@ export async function autenticar(
   // Compras y "Facturador Bodega" en Administración). Elegimos por PRIORIDAD para
   // que el rol específico de Compras gane (Contabilidad sobre Bodega, etc.), en vez
   // de tomar el primero que aparezca.
-  const PRIORIDAD: Role[] = ["contabilidad", "aprobacion", "proveeduria", "ingenieria", "facturacion"];
+  const PRIORIDAD: Role[] = ["contabilidad", "proveeduria", "facturacion"];
   let best: { role: Role; idRol: number; nombre: string } | null = null;
   for (const x of rr.recordset) {
     const m = moduloDeRol(x.idRol, x.nombre);

@@ -36,8 +36,8 @@ export async function PUT(req: Request, { params }: { params: { id: string } }) 
 
 export async function DELETE(req: Request, { params }: { params: { id: string } }) {
   try {
-    const { usuario, rol } = await req.json().catch(() => ({ usuario: "Sistema", rol: "ingenieria" }));
-    await softDeletePedido(Number(params.id), usuario ?? "Sistema", rol ?? "ingenieria");
+    const { usuario, rol } = await req.json().catch(() => ({ usuario: "Sistema", rol: "proveeduria" }));
+    await softDeletePedido(Number(params.id), usuario ?? "Sistema", rol ?? "proveeduria");
     return NextResponse.json({ ok: true });
   } catch (e: any) {
     return NextResponse.json({ error: String(e?.message ?? e) }, { status: 500 });

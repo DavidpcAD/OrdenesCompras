@@ -7,9 +7,8 @@ import { useStore } from "@/lib/store";
 import type { Role, Notificacion } from "@/lib/types";
 import { formatDate } from "@/lib/helpers";
 import {
-  IconBell, IconList, IconOptions, IconDuplicate, IconMatrix, IconTrack,
-  IconReceipt, IconCheck, IconDelivery, IconFolder, IconPlus, IconLogout,
-  IconBox, IconWarning, IconDashboard, IconEdit,
+  IconBell, IconList, IconReceipt, IconCheck, IconDelivery, IconFolder,
+  IconPlus, IconLogout, IconBox, IconWarning, IconDashboard, IconEdit,
 } from "@/components/icons";
 
 const cap = (s: string) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : s);
@@ -28,19 +27,6 @@ type NavItem = { href: string; label: string; icon: IconCmp; alt?: string[] };
 type RoleAction = { href: string; label: string };
 
 const ROLE_META: Record<Role, { label: string; persona: string; home: string; nav: NavItem[]; action?: RoleAction; color: string }> = {
-  ingenieria: {
-    label: "Ingeniería", persona: "Laura", home: "/ingenieria/dashboard", color: "var(--ds-color-green-100)",
-    nav: [
-      { href: "/ingenieria/dashboard", label: "Dashboard", icon: IconDashboard },
-      { href: "/ingenieria", label: "Mis solicitudes", icon: IconList },
-      { href: "/ingenieria/devoluciones", label: "Devoluciones", icon: IconWarning },
-      { href: "/ingenieria/matriz", label: "Matriz", icon: IconMatrix },
-      { href: "/ingenieria/seguimiento", label: "Seguimiento", icon: IconTrack },
-      { href: "/ingenieria/clasificaciones", label: "Clasificaciones", icon: IconOptions },
-      { href: "/ingenieria/plantillas", label: "Plantillas", icon: IconDuplicate },
-      { href: "/ingenieria/inventarios", label: "Inventarios", icon: IconBox },
-    ],
-  },
   proveeduria: {
     label: "Proveeduría", persona: "Angie", home: "/proveeduria/dashboard", color: "var(--ds-color-yellow)",
     action: { href: "/proveeduria/directa", label: "Compra directa" },
@@ -52,14 +38,6 @@ const ROLE_META: Record<Role, { label: string; persona: string; home: string; na
       { href: "/proveeduria/ordenes", label: "Órdenes", icon: IconReceipt, alt: ["/proveeduria/pedidas", "/proveeduria/nueva", "/proveeduria/directa"] },
       { href: "/proveeduria/devoluciones", label: "Devoluciones", icon: IconWarning },
       { href: "/proveeduria/inventarios", label: "Inventarios", icon: IconBox },
-    ],
-  },
-  aprobacion: {
-    label: "Aprobación", persona: "Luis Roberto", home: "/aprobacion", color: "var(--ds-color-green-200)",
-    nav: [
-      { href: "/aprobacion", label: "Por aprobar", icon: IconCheck },
-      { href: "/aprobacion/todas", label: "Todas las órdenes", icon: IconReceipt },
-      { href: "/aprobacion/devoluciones", label: "Devoluciones", icon: IconWarning },
     ],
   },
   facturacion: {

@@ -85,17 +85,20 @@ export function formatDateTime(iso: string): string {
 }
 
 export const PERSONA_POR_ROL: Record<string, string> = {
-  ingenieria: "Laura Jiménez",
   proveeduria: "Angie",
-  aprobacion: "Luis Roberto",
-  facturacion: "Kattya",
+  facturacion: "Pedro",
+  contabilidad: "Kattya",
 };
 
+// Etiquetas para MOSTRAR (historial/timeline). Incluye roles que ya no entran a
+// esta app pero sí aparecen en movimientos viejos (Ingeniería/Aprobación viven
+// ahora en la app de producción).
 export const ROL_LABEL: Record<string, string> = {
-  ingenieria: "Ingeniería",
   proveeduria: "Proveeduría",
-  aprobacion: "Aprobación",
   facturacion: "Bodega",
+  contabilidad: "Contabilidad",
+  ingenieria: "Ingeniería",
+  aprobacion: "Aprobación",
 };
 
 // ---- líneas de pedido ----

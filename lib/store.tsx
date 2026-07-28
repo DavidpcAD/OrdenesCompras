@@ -201,10 +201,10 @@ export function StoreProvider({ children, useApi }: { children: React.ReactNode;
   const api2 = useMemo<StoreShape>(() => {
     const uid = () => Math.random().toString(36).slice(2, 9);
     const persona = usuario ?? (role ? PERSONA_POR_ROL[role] : "Sistema");
-    const rolActual: Role = role ?? "ingenieria";
+    const rolActual: Role = role ?? "proveeduria";
     const mkMov = (m: Omit<Movimiento, "id" | "usuario" | "rol" | "fecha">): Movimiento =>
       ({ id: uid(), usuario: persona, rol: rolActual, fecha: nowISO(), ...m });
-    const mkNotif = (tipo: Notificacion["tipo"], mensaje: string, href?: string, rol?: Role): Notificacion =>
+    const mkNotif = (tipo: Notificacion["tipo"], mensaje: string, href?: string, rol?: string): Notificacion =>
       ({ id: uid(), tipo, mensaje, fecha: nowISO(), leida: false, href, rol });
     const prov = (id: string) => seed.proveedores.find((p) => p.id === id);
 
