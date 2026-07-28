@@ -189,7 +189,12 @@ export function AppShell({ role, children }: { role: Role; children: React.React
             })}
             <button className="app-nav__item app-nav__salir" style={{ marginTop: "auto" }}
               title="Salir"
-              onClick={() => { setRole(null); setUsuario(null); router.replace("/"); }}>
+              onClick={() => {
+                // Borra la cookie de sesión del server además del estado local.
+                fetch("/api/logout", { method: "POST" }).catch(() => {}).finally(() => {
+                  setRole(null); setUsuario(null); router.replace("/");
+                });
+              }}>
               <span className="app-nav__ic"><IconLogout size={20} /></span>
               <span className="app-nav__label">Salir</span>
             </button>

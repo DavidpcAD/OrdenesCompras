@@ -5,6 +5,14 @@ export const USE_API = process.env.NEXT_PUBLIC_USE_API === "1";
 
 async function jsonOrThrow(res: Response) {
   if (!res.ok) {
+    // Sesión vencida o ausente: limpiamos el estado local y volvemos al login.
+    if (res.status === 401 && typeof window !== "undefined") {
+      try {
+        localStorage.removeItem("adelante_oc_role");
+        localStorage.removeItem("adelante_oc_usuario");
+      } catch {}
+      if (window.location.pathname !== "/") window.location.href = "/";
+    }
     const body = await res.json().catch(() => ({}));
     throw new Error(body.error ?? `HTTP ${res.status}`);
   }

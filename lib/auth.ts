@@ -26,15 +26,16 @@ function moduloDeRol(idRol: number, nombre: string): Role | undefined {
   return undefined;
 }
 
-// Comparación flexible: soporta texto plano y SHA-256 (hex o base64), sin
-// dependencias extra. Si las claves fueran bcrypt habría que agregar bcryptjs.
+// Comparación de contraseña contra el hash guardado. SOLO acepta hashes:
+// bcrypt (como guarda ControlUsuarios) o SHA-256 (hex/base64) legado.
+// Ya NO se acepta texto plano: una clave guardada sin hashear no autentica.
 function passwordOk(input: string, stored: string): boolean {
   if (!stored) return false;
   // bcrypt (así guarda las claves ControlUsuarios): hash empieza con $2a/$2b/$2y.
   if (/^\$2[aby]?\$/.test(stored)) {
     try { return bcrypt.compareSync(input, stored); } catch { return false; }
   }
-  if (input === stored) return true;
+  // SHA-256 legado (hex o base64). No es texto plano: `stored` debe ser un hash.
   const hex = crypto.createHash("sha256").update(input).digest("hex");
   if (hex.toLowerCase() === stored.toLowerCase()) return true;
   const b64 = crypto.createHash("sha256").update(input).digest("base64");
