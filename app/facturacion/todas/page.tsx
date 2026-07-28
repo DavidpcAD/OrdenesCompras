@@ -31,7 +31,7 @@ export default function BodegaTodasPage() {
   };
 
   return (
-    <AppShell role="facturacion">
+    <AppShell role="contabilidad">
       <main className="page">
         <div className="page__head">
           <div className="page__title">

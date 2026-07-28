@@ -1,5 +1,5 @@
 import { getPool, sql } from "./db";
-import type { Orden, OrdenLinea, Pedido, PedidoLinea, Recepcion, RecepcionLinea, Role } from "./types";
+import type { Orden, OrdenLinea, Pedido, PedidoLinea, Recepcion, RecepcionLinea, Role, NotaCreditoLinea } from "./types";
 
 /* ============================================================================
    Capa de acceso a datos (SQL Server) para Compras Adelante.
@@ -486,7 +486,7 @@ export async function listRecepciones(): Promise<Recepcion[]> {
     fechaFactura: (r.fechaFactura?.toISOString?.() ?? "").slice(0, 10),
     fechaRecepcion: (r.fechaRecepcion?.toISOString?.() ?? "").slice(0, 10),
     fechaRegistro: (r.fechaRegistro?.toISOString?.() ?? "").slice(0, 10),
-    total: Number(r.total ?? 0), parcial: !!r.esParcial,
+    total: Number(r.total ?? 0), parcial: !!r.esParcial, recibidoPor: r.creadoPor ?? undefined,
     lineas: d.recordset.filter((x) => x.idRecepcionCompra === r.idRecepcionCompra)
       .map((l): RecepcionLinea => ({
         ordenLineaId: String(l.idOrdenCompraDet),
@@ -547,7 +547,8 @@ export async function listMovimientos(entidad: string, idEntidad: number) {
    ============================================================================ */
 
 export type PlantillaLineaDB = { code: string; descripcion?: string; cantidad: number; unidad?: string; obraCodigo: string };
-export type Plantilla = { id: number; nombre: string; creadoPor: string; idClasificacion: number | null; lineas: PlantillaLineaDB[]; fechaCreacion: string };
+export type TipoPlantilla = "general" | "bodega";
+export type Plantilla = { id: number; nombre: string; creadoPor: string; idClasificacion: number | null; tipo: TipoPlantilla; lineas: PlantillaLineaDB[]; fechaCreacion: string };
 
 function parseLineas(json: string): PlantillaLineaDB[] {
   try {
@@ -556,25 +557,45 @@ function parseLineas(json: string): PlantillaLineaDB[] {
   } catch { return []; }
 }
 
+// ¿Existe ya la columna dbo.PlantillaSolicitud.tipo? (migración sql/plantilla_tipo.sql).
+// Permite que el código funcione con o sin la columna, sin romper el listado.
+async function plantillaTieneTipo(pool: sql.ConnectionPool): Promise<boolean> {
+  try {
+    const r = await pool.request().query("SELECT COL_LENGTH('dbo.PlantillaSolicitud','tipo') AS c");
+    return r.recordset[0]?.c != null;
+  } catch { return false; }
+}
+// tipo efectivo: el guardado, o inferido (sin clasificación ⇒ bodega) para filas viejas.
+const tipoEfectivo = (tipo: unknown, idClas: number | null): TipoPlantilla =>
+  tipo === "bodega" ? "bodega" : tipo === "general" ? "general" : (idClas == null ? "bodega" : "general");
+
 export async function listPlantillas(): Promise<Plantilla[]> {
   const pool = await getPool();
+  const hasTipo = await plantillaTieneTipo(pool);
+  const cols = `idPlantillaSolicitud, nombre, creadoPor, idClasificacion, lineasJson, fechaCreacion${hasTipo ? ", tipo" : ""}`;
   const r = await pool.request().query(
-    "SELECT idPlantillaSolicitud, nombre, creadoPor, idClasificacion, lineasJson, fechaCreacion FROM dbo.PlantillaSolicitud WHERE esEliminada = 0 ORDER BY nombre"
+    `SELECT ${cols} FROM dbo.PlantillaSolicitud WHERE esEliminada = 0 ORDER BY nombre`
   );
-  return r.recordset.map((row) => ({
-    id: row.idPlantillaSolicitud,
-    nombre: row.nombre,
-    creadoPor: row.creadoPor,
-    idClasificacion: row.idClasificacion ?? null,
-    lineas: parseLineas(row.lineasJson),
-    fechaCreacion: row.fechaCreacion?.toISOString?.() ?? "",
-  }));
+  return r.recordset.map((row) => {
+    const idClas = row.idClasificacion ?? null;
+    return {
+      id: row.idPlantillaSolicitud,
+      nombre: row.nombre,
+      creadoPor: row.creadoPor,
+      idClasificacion: idClas,
+      tipo: tipoEfectivo(hasTipo ? row.tipo : undefined, idClas),
+      lineas: parseLineas(row.lineasJson),
+      fechaCreacion: row.fechaCreacion?.toISOString?.() ?? "",
+    };
+  });
 }
 
-export async function createPlantilla(input: { nombre: string; creadoPor: string; idClasificacion?: number | null; lineas: PlantillaLineaDB[] }): Promise<number> {
+export async function createPlantilla(input: { nombre: string; creadoPor: string; tipo?: TipoPlantilla; idClasificacion?: number | null; lineas: PlantillaLineaDB[] }): Promise<number> {
   const pool = await getPool();
+  const hasTipo = await plantillaTieneTipo(pool);
   const lineasJson = JSON.stringify(input.lineas ?? []);
   const idClas = input.idClasificacion ?? null;
+  const tipo: TipoPlantilla = input.tipo === "bodega" ? "bodega" : "general";
   // upsert por (nombre, creadoPor): si el mismo usuario reusa el nombre, se actualiza.
   const ex = await pool.request()
     .input("nombre", sql.NVarChar(100), input.nombre)
@@ -582,32 +603,37 @@ export async function createPlantilla(input: { nombre: string; creadoPor: string
     .query("SELECT idPlantillaSolicitud FROM dbo.PlantillaSolicitud WHERE nombre=@nombre AND creadoPor=@creadoPor AND esEliminada=0");
   if (ex.recordset.length) {
     const id = ex.recordset[0].idPlantillaSolicitud as number;
-    await pool.request()
+    const req = pool.request()
       .input("id", sql.Int, id)
       .input("idClasificacion", sql.Int, idClas)
       .input("lineasJson", sql.NVarChar(sql.MAX), lineasJson)
-      .input("modificadoPor", sql.NVarChar(100), input.creadoPor)
-      .query("UPDATE dbo.PlantillaSolicitud SET idClasificacion=@idClasificacion, lineasJson=@lineasJson, fechaModificacion=SYSUTCDATETIME(), modificadoPor=@modificadoPor WHERE idPlantillaSolicitud=@id");
+      .input("modificadoPor", sql.NVarChar(100), input.creadoPor);
+    if (hasTipo) req.input("tipo", sql.NVarChar(15), tipo);
+    await req.query(`UPDATE dbo.PlantillaSolicitud SET idClasificacion=@idClasificacion, lineasJson=@lineasJson${hasTipo ? ", tipo=@tipo" : ""}, fechaModificacion=SYSUTCDATETIME(), modificadoPor=@modificadoPor WHERE idPlantillaSolicitud=@id`);
     return id;
   }
-  const ins = await pool.request()
+  const ins = pool.request()
     .input("nombre", sql.NVarChar(100), input.nombre)
     .input("creadoPor", sql.NVarChar(100), input.creadoPor)
     .input("idClasificacion", sql.Int, idClas)
-    .input("lineasJson", sql.NVarChar(sql.MAX), lineasJson)
-    .query("INSERT dbo.PlantillaSolicitud (nombre, creadoPor, idClasificacion, lineasJson, esEliminada, fechaCreacion) OUTPUT INSERTED.idPlantillaSolicitud VALUES (@nombre,@creadoPor,@idClasificacion,@lineasJson,0,SYSUTCDATETIME())");
-  return ins.recordset[0].idPlantillaSolicitud as number;
+    .input("lineasJson", sql.NVarChar(sql.MAX), lineasJson);
+  if (hasTipo) ins.input("tipo", sql.NVarChar(15), tipo);
+  const res = await ins.query(`INSERT dbo.PlantillaSolicitud (nombre, creadoPor, idClasificacion, lineasJson${hasTipo ? ", tipo" : ""}, esEliminada, fechaCreacion) OUTPUT INSERTED.idPlantillaSolicitud VALUES (@nombre,@creadoPor,@idClasificacion,@lineasJson${hasTipo ? ",@tipo" : ""},0,SYSUTCDATETIME())`);
+  return res.recordset[0].idPlantillaSolicitud as number;
 }
 
-export async function updatePlantilla(id: number, input: { nombre: string; idClasificacion?: number | null; lineas: PlantillaLineaDB[]; usuario: string }): Promise<void> {
+export async function updatePlantilla(id: number, input: { nombre: string; tipo?: TipoPlantilla; idClasificacion?: number | null; lineas: PlantillaLineaDB[]; usuario: string }): Promise<void> {
   const pool = await getPool();
-  await pool.request()
+  const hasTipo = await plantillaTieneTipo(pool);
+  const tipo: TipoPlantilla = input.tipo === "bodega" ? "bodega" : "general";
+  const req = pool.request()
     .input("id", sql.Int, id)
     .input("nombre", sql.NVarChar(100), input.nombre)
     .input("idClasificacion", sql.Int, input.idClasificacion ?? null)
     .input("lineasJson", sql.NVarChar(sql.MAX), JSON.stringify(input.lineas ?? []))
-    .input("modificadoPor", sql.NVarChar(100), input.usuario || null)
-    .query("UPDATE dbo.PlantillaSolicitud SET nombre=@nombre, idClasificacion=@idClasificacion, lineasJson=@lineasJson, fechaModificacion=SYSUTCDATETIME(), modificadoPor=@modificadoPor WHERE idPlantillaSolicitud=@id");
+    .input("modificadoPor", sql.NVarChar(100), input.usuario || null);
+  if (hasTipo) req.input("tipo", sql.NVarChar(15), tipo);
+  await req.query(`UPDATE dbo.PlantillaSolicitud SET nombre=@nombre, idClasificacion=@idClasificacion, lineasJson=@lineasJson${hasTipo ? ", tipo=@tipo" : ""}, fechaModificacion=SYSUTCDATETIME(), modificadoPor=@modificadoPor WHERE idPlantillaSolicitud=@id`);
 }
 
 export async function deletePlantilla(id: number, usuario: string): Promise<void> {
@@ -782,4 +808,62 @@ export async function deleteVista(id: number, usuario: string): Promise<void> {
   const pool = await getPool();
   await pool.request().input("id", sql.Int, id).input("usuario", sql.NVarChar(100), usuario)
     .query("UPDATE dbo.TablaVista SET esEliminada=1, fechaModificacion=SYSUTCDATETIME() WHERE id=@id AND usuario=@usuario");
+}
+
+/* ============================================================================
+   NOTAS DE CRÉDITO (Bodega) — líneas de factura recibida con problema (dañado /
+   menos cantidad / precio distinto) para emitir una nota de crédito.
+   Tabla dbo.NotaCreditoDet (ver sql/notas_credito.sql). Aislado del bootstrap.
+   ============================================================================ */
+export interface NewNotaCreditoDB {
+  idOrdenCompra: number;
+  usuario: string;
+  lineas: { ordenLineaId?: string; articuloNo?: string; descripcion: string; motivo: string; cantidad: number; precioUnitario?: number; nota?: string }[];
+}
+
+export async function createNotasCredito(input: NewNotaCreditoDB): Promise<number> {
+  const pool = await getPool();
+  let n = 0;
+  for (const l of input.lineas) {
+    if (!l.descripcion || !(l.cantidad > 0)) continue;
+    await pool.request()
+      .input("idOrdenCompra", sql.Int, input.idOrdenCompra)
+      .input("idOrdenCompraDet", sql.Int, l.ordenLineaId ? Number(l.ordenLineaId) : null)
+      .input("articuloNo", sql.NVarChar(40), l.articuloNo ?? null)
+      .input("descripcion", sql.NVarChar(200), l.descripcion)
+      .input("motivo", sql.NVarChar(30), l.motivo)
+      .input("cantidad", sql.Decimal(18, 4), l.cantidad)
+      .input("precioUnitario", sql.Decimal(18, 4), l.precioUnitario ?? null)
+      .input("nota", sql.NVarChar(300), l.nota ?? null)
+      .input("creadoPor", sql.NVarChar(100), input.usuario)
+      .query(`INSERT dbo.NotaCreditoDet (idOrdenCompra,idOrdenCompraDet,articuloNo,descripcion,motivo,cantidad,precioUnitario,nota,estado,esEliminada,fechaCreacion,creadoPor)
+              VALUES (@idOrdenCompra,@idOrdenCompraDet,@articuloNo,@descripcion,@motivo,@cantidad,@precioUnitario,@nota,'pendiente',0,getdate(),@creadoPor)`);
+    n++;
+  }
+  return n;
+}
+
+export async function listNotasCredito(): Promise<NotaCreditoLinea[]> {
+  const pool = await getPool();
+  const r = await pool.request().query(`
+    SELECT nc.idNotaCreditoDet, nc.idOrdenCompra, nc.idOrdenCompraDet, nc.articuloNo, nc.descripcion,
+           nc.motivo, nc.cantidad, nc.precioUnitario, nc.nota, nc.estado, nc.fechaCreacion, o.ordenNo
+    FROM dbo.NotaCreditoDet nc
+    LEFT JOIN dbo.OrdenCompra o ON o.idOrdenCompra = nc.idOrdenCompra
+    WHERE ISNULL(nc.esEliminada,0)=0
+    ORDER BY nc.fechaCreacion DESC`);
+  return r.recordset.map((x: any) => ({
+    id: String(x.idNotaCreditoDet),
+    ordenId: String(x.idOrdenCompra),
+    ordenNumero: x.ordenNo ?? "",
+    ordenLineaId: x.idOrdenCompraDet != null ? String(x.idOrdenCompraDet) : undefined,
+    articuloNo: x.articuloNo ?? undefined,
+    descripcion: x.descripcion ?? "",
+    motivo: x.motivo,
+    cantidad: Number(x.cantidad) || 0,
+    precioUnitario: x.precioUnitario != null ? Number(x.precioUnitario) : undefined,
+    nota: x.nota ?? undefined,
+    fecha: x.fechaCreacion instanceof Date ? x.fechaCreacion.toISOString() : String(x.fechaCreacion ?? ""),
+    estado: (x.estado ?? "pendiente") as NotaCreditoLinea["estado"],
+  }));
 }

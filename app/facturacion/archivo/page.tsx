@@ -63,12 +63,14 @@ export default function ArchivoPage() {
     { id: "orden", header: "Orden", accessorFn: (r) => ordenDe(r)?.numero ?? "—", meta: { label: "Orden" }, cell: (c) => c.getValue() },
     { id: "proveedor", header: "Proveedor", accessorFn: (r) => { const o = ordenDe(r); return (o ? (o.proveedorNombre ?? prov(o.proveedorId)?.nombre) : "") ?? "—"; }, meta: { label: "Proveedor" }, cell: (c) => c.getValue() },
     { id: "fecha", header: "Fecha registro", accessorFn: (r) => r.fechaRegistro, meta: { label: "Fecha registro" }, cell: (c) => formatDate(c.getValue()) },
-    { id: "total", header: "Total", accessorFn: (r) => r.total, meta: { label: "Total", num: true }, cell: (c) => money(c.getValue(), ordenDe(c.row.original)?.currencyCode) },
+    { id: "recibidoPor", header: "Recibido por", accessorFn: (r) => r.recibidoPor ?? "—", meta: { label: "Recibido por" }, cell: (c) => <span className="ds-body-sm">{c.getValue()}</span> },
+    { id: "importe", header: "Importe", accessorFn: (r) => r.total, meta: { label: "Importe (excl. IVA)", num: true }, cell: (c) => money(c.getValue(), ordenDe(c.row.original)?.currencyCode) },
+    { id: "totalIva", header: "Total c/IVA", accessorFn: (r) => r.total * 1.13, meta: { label: "Total con IVA (13%)", num: true }, cell: (c) => <span className="ds-strong">{money(c.getValue(), ordenDe(c.row.original)?.currencyCode)}</span> },
     { id: "tipo", header: "Tipo", accessorFn: (r) => (r.parcial ? "Parcial" : "Completa"), meta: { label: "Tipo" }, cell: (c) => c.row.original.parcial ? <Badge tone="yellow">Parcial</Badge> : <Badge tone="green">Completa</Badge> },
   ], [ordenes, proveedores]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
-    <AppShell role="facturacion">
+    <AppShell role="contabilidad">
       <main className="page page--wide">
         <div className="page__head">
           <div className="page__title">
@@ -113,7 +115,7 @@ export default function ArchivoPage() {
         )}
 
         <h3 className="ds-subtitle mt-6" style={{ marginBottom: 12 }}>Facturas registradas</h3>
-        <DataTable data={registradas} columns={columns} tablaKey="recepciones" getRowId={(r) => r.id} onRowClick={(r) => router.push(`/facturacion/recepcion/${r.id}`)} vacio="Sin facturas registradas." />
+        <DataTable data={registradas} columns={columns} tablaKey="recepciones" buscarPlaceholder="Buscar por N.º de factura o proveedor…" getRowId={(r) => r.id} onRowClick={(r) => router.push(`/facturacion/recepcion/${r.id}`)} vacio="Sin facturas registradas." />
 
         {facObj && (
           <Modal title={`Registrar factura · ${ordenDe(facObj)?.numero ?? ""}`} onClose={() => setFacObj(null)}

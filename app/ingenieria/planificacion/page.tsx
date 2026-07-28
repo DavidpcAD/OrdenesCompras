@@ -89,7 +89,7 @@ export default function PlanificacionPage() {
             <table className="ds-table" style={{ minWidth: 720 }}>
               <thead>
                 <tr>
-                  <th style={{ minWidth: 200, position: "sticky", left: 0, background: "var(--ds-color-white)", zIndex: 2 }}>Obra</th>
+                  <th style={{ minWidth: 200, position: "sticky", left: 0, color: "var(--ds-color-black)", background: "var(--ds-color-white)", zIndex: 2 }}>Obra</th>
                   {partidas.map((c) => <th key={c} style={{ minWidth: 120 }} className="ds-num">{c}</th>)}
                 </tr>
               </thead>

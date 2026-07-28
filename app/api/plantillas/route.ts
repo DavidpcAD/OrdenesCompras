@@ -21,6 +21,7 @@ export async function POST(req: Request) {
     const id = await createPlantilla({
       nombre: String(body.nombre),
       creadoPor: String(body.creadoPor),
+      tipo: body.tipo === "bodega" ? "bodega" : "general",
       idClasificacion: body.idClasificacion != null ? Number(body.idClasificacion) : null,
       lineas: Array.isArray(body.lineas) ? body.lineas : [],
     });

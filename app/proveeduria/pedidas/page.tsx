@@ -90,7 +90,7 @@ export default function ProveeduriaLineasPedidasPage() {
         </div>
 
         <div className="mt-2">
-          <DataTable data={base} columns={columns} tablaKey="lineas-pedidas" titulo="Líneas pedidas" vacio="No hay líneas que coincidan con el filtro." />
+          <DataTable data={base} columns={columns} tablaKey="lineas-pedidas" titulo="Líneas pedidas" buscarPlaceholder="Buscar por material, pedido o proveedor…" vacio="No hay líneas que coincidan con el filtro." />
         </div>
       </main>
 

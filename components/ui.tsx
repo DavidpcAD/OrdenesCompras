@@ -128,17 +128,21 @@ export function Tile({
   accent = "var(--ds-color-green-100)",
   onClick,
   active,
+  className = "",
+  style,
 }: {
   value: React.ReactNode;
   label: string;
   accent?: string;
   onClick?: () => void;
   active?: boolean;
+  className?: string;
+  style?: React.CSSProperties;
 }) {
-  const cls = ["tile", onClick ? "tile--clickable" : "", active ? "is-active" : ""].filter(Boolean).join(" ");
   if (onClick) {
+    const cls = ["tile", "tile--clickable", active ? "is-active" : "", className].filter(Boolean).join(" ");
     return (
-      <button type="button" className={cls} style={{ "--tile-accent": accent } as React.CSSProperties} onClick={onClick} aria-pressed={active}>
+      <button type="button" className={cls} style={{ "--tile-accent": accent, ...style } as React.CSSProperties} onClick={onClick} aria-pressed={active}>
         <div className="tile__accent" style={{ background: accent }} />
         <div className="tile__value">{value}</div>
         <div className="tile__label">{label}</div>
@@ -146,12 +150,24 @@ export function Tile({
     );
   }
   return (
-    <div className="tile">
+    <div className={["tile", className].filter(Boolean).join(" ")} style={style}>
       <div className="tile__accent" style={{ background: accent }} />
       <div className="tile__value">{value}</div>
       <div className="tile__label">{label}</div>
     </div>
   );
+}
+
+// ---------------------------------------------------------------- Skeleton
+// Barra "fantasma" con shimmer del DS para estados de carga. Pasá width/height
+// (px o cualquier unidad CSS). aria-hidden: es puramente visual.
+export function Skeleton({
+  width, height, radius, pill, className = "", style,
+}: {
+  width?: number | string; height?: number | string; radius?: number | string; pill?: boolean; className?: string; style?: React.CSSProperties;
+}) {
+  const cls = ["ds-skeleton", pill ? "ds-skeleton--pill" : "", className].filter(Boolean).join(" ");
+  return <span aria-hidden className={cls} style={{ width, height, borderRadius: radius, ...style }} />;
 }
 
 // ---------------------------------------------------------------- QtyRing
@@ -174,6 +190,31 @@ export function QtyRing({ recibida, total }: { recibida: number; total: number }
   );
 }
 
+// ---------------------------------------------------------------- ProgressBar
+// Variante lineal para progreso (evita el "anillo" cuando ocupa demasiado foco).
+export function ProgressBar({
+  value,
+  total,
+  compact,
+}: {
+  value: number;
+  total: number;
+  compact?: boolean;
+}) {
+  const pct = total > 0 ? Math.max(0, Math.min(100, Math.round((value / total) * 100))) : 0;
+  const tone = pct >= 100 ? "var(--ds-color-green-100)" : pct > 0 ? "var(--ds-color-yellow)" : "var(--ds-color-gray-300)";
+  return (
+    <span
+      className={`ds-progress ${compact ? "ds-progress--compact" : ""}`}
+      title={`${value} de ${total}`}
+      style={{ "--ds-progress": `${pct}%`, "--ds-progress-tone": tone } as React.CSSProperties}
+    >
+      <span className="ds-progress__track"><span className="ds-progress__fill" /></span>
+      <span className="ds-progress__pct">{pct}%</span>
+    </span>
+  );
+}
+
 // ---------------------------------------------------------------- Modal
 export function Modal({ title, onClose, children, footer, wide }: {
   title: string; onClose: () => void; children: React.ReactNode; footer?: React.ReactNode; wide?: boolean;
@@ -189,6 +230,27 @@ export function Modal({ title, onClose, children, footer, wide }: {
         {footer && <div className="row gap-3 mt-6" style={{ justifyContent: "flex-end" }}>{footer}</div>}
       </div>
     </div>
+  );
+}
+
+// ---------------------------------------------------------------- ConfirmDialog
+// Overlay de confirmación (reemplaza window.confirm) para acciones destructivas.
+// Evita eliminaciones accidentales con un paso explícito.
+export function ConfirmDialog({
+  title = "¿Confirmar?", message, confirmLabel = "Eliminar", cancelLabel = "Cancelar",
+  tone = "red", onConfirm, onCancel,
+}: {
+  title?: string; message: React.ReactNode; confirmLabel?: string; cancelLabel?: string;
+  tone?: "red" | "green"; onConfirm: () => void; onCancel: () => void;
+}) {
+  return (
+    <Modal title={title} onClose={onCancel}
+      footer={<>
+        <Button variant="outline" onClick={onCancel}>{cancelLabel}</Button>
+        <Button variant={tone} onClick={onConfirm}>{confirmLabel}</Button>
+      </>}>
+      <p className="ds-body" style={{ lineHeight: 1.5 }}>{message}</p>
+    </Modal>
   );
 }
 

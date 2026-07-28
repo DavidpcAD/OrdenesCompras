@@ -125,27 +125,6 @@ export default function ArmarOrdenPage() {
     return () => { cancel = true; };
   }, [proveedorId, itemIdsKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Prellenar el precio con el ÚLTIMO precio de compra (costo directo del item)
-  // en las líneas que vengan sin precio. No pisa lo que el comprador ya escribió.
-  useEffect(() => {
-    if (!itemsBc.length) return;
-    setRows((rs) => rs.map((r) => {
-      if (Number(r.precio) > 0) return r;
-      const it = itemsBc.find((x) => x.code === r.articuloId);
-      return it?.precioUltimo ? { ...r, precio: String(it.precioUltimo) } : r;
-    }));
-  }, [itemsBc]);
-
-  // Prellenar también con el último precio de BC (por si el catálogo de items no
-  // trae costo pero lastprice sí). No pisa lo que el comprador ya escribió.
-  useEffect(() => {
-    setRows((rs) => rs.map((r) => {
-      if (Number(r.precio) > 0) return r;
-      const p = bcPrices[r.articuloId];
-      return typeof p === "number" && p > 0 ? { ...r, precio: String(p) } : r;
-    }));
-  }, [bcPrices]);
-
   const setRow = (id: string, patch: Partial<Row>) =>
     setRows((rs) => rs.map((r) => (r.pedidoLineaId === id ? { ...r, ...patch } : r)));
   const removeRow = (id: string) => setRows((rs) => rs.filter((r) => r.pedidoLineaId !== id));
@@ -194,7 +173,22 @@ export default function ArmarOrdenPage() {
     if (it?.precioUltimo) return it.precioUltimo;
     return proveedorId ? ultimoPrecioProveedor(ordenes, r.articuloId, proveedorId) : null;
   };
-  const ivaTotal = rows.reduce((s, r) => s + calcImporte(r) * ((Number(r.iva) || 0) / 100), 0);
+  // Prellenar el precio con el ÚLTIMO precio mostrado (que incluye el historial de
+  // órdenes de la app al mismo proveedor), para las líneas que sigan en 0. Antes
+  // solo se prellenaba desde BC/catálogo; si el ítem nunca se compró en BC (solo se
+  // cotizó en la app), quedaba en 0 aunque el hint "últ. ₡…" sí lo mostraba.
+  useEffect(() => {
+    setRows((rs) => rs.map((r) => {
+      if (Number(r.precio) > 0) return r;
+      const lp = lastPrice(r);
+      return typeof lp === "number" && lp > 0 ? { ...r, precio: String(lp) } : r;
+    }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bcPrices, itemsBc, proveedorId, ordenes]);
+  // El IVA se aplica a los materiales Y al flete/cargo (13%), igual que en BC. Antes
+  // el cargo quedaba sin IVA y el total no cuadraba con BC (faltaba el 13% del flete).
+  const ivaCargos = cargosTotal * 0.13;
+  const ivaTotal = rows.reduce((s, r) => s + calcImporte(r) * ((Number(r.iva) || 0) / 100), 0) + ivaCargos;
   const total = subtotal + cargosTotal + ivaTotal;
   const pedidosDistintos = [...new Set(rows.map((r) => r.pedidoNumero))];
   const puedeCrear = !!proveedorId && rows.length > 0;
@@ -210,6 +204,11 @@ export default function ArmarOrdenPage() {
   // "Guardar como abierta": solo registra la orden local como borrador/abierta.
   async function crear(aprobar: boolean) {
     if (!puedeCrear) { toast("Seleccioná un proveedor.", "error"); return; }
+    // Todo cargo con importe debe tener un TIPO válido (Item Charge de BC). Sin tipo,
+    // BC rechaza el cargo (404) y la orden queda lanzada SIN el flete. Se bloquea acá.
+    if (cargos.some((c) => cargoImporte(c) > 0 && !c.chargeNo)) {
+      toast("Elegí el tipo de cargo (transporte) antes de continuar. Sin tipo, BC no acepta el flete.", "error"); return;
+    }
     // Precio obligatorio para enviar a aprobación: ninguna línea puede ir a BC en 0.
     if (aprobar) {
       const sinPrecio = rows.filter((r) => !(Number(r.precio) > 0)).length;
@@ -350,7 +349,7 @@ export default function ArmarOrdenPage() {
                 {rows.map((r) => (
                   <tr key={r.pedidoLineaId}>
                     <td className="ds-body-sm ds-strong">{r.pedidoNumero}</td>
-                    <td><div className="ds-truncate" title={r.descripcion} style={{ maxWidth: 200 }}>{r.descripcion}</div></td>
+                    <td><div className="ds-truncate" title={`${r.articuloId} — ${r.descripcion}`} style={{ maxWidth: 260 }}><span className="ds-strong ds-body-sm">{r.articuloId}</span> <span className="ds-muted">— {r.descripcion}</span></div></td>
                     <td className="ds-muted ds-body-sm">{r.almacen}</td>
                     <td className="ds-num"><input className="ds-cell-input" type="number" min={0} value={r.cantidad} style={{ width: 70 }} onChange={(e) => setRow(r.pedidoLineaId, { cantidad: e.target.value })} /></td>
                     <td className="ds-num">
@@ -359,9 +358,15 @@ export default function ArmarOrdenPage() {
                         const lp = lastPrice(r);
                         if (lp == null) return <div className="ds-body-sm ds-muted">sin historial</div>;
                         const up = Number(r.precio) > lp, down = Number(r.precio) < lp;
-                        return <div className="ds-body-sm" style={{ color: up ? "var(--ds-color-red-200)" : down ? "var(--ds-color-green-200)" : "var(--ds-color-gray-400)" }}>
-                          últ. {money(lp, currency)} {up ? "↑" : down ? "↓" : "="}
-                        </div>;
+                        const igual = !up && !down;
+                        return (
+                          <button type="button" className="link-btn ds-body-sm"
+                            title={igual ? "Precio igual al último" : "Usar este último precio"}
+                            onClick={() => setRow(r.pedidoLineaId, { precio: String(lp) })}
+                            style={{ color: up ? "var(--ds-color-red-200)" : down ? "var(--ds-color-green-200)" : "var(--ds-color-gray-400)", cursor: igual ? "default" : "pointer" }}>
+                            últ. {money(lp, currency)} {up ? "↑" : down ? "↓" : "="}
+                          </button>
+                        );
                       })()}
                     </td>
                     <td className="ds-num"><input className="ds-cell-input" type="number" min={0} max={100} value={r.descuento} style={{ width: 64 }} onChange={(e) => setRow(r.pedidoLineaId, { descuento: e.target.value })} /></td>
@@ -450,7 +455,7 @@ export default function ArmarOrdenPage() {
                   {lineasDispFiltradas.map(({ p, l, pend }) => (
                     <tr key={l.id}>
                       <td className="ds-body-sm ds-strong">{p.numero}</td>
-                      <td><div className="ds-truncate" style={{ maxWidth: 260 }} title={l.descripcion}>{l.descripcion}</div></td>
+                      <td><div className="ds-truncate" style={{ maxWidth: 260 }} title={`${l.articuloId} — ${l.descripcion}`}><span className="ds-strong ds-body-sm">{l.articuloId}</span> <span className="ds-muted">— {l.descripcion}</span></div></td>
                       <td className="ds-muted ds-body-sm">{l.almacen || p.obraCodigo || "—"}</td>
                       <td className="ds-num">{pend} {l.unidad}</td>
                       <td className="ds-num"><Button variant="outline" size="sm" onClick={() => agregarDeSolicitud(p, l, pend)}>Agregar</Button></td>

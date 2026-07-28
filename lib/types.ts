@@ -17,7 +17,7 @@
 // ============================================================================
 
 // nota: la ruta interna 'facturacion' se muestra como "Bodega" (Kattya) en la UI
-export type Role = "ingenieria" | "proveeduria" | "aprobacion" | "facturacion";
+export type Role = "ingenieria" | "proveeduria" | "aprobacion" | "facturacion" | "contabilidad";
 
 export type LineType = "articulo" | "cargo"; // 'cargo' = flete / cargo de producto
 export type TipoSolicitud = "material" | "repuesto" | "stock"; // stock = compra para bodega/inventario
@@ -183,9 +183,32 @@ export interface Recepcion {
   total: number;
   lineas: RecepcionLinea[];
   parcial: boolean;
+  // Quién recibió/registró la recepción (hay varios en bodega). Es creadoPor en BD.
+  recibidoPor?: string;
   // MODO 2: material recibido pero la factura quedó EN REVISIÓN (aún sin registrar).
   // Se deriva de numeroFactura vacío; Kattya la registra después (bcFacturarRecibido).
   facturaEnRevision?: boolean;
+}
+
+// ============================ NOTAS DE CRÉDITO (Bodega · Kattya) ============
+// Líneas de una factura recibida que vienen MAL (dañado / menos cantidad / precio
+// distinto). El material se recibe igual, pero esas líneas se marcan para emitir
+// una NOTA DE CRÉDITO. Es DISTINTO de Devoluciones (que devuelve toda la OC/pedido).
+export type MotivoNC = "danado" | "menos_cantidad" | "precio_distinto";
+export interface NotaCreditoLinea {
+  id: string;
+  ordenId: string;
+  ordenNumero: string;
+  proveedor?: string;
+  ordenLineaId?: string;
+  articuloNo?: string;
+  descripcion: string;
+  motivo: MotivoNC;
+  cantidad: number;
+  precioUnitario?: number;
+  nota?: string;
+  fecha: string;                 // ISO
+  estado: "pendiente" | "resuelta";
 }
 
 // ============================ BITÁCORA / MOVIMIENTOS ========================

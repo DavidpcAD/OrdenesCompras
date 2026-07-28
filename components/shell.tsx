@@ -9,7 +9,7 @@ import { formatDate } from "@/lib/helpers";
 import {
   IconBell, IconList, IconOptions, IconDuplicate, IconMatrix, IconTrack,
   IconReceipt, IconCheck, IconDelivery, IconFolder, IconPlus, IconLogout,
-  IconBox, IconWarning, IconDashboard,
+  IconBox, IconWarning, IconDashboard, IconEdit,
 } from "@/components/icons";
 
 const cap = (s: string) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : s);
@@ -63,39 +63,37 @@ const ROLE_META: Record<Role, { label: string; persona: string; home: string; na
     ],
   },
   facturacion: {
-    label: "Bodega", persona: "Kattya", home: "/facturacion", color: "var(--ds-color-red-100)",
+    // Bodega (ej. Pedro): recibe el material. Interfaz mínima — solo lo por recibir.
+    label: "Bodega", persona: "Pedro", home: "/facturacion", color: "var(--ds-color-red-100)",
     nav: [
-      { href: "/facturacion", label: "Por recibir", icon: IconDelivery },
+      { href: "/facturacion", label: "Órdenes por recibir", icon: IconDelivery },
+      { href: "/facturacion/recibidas", label: "Recibidas", icon: IconCheck },
+    ],
+  },
+  contabilidad: {
+    // Contabilidad (ej. Kathya): notas de crédito, cargos de tercero, consulta y archivo.
+    label: "Contabilidad", persona: "Kattya", home: "/facturacion/notas-credito", color: "var(--ds-color-gray-300)",
+    nav: [
+      { href: "/facturacion/notas-credito", label: "Notas de crédito", icon: IconEdit },
       { href: "/facturacion/cargo", label: "Cargo sobre factura", icon: IconPlus },
       { href: "/facturacion/todas", label: "Todas las órdenes", icon: IconReceipt },
       { href: "/facturacion/archivo", label: "Archivo", icon: IconFolder },
-      { href: "/facturacion/devoluciones", label: "Devoluciones", icon: IconWarning },
     ],
   },
 };
 
 export function AppShell({ role, children }: { role: Role; children: React.ReactNode }) {
-  const { role: current, setRole, usuario, setUsuario, notificaciones, marcarNotifsLeidas, hydrated } = useStore();
+  const { role: current, setRole, usuario, setUsuario, notificaciones, marcarNotifsLeidas, marcarNotifLeida, hydrated } = useStore();
   const router = useRouter();
   const pathname = usePathname();
   const [notifOpen, setNotifOpen] = useState(false);
-  // Estado colapsado del sidebar, PERSISTIDO en localStorage: al navegar el
-  // AppShell se re-monta, así que sin persistir se cerraría solo. Default colapsado.
-  const [navCollapsed, setNavCollapsed] = useState<boolean>(() =>
-    typeof window === "undefined" ? true : localStorage.getItem("adelante_oc_nav_collapsed") !== "0"
-  );
-  const toggleNav = () => setNavCollapsed((v) => {
-    const n = !v;
-    try { localStorage.setItem("adelante_oc_nav_collapsed", n ? "1" : "0"); } catch { /* noop */ }
-    return n;
-  });
   // Notificaciones relevantes para este rol (o sin rol específico).
   const notifsRol = notificaciones.filter((n) => !n.rol || n.rol === role);
   const noLeidas = notifsRol.filter((n) => !n.leida).length;
   function toggleNotif() {
-    const open = !notifOpen;
-    setNotifOpen(open);
-    if (open && noLeidas > 0) setTimeout(() => marcarNotifsLeidas(), 1200);
+    // Abrir el panel NO marca leídas: cada notificación queda resaltada (no leída)
+    // hasta que el usuario la abre (clic) o usa "Marcar todas como leídas".
+    setNotifOpen((o) => !o);
   }
 
   // guard: esperar a que el store lea el rol de localStorage (hydrated) para no
@@ -128,16 +126,21 @@ export function AppShell({ role, children }: { role: Role; children: React.React
   return (
     <div className="app-shell">
       <header className="topbar">
-        <Link href={meta.home} className="topbar__brand">
-          <span className="topbar__logo">A</span>
-          <span>Compras Adelante</span>
-        </Link>
+        {/* Con riel presente, la marca vive en el tope del riel oscuro. Sin riel,
+            se muestra acá en el encabezado. */}
+        {!hasNav && (
+          <Link href={meta.home} className="topbar__brand">
+            <span className="topbar__logo">A</span>
+            <span>Compras Adelante</span>
+          </Link>
+        )}
         <div className="topbar__spacer" />
         <div className="topbar__user">
-          {/* Acción primaria del rol — siempre visible */}
-          {meta.action && (
+          {/* Acción primaria del rol — solo en el dashboard del rol (hace mucho
+              ruido en el resto de pantallas; ahí se usa desde el sidebar). */}
+          {meta.action && pathname === meta.home && (
             <button className="ds-btn ds-btn--green ds-btn--sm topbar__action" onClick={() => router.push(meta.action!.href)}>
-              <IconPlus size={18} /><span>{meta.action.label}</span>
+              <IconPlus size={20} /><span>{meta.action.label}</span>
             </button>
           )}
           {/* Campanita de notificaciones */}
@@ -151,7 +154,11 @@ export function AppShell({ role, children }: { role: Role; children: React.React
                 <div className="notif-panel">
                   <div className="notif-panel__head">
                     <span className="notif-panel__title">Notificaciones</span>
-                    {noLeidas > 0 && <span className="notif-panel__count">{noLeidas} sin leer</span>}
+                    {noLeidas > 0 && (
+                      <button type="button" className="notif-panel__mark" onClick={() => marcarNotifsLeidas()}>
+                        {noLeidas} sin leer · Marcar todas
+                      </button>
+                    )}
                   </div>
                   {notifsRol.length === 0 ? (
                     <div className="notif-empty">
@@ -162,7 +169,7 @@ export function AppShell({ role, children }: { role: Role; children: React.React
                     <div className="notif-list">
                       {notifsRol.slice(0, 30).map((n) => (
                         <button key={n.id} className={`notif-item ${n.leida ? "" : "is-unread"}`}
-                          onClick={() => { setNotifOpen(false); if (n.href) router.push(n.href); }}>
+                          onClick={() => { marcarNotifLeida(n.id); setNotifOpen(false); if (n.href) router.push(n.href); }}>
                           <span className={`notif-item__icon notif-item__icon--${n.tipo}`}>{NOTIF_ICON[n.tipo]}</span>
                           <span className="notif-item__body">
                             <span className="notif-item__msg">{n.mensaje}</span>
@@ -185,31 +192,27 @@ export function AppShell({ role, children }: { role: Role; children: React.React
       </header>
       <div className="app-body">
         {hasNav && (
-          <aside className={`app-nav${navCollapsed ? " is-collapsed" : ""}`} aria-label="Secciones">
-            {/* Toggle ARRIBA (como ControlUsuarios): abre/cierra y queda fijo — no se
-                oculta solo mientras trabajás. */}
-            <button className={`app-nav__toggle${navCollapsed ? " is-collapsed" : ""}`} onClick={toggleNav}
-              aria-label={navCollapsed ? "Abrir menú" : "Cerrar menú"} title={navCollapsed ? "Abrir" : "Cerrar"}>
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
-                {navCollapsed ? <path d="M13 6l6 6-6 6M5 6l6 6-6 6" /> : <path d="M11 6l-6 6 6 6M19 6l-6 6 6 6" />}
-              </svg>
-            </button>
+          <aside className="app-nav" aria-label="Secciones">
+            <Link href={meta.home} className="app-nav__brand" title="Compras Adelante">
+              <span className="topbar__logo">A</span>
+              <span className="app-nav__brand-name">Compras Adelante</span>
+            </Link>
             {meta.nav.map((n) => {
               const Icon = n.icon;
               const active = activeHref === n.href;
               return (
                 <button key={n.href} className={`app-nav__item${active ? " is-active" : ""}`}
-                  title={navCollapsed ? n.label : undefined}
+                  title={n.label}
                   onClick={() => router.push(n.href)} aria-current={active ? "page" : undefined}>
-                  <Icon size={20} />
+                  <span className="app-nav__ic"><Icon size={20} /></span>
                   <span className="app-nav__label">{n.label}</span>
                 </button>
               );
             })}
             <button className="app-nav__item app-nav__salir" style={{ marginTop: "auto" }}
-              title={navCollapsed ? "Salir" : undefined}
+              title="Salir"
               onClick={() => { setRole(null); setUsuario(null); router.replace("/"); }}>
-              <IconLogout size={20} />
+              <span className="app-nav__ic"><IconLogout size={20} /></span>
               <span className="app-nav__label">Salir</span>
             </button>
           </aside>

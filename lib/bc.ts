@@ -459,6 +459,30 @@ export async function bcUltimoPrecioFacturado(itemNo: string, vendorNo: string):
   }
 }
 
+export type BcOrdenTotales = { subtotal: number; iva: number; total: number; currencyCode: string };
+
+// Totales del Pedido de compra CALCULADOS POR BC (fuente de verdad): subtotal
+// (excl. IVA, incluye cargos), IVA total y total con IVA. La app los MUESTRA tal
+// cual para que la orden se vea igual que en BC (en vez de recalcular y desalinearse).
+// Defensiva: null si BC no responde o el pedido no existe todavía.
+export async function bcOrdenTotales(orderNo: string): Promise<BcOrdenTotales | null> {
+  if (!orderNo) return null;
+  try {
+    const cid = await getStdCompanyId();
+    const filtro = `$filter=${encodeURIComponent(`number eq '${odataStr(orderNo)}'`)}&$select=totalAmountExcludingTax,totalTaxAmount,totalAmountIncludingTax,currencyCode&$top=1`;
+    const res = await bcFetch(`${stdRoot()}/companies(${cid})/purchaseOrders?${filtro}`, { cache: "no-store" });
+    if (!res.ok) return null;
+    const po = ((await res.json())?.value ?? [])[0];
+    if (!po) return null;
+    return {
+      subtotal: Number(po.totalAmountExcludingTax) || 0,
+      iva: Number(po.totalTaxAmount) || 0,
+      total: Number(po.totalAmountIncludingTax) || 0,
+      currencyCode: po.currencyCode || "",
+    };
+  } catch { return null; }
+}
+
 export type BcVariante = { code: string; descripcion: string; id?: string };
 
 // Resultado de cargar variantes. `disponible=false` significa que NO se pudo
@@ -578,7 +602,7 @@ export function toBcAmount(v: unknown): number {
   return 0;
 }
 
-export async function bcCrearPedido(input: { vendorNo: string; currencyCode?: string; locationCode?: string; lineas: NuevaLineaBc[]; cargos?: CargoBc[]; flete?: { monto: number; descripcion?: string } }): Promise<{ number: string; id: string; omitidas: string[]; creadas: number; lineError?: string }> {
+export async function bcCrearPedido(input: { vendorNo: string; currencyCode?: string; locationCode?: string; lineas: NuevaLineaBc[]; cargos?: CargoBc[]; flete?: { monto: number; descripcion?: string } }): Promise<{ number: string; id: string; omitidas: string[]; creadas: number; lineError?: string; cargoError?: string; cargosCreados: number }> {
   if (!input?.vendorNo) throw new Error("Falta el proveedor (vendorNo).");
   const lineas = (input.lineas ?? []).filter((l) => l.itemNo && l.cantidad > 0);
   if (!lineas.length) throw new Error("No hay líneas de material válidas para el pedido.");
@@ -598,6 +622,8 @@ export async function bcCrearPedido(input: { vendorNo: string; currencyCode?: st
   // ciegas por qué no se agregaban las líneas). Devolvemos omitidas + primer error.
   const omitidas: string[] = [];
   let lineError: string | undefined;
+  let cargoError: string | undefined;
+  let cargosCreados = 0;
   let creadas = 0;
   // Almacén de recepción fijo (p.ej. ALM-GRAL): aunque Ingeniería pida para una
   // obra, el material entra siempre al almacén general. Configurable por env.
@@ -621,9 +647,9 @@ export async function bcCrearPedido(input: { vendorNo: string; currencyCode?: st
       if (!lineError) lineError = `${l.itemNo}: BC ${resL.status} ${(await resL.text()).slice(0, 400)}`;
     }
   }
-  // 3) CARGOS DE PRODUCTO (Item Charge): una línea por cargo elegido (Transporte,
-  // Seguro, etc.). El codeunit AL los distribuye POR IMPORTE entre los artículos
-  // antes de registrar. `cargos` es la vía nueva; `flete` se mantiene por compat.
+  // 3) CARGOS DE PRODUCTO (Item Charge): NO por la API estándar (se traga la línea
+  // sin avisar). Van por el codeunit AdelantePO_AddChargeLine (idempotente por
+  // itemChargeNo). El reparto por importe lo hace el codeunit al registrar.
   const cargos: CargoBc[] = (input.cargos && input.cargos.length)
     ? input.cargos
     : (input.flete && input.flete.monto > 0 ? [{ descripcion: input.flete.descripcion, cantidad: 1, precio: input.flete.monto }] : []);
@@ -632,13 +658,20 @@ export async function bcCrearPedido(input: { vendorNo: string; currencyCode?: st
       const qty = cg.cantidad && cg.cantidad > 0 ? cg.cantidad : 1;
       const precioCargo = toBcAmount(cg.precio);
       if (!(precioCargo > 0)) continue;
-      const chargeNo = cg.chargeNo || process.env.BC_ITEM_CHARGE_FLETE || "FLETE";
-      const chargeBody: Record<string, unknown> = {
-        lineType: "Charge (Item)", lineObjectNumber: chargeNo, quantity: qty,
-        directUnitCost: precioCargo, description: cg.descripcion || "CARGO / TRANSPORTE",
-      };
-      const resC = await bcFetch(`${stdRoot()}/companies(${cid})/purchaseOrders(${po.id})/purchaseOrderLines`, { method: "POST", headers: jsonHeaders, body: JSON.stringify(chargeBody), cache: "no-store" });
-      if (!resC.ok && !lineError) lineError = `cargo ${chargeNo}: BC ${resC.status} ${(await resC.text()).slice(0, 300)}`;
+      // El tipo (Item Charge) debe ser un código REAL de BC. Antes caía a "FLETE",
+      // que no existe → 404 y la orden quedaba sin flete. Si no hay tipo válido, se
+      // omite el cargo y se reporta (no se inventa un código).
+      const chargeNo = (cg.chargeNo || process.env.BC_ITEM_CHARGE_FLETE || "").trim();
+      if (!chargeNo) {
+        if (!cargoError) cargoError = "El cargo no tiene tipo (Item Charge). Elegí el tipo de cargo y reintentá.";
+        continue;
+      }
+      try {
+        await bcAddChargeLine(po.number, chargeNo, cg.descripcion || "CARGO / TRANSPORTE", qty, precioCargo);
+        cargosCreados++;
+      } catch (e: any) {
+        if (!cargoError) cargoError = `cargo ${chargeNo}: ${String(e?.message ?? e)}`;
+      }
     }
   }
   // Si NINGUNA línea entró, el pedido quedaría vacío en BC (y "no hay nada que
@@ -647,7 +680,7 @@ export async function bcCrearPedido(input: { vendorNo: string; currencyCode?: st
     try { await bcFetch(`${stdRoot()}/companies(${cid})/purchaseOrders(${po.id})`, { method: "DELETE", cache: "no-store" }); } catch { /* best effort */ }
     throw new Error(`BC rechazó todas las líneas del pedido — ${lineError ?? "sin detalle"}`);
   }
-  return { number: po.number ?? "", id: po.id ?? "", omitidas, creadas, lineError };
+  return { number: po.number ?? "", id: po.id ?? "", omitidas, creadas, lineError, cargoError, cargosCreados };
 }
 
 // Raíz OData V4 (para los web services de codeunit custom, p.ej. AdelantePO).
@@ -729,10 +762,21 @@ export async function bcRegistrarFactura(
   vendorInvoiceNo: string,
   lines: { itemNo: string; qty: number; variantCode?: string }[],
   postingDate = "", // fecha de registro (ISO yyyy-mm-dd). "" → BC usa la fecha del día
+  // Cargo de transporte de ESTA factura/viaje (opcional). Se agrega a la OC y se
+  // reparte entre lo que se recibe en este registro, según `metodo`.
+  cargo?: { itemChargeNo: string; descripcion?: string; monto: number; metodo?: string },
 ): Promise<string> {
   if (!orderNo) throw new Error("Falta el número de pedido de BC.");
   if (!vendorInvoiceNo) throw new Error("Falta el N.º de factura del proveedor.");
   const cid = await getStdCompanyId();
+  // Cargo de transporte por viaje: se agrega la línea de Cargo (Prod.) a la OC y se
+  // asigna con el método elegido ANTES de registrar (para que quede repartido en
+  // esta factura sobre lo recibido). Debe ir antes del PostInvoice.
+  if (cargo && cargo.itemChargeNo && cargo.monto > 0) {
+    await bcAddChargeLine(orderNo, cargo.itemChargeNo, cargo.descripcion || "Transporte", 1, cargo.monto);
+    try { await bcAssignItemCharges(orderNo, (cargo.metodo || "Amount").trim() || "Amount"); }
+    catch (e) { console.warn(`BC asignar cargo de transporte en ${orderNo} falló:`, e); }
+  }
   const url = `${odataRoot()}/AdelantePO_PostInvoice?company=${encodeURIComponent(cid)}`;
   const res = await bcFetch(url, {
     method: "POST", cache: "no-store",
@@ -783,13 +827,19 @@ export async function bcFacturarRecibido(orderNo: string, vendorInvoiceNo: strin
 // Si el create funciona pero el release falla (p.ej. AdelantePO no publicado aún),
 // devuelve el pedido creado con released=false para que la UI avise sin romperse.
 export async function bcCrearYLanzarPedido(input: { vendorNo: string; currencyCode?: string; locationCode?: string; lineas: NuevaLineaBc[]; cargos?: CargoBc[]; metodo?: string; flete?: { monto: number; descripcion?: string } }):
-  Promise<{ number: string; id: string; omitidas: string[]; creadas: number; lineError?: string; released: boolean; releaseError?: string }> {
-  const { number, id, omitidas, creadas, lineError } = await bcCrearPedido(input);
+  Promise<{ number: string; id: string; omitidas: string[]; creadas: number; lineError?: string; cargoError?: string; cargosCreados?: number; released: boolean; releaseError?: string }> {
+  const { number, id, omitidas, creadas, lineError, cargoError, cargosCreados } = await bcCrearPedido(input);
   // Si NINGUNA línea entró a BC, no tiene sentido intentar lanzar (BC responde
   // "nothing to release"). Devolvemos released=false con el motivo real de la línea.
   if (creadas === 0) {
-    return { number, id, omitidas, creadas, lineError, released: false, releaseError: lineError ?? "BC rechazó todas las líneas del pedido." };
+    return { number, id, omitidas, creadas, lineError, cargoError, cargosCreados, released: false, releaseError: lineError ?? "BC rechazó todas las líneas del pedido." };
   }
+  // FORZAR EL PRECIO DE LA APP: al insertar la línea, la API estándar valida el
+  // N.º del artículo y autocompleta el "Direct Unit Cost" desde la ficha del ítem,
+  // PISANDO el precio que mandamos en el POST (si el ítem no tiene costo, lo deja
+  // en blanco → no se puede facturar). Re-sincronizamos con PATCH para que el
+  // precio NEGOCIADO en la app sea el que queda en BC. No debe tumbar el lanzamiento.
+  try { await bcResyncPedidoLines(number, input.lineas); } catch (e) { console.warn(`BC resync de precios en ${number} falló:`, e); }
   // Cargos con método distinto de importe: reasignar explícitamente (Igualmente/
   // Peso/Volumen). El default "Amount" ya lo hace el codeunit al registrar, así que
   // solo llamamos cuando el método NO es Amount. No debe tumbar el lanzamiento.
@@ -800,10 +850,29 @@ export async function bcCrearYLanzarPedido(input: { vendorNo: string; currencyCo
   }
   try {
     await bcReleasePedido(number);
-    return { number, id, omitidas, creadas, lineError, released: true };
+    return { number, id, omitidas, creadas, lineError, cargoError, cargosCreados, released: true };
   } catch (e: any) {
-    return { number, id, omitidas, creadas, lineError, released: false, releaseError: String(e?.message ?? e) };
+    return { number, id, omitidas, creadas, lineError, cargoError, cargosCreados, released: false, releaseError: String(e?.message ?? e) };
   }
+}
+
+// Crea una línea de Cargo de producto (Item Charge) en un pedido, vía el codeunit
+// AdelantePO_AddChargeLine. La API ESTÁNDAR se traga la línea de cargo sin avisar,
+// así que las líneas de cargo van SIEMPRE por acá (las de artículo siguen por la
+// API estándar). Es idempotente por itemChargeNo (no duplica si se reintenta).
+export async function bcAddChargeLine(orderNo: string, itemChargeNo: string, description: string, quantity: number, directUnitCost: number): Promise<string> {
+  if (!orderNo) throw new Error("Falta el número de pedido para el cargo.");
+  if (!itemChargeNo) throw new Error("Falta el tipo de cargo (itemChargeNo).");
+  const cid = await getStdCompanyId();
+  const url = `${odataRoot()}/AdelantePO_AddChargeLine?company=${encodeURIComponent(cid)}`;
+  const res = await bcFetch(url, {
+    method: "POST", cache: "no-store",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ orderNo, itemChargeNo, description, quantity: quantity > 0 ? quantity : 1, directUnitCost }),
+  });
+  if (!res.ok) throw new Error(`BC add cargo ${res.status}: ${(await res.text()).slice(0, 300)}`);
+  const d: any = await res.json().catch(() => ({}));
+  return d?.value ?? "Agregado";
 }
 
 // Sugerir/aplicar la asignación de los Cargos de producto de un pedido con un

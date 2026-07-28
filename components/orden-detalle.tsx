@@ -1,8 +1,9 @@
 "use client";
 
-import { Fragment, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Badge, Card, useToast } from "@/components/ui";
+import { Badge, Button, Card, useToast } from "@/components/ui";
+import { IconChevronDown } from "@/components/icons";
 import { OrderLinesTable } from "@/components/order-lines";
 import { Timeline } from "@/components/timeline";
 import { useStore } from "@/lib/store";
@@ -29,6 +30,17 @@ export function OrdenDetalle({
   const toast = useToast();
   const [verFactura, setVerFactura] = useState<string | null>(null);
   const [relanzando, setRelanzando] = useState(false);
+  // Totales calculados por BC (fuente de verdad). Se leen si la orden ya está en BC.
+  const [bcTot, setBcTot] = useState<{ subtotal: number; iva: number; total: number; currencyCode: string } | null>(null);
+  useEffect(() => {
+    if (!orden.bcNumber) { setBcTot(null); return; }
+    let vivo = true;
+    fetch(`/api/bc/orden-totales?orderNo=${encodeURIComponent(orden.bcNumber)}`)
+      .then((r) => (r.ok ? r.json() : { totales: null }))
+      .then((d) => { if (vivo && d?.totales) setBcTot(d.totales); })
+      .catch(() => { /* sin BC: se muestran los totales locales */ });
+    return () => { vivo = false; };
+  }, [orden.bcNumber]);
 
   // Reintenta el lanzamiento en BC de un pedido YA creado (no duplica). Ahora
   // RE-SINCRONIZA las líneas (precio + variante) antes del Release, para que las
@@ -88,8 +100,11 @@ export function OrdenDetalle({
           </div>
         </div>
         <div className="row gap-3">
-          <button className="link-btn" title="Imprimir / Guardar PDF para el proveedor"
-            onClick={() => router.push(`/proveeduria/ordenes/${orden.id}/imprimir`)}>🖨️ Imprimir</button>
+          <Button variant="outline" size="sm" title="Imprimir / Guardar PDF para el proveedor"
+            onClick={() => router.push(`/proveeduria/ordenes/${orden.id}/imprimir`)}>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: 6 }}><path d="M6 9V3h12v6" /><path d="M6 18H4a2 2 0 0 1-2-2v-4a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2h-2" /><rect x="6" y="14" width="12" height="7" rx="1" /></svg>
+            Imprimir
+          </Button>
           {orden.bcDeepLink && (
             <button className="link-btn" title="Abrir el Pedido en Business Central (editar · vista previa de registro · registrar)"
               onClick={() => window.open(orden.bcDeepLink!, "_blank")}>↗ Abrir en BC</button>
@@ -108,10 +123,22 @@ export function OrdenDetalle({
 
       <div className="row mt-6" style={{ justifyContent: "flex-end" }}>
         <div className="totals" style={{ minWidth: 320 }}>
-          <div className="totals__row"><span>Subtotal artículos</span><span>{money(subtotal, orden.currencyCode)}</span></div>
-          <div className="totals__row"><span>Flete</span><span>{money(flete, orden.currencyCode)}</span></div>
-          <div className="totals__row"><span>IVA</span><span>{money(iva, orden.currencyCode)}</span></div>
-          <div className="totals__row totals__row--grand" style={{ gridColumn: "1 / -1" }}><span>Total orden</span><span>{money(subtotal + flete + iva, orden.currencyCode)}</span></div>
+          {bcTot ? (
+            <>
+              <div className="totals__row"><span>Subtotal (excl. IVA)</span><span>{money(bcTot.subtotal, bcTot.currencyCode || orden.currencyCode)}</span></div>
+              <div className="totals__row"><span>IVA</span><span>{money(bcTot.iva, bcTot.currencyCode || orden.currencyCode)}</span></div>
+              <div className="totals__row totals__row--grand" style={{ gridColumn: "1 / -1" }}><span>Total (con IVA)</span><span>{money(bcTot.total, bcTot.currencyCode || orden.currencyCode)}</span></div>
+              <div style={{ gridColumn: "1 / -1" }} className="ds-body-sm ds-muted">Totales calculados por Business Central ✓</div>
+            </>
+          ) : (
+            <>
+              <div className="totals__row"><span>Subtotal artículos</span><span>{money(subtotal, orden.currencyCode)}</span></div>
+              <div className="totals__row"><span>Flete</span><span>{money(flete, orden.currencyCode)}</span></div>
+              <div className="totals__row"><span>IVA (materiales)</span><span>{money(iva, orden.currencyCode)}</span></div>
+              <div className="totals__row totals__row--grand" style={{ gridColumn: "1 / -1" }}><span>Total orden</span><span>{money(subtotal + flete + iva, orden.currencyCode)}</span></div>
+              {orden.bcNumber && <div style={{ gridColumn: "1 / -1" }} className="ds-body-sm ds-muted">Estimado local · los totales definitivos los calcula BC.</div>}
+            </>
+          )}
         </div>
       </div>
 
@@ -134,7 +161,12 @@ export function OrdenDetalle({
                         <td>{formatDate(r.fechaRegistro)}</td>
                         <td className="ds-num">{money(r.total, orden.currencyCode)}</td>
                         <td>{r.parcial ? <Badge tone="yellow">Parcial</Badge> : <Badge tone="green">Completa</Badge>}</td>
-                        <td className="ds-num ds-muted">{abierto ? "▾ ocultar" : "› ver"}</td>
+                        <td className="ds-num ds-muted">
+                          <span className="row gap-1" style={{ justifyContent: "flex-end", alignItems: "center" }}>
+                            {abierto ? "ocultar" : "ver"}
+                            <IconChevronDown size={16} style={{ transform: abierto ? "rotate(180deg)" : "none", transition: "transform .15s ease" }} />
+                          </span>
+                        </td>
                       </tr>
                       {abierto && (
                         <tr>

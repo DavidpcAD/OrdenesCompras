@@ -61,7 +61,8 @@ export async function aprobarYLanzar(
       return { ok: false, tone: "error", message: `No se lanzó ${orden.bcNumber} en BC: ${d.error || `HTTP ${res.status}`}. La orden queda pendiente.` };
     }
     await setOrdenEstado(orden.id, "lanzado", { bcNumber: orden.bcNumber });
-    return { ok: true, tone: "success", message: `${orden.bcNumber} aprobada y lanzada en BC` };
+    const avisoCargoRe = d.cargoError ? ` · ⚠️ el cargo NO se agregó a BC: ${d.cargoError}` : "";
+    return { ok: !d.cargoError, tone: d.cargoError ? "error" : "success", message: `${orden.bcNumber} aprobada y lanzada en BC${avisoCargoRe}` };
   }
 
   // Primer intento: crear el pedido en BC y lanzarlo.
@@ -82,11 +83,14 @@ export async function aprobarYLanzar(
   // el próximo intento solo relanzará ese mismo pedido en vez de crear otro.
   if (res.ok && d.number) {
     if (d.released === true) {
-      const aviso = Array.isArray(d.omitidas) && d.omitidas.length
+      const avisoLineas = Array.isArray(d.omitidas) && d.omitidas.length
         ? ` · ojo: BC omitió ${d.omitidas.length} línea(s): ${d.omitidas.join(", ")}`
         : "";
+      // El cargo de producto (flete) se crea por la API estándar; si BC lo rechaza,
+      // NO tumbamos el lanzamiento pero AVISAMOS con el motivo real (antes se tragaba).
+      const avisoCargo = d.cargoError ? ` · ⚠️ el cargo NO se agregó a BC: ${d.cargoError}` : "";
       await setOrdenEstado(orden.id, "lanzado", { bcNumber: d.number, bcDeepLink: d.deepLink || undefined });
-      return { ok: true, tone: "success", message: `${d.number} aprobada y lanzada en BC${aviso}` };
+      return { ok: true, tone: d.cargoError ? "error" : "success", message: `${d.number} aprobada y lanzada en BC${avisoLineas}${avisoCargo}` };
     }
     // Creado pero no lanzado: persistimos el bcNumber sin cambiar el estado real.
     await setOrdenEstado(orden.id, orden.estado, { bcNumber: d.number, bcDeepLink: d.deepLink || undefined });

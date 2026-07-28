@@ -6,7 +6,6 @@ import * as XLSX from "xlsx";
 import { Button, Card, Field, Select, Textarea, useToast } from "@/components/ui";
 import { IconTrash, IconPlus } from "@/components/icons";
 import { Combobox } from "@/components/combobox";
-import { SlideConfirm } from "@/components/slide-confirm";
 import { useStore, type NewPedidoInput } from "@/lib/store";
 import type { Almacen, Articulo, Obra, Pedido, TipoSolicitud } from "@/lib/types";
 
@@ -18,7 +17,7 @@ const SOLICITANTES = ["Laura Ureña", "Loana", "Michael Thames", "Roger Solano"]
 
 // ---- Plantillas (persistidas en SQL: dbo.PlantillaSolicitud) ----
 type PlantillaLinea = { code: string; cantidad: number; obraCodigo: string };
-type Plantilla = { id: number; nombre: string; creadoPor: string; idClasificacion?: number | null; lineas: PlantillaLinea[] };
+type Plantilla = { id: number; nombre: string; creadoPor: string; idClasificacion?: number | null; tipo?: "general" | "bodega"; lineas: PlantillaLinea[] };
 // WBS para filtrar plantillas por etapa/partida.
 type WbsNodo = { id: number; codigo: string; nombre: string };
 type WbsPartida = { id: number; codigo: string; nombre: string; etapaId: number | null };
@@ -163,6 +162,8 @@ export function SolicitudForm({
   const [varMap, setVarMap] = useState<Record<string, { variantes: Variante[]; disponible: boolean }>>({});
   const varPromises = useRef<Map<string, Promise<{ variantes: Variante[]; disponible: boolean }>>>(new Map());
   const codeDeLinea = (l: DraftLine) => catArticulos.find((a) => a.id === l.articuloId)?.code ?? "";
+  // Stock actual en BC por material (solo pedidos a bodega/stock): código → total | null | "loading".
+  const [stockBc, setStockBc] = useState<Record<string, number | null | "loading">>({});
   function getVariantes(code: string): Promise<{ variantes: Variante[]; disponible: boolean }> {
     if (!code) return Promise.resolve({ variantes: [], disponible: true });
     const cached = varPromises.current.get(code);
@@ -195,8 +196,7 @@ export function SolicitudForm({
   // ---- plantillas (SQL) ----
   const [plantillas, setPlantillas] = useState<Plantilla[]>([]);
   const [nombrePlantilla, setNombrePlantilla] = useState("");
-  const [filtroPlantilla, setFiltroPlantilla] = useState<string>(""); // "" = todas; o creadoPor
-  const [buscarPlantilla, setBuscarPlantilla] = useState("");
+  const [fTipoPl, setFTipoPl] = useState<"todas" | "general" | "bodega">("todas");
   const [plantillaCargada, setPlantillaCargada] = useState<string>("");
   const [obraTodas, setObraTodas] = useState("");
   // Filtros de plantillas por etapa/partida (cuando hay muchas). Requiere el WBS.
@@ -263,7 +263,6 @@ export function SolicitudForm({
   }, [obraParam, catObras, lineas, tipo]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // por defecto, cada quien ve las suyas
-  useEffect(() => { if (solicitante && filtroPlantilla === "") setFiltroPlantilla(solicitante); }, [solicitante]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const q = qaQuery.trim().toLowerCase();
   const sugerencias = useMemo(() => {
@@ -441,19 +440,10 @@ export function SolicitudForm({
     setLineas((ls) => ls.map((l) => ({ ...l, obraCodigo: o.codigo, obraNombre: o.nombre })));
     toast(`Obra ${o.codigo} aplicada a las ${lineas.length} línea(s).`, "success");
   }
-  async function borrarPlantilla(id: number) {
-    try {
-      const r = await fetch(`/api/plantillas/${id}?usuario=${encodeURIComponent(solicitante)}`, { method: "DELETE" });
-      if (!r.ok) throw new Error("No se pudo borrar");
-      await recargarPlantillas();
-    } catch (e: any) {
-      toast(`No se pudo borrar la plantilla: ${String(e?.message ?? e)}`, "error");
-    }
-  }
   const plantillasVisibles = plantillas
     // En contexto de una clasificación (Matriz), SOLO las plantillas de esa clasificación.
     .filter((p) => idClasificacion == null || Number(p.idClasificacion) === Number(idClasificacion))
-    .filter((p) => (filtroPlantilla && filtroPlantilla !== "*" ? p.creadoPor === filtroPlantilla : true))
+    .filter((p) => { if (fTipoPl === "todas") return true; const bod = p.tipo === "bodega" || (!p.tipo && p.idClasificacion == null); return (fTipoPl === "bodega") === bod; })
     // Filtros por etapa/partida (para acotar cuando hay muchas plantillas).
     .filter((p) => {
       if (!fEtapaPl && !fPartidaPl) return true;
@@ -462,11 +452,9 @@ export function SolicitudForm({
       if (fPartidaPl && String(partida?.id) !== fPartidaPl) return false;
       return true;
     })
-    .filter((p) => { const q = buscarPlantilla.trim().toLowerCase(); return !q || p.nombre.toLowerCase().includes(q); });
-  const creadoresPlantillas = useMemo(
-    () => Array.from(new Set(plantillas.map((p) => p.creadoPor).filter(Boolean))).sort(),
-    [plantillas]
-  );
+    ;
+  // Bodega = sin amarre a clasificación (compatibilidad con filas viejas sin tipo).
+  const esBodegaPl = (p: Plantilla) => p.tipo === "bodega" || (!p.tipo && p.idClasificacion == null);
   function cambiarTipo(t: TipoSolicitud) {
     if (t === tipo) return;
     setTipo(t); setLineas([]); setMaquinaId(""); setAlmacenStock(""); setObraTodas("");
@@ -537,6 +525,26 @@ export function SolicitudForm({
   const esRepuesto = tipo === "repuesto";
   const esStock = tipo === "stock";
 
+  // Pedidos a bodega (stock): traer el stock actual en BC de cada material de la lista.
+  const codigosStock = esStock ? [...new Set(lineas.map(codeDeLinea).filter(Boolean))].join(",") : "";
+  useEffect(() => {
+    const codes = codigosStock ? codigosStock.split(",") : [];
+    const faltan = codes.filter((c) => !(c in stockBc));
+    if (!faltan.length) return;
+    setStockBc((s) => { const n = { ...s }; faltan.forEach((c) => { n[c] = "loading"; }); return n; });
+    let vivo = true;
+    Promise.all(faltan.map(async (c) => {
+      try {
+        const r = await fetch(`/api/bc/existencias?itemNo=${encodeURIComponent(c)}`);
+        const d = await r.json().catch(() => ({}));
+        const tot = r.ok && Array.isArray(d.existencias) ? d.existencias.reduce((a: number, e: any) => a + (Number(e.cantidad) || 0), 0) : null;
+        return [c, tot] as const;
+      } catch { return [c, null] as const; }
+    })).then((pares) => { if (vivo) setStockBc((s) => ({ ...s, ...Object.fromEntries(pares) })); });
+    return () => { vivo = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [codigosStock]);
+
   return (
     <>
       {planContexto && (
@@ -589,81 +597,66 @@ export function SolicitudForm({
         </p>
 
         {(esMaterial || esStock) && (
-          <div style={{ marginBottom: 16, borderRadius: 14, border: "1.5px solid var(--ds-color-gray-100)", background: "color-mix(in srgb, var(--ds-color-green-100) 6%, #fff)", overflow: "hidden" }}>
+          <div className="tpl-panel" style={{ marginBottom: 16 }}>
             {/* Encabezado: título + acciones de Excel */}
-            <div className="row row--between wrap gap-2" style={{ alignItems: "center", padding: "10px 14px", borderBottom: "1.5px solid var(--ds-color-gray-100)", background: "color-mix(in srgb, var(--ds-color-green-100) 10%, #fff)" }}>
-              <span className="ds-strong ds-body-sm">{compact ? "Plantilla a usar" : "📋 Plantillas y Excel"}</span>
+            <div className="tpl-panel__head">
+              <span className="ds-strong ds-body-sm">{compact ? "Plantilla a usar" : "Plantillas y Excel"}</span>
               {!compact && (
               <div className="row gap-2" style={{ alignItems: "center" }}>
                 <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" style={{ display: "none" }}
                   onChange={(e) => { const f = e.target.files?.[0]; if (f) importarExcel(f); }} />
-                <Button variant="outline" onClick={descargarExcel}>⬇ Descargar Excel</Button>
-                <Button variant="outline" onClick={() => fileRef.current?.click()}>⬆ Importar Excel</Button>
+                <Button variant="outline" size="sm" onClick={descargarExcel}>⬇ Descargar Excel</Button>
+                <Button variant="outline" size="sm" onClick={() => fileRef.current?.click()}>⬆ Importar Excel</Button>
               </div>
               )}
             </div>
-            {/* Cuerpo: plantillas guardadas (tarjetas) + guardar */}
-            <div style={{ padding: 14 }}>
-              <div className="row row--between wrap gap-3" style={{ alignItems: "center", marginBottom: 12 }}>
-                <div className="row gap-2 wrap" style={{ alignItems: "center" }}>
-                  <span className="ds-body-sm ds-strong">Plantillas guardadas</span>
-                  {creadoresPlantillas.length > 1 && (
-                    <div className="seg-mini">
-                      <button type="button" className={filtroPlantilla === solicitante ? "is-active" : ""} onClick={() => setFiltroPlantilla(solicitante)}>Mías</button>
-                      <button type="button" className={filtroPlantilla === "*" ? "is-active" : ""} onClick={() => setFiltroPlantilla("*")}>Todas</button>
-                    </div>
-                  )}
-                  {plantillas.length > 4 && (
-                    <input className="ds-form-field__input" style={{ maxWidth: 180, height: 34 }} placeholder="Buscar plantilla…"
-                      value={buscarPlantilla} onChange={(e) => setBuscarPlantilla(e.target.value)} />
-                  )}
-                  {!compact && wbs.etapas.length > 0 && (
-                    <>
-                      <div style={{ minWidth: 150 }}>
-                        <Select value={fEtapaPl} onChange={(e) => { setFEtapaPl(e.target.value); setFPartidaPl(""); }}>
-                          <option value="">Todas las etapas</option>
-                          {wbs.etapas.map((et) => <option key={et.id} value={et.id}>{et.codigo} · {et.nombre}</option>)}
-                        </Select>
-                      </div>
-                      <div style={{ minWidth: 170 }}>
-                        <Select value={fPartidaPl} onChange={(e) => setFPartidaPl(e.target.value)}>
-                          <option value="">Todas las partidas</option>
-                          {partidasDeEtapaPl.map((p) => <option key={p.id} value={p.id}>{p.codigo} · {p.nombre}</option>)}
-                        </Select>
-                      </div>
-                    </>
+            {/* Cuerpo: picker limpio + pie discreto (contador · guardar) */}
+            <div className="tpl-panel__body">
+              {plantillas.length > 0 && (
+                <div className="row gap-3 wrap" style={{ alignItems: "flex-end" }}>
+                  <div style={{ flex: "1 1 340px", minWidth: 240 }}>
+                    <label className="ds-label ds-muted" style={{ display: "block", marginBottom: 4 }}>Usar una plantilla</label>
+                    <Combobox items={plantillasVisibles} value={plantillaCargada}
+                      onChange={(k) => cargarPlantilla(k)}
+                      getKey={(p) => String(p.id)}
+                      getLabel={(p) => `${p.nombre} · ${p.lineas.length} ítem(s)`}
+                      getSearch={(p) => `${p.nombre} ${p.creadoPor ?? ""}`}
+                      groupBy={(p) => (esBodegaPl(p) ? "Bodega" : "General")}
+                      renderItem={(p) => (
+                        <span className="combo__row">
+                          <span className="combo__row-main">
+                            <span className="ds-strong">{p.nombre}</span>
+                            <span className="ds-body-sm ds-muted">{p.lineas.length} ítem(s){p.creadoPor && p.creadoPor !== solicitante ? ` · ${p.creadoPor}` : ""}</span>
+                          </span>
+                          <span className={`combo__tag combo__tag--${esBodegaPl(p) ? "bodega" : "general"}`}>{esBodegaPl(p) ? "Bodega" : "General"}</span>
+                        </span>
+                      )}
+                      placeholder="Elegí una plantilla…" />
+                  </div>
+                  <div className="seg-mini" style={{ marginBottom: 2 }}>
+                    <button type="button" className={fTipoPl === "todas" ? "is-active" : ""} onClick={() => setFTipoPl("todas")}>Todas</button>
+                    <button type="button" className={fTipoPl === "general" ? "is-active" : ""} onClick={() => setFTipoPl("general")}>General</button>
+                    <button type="button" className={fTipoPl === "bodega" ? "is-active" : ""} onClick={() => setFTipoPl("bodega")}>Bodega</button>
+                  </div>
+                  {plantillaCargada && (
+                    <Button variant="ghost" size="sm" style={{ marginBottom: 2 }} onClick={() => { setPlantillaCargada(""); setLineas([]); }}>Quitar</Button>
                   )}
                 </div>
+              )}
+              <div className="row row--between wrap gap-2" style={{ alignItems: "center" }}>
+                <span className="ds-body-sm ds-muted">
+                  {plantillas.length > 0
+                    ? `${plantillaCargada ? "Cargada ✓ · " : ""}${plantillasVisibles.length} plantilla${plantillasVisibles.length === 1 ? "" : "s"} · se gestionan en Plantillas`
+                    : "No hay plantillas guardadas. Armá la lista abajo y guardala como plantilla."}
+                </span>
                 {!compact && lineas.length > 0 && (
                   <div className="row gap-2" style={{ alignItems: "center" }}>
-                    <input className="ds-form-field__input" style={{ maxWidth: 210, height: 38 }} placeholder="Guardar estas líneas como plantilla…" value={nombrePlantilla}
+                    <input className="ds-form-field__input" style={{ maxWidth: 260, height: 36 }} placeholder="Guardar estas líneas como plantilla…" value={nombrePlantilla}
                       onChange={(e) => setNombrePlantilla(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") guardarComoPlantilla(); }} />
-                    <Button variant="outline" onClick={guardarComoPlantilla}>Guardar</Button>
+                    <Button variant="outline" size="sm" onClick={guardarComoPlantilla}>Guardar</Button>
                   </div>
                 )}
               </div>
-              {plantillasVisibles.length > 0 ? (
-                <div className="tpl-cards">
-                  {plantillasVisibles.map((p) => (
-                    <div key={p.id} className={`tpl-card ${plantillaCargada === String(p.id) ? "is-active" : ""}`} role="button" tabIndex={0} title={`Cargar "${p.nombre}" (reemplaza las líneas)`}
-                      onClick={() => cargarPlantilla(String(p.id))}
-                      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); cargarPlantilla(String(p.id)); } }}>
-                      <span className="tpl-card__name">{p.nombre}</span>
-                      <span className="tpl-card__meta">{p.lineas.length} ítem(s){filtroPlantilla === "*" && p.creadoPor ? ` · ${p.creadoPor}` : ""}</span>
-                      {p.creadoPor === solicitante && (
-                        <button type="button" className="tpl-card__del" title="Borrar plantilla"
-                          onClick={(e) => { e.stopPropagation(); borrarPlantilla(p.id); }}>×</button>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <p className="ds-body-sm ds-muted" style={{ margin: 0 }}>
-                  {idClasificacion != null
-                    ? "No hay plantillas para esta clasificación todavía. Buscá el material abajo y agregalo."
-                    : "No hay plantillas guardadas todavía. Agregá materiales abajo y guardá la lista, o descargá el Excel para armarla en tu compu."}
-                </p>
-              )}
             </div>
           </div>
         )}
@@ -724,20 +717,21 @@ export function SolicitudForm({
           <table className="ds-table">
             <thead>
               <tr>
-                <th style={{ minWidth: 260 }}>{esRepuesto ? "Repuesto" : "Artículo"}</th>
-                {esMaterial && <th>Obra</th>}
-                <th>Variante</th>
-                <th className="ds-num">Cantidad</th><th>Unidad</th><th></th>
+                <th style={{ width: 300 }}>{esRepuesto ? "Repuesto" : "Artículo"}</th>
+                {esMaterial && <th style={{ width: 240 }}>Obra</th>}
+                <th style={{ width: 220 }}>Variante</th>
+                {esStock && <th className="ds-num" style={{ width: 110 }}>Stock BC</th>}
+                <th className="ds-num" style={{ width: 110 }}>Cantidad</th><th style={{ width: 90 }}>Unidad</th><th style={{ width: 48 }}></th>
               </tr>
             </thead>
             <tbody>
-              {lineas.length === 0 && (<tr><td colSpan={esMaterial ? 6 : 5}><div className="empty" style={{ padding: "28px 0" }}>Todavía no agregaste {esRepuesto ? "repuestos" : "materiales"}.</div></td></tr>)}
+              {lineas.length === 0 && (<tr><td colSpan={esMaterial || esStock ? 6 : 5}><div className="empty" style={{ padding: "28px 0" }}>Todavía no agregaste {esRepuesto ? "repuestos" : "materiales"}.</div></td></tr>)}
               {lineas.map((l) => {
                 const a = catArticulos.find((x) => x.id === l.articuloId);
                 const obraId = catObras.find((o) => o.codigo === l.obraCodigo)?.id ?? "";
                 return (
                   <tr key={l.key}>
-                    <td><span className="ds-strong">{a?.code}</span> <span className="ds-muted">— {a?.descripcion}</span></td>
+                    <td style={{ maxWidth: 300 }}><div className="ds-truncate" title={`${a?.code} — ${a?.descripcion}`}><span className="ds-strong">{a?.code}</span> <span className="ds-muted">— {a?.descripcion}</span></div></td>
                     {esMaterial && (
                       <td style={{ minWidth: 220 }}>
                         {obraParam ? (
@@ -762,6 +756,18 @@ export function SolicitudForm({
                         );
                       })()}
                     </td>
+                    {esStock && (() => {
+                      const st = stockBc[a?.code ?? ""];
+                      return (
+                        <td className="ds-num">
+                          {st === undefined || st === "loading"
+                            ? <span className="ds-muted">…</span>
+                            : st === null
+                              ? <span className="ds-muted" title="Sin conexión a Business Central">s/d</span>
+                              : <span className={st > 0 ? "ds-strong" : "ds-muted"}>{st.toLocaleString("es-CR")}</span>}
+                        </td>
+                      );
+                    })()}
                     <td className="ds-num">
                       <input className="ds-form-field__input" type="number" min={0} value={l.cantidad}
                         onChange={(e) => setLineCantidad(l.key, e.target.value)}
@@ -777,15 +783,13 @@ export function SolicitudForm({
         </div>
       </Card>
 
-      {/* Acciones secundarias arriba; el "pedir" primario es un slide-to-confirm (DS). */}
-      <div className="mt-6" style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-        <div className="row gap-3" style={{ justifyContent: "flex-end" }}>
-          <Button variant="outline" onClick={onCancelar}>Cancelar</Button>
-          {guardarSecundario && textoBotonSecundario && (
-            <Button variant="outline" onClick={() => onGuardar(guardarSecundario)} disabled={!puedeGuardar || guardando}>{textoBotonSecundario}</Button>
-          )}
-        </div>
-        <SlideConfirm oneWay approveLabel={textoBoton} busy={guardando} disabled={!puedeGuardar} onApprove={() => onGuardar()} height={60} />
+      {/* Acciones: cancelar + (secundaria) + guardar (botón primario, escritorio). */}
+      <div className="row gap-3 mt-6" style={{ justifyContent: "flex-end", flexWrap: "wrap" }}>
+        <Button variant="outline" onClick={onCancelar}>Cancelar</Button>
+        {guardarSecundario && textoBotonSecundario && (
+          <Button variant="outline" onClick={() => onGuardar(guardarSecundario)} disabled={!puedeGuardar || guardando}>{textoBotonSecundario}</Button>
+        )}
+        <Button onClick={() => onGuardar()} disabled={!puedeGuardar || guardando}>{guardando ? "Guardando…" : textoBoton}</Button>
       </div>
     </>
   );

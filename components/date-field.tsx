@@ -21,6 +21,7 @@ export function DateField({ value, onChange, min, max, placeholder = "Elegí una
   value: string; onChange: (iso: string) => void; min?: string; max?: string; placeholder?: string;
 }) {
   const [open, setOpen] = useState(false);
+  const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
   const ref = useRef<HTMLDivElement>(null);
   const sel = parseISO(value);
   const hoy = useMemo(() => { const t = new Date(); return { y: t.getFullYear(), m: t.getMonth(), d: t.getDate() }; }, []);
@@ -33,6 +34,31 @@ export function DateField({ value, onChange, min, max, placeholder = "Elegí una
     const h = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); };
     document.addEventListener("mousedown", h);
     return () => document.removeEventListener("mousedown", h);
+  }, [open]);
+
+  // Posiciona el calendario con position:fixed respecto al campo y lo abre hacia
+  // ARRIBA si no hay espacio abajo (para que no lo tape la barra de acciones ni lo
+  // recorte ningún contenedor). Se re-posiciona al hacer scroll o cambiar el tamaño.
+  const POP_W = 300, POP_H = 380;
+  const place = () => {
+    const el = ref.current; if (!el) return;
+    const r = el.getBoundingClientRect();
+    const vw = window.innerWidth, vh = window.innerHeight;
+    const cabeAbajo = r.bottom + 8 + POP_H <= vh;
+    const cabeArriba = r.top - 8 - POP_H >= 0;
+    const abajo = cabeAbajo || !cabeArriba;
+    const top = abajo ? r.bottom + 8 : r.top - 8 - POP_H;
+    const left = Math.max(8, Math.min(r.left, vw - POP_W - 8));
+    setPos({ top, left });
+  };
+  useEffect(() => {
+    if (!open) return;
+    place();
+    const onMove = () => place();
+    window.addEventListener("scroll", onMove, true);
+    window.addEventListener("resize", onMove);
+    return () => { window.removeEventListener("scroll", onMove, true); window.removeEventListener("resize", onMove); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
   const cells = useMemo(() => {
@@ -51,12 +77,12 @@ export function DateField({ value, onChange, min, max, placeholder = "Elegí una
 
   return (
     <div ref={ref} className="datefield">
-      <button type="button" className={`datefield__input${open ? " is-open" : ""}`} onClick={() => setOpen((o) => !o)}>
+      <button type="button" className={`datefield__input${open ? " is-open" : ""}`} onClick={() => { if (!open) place(); setOpen((o) => !o); }}>
         <span className={value ? "" : "datefield__ph"}>{value ? fmt(value) : placeholder}</span>
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="4" /><path d="M3 9h18M8 2v4M16 2v4" /></svg>
       </button>
       {open && (
-        <div className="datefield__pop">
+        <div className="datefield__pop" style={{ position: "fixed", top: pos?.top ?? 0, left: pos?.left ?? 0, zIndex: 60 }}>
           <div className="datefield__head">
             <span className="datefield__my">{MESES[viewM]} {viewY}</span>
             <div className="datefield__nav">

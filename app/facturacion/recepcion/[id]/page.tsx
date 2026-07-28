@@ -16,7 +16,7 @@ export default function RecepcionDetallePage() {
 
   const rec = recepciones.find((r) => r.id === id);
   if (!rec) {
-    return <AppShell role="facturacion"><main className="page"><div className="empty">Recepción no encontrada.</div></main></AppShell>;
+    return <AppShell role="contabilidad"><main className="page"><div className="empty">Recepción no encontrada.</div></main></AppShell>;
   }
   const orden = ordenes.find((o) => o.id === rec.ordenId);
   const provNombre = orden?.proveedorNombre ?? proveedores.find((p) => p.id === orden?.proveedorId)?.nombre;
@@ -33,7 +33,7 @@ export default function RecepcionDetallePage() {
   const esCargo = (f: typeof filas[number]) => f.ol?.tipo === "cargo";
 
   return (
-    <AppShell role="facturacion">
+    <AppShell role="contabilidad">
       <main className="page page--wide">
         <div className="back-link" onClick={() => router.push("/facturacion/archivo")}>Volver a archivo y recepciones</div>
         <div className="page__head">
