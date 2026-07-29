@@ -194,10 +194,11 @@ export function AppShell({ role, children }: { role: Role; children: React.React
                 <span className="topbar__logo">A</span>
                 <span className="app-nav__brand-name">Compras Adelante</span>
               </Link>
-              {/* Desktop: fijar/encoger el riel (estilo Canva). */}
+              {/* Desktop: fijar/encoger el riel. Ícono claro: › expande/fija, ‹ encoge
+                  (rota 180° al fijar vía CSS .pinned). */}
               <button type="button" className="app-nav__toggle" onClick={() => setPinned((p) => !p)}
-                aria-label={pinned ? "Encoger menú" : "Fijar menú"} title={pinned ? "Encoger menú" : "Fijar menú"} aria-pressed={pinned}>
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M15 6l-6 6 6 6" /></svg>
+                aria-label={pinned ? "Encoger menú" : "Fijar menú abierto"} title={pinned ? "Encoger menú" : "Fijar menú abierto"} aria-pressed={pinned}>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M9 6l6 6-6 6" /></svg>
               </button>
               {/* Móvil: cerrar el drawer. */}
               <button type="button" className="app-nav__close" onClick={() => setNavOpen(false)} aria-label="Cerrar menú">

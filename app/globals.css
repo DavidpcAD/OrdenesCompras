@@ -786,10 +786,10 @@ h1, h2, h3, h4, p { margin: 0; }
 .app-nav:hover .app-nav__brand-name, .app-shell.pinned .app-nav__brand-name { max-width: 200px; opacity: 1; }
 .app-nav:hover .app-nav__item, .app-shell.pinned .app-nav__item { justify-content: flex-start; padding: 0 18px; }
 
-/* Toggle fijar/encoger (desktop): aparece al expandir. Rota al fijar. */
-.app-nav__toggle { display: none; align-items: center; justify-content: center; width: 34px; height: 34px; flex-shrink: 0; border: 0; border-radius: 50%; background: rgba(255, 255, 255, .1); color: #fff; cursor: pointer; transition: background .12s ease, transform .2s ease; }
+/* Toggle fijar/encoger (desktop): aparece al expandir. Rota al fijar (› ↔ ‹). */
+.app-nav__toggle { display: none; align-items: center; justify-content: center; width: 36px; height: 36px; flex-shrink: 0; border: 1.5px solid rgba(255, 255, 255, .22); border-radius: 50%; background: rgba(255, 255, 255, .08); color: #fff; cursor: pointer; transition: background .12s ease, border-color .12s ease, transform .22s cubic-bezier(.34, 1.4, .5, 1); }
 .app-nav:hover .app-nav__toggle, .app-shell.pinned .app-nav__toggle { display: inline-flex; }
-.app-nav__toggle:hover { background: rgba(255, 255, 255, .2); }
+.app-nav__toggle:hover { background: rgba(255, 255, 255, .18); border-color: rgba(255, 255, 255, .4); }
 .app-shell.pinned .app-nav__toggle { transform: rotate(180deg); }
 
 /* Cerrar (X): solo móvil. */
