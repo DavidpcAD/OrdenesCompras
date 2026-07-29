@@ -670,14 +670,11 @@ h1, h2, h3, h4, p { margin: 0; }
 .ds-truncate { max-width: 280px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 /* sticky action bar (appears when there's a selection) */
-.action-bar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 45; background: #fff; box-shadow: 0 -4px 18px #0000001f; padding: var(--ds-space-3) var(--ds-space-6); animation: barUp .2s ease; transition: left .34s cubic-bezier(.34, 1.4, .5, 1); }
-/* No montar la barra de acciones sobre el sidebar: su borde izquierdo sigue el
-   ancho del rail (288px expandido / 112px colapsado). Sin nav o en móvil = full. */
-/* Con el drawer FIJO (desktop abierto), la barra de acciones arranca tras él. */
-.app-shell.nav-open .action-bar { left: var(--nav-w); }
+.action-bar { position: fixed; left: 72px; right: 0; bottom: 0; z-index: 45; background: #fff; box-shadow: 0 -4px 18px #0000001f; padding: var(--ds-space-3) var(--ds-space-6); animation: barUp .2s ease; transition: left .26s cubic-bezier(.34, 1.2, .5, 1); }
+/* La barra sigue al riel: 72px colapsado, nav-w fijado, 0 en móvil. */
+.app-shell.pinned .action-bar { left: var(--nav-w); }
 @media (max-width: 760px) {
-  /* En móvil el drawer es overlay → la barra ocupa todo el ancho. */
-  .app-shell.nav-open .action-bar { left: 0; }
+  .action-bar, .app-shell.pinned .action-bar { left: 0; }
 }
 .action-bar__inner { max-width: 1180px; margin: 0 auto; display: flex; align-items: center; justify-content: space-between; gap: var(--ds-space-4); flex-wrap: wrap; }
 @keyframes barUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
@@ -749,17 +746,19 @@ h1, h2, h3, h4, p { margin: 0; }
 .app-shell.is-ready .topbar,
 .app-shell.is-ready .app-content { transition: margin-left .26s cubic-bezier(.34, 1.2, .5, 1); }
 
-/* Expandido: al pasar el mouse (preview flotante) o FIJADO (pinned). */
-.app-nav:hover, .app-shell.pinned .app-nav { width: var(--nav-w); overflow-y: auto; overflow-x: hidden; }
-.app-shell:not(.pinned) .app-nav:hover { box-shadow: 0 10px 40px rgba(0, 0, 0, .35); }
+/* Expandido SOLO al fijar con la hamburguesa (no al hover): empuja el contenido,
+   nunca lo tapa. */
+.app-shell.pinned .app-nav { width: var(--nav-w); overflow-y: auto; overflow-x: hidden; }
 
 /* El contenido reserva el riel colapsado (72px); al FIJAR se empuja a nav-w. */
 .app-content, .topbar { margin-left: 72px; }
 .app-shell.pinned .app-content, .app-shell.pinned .topbar { margin-left: var(--nav-w); }
 
-/* Cabecera: marca + toggle fijar/encoger. */
-.app-nav__head { display: flex; align-items: center; gap: var(--ds-space-2); min-height: 44px; margin-bottom: var(--ds-space-2); }
-.app-nav__brand { display: flex; align-items: center; gap: var(--ds-space-2); min-width: 0; flex: 1; color: #fff; text-decoration: none; overflow: hidden; }
+/* Cabecera: hamburguesa (siempre) + marca (solo al fijar). */
+.app-nav__head { display: flex; align-items: center; justify-content: center; gap: var(--ds-space-2); min-height: 44px; margin-bottom: var(--ds-space-2); }
+.app-shell.pinned .app-nav__head { justify-content: flex-start; }
+.app-nav__brand { display: none; align-items: center; gap: var(--ds-space-2); min-width: 0; flex: 1; color: #fff; text-decoration: none; overflow: hidden; }
+.app-shell.pinned .app-nav__brand { display: flex; }
 .app-nav__brand .topbar__logo { flex-shrink: 0; }
 .app-nav__brand-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 0; opacity: 0; font-weight: var(--ds-font-weight-semibold); font-size: var(--ds-font-size-body-md); transition: max-width .26s cubic-bezier(.34, 1.2, .5, 1), opacity .18s ease; }
 
@@ -781,16 +780,14 @@ h1, h2, h3, h4, p { margin: 0; }
 .app-nav__salir { margin-top: auto; }
 .app-nav__salir:hover { color: var(--ds-color-red-100); box-shadow: 0 0 0 3px color-mix(in srgb, var(--ds-color-red-100) 30%, transparent); }
 
-/* Al expandir (hover o fijado): mostrar textos y alinear ítems a la izquierda. */
-.app-nav:hover .app-nav__label, .app-shell.pinned .app-nav__label,
-.app-nav:hover .app-nav__brand-name, .app-shell.pinned .app-nav__brand-name { max-width: 200px; opacity: 1; }
-.app-nav:hover .app-nav__item, .app-shell.pinned .app-nav__item { justify-content: flex-start; padding: 0 18px; }
+/* Al FIJAR: mostrar textos y alinear ítems a la izquierda. */
+.app-shell.pinned .app-nav__label,
+.app-shell.pinned .app-nav__brand-name { max-width: 200px; opacity: 1; }
+.app-shell.pinned .app-nav__item { justify-content: flex-start; padding: 0 18px; }
 
-/* Toggle fijar/encoger (desktop): aparece al expandir. Rota al fijar (› ↔ ‹). */
-.app-nav__toggle { display: none; align-items: center; justify-content: center; width: 36px; height: 36px; flex-shrink: 0; border: 1.5px solid rgba(255, 255, 255, .22); border-radius: 50%; background: rgba(255, 255, 255, .08); color: #fff; cursor: pointer; transition: background .12s ease, border-color .12s ease, transform .22s cubic-bezier(.34, 1.4, .5, 1); }
-.app-nav:hover .app-nav__toggle, .app-shell.pinned .app-nav__toggle { display: inline-flex; }
-.app-nav__toggle:hover { background: rgba(255, 255, 255, .18); border-color: rgba(255, 255, 255, .4); }
-.app-shell.pinned .app-nav__toggle { transform: rotate(180deg); }
+/* Hamburguesa del riel (desktop): abre/fija (empuja) y encoge. Siempre visible. */
+.app-nav__burger { display: inline-flex; align-items: center; justify-content: center; width: 44px; height: 44px; flex-shrink: 0; border: 0; border-radius: var(--ds-radius-lg); background: rgba(255, 255, 255, .08); color: #fff; cursor: pointer; transition: background .12s ease; }
+.app-nav__burger:hover { background: rgba(255, 255, 255, .2); }
 
 /* Cerrar (X): solo móvil. */
 .app-nav__close { display: none; align-items: center; justify-content: center; width: 40px; height: 40px; flex-shrink: 0; border: 0; border-radius: 50%; background: rgba(255, 255, 255, .1); color: var(--ds-color-white); cursor: pointer; transition: background .12s ease; }
@@ -810,15 +807,16 @@ h1, h2, h3, h4, p { margin: 0; }
   }
   .app-shell.is-ready .app-nav { transition: transform .28s cubic-bezier(.34, 1.2, .5, 1), box-shadow .2s ease; }
   .app-nav.is-open { transform: translateX(0); box-shadow: 0 12px 44px rgba(0, 0, 0, .5); }
-  /* Sin hover-expand ni push en móvil: ancho fijo, contenido a ancho completo. */
-  .app-nav:hover, .app-shell.pinned .app-nav { width: 280px; box-shadow: none; }
+  /* Sin expand/push en móvil: ancho fijo, contenido a ancho completo. */
+  .app-shell.pinned .app-nav { width: 280px; box-shadow: none; }
   .app-content, .topbar,
   .app-shell.pinned .app-content, .app-shell.pinned .topbar { margin-left: 0; }
-  /* Textos siempre visibles en el drawer; ítems a la izquierda. */
+  /* Drawer: textos e ítems siempre expandidos; marca visible. */
   .app-nav__label, .app-nav__brand-name { max-width: none; opacity: 1; }
-  .app-nav__item { justify-content: flex-start; padding: 0 16px; }
-  .app-nav__head { margin-bottom: var(--ds-space-3); }
-  .app-nav__toggle { display: none !important; } /* en móvil se usa la X, no el fijar */
+  .app-nav__item, .app-shell.pinned .app-nav__item { justify-content: flex-start; padding: 0 16px; }
+  .app-nav__head, .app-shell.pinned .app-nav__head { justify-content: space-between; margin-bottom: var(--ds-space-3); }
+  .app-nav__brand, .app-shell.pinned .app-nav__brand { display: flex; }
+  .app-nav__burger { display: none; } /* en móvil se usa la X, no la hamburguesa del riel */
   .app-nav__close { display: inline-flex; }
   .app-shell.nav-open .app-nav-overlay { display: block; position: fixed; inset: 0; z-index: 55; background: rgba(0, 0, 0, .5); animation: fade .18s ease; }
   .topbar { padding-left: 84px; }
