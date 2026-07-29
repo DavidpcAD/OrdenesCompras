@@ -1,7 +1,6 @@
 "use client";
 
 import { useParams, useRouter } from "next/navigation";
-import { AppShell } from "@/components/shell";
 import { Button, useToast } from "@/components/ui";
 import { OrdenDetalle } from "@/components/orden-detalle";
 import { useStore } from "@/lib/store";
@@ -14,7 +13,7 @@ export default function ProvOrdenDetallePage() {
 
   const orden = ordenes.find((o) => o.id === id);
   if (!orden) {
-    return <AppShell role="proveeduria"><main className="page"><div className="empty">Orden no encontrada.</div></main></AppShell>;
+    return <><main className="page"><div className="empty">Orden no encontrada.</div></main></>;
   }
   // Link de cada línea a su solicitud de origen (para ver quién la pidió).
   const solicitudHref = (l: NonNullable<typeof orden>["lineas"][number]) => {
@@ -55,8 +54,8 @@ export default function ProvOrdenDetallePage() {
   );
 
   return (
-    <AppShell role="proveeduria">
+    <>
       <OrdenDetalle orden={orden} volverHref="/proveeduria/ordenes" volverLabel="Volver a órdenes" acciones={acciones} solicitudHref={solicitudHref} />
-    </AppShell>
+    </>
   );
 }

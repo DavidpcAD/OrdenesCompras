@@ -1,7 +1,6 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { AppShell } from "@/components/shell";
 import { Tile } from "@/components/ui";
 import { OrdenesLista } from "@/components/ordenes-lista";
 import { useStore } from "@/lib/store";
@@ -31,7 +30,7 @@ export default function BodegaTodasPage() {
   };
 
   return (
-    <AppShell role="contabilidad">
+    <>
       <main className="page">
         <div className="page__head">
           <div className="page__title">
@@ -53,6 +52,6 @@ export default function BodegaTodasPage() {
 
         <OrdenesLista key={filtro} ordenes={lista} hrefDetalle={(id) => `/facturacion/ver/${id}`} vacio="No hay órdenes en esta categoría." />
       </main>
-    </AppShell>
+    </>
   );
 }

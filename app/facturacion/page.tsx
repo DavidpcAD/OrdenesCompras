@@ -1,7 +1,6 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { AppShell } from "@/components/shell";
 import { Badge, Button, Card, QtyRing, Tile } from "@/components/ui";
 import { useStore } from "@/lib/store";
 import { money, formatDate, ordenEsParcial, ordenRecibidoPct } from "@/lib/helpers";
@@ -16,7 +15,7 @@ export default function FacturacionPage() {
   const parciales = porRecibir.filter(ordenEsParcial).length;
 
   return (
-    <AppShell role="facturacion">
+    <>
       <main className="page">
         <div className="page__head">
           <div className="page__title">
@@ -65,6 +64,6 @@ export default function FacturacionPage() {
           })}
         </div>
       </main>
-    </AppShell>
+    </>
   );
 }

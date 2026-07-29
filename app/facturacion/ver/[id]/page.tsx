@@ -1,7 +1,6 @@
 "use client";
 
 import { useParams, useRouter } from "next/navigation";
-import { AppShell } from "@/components/shell";
 import { Button } from "@/components/ui";
 import { OrdenDetalle } from "@/components/orden-detalle";
 import { useStore } from "@/lib/store";
@@ -13,7 +12,7 @@ export default function BodegaOrdenDetallePage() {
 
   const orden = ordenes.find((o) => o.id === id);
   if (!orden) {
-    return <AppShell role="contabilidad"><main className="page"><div className="empty">Orden no encontrada.</div></main></AppShell>;
+    return <><main className="page"><div className="empty">Orden no encontrada.</div></main></>;
   }
 
   const acciones = orden.estado === "lanzado" ? (
@@ -21,8 +20,8 @@ export default function BodegaOrdenDetallePage() {
   ) : null;
 
   return (
-    <AppShell role="contabilidad">
+    <>
       <OrdenDetalle orden={orden} volverHref="/facturacion/todas" volverLabel="Volver a órdenes" acciones={acciones} />
-    </AppShell>
+    </>
   );
 }

@@ -2,7 +2,6 @@
 
 import { useMemo, useState } from "react";
 import type { ColumnDef } from "@tanstack/react-table";
-import { AppShell } from "@/components/shell";
 import { Badge } from "@/components/ui";
 import { DataTable } from "@/components/data-table";
 import { VistaToggle } from "@/components/vista-toggle";
@@ -62,7 +61,7 @@ export default function ProveeduriaLineasPedidasPage() {
   ], []);
 
   return (
-    <AppShell role="proveeduria">
+    <>
       <style>{`
         .print-report { display: none; }
         @media print { .no-print { display: none !important; } .topbar { display: none !important; } .print-report { display: block !important; } @page { size: A4 landscape; margin: 12mm; } body { background: var(--ds-color-white); } }
@@ -130,6 +129,6 @@ export default function ProveeduriaLineasPedidasPage() {
           </table>
         </div>
       </div>
-    </AppShell>
+    </>
   );
 }

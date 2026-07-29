@@ -2,7 +2,6 @@
 
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { AppShell } from "@/components/shell";
 import { Button, Tile } from "@/components/ui";
 import { OrdenesLista } from "@/components/ordenes-lista";
 import { VistaToggle } from "@/components/vista-toggle";
@@ -37,7 +36,7 @@ export default function OrdenesPage() {
   };
 
   return (
-    <AppShell role="proveeduria">
+    <>
       <main className="page">
         <div className="page__head">
           <div className="page__title">
@@ -67,6 +66,6 @@ export default function OrdenesPage() {
 
         <OrdenesLista key={filtro} ordenes={lista} hrefDetalle={(id) => `/proveeduria/ordenes/${id}`} vacio="No hay órdenes en esta categoría." />
       </main>
-    </AppShell>
+    </>
   );
 }

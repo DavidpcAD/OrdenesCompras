@@ -1,7 +1,6 @@
 "use client";
 
 import { useMemo } from "react";
-import { AppShell } from "@/components/shell";
 import { Badge, Card, Tile } from "@/components/ui";
 import { useStore } from "@/lib/store";
 import { money, formatDate } from "@/lib/helpers";
@@ -25,7 +24,7 @@ export default function RecibidasPage() {
   const delMes = lista.filter((r) => (r.fechaRecepcion || "").slice(0, 7) === hoy.slice(0, 7)).length;
 
   return (
-    <AppShell role="facturacion">
+    <>
       <main className="page page--wide">
         <div className="page__head">
           <div className="page__title">
@@ -81,6 +80,6 @@ export default function RecibidasPage() {
           </div>
         )}
       </main>
-    </AppShell>
+    </>
   );
 }

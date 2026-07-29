@@ -2,7 +2,6 @@
 
 import { useParams, useRouter } from "next/navigation";
 import { useState } from "react";
-import { AppShell } from "@/components/shell";
 import { Badge, Button, Card, Modal, Textarea, useToast, QtyRing } from "@/components/ui";
 import { Timeline } from "@/components/timeline";
 import { useStore } from "@/lib/store";
@@ -18,7 +17,7 @@ export default function ProveeduriaPedidoDetallePage() {
 
   const pedido = pedidos.find((p) => p.id === id);
   if (!pedido) {
-    return <AppShell role="proveeduria"><main className="page"><div className="empty">Solicitud no encontrada.</div></main></AppShell>;
+    return <><main className="page"><div className="empty">Solicitud no encontrada.</div></main></>;
   }
   const b = pedidoBadge(pedido.estado);
   const t = tipoSolicitudBadge(pedido.tipoSolicitud);
@@ -44,7 +43,7 @@ export default function ProveeduriaPedidoDetallePage() {
   }
 
   return (
-    <AppShell role="proveeduria">
+    <>
       <main className="page">
         <div className="back-link" onClick={() => router.push("/proveeduria/solicitudes")}>Volver a solicitudes</div>
         <div className="page__head">
@@ -100,6 +99,6 @@ export default function ProveeduriaPedidoDetallePage() {
           <Textarea value={motivo} onChange={(e) => setMotivo(e.target.value)} placeholder="Motivo de la devolución…" rows={4} style={{ width: "100%" }} />
         </Modal>
       )}
-    </AppShell>
+    </>
   );
 }

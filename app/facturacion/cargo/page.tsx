@@ -2,7 +2,6 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
-import { AppShell } from "@/components/shell";
 import { Button, Card, Field, Input, Select, useToast } from "@/components/ui";
 import { Combobox } from "@/components/combobox";
 import { DateField } from "@/components/date-field";
@@ -184,7 +183,7 @@ export default function CargoSobreFacturaPage() {
   }
 
   return (
-    <AppShell role="contabilidad">
+    <>
       <main className="page page--wide" style={{ paddingBottom: 120 }}>
         <div className="back-link" onClick={() => router.push("/facturacion")}>Volver a órdenes por recibir</div>
         <div className="page__head">
@@ -417,6 +416,6 @@ export default function CargoSobreFacturaPage() {
           </div>
         </div>
       </div>
-    </AppShell>
+    </>
   );
 }

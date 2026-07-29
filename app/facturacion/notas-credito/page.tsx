@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useMemo } from "react";
-import { AppShell } from "@/components/shell";
 import { Badge, Card, Tile } from "@/components/ui";
 import { useStore } from "@/lib/store";
 import { money, formatDate } from "@/lib/helpers";
@@ -33,7 +32,7 @@ export default function NotasCreditoPage() {
   const totalNC = pend.reduce((s, n) => s + (n.precioUnitario ?? 0) * n.cantidad, 0);
 
   return (
-    <AppShell role="contabilidad">
+    <>
       <main className="page page--wide">
         <div className="page__head">
           <div className="page__title">
@@ -83,6 +82,6 @@ export default function NotasCreditoPage() {
           </div>
         )}
       </main>
-    </AppShell>
+    </>
   );
 }

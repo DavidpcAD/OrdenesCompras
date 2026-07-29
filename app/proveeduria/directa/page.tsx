@@ -2,7 +2,6 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
-import { AppShell } from "@/components/shell";
 import { Badge, Button, Card, Field, Input, Select, useToast } from "@/components/ui";
 import { Combobox } from "@/components/combobox";
 import { useStore } from "@/lib/store";
@@ -94,7 +93,7 @@ export default function OrdenDirectaPage() {
   }
 
   return (
-    <AppShell role="proveeduria">
+    <>
       <main className="page page--wide" style={{ paddingBottom: 120 }}>
         <div className="back-link" onClick={() => router.push("/proveeduria/ordenes")}>Volver a órdenes</div>
         <div className="page__head">
@@ -203,6 +202,6 @@ export default function OrdenDirectaPage() {
           </div>
         </div>
       </div>
-    </AppShell>
+    </>
   );
 }

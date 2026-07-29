@@ -2,7 +2,6 @@
 
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
-import { AppShell } from "@/components/shell";
 import { Badge, Button, Card, Field, Input, Select, useToast } from "@/components/ui";
 import { Combobox } from "@/components/combobox";
 import { useStore } from "@/lib/store";
@@ -66,22 +65,22 @@ export default function EditarOrdenPage() {
   const total = subtotal + fleteNum + ivaTotal;
   const [guardando, setGuardando] = useState(false);
 
-  if (!orden) return <AppShell role="proveeduria"><main className="page"><div className="empty">Orden no encontrada.</div></main></AppShell>;
+  if (!orden) return <><main className="page"><div className="empty">Orden no encontrada.</div></main></>;
   // No se puede editar una orden que ya tiene recepciones: reescribir las líneas
   // rompería la trazabilidad de lo recibido/facturado (y su enlace a las recepciones).
   const tieneRecepciones = recepciones.some((r) => r.ordenId === orden.id)
     || orden.lineas.some((l) => l.cantidadRecibida > 0 || l.cantidadFacturada > 0);
   if (tieneRecepciones) {
-    return <AppShell role="proveeduria"><main className="page">
+    return <><main className="page">
       <div className="back-link" onClick={() => router.push(`/proveeduria/ordenes/${id}`)}>Volver a la orden</div>
       <div className="empty" style={{ padding: "48px 16px" }}>Esta orden ya tiene recepciones registradas, así que no se puede editar: se perdería la trazabilidad de lo recibido y facturado.</div>
-    </main></AppShell>;
+    </main></>;
   }
   if (orden.estado !== "abierto" && orden.estado !== "rechazado") {
-    return <AppShell role="proveeduria"><main className="page">
+    return <><main className="page">
       <div className="back-link" onClick={() => router.push(`/proveeduria/ordenes/${id}`)}>Volver a la orden</div>
       <div className="empty" style={{ padding: "48px 16px" }}>Esta orden ya no se puede editar: solo se permite mientras está Abierta o Rechazada.</div>
-    </main></AppShell>;
+    </main></>;
   }
 
   // Una orden nacida de una solicitud NO permite agregar artículos sueltos: sus
@@ -109,7 +108,7 @@ export default function EditarOrdenPage() {
   }
 
   return (
-    <AppShell role="proveeduria">
+    <>
       <main className="page page--wide" style={{ paddingBottom: 120 }}>
         <div className="back-link" onClick={() => router.push(`/proveeduria/ordenes/${id}`)}>Volver a la orden</div>
         <div className="page__head">
@@ -202,6 +201,6 @@ export default function EditarOrdenPage() {
           </div>
         </div>
       </div>
-    </AppShell>
+    </>
   );
 }

@@ -2,7 +2,6 @@
 
 import { useMemo } from "react";
 import type { ColumnDef } from "@tanstack/react-table";
-import { AppShell } from "@/components/shell";
 import { Tile, ProgressBar } from "@/components/ui";
 import { DataTable } from "@/components/data-table";
 import { useStore } from "@/lib/store";
@@ -97,7 +96,7 @@ export default function ProveeduriaDashboardPage() {
   );
 
   return (
-    <AppShell role="proveeduria">
+    <>
       <main className="page page--wide">
         <div className="page__head">
           <div className="page__title">
@@ -118,6 +117,6 @@ export default function ProveeduriaDashboardPage() {
           <DataTable data={filas} columns={columns} tablaKey="dash-prov" buscarPlaceholder="Buscar proveedor…" getRowId={(r) => r.proveedorId} renderExpanded={renderExpanded} vacio="Todavía no hay órdenes de compra." />
         </div>
       </main>
-    </AppShell>
+    </>
   );
 }

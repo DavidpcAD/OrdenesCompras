@@ -1,7 +1,6 @@
 "use client";
 
 import { useParams, useRouter } from "next/navigation";
-import { AppShell } from "@/components/shell";
 import { Badge, Card } from "@/components/ui";
 import { useStore } from "@/lib/store";
 import { money, formatDate, num } from "@/lib/helpers";
@@ -16,7 +15,7 @@ export default function RecepcionDetallePage() {
 
   const rec = recepciones.find((r) => r.id === id);
   if (!rec) {
-    return <AppShell role="contabilidad"><main className="page"><div className="empty">Recepción no encontrada.</div></main></AppShell>;
+    return <><main className="page"><div className="empty">Recepción no encontrada.</div></main></>;
   }
   const orden = ordenes.find((o) => o.id === rec.ordenId);
   const provNombre = orden?.proveedorNombre ?? proveedores.find((p) => p.id === orden?.proveedorId)?.nombre;
@@ -33,7 +32,7 @@ export default function RecepcionDetallePage() {
   const esCargo = (f: typeof filas[number]) => f.ol?.tipo === "cargo";
 
   return (
-    <AppShell role="contabilidad">
+    <>
       <main className="page page--wide">
         <div className="back-link" onClick={() => router.push("/facturacion/archivo")}>Volver a archivo y recepciones</div>
         <div className="page__head">
@@ -97,6 +96,6 @@ export default function RecepcionDetallePage() {
           </div>
         </div>
       </main>
-    </AppShell>
+    </>
   );
 }

@@ -2,7 +2,6 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { AppShell } from "@/components/shell";
 import { Badge, Button, Card, Field, Input, Modal, Select, useToast } from "@/components/ui";
 import { Combobox } from "@/components/combobox";
 import { useStore } from "@/lib/store";
@@ -240,7 +239,7 @@ export default function ArmarOrdenPage() {
   }
 
   return (
-    <AppShell role="proveeduria">
+    <>
       <main className="page page--wide" style={{ paddingBottom: 120 }}>
         <div className="back-link" onClick={() => router.push("/proveeduria")}>Volver a materiales</div>
         <div className="page__head">
@@ -467,6 +466,6 @@ export default function ArmarOrdenPage() {
           )}
         </Modal>
       )}
-    </AppShell>
+    </>
   );
 }

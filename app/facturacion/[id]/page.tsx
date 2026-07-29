@@ -2,7 +2,6 @@
 
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
-import { AppShell } from "@/components/shell";
 import { Badge, Button, Card, Field, Input, Modal, Select, useToast } from "@/components/ui";
 import { IconWarning } from "@/components/icons";
 import { DateField } from "@/components/date-field";
@@ -114,7 +113,7 @@ export default function RegistrarFacturaPage() {
   const fechasCoinciden = fechaFactura === fechaRegistro;
 
   if (!orden) {
-    return <AppShell role="facturacion"><main className="page"><div className="empty">Orden no encontrada.</div></main></AppShell>;
+    return <><main className="page"><div className="empty">Orden no encontrada.</div></main></>;
   }
   const prov = proveedores.find((p) => p.id === orden.proveedorId);
 
@@ -259,7 +258,7 @@ export default function RegistrarFacturaPage() {
   }
 
   return (
-    <AppShell role="facturacion">
+    <>
       <main className="page page--wide">
         <div className="back-link" onClick={() => router.push("/facturacion")}>Volver a órdenes por recibir</div>
         <div className="page__head">
@@ -524,6 +523,6 @@ export default function RegistrarFacturaPage() {
           </Modal>
         )}
       </main>
-    </AppShell>
+    </>
   );
 }

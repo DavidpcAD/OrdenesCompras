@@ -3,7 +3,6 @@
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 import type { ColumnDef } from "@tanstack/react-table";
-import { AppShell } from "@/components/shell";
 import { Badge, Button, Card, Modal, useToast } from "@/components/ui";
 import { DataTable } from "@/components/data-table";
 import { VistaToggle } from "@/components/vista-toggle";
@@ -139,7 +138,7 @@ export default function ProveeduriaMaterialesPage() {
   ];
 
   return (
-    <AppShell role="proveeduria">
+    <>
       <main className="page" style={{ paddingBottom: incluidas.length ? 120 : undefined }}>
         <div className="page__head">
           <div className="page__title">
@@ -257,6 +256,6 @@ export default function ProveeduriaMaterialesPage() {
           </div>
         </Modal>
       )}
-    </AppShell>
+    </>
   );
 }

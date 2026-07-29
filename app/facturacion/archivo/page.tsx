@@ -3,7 +3,6 @@
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { ColumnDef } from "@tanstack/react-table";
-import { AppShell } from "@/components/shell";
 import { Badge, Button, Card, Field, Input, Modal, Tile, useToast } from "@/components/ui";
 import { DataTable } from "@/components/data-table";
 import { useStore } from "@/lib/store";
@@ -70,7 +69,7 @@ export default function ArchivoPage() {
   ], [ordenes, proveedores]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
-    <AppShell role="contabilidad">
+    <>
       <main className="page page--wide">
         <div className="page__head">
           <div className="page__title">
@@ -127,6 +126,6 @@ export default function ArchivoPage() {
           </Modal>
         )}
       </main>
-    </AppShell>
+    </>
   );
 }
