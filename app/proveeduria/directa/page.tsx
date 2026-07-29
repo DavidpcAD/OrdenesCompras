@@ -12,7 +12,8 @@ import type { OrdenLinea } from "@/lib/types";
 // Orden DIRECTA: compra armada por Proveeduría sin partir de una solicitud de
 // Ingeniería (material que no vino en ningún pedido). Todas las líneas son
 // manuales (pedidoNumero "Manual"); en la lista/detalle se marca como "Directa".
-interface Row { key: string; articuloId: string; descripcion: string; unidad: string; obra: string; cantidad: string; precio: string; iva: string; descuento: string; }
+interface Row { key: string; articuloId: string; descripcion: string; unidad: string; obra: string; cantidad: string; precio: string; iva: string; descuento: string; variantCode: string; variantNombre: string; }
+type Variante = { code: string; descripcion: string };
 const uid = () => Math.random().toString(36).slice(2, 9);
 
 export default function OrdenDirectaPage() {
@@ -42,14 +43,22 @@ export default function OrdenDirectaPage() {
 
   const [rows, setRows] = useState<Row[]>([]);
   const [qaCode, setQaCode] = useState(""); const [qaQty, setQaQty] = useState(""); const [qaPrecio, setQaPrecio] = useState("");
+  // Variantes del artículo elegido (color/medida/etc. en BC). Si el item tiene
+  // variantes, hay que elegir una ANTES de agregar la línea (BC la exige).
+  const [qaVariantes, setQaVariantes] = useState<Variante[]>([]);
+  const [qaVariante, setQaVariante] = useState("");
+  const [qaVariantesError, setQaVariantesError] = useState(false);
+  const variantePendiente = qaVariantes.length > 0 && !qaVariante;
 
   const setRow = (k: string, patch: Partial<Row>) => setRows((rs) => rs.map((r) => (r.key === k ? { ...r, ...patch } : r)));
   const removeRow = (k: string) => setRows((rs) => rs.filter((r) => r.key !== k));
   function agregarLinea() {
     const it = itemsBc.find((x) => x.code === qaCode);
     if (!it || !(Number(qaQty) > 0)) { toast("Elegí un artículo y una cantidad.", "error"); return; }
-    setRows((rs) => [...rs, { key: `m-${uid()}`, articuloId: it.code, descripcion: it.descripcion, unidad: it.unidad, obra: "", cantidad: String(Number(qaQty)), precio: String(Number(qaPrecio) || it.precioUltimo || 0), iva: "13", descuento: "0" }]);
-    setQaCode(""); setQaQty(""); setQaPrecio("");
+    if (variantePendiente) { toast("Este artículo tiene variantes: elegí una antes de agregar la línea.", "error"); return; }
+    const variante = qaVariantes.find((v) => v.code === qaVariante);
+    setRows((rs) => [...rs, { key: `m-${uid()}`, articuloId: it.code, descripcion: it.descripcion, unidad: it.unidad, obra: "", cantidad: String(Number(qaQty)), precio: String(Number(qaPrecio) || it.precioUltimo || 0), iva: "13", descuento: "0", variantCode: qaVariante, variantNombre: variante?.descripcion ?? "" }]);
+    setQaCode(""); setQaQty(""); setQaPrecio(""); setQaVariantes([]); setQaVariante(""); setQaVariantesError(false);
   }
 
   const calcImporte = (r: Row) => Number(r.cantidad) * Number(r.precio) * (1 - (Number(r.descuento) || 0) / 100);
@@ -71,7 +80,7 @@ export default function OrdenDirectaPage() {
     setGuardando(true);
     try {
       const ls: Omit<OrdenLinea, "id" | "cantidadRecibida" | "cantidadFacturada">[] = rows.map((r) => ({
-        tipo: "articulo", articuloId: r.articuloId, pedidoNumero: "Manual",
+        tipo: "articulo", articuloId: r.articuloId, variantCode: r.variantCode || undefined, pedidoNumero: "Manual",
         descripcion: r.descripcion, cantidad: Number(r.cantidad), unidad: r.unidad, almacen: r.obra,
         precioUnitario: Number(r.precio), ivaPct: Number(r.iva) || 0, descuentoPct: Number(r.descuento) || 0,
         proyecto: r.obra || undefined,
@@ -122,16 +131,37 @@ export default function OrdenDirectaPage() {
               <label className="ds-label ds-muted" style={{ display: "block", marginBottom: 4 }}>Agregar artículo</label>
               <Combobox items={itemsBc} value={qaCode} onChange={(k) => {
                   setQaCode(k);
+                  setQaVariantes([]); setQaVariante(""); setQaVariantesError(false);
                   const it = itemsBc.find((x) => x.code === k);
                   if (it?.precioUltimo) setQaPrecio(String(it.precioUltimo)); // respaldo inmediato
-                  if (k) fetch(`/api/bc/lastprice?item=${encodeURIComponent(k)}&vendor=${encodeURIComponent(provSel?.code ?? "")}`)
-                    .then((r) => r.json()).then((d) => { if (typeof d.precio === "number" && d.precio > 0) setQaPrecio(String(d.precio)); }).catch(() => {});
+                  if (k) {
+                    fetch(`/api/bc/lastprice?item=${encodeURIComponent(k)}&vendor=${encodeURIComponent(provSel?.code ?? "")}`)
+                      .then((r) => r.json()).then((d) => { if (typeof d.precio === "number" && d.precio > 0) setQaPrecio(String(d.precio)); }).catch(() => {});
+                    // Variantes del item: si tiene, se exige elegir una antes de agregar.
+                    fetch(`/api/bc/variants?item=${encodeURIComponent(k)}`)
+                      .then((r) => (r.ok ? r.json() : { variantes: [], disponible: false }))
+                      .then((d) => { setQaVariantes(d.variantes ?? []); setQaVariantesError(d.disponible === false); })
+                      .catch(() => { setQaVariantes([]); setQaVariantesError(true); });
+                  }
                 }} getKey={(i) => i.code} getLabel={(i) => `${i.code} — ${i.descripcion}`} getSearch={(i) => `${i.code} ${i.descripcion}`} minChars={2} placeholder="Buscar artículo del catálogo…" />
             </div>
+            {qaVariantes.length > 0 && (
+              <div style={{ flex: "0 1 200px", minWidth: 170 }}>
+                <label className="ds-label ds-muted" style={{ display: "block", marginBottom: 4 }}>Variante</label>
+                <div style={!qaVariante ? { outline: "1.5px solid var(--ds-color-red-100)", borderRadius: 12 } : undefined}>
+                  <Combobox items={qaVariantes} value={qaVariante} onChange={(k) => setQaVariante(k)} getKey={(v) => v.code} getLabel={(v) => `${v.code} — ${v.descripcion}`} getSearch={(v) => `${v.code} ${v.descripcion}`} placeholder="Elegí variante…" />
+                </div>
+              </div>
+            )}
             <div><label className="ds-label ds-muted" style={{ display: "block", marginBottom: 4 }}>Cantidad</label><Input type="number" min={0} value={qaQty} onChange={(e) => setQaQty(e.target.value)} placeholder="0" style={{ width: 90 }} /></div>
             <div><label className="ds-label ds-muted" style={{ display: "block", marginBottom: 4 }}>Precio</label><Input type="number" min={0} value={qaPrecio} onChange={(e) => setQaPrecio(e.target.value)} placeholder="0" style={{ width: 110 }} />{(() => { const it = itemsBc.find((x) => x.code === qaCode); return it?.precioUltimo ? <div className="ds-body-sm ds-muted" style={{ marginTop: 2 }}>últ. compra {money(it.precioUltimo, currency)}</div> : null; })()}</div>
-            <Button variant="outline" onClick={agregarLinea} disabled={!qaCode || !(Number(qaQty) > 0)}>+ Agregar línea</Button>
+            <Button variant="outline" onClick={agregarLinea} disabled={!qaCode || !(Number(qaQty) > 0) || variantePendiente}>+ Agregar línea</Button>
           </div>
+          {qaCode && qaVariantesError && (
+            <div className="ds-body-sm" style={{ color: "var(--ds-color-red-100)", padding: "0 16px 10px" }}>
+              No se pudieron cargar las variantes de este material. Si requiere variante, la orden podría fallar en Business Central.
+            </div>
+          )}
           <div className="ds-table-wrap" style={{ boxShadow: "none" }}>
             <table className="ds-table">
               <thead><tr><th>Artículo</th><th>Obra</th><th className="ds-num">Cantidad</th><th className="ds-num">Precio</th><th className="ds-num">Desc%</th><th className="ds-num">IVA%</th><th className="ds-num">Importe</th><th></th></tr></thead>
@@ -139,7 +169,7 @@ export default function OrdenDirectaPage() {
                 {rows.length === 0 && <tr><td colSpan={8}><div className="empty">Sin líneas. Buscá un artículo del catálogo y agregalo.</div></td></tr>}
                 {rows.map((r) => (
                   <tr key={r.key}>
-                    <td><div className="ds-truncate" title={r.descripcion} style={{ maxWidth: 220 }}>{r.descripcion}</div><div className="ds-body-sm ds-muted">{r.articuloId}</div></td>
+                    <td><div className="ds-truncate" title={r.descripcion} style={{ maxWidth: 220 }}>{r.descripcion}</div><div className="ds-body-sm ds-muted">{r.articuloId}{r.variantCode ? ` · var. ${r.variantCode}${r.variantNombre ? ` (${r.variantNombre})` : ""}` : ""}</div></td>
                     <td><input className="ds-cell-input" value={r.obra} placeholder="—" style={{ width: 92 }} onChange={(e) => setRow(r.key, { obra: e.target.value })} /></td>
                     <td className="ds-num"><input className="ds-cell-input" type="number" min={0} value={r.cantidad} style={{ width: 70 }} onChange={(e) => setRow(r.key, { cantidad: e.target.value })} /></td>
                     <td className="ds-num"><input className="ds-cell-input" type="number" min={0} value={r.precio} style={{ width: 92 }} onChange={(e) => setRow(r.key, { precio: e.target.value })} /></td>
