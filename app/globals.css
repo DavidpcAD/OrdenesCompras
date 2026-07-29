@@ -919,8 +919,21 @@ h1, h2, h3, h4, p { margin: 0; }
 @media (max-width: 760px) {
   .grid-2, .grid-3 { grid-template-columns: 1fr; }
   .tiles { grid-template-columns: 1fr 1fr; }
+  .tiles > * { min-width: 0; }  /* que las tarjetas puedan encoger (números grandes no ensanchan la página) */
+  /* Número KPI: escala al viewport para caber en la tarjeta angosta (el separador
+     de miles es NBSP y no rompe solo; overflow-wrap evita que se corte). */
+  .tile__value { font-size: clamp(16px, 4.5vw, 24px); overflow-wrap: anywhere; }
   .topbar__nav { display: none; }
   .page { padding: var(--ds-space-6) var(--ds-space-4) 64px; }
+  /* Evitar el overflow horizontal en móvil: el contenido ocupa el ANCHO DE LA
+     PANTALLA, no el de su contenido. En columna, .app-body debe estirar a sus
+     hijos (si no, .app-content toma su ancho intrínseco y desborda → zoom-out). */
+  .app-body { align-items: stretch; }
+  .app-content { width: 100%; min-width: 0; max-width: 100%; }
+  .page, .page--wide { max-width: 100%; }
+  /* La barra de herramientas de las tablas (buscar + Tabla/Grid + Columnas/Vistas/
+     Exportar) debe envolver en vez de desbordar a lo ancho. */
+  .dt-toolbar .row { flex-wrap: wrap; }
 }
 
 /* ---- Plantillas: panel, tarjetas y filtro mini ---- */
