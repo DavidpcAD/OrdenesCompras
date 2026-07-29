@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { useStore } from "@/lib/store";
+import { ConfirmDialog } from "@/components/ui";
 import type { Role, Notificacion } from "@/lib/types";
 import { formatDate } from "@/lib/helpers";
 import {
@@ -65,10 +66,23 @@ export function AppShell({ role, children }: { role: Role; children: React.React
   const router = useRouter();
   const pathname = usePathname();
   const [notifOpen, setNotifOpen] = useState(false);
-  // Drawer del menú lateral en móvil (en desktop el riel es siempre visible).
+  // Drawer del menú: en desktop queda FIJO empujando el contenido; en móvil es
+  // un overlay temporal. Se persiste para recordar si lo dejaste abierto.
   const [navOpen, setNavOpen] = useState(false);
-  // Cerrar el drawer al navegar a otra ruta.
-  useEffect(() => { setNavOpen(false); }, [pathname]);
+  const [ready, setReady] = useState(false); // evita animar el drawer al cargar
+  const [logoutOpen, setLogoutOpen] = useState(false);
+  const isMobile = () => typeof window !== "undefined" && window.matchMedia("(max-width: 760px)").matches;
+  const closeNavOnMobile = () => { if (isMobile()) setNavOpen(false); };
+  // Estado inicial del drawer: cerrado por defecto (máximo espacio). Si lo dejaste
+  // fijo en desktop, se recuerda; en móvil siempre arranca cerrado.
+  useEffect(() => {
+    const stored = localStorage.getItem("adelante_oc_nav");
+    setNavOpen(stored === "1" && !isMobile());
+    setReady(true);
+  }, []);
+  useEffect(() => { if (ready) try { localStorage.setItem("adelante_oc_nav", navOpen ? "1" : "0"); } catch {} }, [navOpen, ready]);
+  // Cerrar el drawer al navegar SOLO en móvil (en desktop queda fijo).
+  useEffect(() => { if (isMobile()) setNavOpen(false); }, [pathname]);
   // Cerrar el drawer con Escape.
   useEffect(() => {
     if (!navOpen) return;
@@ -76,6 +90,13 @@ export function AppShell({ role, children }: { role: Role; children: React.React
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [navOpen]);
+  function cerrarSesion() {
+    setLogoutOpen(false);
+    // Borra la cookie de sesión del server además del estado local.
+    fetch("/api/logout", { method: "POST" }).catch(() => {}).finally(() => {
+      setRole(null); setUsuario(null); router.replace("/");
+    });
+  }
   // Notificaciones relevantes para este rol (o sin rol específico).
   const notifsRol = notificaciones.filter((n) => !n.rol || n.rol === role);
   const noLeidas = notifsRol.filter((n) => !n.leida).length;
@@ -113,31 +134,10 @@ export function AppShell({ role, children }: { role: Role; children: React.React
     .sort((a, b) => b.len - a.len)[0]?.href ?? "";  // sin match → no se marca ninguna (no cae al home)
 
   return (
-    <div className="app-shell">
+    <div className={`app-shell${navOpen ? " nav-open" : ""}${ready ? " is-ready" : ""}`}>
       <header className="topbar">
-        {/* Móvil: hamburguesa que abre el drawer del menú (oculta en desktop). */}
-        {hasNav && (
-          <button type="button" className="topbar__burger" aria-label="Abrir menú" aria-expanded={navOpen} onClick={() => setNavOpen(true)}>
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M3 6h18M3 12h18M3 18h18" /></svg>
-          </button>
-        )}
-        {/* Con riel presente, la marca vive en el tope del riel oscuro. Sin riel,
-            se muestra acá en el encabezado. */}
-        {!hasNav && (
-          <Link href={meta.home} className="topbar__brand">
-            <span className="topbar__logo">A</span>
-            <span>Compras Adelante</span>
-          </Link>
-        )}
         <div className="topbar__spacer" />
         <div className="topbar__user">
-          {/* Acción primaria del rol — solo en el dashboard del rol (hace mucho
-              ruido en el resto de pantallas; ahí se usa desde el sidebar). */}
-          {meta.action && pathname === meta.home && (
-            <button className="ds-btn ds-btn--green ds-btn--sm topbar__action" onClick={() => router.push(meta.action!.href)}>
-              <IconPlus size={20} /><span>{meta.action.label}</span>
-            </button>
-          )}
           {/* Campanita de notificaciones */}
           <div style={{ position: "relative" }}>
             <button className="notif-bell" title="Notificaciones" onClick={toggleNotif} aria-label="Notificaciones">
@@ -185,45 +185,66 @@ export function AppShell({ role, children }: { role: Role; children: React.React
           </div>
         </div>
       </header>
-      <div className="app-body">
-        {hasNav && (
-          <>
-            {/* Fondo oscuro detrás del drawer en móvil; al tocarlo se cierra. */}
-            {navOpen && <div className="app-nav-overlay" onClick={() => setNavOpen(false)} aria-hidden />}
-            <aside className={`app-nav${navOpen ? " is-open" : ""}`} aria-label="Secciones">
-              <Link href={meta.home} className="app-nav__brand" title="Compras Adelante" onClick={() => setNavOpen(false)}>
+      {hasNav && (
+        <>
+          {/* Fondo oscuro detrás del drawer (solo visible en móvil). */}
+          {navOpen && <div className="app-nav-overlay" onClick={() => setNavOpen(false)} aria-hidden />}
+          <aside className={`app-nav${navOpen ? " is-open" : ""}`} aria-label="Secciones">
+            <div className="app-nav__head">
+              <Link href={meta.home} className="app-nav__brand" title="Compras Adelante" onClick={closeNavOnMobile}>
                 <span className="topbar__logo">A</span>
                 <span className="app-nav__brand-name">Compras Adelante</span>
               </Link>
-              {meta.nav.map((n) => {
-                const Icon = n.icon;
-                const active = activeHref === n.href;
-                return (
-                  <button key={n.href} className={`app-nav__item${active ? " is-active" : ""}`}
-                    title={n.label}
-                    onClick={() => { router.push(n.href); setNavOpen(false); }} aria-current={active ? "page" : undefined}>
-                    <span className="app-nav__ic"><Icon size={20} /></span>
-                    <span className="app-nav__label">{n.label}</span>
-                  </button>
-                );
-              })}
-              <button className="app-nav__item app-nav__salir" style={{ marginTop: "auto" }}
-                title="Salir"
-                onClick={() => {
-                  setNavOpen(false);
-                  // Borra la cookie de sesión del server además del estado local.
-                  fetch("/api/logout", { method: "POST" }).catch(() => {}).finally(() => {
-                    setRole(null); setUsuario(null); router.replace("/");
-                  });
-                }}>
-                <span className="app-nav__ic"><IconLogout size={20} /></span>
-                <span className="app-nav__label">Salir</span>
+              <button type="button" className="app-nav__close" onClick={() => setNavOpen(false)} aria-label="Cerrar menú">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><path d="M6 6l12 12M18 6L6 18" /></svg>
               </button>
-            </aside>
-          </>
-        )}
+            </div>
+            {meta.nav.map((n) => {
+              const Icon = n.icon;
+              const active = activeHref === n.href;
+              return (
+                <button key={n.href} className={`app-nav__item${active ? " is-active" : ""}`}
+                  title={n.label}
+                  onClick={() => { router.push(n.href); closeNavOnMobile(); }} aria-current={active ? "page" : undefined}>
+                  <span className="app-nav__ic"><Icon size={20} /></span>
+                  <span className="app-nav__label">{n.label}</span>
+                </button>
+              );
+            })}
+            <button className="app-nav__item app-nav__salir" title="Salir"
+              onClick={() => { setNavOpen(false); setLogoutOpen(true); }}>
+              <span className="app-nav__ic"><IconLogout size={20} /></span>
+              <span className="app-nav__label">Salir</span>
+            </button>
+          </aside>
+        </>
+      )}
+
+      <div className="app-body">
         <div className="app-content">{children}</div>
       </div>
+
+      {/* FAB menú (arriba-izquierda) — solo cuando el drawer está cerrado. */}
+      {hasNav && !navOpen && (
+        <button type="button" className="ds-btn ds-btn--black ds-btn--icon fab fab--menu" onClick={() => setNavOpen(true)} aria-label="Abrir menú">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M3 6h18M3 12h18M3 18h18" /></svg>
+        </button>
+      )}
+
+      {/* FAB de la acción principal del rol (abajo-derecha). No en su propia
+          pantalla ni en flujos de creación (ahí ya hay barra de acciones). */}
+      {meta.action && pathname !== meta.action.href && !pathname.includes("/nueva") && (
+        <button type="button" className="ds-btn ds-btn--green fab fab--action" onClick={() => router.push(meta.action!.href)}>
+          <IconPlus size={20} /><span>{meta.action.label}</span>
+        </button>
+      )}
+
+      {/* Confirmar cierre de sesión (DS ConfirmDialog). */}
+      {logoutOpen && (
+        <ConfirmDialog title="Cerrar sesión" message="¿Seguro que querés salir de tu sesión?"
+          confirmLabel="Salir" cancelLabel="Quedarme" tone="red"
+          onConfirm={cerrarSesion} onCancel={() => setLogoutOpen(false)} />
+      )}
     </div>
   );
 }

@@ -589,15 +589,17 @@ h1, h2, h3, h4, p { margin: 0; }
 .ds-cell-input[type=number], .ds-form-field__input[type=number] { -moz-appearance: textfield; appearance: textfield; }
 
 /* =====================  APP SHELL  ===================== */
-.app-shell { min-height: 100vh; display: flex; flex-direction: column; }
+.app-shell { --nav-w: 264px; min-height: 100vh; display: flex; flex-direction: column; }
 .topbar {
   position: sticky; top: 0; z-index: 50;
-  margin-left: 76px; /* queda al lado del riel oscuro (76px), no encima */
   background: var(--ds-color-white); box-shadow: var(--ds-shadow-02-soft);
-  display: flex; align-items: center; gap: var(--ds-space-6);
+  display: flex; align-items: center; gap: var(--ds-space-4);
   min-height: 64px; box-sizing: border-box;
   padding: var(--ds-space-3) var(--ds-space-6);
+  padding-left: 92px; /* deja lugar al FAB de menú (arriba-izquierda) */
 }
+.app-shell.is-ready .topbar,
+.app-shell.is-ready .app-content { transition: margin-left .28s cubic-bezier(.34, 1.2, .5, 1); }
 .topbar__brand { display: flex; align-items: center; gap: var(--ds-space-3); font-weight: var(--ds-font-weight-semibold); font-size: var(--ds-font-size-subtitle); }
 .topbar__logo { width: 32px; height: 32px; border-radius: var(--ds-radius-md); background: var(--ds-color-green-100); display: grid; place-items: center; font-weight: 700; color: #000; }
 .topbar__nav { display: flex; gap: var(--ds-space-1); margin-left: var(--ds-space-4); }
@@ -674,11 +676,11 @@ h1, h2, h3, h4, p { margin: 0; }
 .action-bar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 45; background: #fff; box-shadow: 0 -4px 18px #0000001f; padding: var(--ds-space-3) var(--ds-space-6); animation: barUp .2s ease; transition: left .34s cubic-bezier(.34, 1.4, .5, 1); }
 /* No montar la barra de acciones sobre el sidebar: su borde izquierdo sigue el
    ancho del rail (288px expandido / 112px colapsado). Sin nav o en móvil = full. */
-/* El riel reserva 76px a la izquierda; la barra de acciones arranca ahí. */
-.app-body:has(.app-nav) .action-bar { left: 76px; }
+/* Con el drawer FIJO (desktop abierto), la barra de acciones arranca tras él. */
+.app-shell.nav-open .action-bar { left: var(--nav-w); }
 @media (max-width: 760px) {
-  /* En móvil el rail va horizontal arriba → la barra ocupa todo el ancho. */
-  .app-body:has(.app-nav) .action-bar { left: 0; }
+  /* En móvil el drawer es overlay → la barra ocupa todo el ancho. */
+  .app-shell.nav-open .action-bar { left: 0; }
 }
 .action-bar__inner { max-width: 1180px; margin: 0 auto; display: flex; align-items: center; justify-content: space-between; gap: var(--ds-space-4); flex-wrap: wrap; }
 @keyframes barUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
@@ -723,99 +725,73 @@ h1, h2, h3, h4, p { margin: 0; }
 .topbar__identity { display: inline-flex; align-items: center; gap: var(--ds-space-2); height: 40px; padding: 0 var(--ds-space-4) 0 5px; border-radius: 999px; color: var(--ds-color-black); font-weight: var(--ds-font-weight-semibold); font-size: var(--ds-font-size-label); white-space: nowrap; }
 .topbar__identity .topbar__avatar { width: 30px; height: 30px; background: var(--ds-color-white); color: var(--ds-color-gray-500); font-size: var(--ds-font-size-body-sm); }
 .topbar__tabs { margin-left: var(--ds-space-4); }
-/* Hamburguesa: solo en móvil (abre el drawer del menú). Oculta en desktop. */
-.topbar__burger { display: none; align-items: center; justify-content: center; width: 42px; height: 42px; border: 0; border-radius: var(--ds-radius-lg); background: var(--ds-color-gray-100); color: var(--ds-color-black); cursor: pointer; flex-shrink: 0; }
-.topbar__burger:hover { background: var(--ds-color-gray-200); }
+/* FABs (botones flotantes) — reusan .ds-btn del DS para consistencia total.
+   fab--menu: círculo negro arriba-izq (por encima de la topbar, debajo del drawer).
+   fab--action: acción principal del rol abajo-der (debajo de la barra de acciones). */
+.fab { position: fixed; }
+.fab--menu { top: var(--ds-space-4); left: var(--ds-space-5); z-index: 51; border-radius: 50%; }
+.fab--action { bottom: var(--ds-space-6); right: var(--ds-space-6); z-index: 44; box-shadow: var(--ds-shadow-03-big); }
+/* Botón de cerrar dentro del drawer. */
+.app-nav__close { display: inline-flex; align-items: center; justify-content: center; width: 40px; height: 40px; flex-shrink: 0; border: 0; border-radius: 50%; background: rgba(255, 255, 255, .1); color: var(--ds-color-white); cursor: pointer; transition: background .12s ease; }
+.app-nav__close:hover { background: rgba(255, 255, 255, .2); }
 /* Overlay detrás del drawer: solo se muestra en móvil (ver media query). */
 .app-nav-overlay { display: none; }
 
-/* ── Layout: barra superior + RIEL lateral (hover-expand overlay) + contenido ── */
-.app-body { display: flex; align-items: flex-start; gap: 0; }
-.app-content { flex: 1; min-width: 0; }
+/* ── Layout: contenido + DRAWER lateral (hamburguesa) ── */
+.app-body { display: flex; }
+.app-content { flex: 1; min-width: 0; width: 100%; }
 
-/* Riel angosto de solo íconos (76px) como OVERLAY: al pasar el mouse crece a 264px
-   POR ENCIMA del contenido (con sombra), sin mover las tarjetas. Sin botón.
-   El contenido reserva 76px fijos (margin-left) y no hace reflow al expandir. */
+/* Drawer oscuro de altura completa. Oculto por defecto (fuera de pantalla). */
 .app-nav {
-  position: fixed; left: 0; top: 0; z-index: 52; flex-shrink: 0;
-  width: 76px; height: 100vh; overflow: hidden;
-  display: flex; flex-direction: column; gap: var(--ds-space-3);
-  padding: var(--ds-space-4) 14px;
-  background: #2a2a2a; /* columna oscura del DS, de altura completa */
-  transition: width .28s cubic-bezier(.34, 1.2, .5, 1), box-shadow .2s ease;
+  position: fixed; left: 0; top: 0; z-index: 60;
+  width: var(--nav-w); height: 100vh; height: 100dvh;
+  display: flex; flex-direction: column; gap: var(--ds-space-2);
+  padding: var(--ds-space-5) var(--ds-space-4);
+  background: #2a2a2a; /* columna oscura del DS */
+  overflow-y: auto; overflow-x: hidden;
+  transform: translateX(-100%);
 }
-/* Logo/marca en el tope del riel (se expande igual que los ítems). */
-.app-nav__brand { display: flex; align-items: center; gap: 0; height: 40px; padding: 0; margin-bottom: var(--ds-space-2); color: #fff; text-decoration: none; overflow: hidden; }
-.app-nav:hover .app-nav__brand, .app-nav:focus-within .app-nav__brand { gap: var(--ds-space-3); padding: 0 6px; }
-.app-nav__brand .topbar__logo { flex-shrink: 0; margin: 0 auto; }
-.app-nav:hover .app-nav__brand .topbar__logo, .app-nav:focus-within .app-nav__brand .topbar__logo { margin: 0; }
-.app-nav__brand-name { overflow: hidden; white-space: nowrap; max-width: 0; opacity: 0; font-weight: var(--ds-font-weight-semibold); transition: max-width .28s cubic-bezier(.34,1.2,.5,1), opacity .18s ease; }
-.app-nav:hover .app-nav__brand-name, .app-nav:focus-within .app-nav__brand-name { max-width: 180px; opacity: 1; }
-.app-nav:hover, .app-nav:focus-within {
-  width: 264px; overflow-y: auto; overflow-x: hidden;
-  box-shadow: 0 10px 40px rgba(0, 0, 0, .35);
-}
-/* El contenido arranca después del riel (76px) y se queda quieto cuando el riel
-   se expande como overlay. */
-.app-body:has(.app-nav) .app-content { margin-left: 76px; }
+.app-shell.is-ready .app-nav { transition: transform .28s cubic-bezier(.34, 1.2, .5, 1), box-shadow .2s ease; }
+.app-nav.is-open { transform: translateX(0); }
+
+/* Desktop: con el drawer abierto queda FIJO y empuja el contenido (no lo tapa). */
+.app-shell.nav-open .topbar,
+.app-shell.nav-open .app-content { margin-left: var(--nav-w); }
+/* Abierto: el FAB de menú está oculto → la topbar no necesita su hueco. */
+.app-shell.nav-open .topbar { padding-left: var(--ds-space-6); }
+
+/* Cabecera del drawer: marca + cerrar. */
+.app-nav__head { display: flex; align-items: center; justify-content: space-between; gap: var(--ds-space-2); margin-bottom: var(--ds-space-3); }
+.app-nav__brand { display: flex; align-items: center; gap: var(--ds-space-2); min-width: 0; height: 44px; color: #fff; text-decoration: none; overflow: hidden; }
+.app-nav__brand-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: var(--ds-font-weight-semibold); font-size: var(--ds-font-size-body-md); }
+
 .app-nav__item {
-  display: flex; align-items: center; gap: 0;
-  width: 100%; height: 50px; padding: 0; justify-content: center;
-  border: 0; border-radius: 999px; overflow: hidden;
+  display: flex; align-items: center; gap: var(--ds-space-3);
+  width: 100%; min-height: 48px; padding: 0 16px;
+  border: 0; border-radius: var(--ds-radius-xl);
   background: var(--ds-color-black); color: var(--ds-color-white);
   font-family: inherit; font-size: var(--ds-font-size-body-md); font-weight: var(--ds-font-weight-semibold);
-  cursor: pointer; white-space: nowrap; box-shadow: var(--ds-shadow-02-soft);
-  transition: background .12s, color .12s, box-shadow .12s, padding .24s cubic-bezier(.34, 1.2, .5, 1);
+  cursor: pointer; text-align: left; white-space: nowrap; box-shadow: var(--ds-shadow-02-soft);
+  transition: background .12s, color .12s, box-shadow .12s;
 }
-.app-nav:hover .app-nav__item, .app-nav:focus-within .app-nav__item { justify-content: flex-start; padding: 0 18px; gap: var(--ds-space-3); }
 .app-nav__ic { display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; flex-shrink: 0; }
 .app-nav__ic svg { flex-shrink: 0; }
 .app-nav__item:hover { box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.16); }
 .app-nav__item.is-active { background: var(--ds-color-green-100); color: var(--ds-color-black); }
-.app-nav__label {
-  overflow: hidden; white-space: nowrap; max-width: 0; opacity: 0;
-  transition: max-width .28s cubic-bezier(.34, 1.2, .5, 1), opacity .18s ease;
-}
-.app-nav:hover .app-nav__label, .app-nav:focus-within .app-nav__label { max-width: 200px; opacity: 1; }
+.app-nav__salir { margin-top: auto; }
 .app-nav__salir:hover { color: var(--ds-color-red-100); box-shadow: 0 0 0 3px color-mix(in srgb, var(--ds-color-red-100) 30%, transparent); }
 @media (prefers-reduced-motion: reduce) {
-  .app-nav, .app-nav__item, .app-nav__label { transition: none; }
+  .app-shell.is-ready .app-nav, .app-shell.is-ready .topbar, .app-shell.is-ready .app-content { transition: none; }
 }
 
+/* Móvil: el drawer es OVERLAY (no empuja); aparece el fondo oscuro. */
 @media (max-width: 760px) {
-  /* En móvil el riel se vuelve un DRAWER off-canvas que entra desde la izquierda
-     con overlay; la hamburguesa de la topbar lo abre. */
-  .topbar { margin-left: 0; }
-  .topbar__burger { display: inline-flex; }
-  .app-body { flex-direction: column; }
-  .app-body:has(.app-nav) .app-content { margin-left: 0; }
-
-  .app-nav {
-    position: fixed; left: 0; top: 0; z-index: 80;
-    width: 280px; max-width: 84vw; height: 100vh; height: 100dvh;
-    flex-direction: column; align-items: stretch;
-    overflow-y: auto; overflow-x: hidden;
-    padding: var(--ds-space-5) var(--ds-space-4); gap: var(--ds-space-2);
-    transform: translateX(-100%);
-    transition: transform .28s cubic-bezier(.34, 1.2, .5, 1), box-shadow .2s ease;
-    box-shadow: none;
-  }
-  .app-nav.is-open { transform: translateX(0); box-shadow: 0 12px 44px rgba(0, 0, 0, .5); }
-  /* Anular el hover-expand del desktop dentro del drawer (ancho fijo). */
-  .app-nav:hover, .app-nav:focus-within { width: 280px; box-shadow: none; }
-  .app-nav.is-open:hover, .app-nav.is-open:focus-within { box-shadow: 0 12px 44px rgba(0, 0, 0, .5); }
-
-  /* Marca e ítems siempre en su forma expandida (ícono + texto a la izquierda). */
-  .app-nav__brand, .app-nav:hover .app-nav__brand { display: flex; gap: var(--ds-space-3); padding: 0 6px; margin-bottom: var(--ds-space-4); }
-  .app-nav__brand .topbar__logo, .app-nav:hover .app-nav__brand .topbar__logo { margin: 0; }
-  .app-nav__brand-name, .app-nav:hover .app-nav__brand-name { max-width: none; opacity: 1; }
-  .app-nav__item, .app-nav:hover .app-nav__item { width: 100%; height: 48px; justify-content: flex-start; padding: 0 18px; gap: var(--ds-space-3); font-size: var(--ds-font-size-body-md); }
-  .app-nav__label, .app-nav:hover .app-nav__label { max-width: none; opacity: 1; }
-
-  .app-nav-overlay {
-    display: block; position: fixed; inset: 0; z-index: 70;
-    background: rgba(0, 0, 0, .5); animation: fade .18s ease;
-  }
+  .app-shell.nav-open .topbar,
+  .app-shell.nav-open .app-content { margin-left: 0; }
+  .app-nav { width: 280px; max-width: 84vw; }
+  .app-nav.is-open { box-shadow: 0 12px 44px rgba(0, 0, 0, .5); }
+  .app-shell.nav-open .app-nav-overlay { display: block; position: fixed; inset: 0; z-index: 55; background: rgba(0, 0, 0, .5); animation: fade .18s ease; }
+  .topbar { padding-left: 84px; }
 }
 /* la acción primaria no lleva la sombra pesada del botón; queda como acción compacta */
 .topbar__action { box-shadow: var(--ds-shadow-01); }
