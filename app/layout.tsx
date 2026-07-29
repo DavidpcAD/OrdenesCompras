@@ -3,6 +3,11 @@ import "./globals.css";
 import { StoreProvider } from "@/lib/store";
 import { ToastProvider } from "@/components/ui";
 
+// Renderizar en CADA request (no hornear en build): así el layout lee `USE_API`
+// en vivo del App Service y entra en modo base (SQL). Sin esto, el build congela
+// el valor de build-time (donde USE_API no existe) y el front queda en modo mock.
+export const dynamic = "force-dynamic";
+
 export const metadata: Metadata = {
   title: "Compras Adelante — Solicitud de material",
   description: "Pedidos, órdenes de compra y recepción de material. Integrado con Business Central + SQL.",
