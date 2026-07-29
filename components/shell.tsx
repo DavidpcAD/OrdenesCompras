@@ -65,6 +65,17 @@ export function AppShell({ role, children }: { role: Role; children: React.React
   const router = useRouter();
   const pathname = usePathname();
   const [notifOpen, setNotifOpen] = useState(false);
+  // Drawer del menú lateral en móvil (en desktop el riel es siempre visible).
+  const [navOpen, setNavOpen] = useState(false);
+  // Cerrar el drawer al navegar a otra ruta.
+  useEffect(() => { setNavOpen(false); }, [pathname]);
+  // Cerrar el drawer con Escape.
+  useEffect(() => {
+    if (!navOpen) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setNavOpen(false); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [navOpen]);
   // Notificaciones relevantes para este rol (o sin rol específico).
   const notifsRol = notificaciones.filter((n) => !n.rol || n.rol === role);
   const noLeidas = notifsRol.filter((n) => !n.leida).length;
@@ -104,6 +115,12 @@ export function AppShell({ role, children }: { role: Role; children: React.React
   return (
     <div className="app-shell">
       <header className="topbar">
+        {/* Móvil: hamburguesa que abre el drawer del menú (oculta en desktop). */}
+        {hasNav && (
+          <button type="button" className="topbar__burger" aria-label="Abrir menú" aria-expanded={navOpen} onClick={() => setNavOpen(true)}>
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M3 6h18M3 12h18M3 18h18" /></svg>
+          </button>
+        )}
         {/* Con riel presente, la marca vive en el tope del riel oscuro. Sin riel,
             se muestra acá en el encabezado. */}
         {!hasNav && (
@@ -170,35 +187,40 @@ export function AppShell({ role, children }: { role: Role; children: React.React
       </header>
       <div className="app-body">
         {hasNav && (
-          <aside className="app-nav" aria-label="Secciones">
-            <Link href={meta.home} className="app-nav__brand" title="Compras Adelante">
-              <span className="topbar__logo">A</span>
-              <span className="app-nav__brand-name">Compras Adelante</span>
-            </Link>
-            {meta.nav.map((n) => {
-              const Icon = n.icon;
-              const active = activeHref === n.href;
-              return (
-                <button key={n.href} className={`app-nav__item${active ? " is-active" : ""}`}
-                  title={n.label}
-                  onClick={() => router.push(n.href)} aria-current={active ? "page" : undefined}>
-                  <span className="app-nav__ic"><Icon size={20} /></span>
-                  <span className="app-nav__label">{n.label}</span>
-                </button>
-              );
-            })}
-            <button className="app-nav__item app-nav__salir" style={{ marginTop: "auto" }}
-              title="Salir"
-              onClick={() => {
-                // Borra la cookie de sesión del server además del estado local.
-                fetch("/api/logout", { method: "POST" }).catch(() => {}).finally(() => {
-                  setRole(null); setUsuario(null); router.replace("/");
-                });
-              }}>
-              <span className="app-nav__ic"><IconLogout size={20} /></span>
-              <span className="app-nav__label">Salir</span>
-            </button>
-          </aside>
+          <>
+            {/* Fondo oscuro detrás del drawer en móvil; al tocarlo se cierra. */}
+            {navOpen && <div className="app-nav-overlay" onClick={() => setNavOpen(false)} aria-hidden />}
+            <aside className={`app-nav${navOpen ? " is-open" : ""}`} aria-label="Secciones">
+              <Link href={meta.home} className="app-nav__brand" title="Compras Adelante" onClick={() => setNavOpen(false)}>
+                <span className="topbar__logo">A</span>
+                <span className="app-nav__brand-name">Compras Adelante</span>
+              </Link>
+              {meta.nav.map((n) => {
+                const Icon = n.icon;
+                const active = activeHref === n.href;
+                return (
+                  <button key={n.href} className={`app-nav__item${active ? " is-active" : ""}`}
+                    title={n.label}
+                    onClick={() => { router.push(n.href); setNavOpen(false); }} aria-current={active ? "page" : undefined}>
+                    <span className="app-nav__ic"><Icon size={20} /></span>
+                    <span className="app-nav__label">{n.label}</span>
+                  </button>
+                );
+              })}
+              <button className="app-nav__item app-nav__salir" style={{ marginTop: "auto" }}
+                title="Salir"
+                onClick={() => {
+                  setNavOpen(false);
+                  // Borra la cookie de sesión del server además del estado local.
+                  fetch("/api/logout", { method: "POST" }).catch(() => {}).finally(() => {
+                    setRole(null); setUsuario(null); router.replace("/");
+                  });
+                }}>
+                <span className="app-nav__ic"><IconLogout size={20} /></span>
+                <span className="app-nav__label">Salir</span>
+              </button>
+            </aside>
+          </>
         )}
         <div className="app-content">{children}</div>
       </div>

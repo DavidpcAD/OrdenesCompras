@@ -723,6 +723,11 @@ h1, h2, h3, h4, p { margin: 0; }
 .topbar__identity { display: inline-flex; align-items: center; gap: var(--ds-space-2); height: 40px; padding: 0 var(--ds-space-4) 0 5px; border-radius: 999px; color: var(--ds-color-black); font-weight: var(--ds-font-weight-semibold); font-size: var(--ds-font-size-label); white-space: nowrap; }
 .topbar__identity .topbar__avatar { width: 30px; height: 30px; background: var(--ds-color-white); color: var(--ds-color-gray-500); font-size: var(--ds-font-size-body-sm); }
 .topbar__tabs { margin-left: var(--ds-space-4); }
+/* Hamburguesa: solo en móvil (abre el drawer del menú). Oculta en desktop. */
+.topbar__burger { display: none; align-items: center; justify-content: center; width: 42px; height: 42px; border: 0; border-radius: var(--ds-radius-lg); background: var(--ds-color-gray-100); color: var(--ds-color-black); cursor: pointer; flex-shrink: 0; }
+.topbar__burger:hover { background: var(--ds-color-gray-200); }
+/* Overlay detrás del drawer: solo se muestra en móvil (ver media query). */
+.app-nav-overlay { display: none; }
 
 /* ── Layout: barra superior + RIEL lateral (hover-expand overlay) + contenido ── */
 .app-body { display: flex; align-items: flex-start; gap: 0; }
@@ -778,19 +783,39 @@ h1, h2, h3, h4, p { margin: 0; }
 }
 
 @media (max-width: 760px) {
-  /* En móvil: fila horizontal scrollable bajo la topbar (sin riel/hover). */
+  /* En móvil el riel se vuelve un DRAWER off-canvas que entra desde la izquierda
+     con overlay; la hamburguesa de la topbar lo abre. */
   .topbar { margin-left: 0; }
-  .app-nav__brand { display: none; }
+  .topbar__burger { display: inline-flex; }
   .app-body { flex-direction: column; }
   .app-body:has(.app-nav) .app-content { margin-left: 0; }
+
   .app-nav {
-    position: static; flex-direction: row; align-items: center; width: 100%; height: auto;
-    overflow-x: auto; overflow-y: visible; padding: var(--ds-space-3) var(--ds-space-4); gap: var(--ds-space-2);
+    position: fixed; left: 0; top: 0; z-index: 80;
+    width: 280px; max-width: 84vw; height: 100vh; height: 100dvh;
+    flex-direction: column; align-items: stretch;
+    overflow-y: auto; overflow-x: hidden;
+    padding: var(--ds-space-5) var(--ds-space-4); gap: var(--ds-space-2);
+    transform: translateX(-100%);
+    transition: transform .28s cubic-bezier(.34, 1.2, .5, 1), box-shadow .2s ease;
     box-shadow: none;
   }
-  .app-nav:hover { width: 100%; box-shadow: none; }
-  .app-nav__item, .app-nav:hover .app-nav__item { width: auto; height: auto; padding: 10px 16px; justify-content: center; font-size: var(--ds-font-size-label); }
+  .app-nav.is-open { transform: translateX(0); box-shadow: 0 12px 44px rgba(0, 0, 0, .5); }
+  /* Anular el hover-expand del desktop dentro del drawer (ancho fijo). */
+  .app-nav:hover, .app-nav:focus-within { width: 280px; box-shadow: none; }
+  .app-nav.is-open:hover, .app-nav.is-open:focus-within { box-shadow: 0 12px 44px rgba(0, 0, 0, .5); }
+
+  /* Marca e ítems siempre en su forma expandida (ícono + texto a la izquierda). */
+  .app-nav__brand, .app-nav:hover .app-nav__brand { display: flex; gap: var(--ds-space-3); padding: 0 6px; margin-bottom: var(--ds-space-4); }
+  .app-nav__brand .topbar__logo, .app-nav:hover .app-nav__brand .topbar__logo { margin: 0; }
+  .app-nav__brand-name, .app-nav:hover .app-nav__brand-name { max-width: none; opacity: 1; }
+  .app-nav__item, .app-nav:hover .app-nav__item { width: 100%; height: 48px; justify-content: flex-start; padding: 0 18px; gap: var(--ds-space-3); font-size: var(--ds-font-size-body-md); }
   .app-nav__label, .app-nav:hover .app-nav__label { max-width: none; opacity: 1; }
+
+  .app-nav-overlay {
+    display: block; position: fixed; inset: 0; z-index: 70;
+    background: rgba(0, 0, 0, .5); animation: fade .18s ease;
+  }
 }
 /* la acción primaria no lleva la sombra pesada del botón; queda como acción compacta */
 .topbar__action { box-shadow: var(--ds-shadow-01); }
