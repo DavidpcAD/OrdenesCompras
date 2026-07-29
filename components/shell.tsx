@@ -66,24 +66,23 @@ export function AppShell({ role, children }: { role: Role; children: React.React
   const router = useRouter();
   const pathname = usePathname();
   const [notifOpen, setNotifOpen] = useState(false);
-  // Drawer del menú: en desktop queda FIJO empujando el contenido; en móvil es
-  // un overlay temporal. Se persiste para recordar si lo dejaste abierto.
+  // Desktop: RIEL de íconos. Colapsado por defecto; se expande al pasar el mouse
+  // (preview) y el toggle lo FIJA (pinned) empujando el contenido. Se recuerda.
+  const [pinned, setPinned] = useState(false);
+  // Móvil: DRAWER que abre el FAB de menú (overlay temporal).
   const [navOpen, setNavOpen] = useState(false);
-  const [ready, setReady] = useState(false); // evita animar el drawer al cargar
+  const [ready, setReady] = useState(false); // evita animar el riel al cargar
   const [logoutOpen, setLogoutOpen] = useState(false);
   const isMobile = () => typeof window !== "undefined" && window.matchMedia("(max-width: 760px)").matches;
   const closeNavOnMobile = () => { if (isMobile()) setNavOpen(false); };
-  // Estado inicial del drawer: cerrado por defecto (máximo espacio). Si lo dejaste
-  // fijo en desktop, se recuerda; en móvil siempre arranca cerrado.
   useEffect(() => {
-    const stored = localStorage.getItem("adelante_oc_nav");
-    setNavOpen(stored === "1" && !isMobile());
+    setPinned(localStorage.getItem("adelante_oc_navpin") === "1");
     setReady(true);
   }, []);
-  useEffect(() => { if (ready) try { localStorage.setItem("adelante_oc_nav", navOpen ? "1" : "0"); } catch {} }, [navOpen, ready]);
-  // Cerrar el drawer al navegar SOLO en móvil (en desktop queda fijo).
+  useEffect(() => { if (ready) try { localStorage.setItem("adelante_oc_navpin", pinned ? "1" : "0"); } catch {} }, [pinned, ready]);
+  // Cerrar el drawer móvil al navegar.
   useEffect(() => { if (isMobile()) setNavOpen(false); }, [pathname]);
-  // Cerrar el drawer con Escape.
+  // Cerrar el drawer móvil con Escape.
   useEffect(() => {
     if (!navOpen) return;
     const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setNavOpen(false); };
@@ -134,7 +133,7 @@ export function AppShell({ role, children }: { role: Role; children: React.React
     .sort((a, b) => b.len - a.len)[0]?.href ?? "";  // sin match → no se marca ninguna (no cae al home)
 
   return (
-    <div className={`app-shell${navOpen ? " nav-open" : ""}${ready ? " is-ready" : ""}`}>
+    <div className={`app-shell${pinned ? " pinned" : ""}${navOpen ? " nav-open" : ""}${ready ? " is-ready" : ""}`}>
       <header className="topbar">
         <div className="topbar__spacer" />
         <div className="topbar__user">
@@ -195,6 +194,12 @@ export function AppShell({ role, children }: { role: Role; children: React.React
                 <span className="topbar__logo">A</span>
                 <span className="app-nav__brand-name">Compras Adelante</span>
               </Link>
+              {/* Desktop: fijar/encoger el riel (estilo Canva). */}
+              <button type="button" className="app-nav__toggle" onClick={() => setPinned((p) => !p)}
+                aria-label={pinned ? "Encoger menú" : "Fijar menú"} title={pinned ? "Encoger menú" : "Fijar menú"} aria-pressed={pinned}>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M15 6l-6 6 6 6" /></svg>
+              </button>
+              {/* Móvil: cerrar el drawer. */}
               <button type="button" className="app-nav__close" onClick={() => setNavOpen(false)} aria-label="Cerrar menú">
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><path d="M6 6l12 12M18 6L6 18" /></svg>
               </button>
