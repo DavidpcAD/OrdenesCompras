@@ -320,7 +320,7 @@ export default function ArmarOrdenPage() {
                 <span className="ds-label ds-muted" style={{ display: "block", marginBottom: 4 }}>Importe</span>
                 <span className="ds-strong">{money(cargoImporte(c) || 0, currency)}</span>
               </div>
-              <button type="button" className="icon-btn icon-btn--quitar" title="Quitar cargo" style={{ marginBottom: 2 }} onClick={() => removeCargo(i)}>×</button>
+              <button type="button" className="icon-btn icon-btn--quitar" title="Quitar cargo" aria-label="Quitar cargo" style={{ marginBottom: 2 }} onClick={() => removeCargo(i)}>×</button>
             </div>
           ))}
         </Card>
@@ -374,7 +374,7 @@ export default function ArmarOrdenPage() {
                       {money(calcImporte(r) || 0, currency)}
                       {fleteShare(r) > 0 && <div className="ds-body-sm ds-muted" style={{ fontWeight: 400 }}>+ cargos {money(fleteShare(r), currency)}</div>}
                     </td>
-                    <td className="ds-num"><button type="button" className="icon-btn" title="Quitar línea" onClick={() => removeRow(r.pedidoLineaId)}>×</button></td>
+                    <td className="ds-num"><button type="button" className="icon-btn" title="Quitar línea" aria-label="Quitar línea" onClick={() => removeRow(r.pedidoLineaId)}>×</button></td>
                   </tr>
                 ))}
                 {/* Cargos de producto también como líneas (igual que en BC). Se editan
@@ -389,7 +389,7 @@ export default function ArmarOrdenPage() {
                     <td className="ds-num ds-muted">—</td>
                     <td className="ds-num ds-body-sm">13</td>
                     <td className="ds-num ds-strong">{money(cargoImporte(c) || 0, currency)}</td>
-                    <td className="ds-num"><button type="button" className="icon-btn" title="Quitar cargo" onClick={() => removeCargo(i)}>×</button></td>
+                    <td className="ds-num"><button type="button" className="icon-btn" title="Quitar cargo" aria-label="Quitar cargo" onClick={() => removeCargo(i)}>×</button></td>
                   </tr>
                 ) : null)}
               </tbody>

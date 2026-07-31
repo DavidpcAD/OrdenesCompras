@@ -366,7 +366,7 @@ export default function CargoSobreFacturaPage() {
                         <td className="ds-body-sm"><div className="ds-truncate" title={l.descripcion} style={{ maxWidth: 240 }}>{l.itemNo} — {l.descripcion}</div></td>
                         <td className="ds-num ds-body-sm">{money(l.importe || 0, currency)}</td>
                         <td className="ds-num ds-strong">{previewReparto ? money(share(l), currency) : "—"}</td>
-                        <td className="ds-num"><button type="button" className="icon-btn" title="Quitar" onClick={() => toggleLinea(l)}>×</button></td>
+                        <td className="ds-num"><button type="button" className="icon-btn" title="Quitar" aria-label="Quitar línea" onClick={() => toggleLinea(l)}>×</button></td>
                       </tr>
                     ))}
                   </tbody>

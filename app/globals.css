@@ -872,6 +872,13 @@ h1, h2, h3, h4, p { margin: 0; }
 .link-btn { background: none; border: 0; color: var(--ds-color-green-200); font-weight: 600; cursor: pointer; font-size: var(--ds-font-size-label); padding: 0; }
 .icon-btn { background: none; border: 0; cursor: pointer; padding: var(--ds-space-2); border-radius: var(--ds-radius-md); color: var(--ds-color-gray-400); display: inline-grid; place-items: center; }
 .icon-btn:hover { background: var(--ds-color-gray-100); color: var(--ds-color-black); }
+/* Foco visible por teclado en los controles custom (a11y). Solo :focus-visible
+   (teclado), no molesta con el mouse. */
+.icon-btn:focus-visible, .app-nav__item:focus-visible, .app-nav__burger:focus-visible,
+.app-nav__close:focus-visible, .notif-bell:focus-visible, .segmented__btn:focus-visible,
+.filter-chip:focus-visible, .topnav__item:focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--ds-color-green-100) 60%, transparent); outline-offset: 2px;
+}
 /* Botón "Quitar" (remover línea): más grande y en rojo del DS, bien visible. */
 .icon-btn--quitar { width: 36px; height: 36px; font-size: 22px; line-height: 1; color: var(--ds-color-red-200); border-radius: var(--ds-radius-md); }
 .icon-btn--quitar:hover { background: var(--ds-color-red-100); color: var(--ds-color-red-200); }

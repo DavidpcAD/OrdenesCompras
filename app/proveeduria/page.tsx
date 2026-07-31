@@ -178,7 +178,7 @@ export default function ProveeduriaMaterialesPage() {
                     <span className="row gap-2" style={{ alignItems: "center" }}>{dot(p.tipoSolicitud === "repuesto" ? "yellow" : "green")} <span className="ds-strong">{p.numero}</span></span>
                     <span className="row gap-2" style={{ alignItems: "center" }}>
                       {sel > 0 ? <span className="md-pill">{sel} ✓</span> : <span className="ds-muted ds-body-sm">{n}</span>}
-                      <span className="icon-btn" title="Ver líneas" onClick={(e) => { e.stopPropagation(); setPreviewId(p.id); }}><IconEye /></span>
+                      <button type="button" className="icon-btn" title="Ver líneas" aria-label="Ver líneas" onClick={(e) => { e.stopPropagation(); setPreviewId(p.id); }}><IconEye /></button>
                     </span>
                   </div>
                   {(() => { const r = solicitudResumen(p); return (

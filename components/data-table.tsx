@@ -259,8 +259,8 @@ export function DataTable<T>({
                     <input type="checkbox" className="ds-cbx" checked={col.getIsVisible()} onChange={col.getToggleVisibilityHandler()} /> {labelDe(cid)}
                   </label>
                   <span className="row gap-1">
-                    <button type="button" className="icon-btn" title="Subir" onClick={() => moveCol(cid, -1)}>↑</button>
-                    <button type="button" className="icon-btn" title="Bajar" onClick={() => moveCol(cid, 1)}>↓</button>
+                    <button type="button" className="icon-btn" title="Subir" aria-label="Subir columna" onClick={() => moveCol(cid, -1)}>↑</button>
+                    <button type="button" className="icon-btn" title="Bajar" aria-label="Bajar columna" onClick={() => moveCol(cid, 1)}>↓</button>
                   </span>
                 </div>
               );
@@ -277,7 +277,7 @@ export function DataTable<T>({
             {vistas.map((v) => (
               <div key={v.id} className="row row--between gap-2" style={{ alignItems: "center", padding: "5px 8px" }}>
                 <button type="button" className="link-btn" onClick={() => aplicarVista(v)} style={{ textAlign: "left" }}>{v.nombre}{v.esPredeterminada ? " ★" : ""}</button>
-                <button type="button" className="icon-btn" title="Borrar" onClick={() => setVistaABorrar(v)}>×</button>
+                <button type="button" className="icon-btn" title="Borrar" aria-label="Borrar vista" onClick={() => setVistaABorrar(v)}>×</button>
               </div>
             ))}
             <div style={{ borderTop: "1.5px solid var(--ds-color-gray-100)", marginTop: 6, paddingTop: 8 }}>
