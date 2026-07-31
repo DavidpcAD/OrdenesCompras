@@ -586,6 +586,22 @@ async function getStdLocationId(cid: string, code: string): Promise<string | nul
 // BC), cantidad y precio unitario. Sin chargeNo cae al flete por defecto (env).
 export type CargoBc = { chargeNo?: string; descripcion?: string; cantidad?: number; precio: number };
 
+// Normaliza un precio a número válido para BC (directUnitCost). El precio puede
+// llegar como number, o como string desde el request body / la BD, a veces con
+// coma decimal o separadores de miles (es-CR: "1.234,56"). Si se manda crudo,
+// BC lo recibe mal. Acá lo dejamos siempre como número limpio (5 decimales).
+export function toBcAmount(v: unknown): number {
+  if (typeof v === "number") return Number.isFinite(v) ? Math.round(v * 1e5) / 1e5 : 0;
+  if (typeof v === "string") {
+    let s = v.replace(/[^\d.,-]/g, "").trim();
+    if (s.includes(",") && s.includes(".")) s = s.replace(/\./g, "").replace(",", "."); // "1.234,56" -> "1234.56"
+    else if (s.includes(",")) s = s.replace(",", "."); // "1234,56" -> "1234.56"
+    const n = parseFloat(s);
+    return Number.isFinite(n) ? Math.round(n * 1e5) / 1e5 : 0;
+  }
+  return 0;
+}
+
 export async function bcCrearPedido(input: { vendorNo: string; currencyCode?: string; locationCode?: string; lineas: NuevaLineaBc[]; cargos?: CargoBc[]; flete?: { monto: number; descripcion?: string } }): Promise<{ number: string; id: string; omitidas: string[]; creadas: number; lineError?: string; cargoError?: string; cargosCreados: number }> {
   if (!input?.vendorNo) throw new Error("Falta el proveedor (vendorNo).");
   const lineas = (input.lineas ?? []).filter((l) => l.itemNo && l.cantidad > 0);
@@ -616,7 +632,8 @@ export async function bcCrearPedido(input: { vendorNo: string; currencyCode?: st
   const locId = loc ? await getStdLocationId(cid, loc) : null;
   for (const l of lineas) {
     const lineBody: Record<string, unknown> = { lineType: "Item", lineObjectNumber: l.itemNo, quantity: l.cantidad };
-    if (l.precio && l.precio > 0) lineBody.directUnitCost = l.precio;
+    const precioItem = toBcAmount(l.precio);
+    if (precioItem > 0) lineBody.directUnitCost = precioItem;
     if (locId) lineBody.locationId = locId;
     // Variante: si el item la exige, BC pide itemVariantId (GUID), no el código.
     if (l.variantCode) {
@@ -639,7 +656,8 @@ export async function bcCrearPedido(input: { vendorNo: string; currencyCode?: st
   if (creadas > 0) {
     for (const cg of cargos) {
       const qty = cg.cantidad && cg.cantidad > 0 ? cg.cantidad : 1;
-      if (!(cg.precio > 0)) continue;
+      const precioCargo = toBcAmount(cg.precio);
+      if (!(precioCargo > 0)) continue;
       // El tipo (Item Charge) debe ser un código REAL de BC. Antes caía a "FLETE",
       // que no existe → 404 y la orden quedaba sin flete. Si no hay tipo válido, se
       // omite el cargo y se reporta (no se inventa un código).
@@ -649,7 +667,7 @@ export async function bcCrearPedido(input: { vendorNo: string; currencyCode?: st
         continue;
       }
       try {
-        await bcAddChargeLine(po.number, chargeNo, cg.descripcion || "CARGO / TRANSPORTE", qty, cg.precio);
+        await bcAddChargeLine(po.number, chargeNo, cg.descripcion || "CARGO / TRANSPORTE", qty, precioCargo);
         cargosCreados++;
       } catch (e: any) {
         if (!cargoError) cargoError = `cargo ${chargeNo}: ${String(e?.message ?? e)}`;
@@ -718,7 +736,8 @@ export async function bcResyncPedidoLines(orderNo: string, lineas: NuevaLineaBc[
     if (!bc) { sinMatch.push(l.itemNo); continue; }
     usados.add(bc.id);
     const patch: Record<string, unknown> = {};
-    if (l.precio && l.precio > 0 && Number(bc.directUnitCost) !== l.precio) patch.directUnitCost = l.precio;
+    const precioLinea = toBcAmount(l.precio);
+    if (precioLinea > 0 && toBcAmount(bc.directUnitCost) !== precioLinea) patch.directUnitCost = precioLinea;
     if (l.variantCode) {
       const vId = await getStdVariantId(l.itemNo, l.variantCode);
       if (vId && bc.itemVariantId !== vId) patch.itemVariantId = vId;
