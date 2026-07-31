@@ -725,7 +725,7 @@ export function SolicitudForm({
               </tr>
             </thead>
             <tbody>
-              {lineas.length === 0 && (<tr><td colSpan={esMaterial || esStock ? 6 : 5}><div className="empty" style={{ padding: "28px 0" }}>Todavía no agregaste {esRepuesto ? "repuestos" : "materiales"}.</div></td></tr>)}
+              {lineas.length === 0 && (<tr><td colSpan={esMaterial || esStock ? 6 : 5}><div className="empty empty--compact">Todavía no agregaste {esRepuesto ? "repuestos" : "materiales"}.</div></td></tr>)}
               {lineas.map((l) => {
                 const a = catArticulos.find((x) => x.id === l.articuloId);
                 const obraId = catObras.find((o) => o.codigo === l.obraCodigo)?.id ?? "";

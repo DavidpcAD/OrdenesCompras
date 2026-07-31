@@ -450,7 +450,7 @@ export default function ArmarOrdenPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {lineasDispFiltradas.length === 0 && <tr><td colSpan={5}><div className="empty" style={{ padding: "20px 0" }}>Ninguna línea coincide con el filtro.</div></td></tr>}
+                  {lineasDispFiltradas.length === 0 && <tr><td colSpan={5}><div className="empty empty--compact">Ninguna línea coincide con el filtro.</div></td></tr>}
                   {lineasDispFiltradas.map(({ p, l, pend }) => (
                     <tr key={l.id}>
                       <td className="ds-body-sm ds-strong">{p.numero}</td>

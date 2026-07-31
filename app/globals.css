@@ -855,6 +855,8 @@ h1, h2, h3, h4, p { margin: 0; }
 /* misc */
 .divider { height: 1px; background: var(--ds-color-gray-100); border: 0; margin: var(--ds-space-5) 0; }
 .empty { text-align: center; color: var(--ds-color-gray-400); padding: var(--ds-space-10); }
+/* Variante compacta para celdas de tabla (el padding grande del default no va ahí). */
+.empty--compact { padding: var(--ds-space-5) 0; }
 /* Estado vacío unificado (componente EmptyState del DS). */
 .ds-empty { display: flex; flex-direction: column; align-items: center; gap: var(--ds-space-2); text-align: center; padding: var(--ds-space-9) var(--ds-space-5); color: var(--ds-color-gray-500); }
 .ds-empty__icon { display: inline-flex; align-items: center; justify-content: center; width: 52px; height: 52px; border-radius: 50%; background: var(--ds-color-gray-100); color: var(--ds-color-gray-400); margin-bottom: var(--ds-space-1); }

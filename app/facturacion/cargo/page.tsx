@@ -293,7 +293,7 @@ export default function CargoSobreFacturaPage() {
                   </div>
                 )}
                 {resultados.length === 0 ? (
-                  <div className="empty" style={{ padding: "16px 0" }}>
+                  <div className="empty empty--compact">
                     {buscarError ? "La API de recepciones registradas aún no responde (¿extensión BC publicada?)." : "No hay líneas de recepción para ese filtro."}
                   </div>
                 ) : (
