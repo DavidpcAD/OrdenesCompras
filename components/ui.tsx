@@ -1,6 +1,6 @@
 "use client";
 
-import React, { createContext, useCallback, useContext, useId, useState } from "react";
+import React, { createContext, useCallback, useContext, useEffect, useId, useState } from "react";
 import { IconClose, IconChevronDown } from "@/components/icons";
 import { haptic } from "@/lib/haptic";
 
@@ -243,11 +243,18 @@ export function EmptyState({ icon, title, hint }: {
 export function Modal({ title, onClose, children, footer, wide }: {
   title: string; onClose: () => void; children: React.ReactNode; footer?: React.ReactNode; wide?: boolean;
 }) {
+  const titleId = useId();
+  // Cerrar con Escape (a11y/UX estándar de diálogos).
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
   return (
     <div className="modal-overlay" onClick={onClose}>
-      <div className={`modal ${wide ? "modal--wide" : ""}`} onClick={(e) => e.stopPropagation()}>
+      <div className={`modal ${wide ? "modal--wide" : ""}`} role="dialog" aria-modal="true" aria-labelledby={titleId} onClick={(e) => e.stopPropagation()}>
         <div className="row row--between" style={{ marginBottom: 16 }}>
-          <h3 className="ds-subtitle-lg">{title}</h3>
+          <h3 className="ds-subtitle-lg" id={titleId}>{title}</h3>
           <button className="modal-close" onClick={onClose} aria-label="Cerrar"><IconClose size={18} /></button>
         </div>
         {children}
