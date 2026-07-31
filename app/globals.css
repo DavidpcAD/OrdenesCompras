@@ -647,6 +647,11 @@ h1, h2, h3, h4, p { margin: 0; }
 
 /* segmented totals box */
 .totals { display: grid; grid-template-columns: 1fr 1fr; gap: var(--ds-space-3) var(--ds-space-10); padding: var(--ds-space-5); background: var(--ds-color-gray-100); border-radius: var(--ds-radius-lg); }
+/* Móvil: el bloque de totales ocupa el ancho completo y achica el gran gap de
+   columna (el min-width inline de 320/340 px desbordaba a 375). */
+@media (max-width: 760px) {
+  .totals { min-width: 0 !important; width: 100%; column-gap: var(--ds-space-5); padding: var(--ds-space-4); }
+}
 .totals__row { display: flex; justify-content: space-between; gap: var(--ds-space-4); }
 .totals__row--grand { font-size: var(--ds-font-size-subtitle); font-weight: var(--ds-font-weight-semibold); }
 
