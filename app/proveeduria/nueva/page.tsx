@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { Badge, Button, Card, Field, Input, Modal, Select, useToast } from "@/components/ui";
+import { Badge, Button, Card, EmptyState, Field, Input, Modal, Select, useToast } from "@/components/ui";
 import { Combobox } from "@/components/combobox";
 import { useStore } from "@/lib/store";
 import { money, ultimoPrecioProveedor, almacenesFisicos, pedidoLineaPendiente } from "@/lib/helpers";
@@ -436,7 +436,7 @@ export default function ArmarOrdenPage() {
           footer={<Button variant="outline" onClick={() => setAddOpen(false)}>Cerrar</Button>}>
           <p className="ds-muted ds-body-sm" style={{ marginTop: 0 }}>Líneas pendientes por ordenar de solicitudes ya hechas. Se suman a esta orden.</p>
           {lineasDisponibles.length === 0 ? (
-            <div className="empty">No hay líneas pendientes en otras solicitudes.</div>
+            <EmptyState title="No hay líneas pendientes en otras solicitudes." />
           ) : (
             <div className="ds-table-wrap" style={{ boxShadow: "none", maxHeight: 420, overflow: "auto" }}>
               <table className="ds-table">

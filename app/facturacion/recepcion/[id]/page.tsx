@@ -1,7 +1,8 @@
 "use client";
 
 import { useParams, useRouter } from "next/navigation";
-import { Badge, Card } from "@/components/ui";
+import { Badge, Card, EmptyState } from "@/components/ui";
+import { IconWarning } from "@/components/icons";
 import { useStore } from "@/lib/store";
 import { money, formatDate, num } from "@/lib/helpers";
 
@@ -15,7 +16,7 @@ export default function RecepcionDetallePage() {
 
   const rec = recepciones.find((r) => r.id === id);
   if (!rec) {
-    return <><main className="page"><div className="empty">Recepción no encontrada.</div></main></>;
+    return <><main className="page"><EmptyState icon={<IconWarning size={24} />} title="Recepción no encontrada." /></main></>;
   }
   const orden = ordenes.find((o) => o.id === rec.ordenId);
   const provNombre = orden?.proveedorNombre ?? proveedores.find((p) => p.id === orden?.proveedorId)?.nombre;

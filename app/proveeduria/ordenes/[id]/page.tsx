@@ -1,7 +1,8 @@
 "use client";
 
 import { useParams, useRouter } from "next/navigation";
-import { Button, useToast } from "@/components/ui";
+import { Button, EmptyState, useToast } from "@/components/ui";
+import { IconWarning } from "@/components/icons";
 import { OrdenDetalle } from "@/components/orden-detalle";
 import { useStore } from "@/lib/store";
 
@@ -13,7 +14,7 @@ export default function ProvOrdenDetallePage() {
 
   const orden = ordenes.find((o) => o.id === id);
   if (!orden) {
-    return <><main className="page"><div className="empty">Orden no encontrada.</div></main></>;
+    return <><main className="page"><EmptyState icon={<IconWarning size={24} />} title="Orden no encontrada." /></main></>;
   }
   // Link de cada línea a su solicitud de origen (para ver quién la pidió).
   const solicitudHref = (l: NonNullable<typeof orden>["lineas"][number]) => {

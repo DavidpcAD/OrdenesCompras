@@ -2,7 +2,8 @@
 
 import { useParams, useRouter } from "next/navigation";
 import { useState } from "react";
-import { Badge, Button, Card, Modal, Textarea, useToast, QtyRing } from "@/components/ui";
+import { Badge, Button, Card, EmptyState, Modal, Textarea, useToast, QtyRing } from "@/components/ui";
+import { IconWarning } from "@/components/icons";
 import { Timeline } from "@/components/timeline";
 import { useStore } from "@/lib/store";
 import { formatDate, num, pedidoBadge, pedidoLineaPendiente, recibidoDeLineaPedido, destinoCodigo, destinoLabel, tipoSolicitudBadge } from "@/lib/helpers";
@@ -17,7 +18,7 @@ export default function ProveeduriaPedidoDetallePage() {
 
   const pedido = pedidos.find((p) => p.id === id);
   if (!pedido) {
-    return <><main className="page"><div className="empty">Solicitud no encontrada.</div></main></>;
+    return <><main className="page"><EmptyState icon={<IconWarning size={24} />} title="Solicitud no encontrada." /></main></>;
   }
   const b = pedidoBadge(pedido.estado);
   const t = tipoSolicitudBadge(pedido.tipoSolicitud);

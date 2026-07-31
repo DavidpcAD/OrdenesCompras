@@ -2,7 +2,7 @@
 
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
-import { Badge, Button, Card, Field, Input, Modal, Select, useToast } from "@/components/ui";
+import { Badge, Button, Card, EmptyState, Field, Input, Modal, Select, useToast } from "@/components/ui";
 import { IconWarning } from "@/components/icons";
 import { DateField } from "@/components/date-field";
 import { useStore } from "@/lib/store";
@@ -113,7 +113,7 @@ export default function RegistrarFacturaPage() {
   const fechasCoinciden = fechaFactura === fechaRegistro;
 
   if (!orden) {
-    return <><main className="page"><div className="empty">Orden no encontrada.</div></main></>;
+    return <><main className="page"><EmptyState icon={<IconWarning size={24} />} title="Orden no encontrada." /></main></>;
   }
   const prov = proveedores.find((p) => p.id === orden.proveedorId);
 

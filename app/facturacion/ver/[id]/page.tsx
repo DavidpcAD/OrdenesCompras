@@ -1,7 +1,8 @@
 "use client";
 
 import { useParams, useRouter } from "next/navigation";
-import { Button } from "@/components/ui";
+import { Button, EmptyState } from "@/components/ui";
+import { IconWarning } from "@/components/icons";
 import { OrdenDetalle } from "@/components/orden-detalle";
 import { useStore } from "@/lib/store";
 
@@ -12,7 +13,7 @@ export default function BodegaOrdenDetallePage() {
 
   const orden = ordenes.find((o) => o.id === id);
   if (!orden) {
-    return <><main className="page"><div className="empty">Orden no encontrada.</div></main></>;
+    return <><main className="page"><EmptyState icon={<IconWarning size={24} />} title="Orden no encontrada." /></main></>;
   }
 
   const acciones = orden.estado === "lanzado" ? (

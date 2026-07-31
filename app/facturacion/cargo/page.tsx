@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
-import { Button, Card, Field, Input, Select, useToast } from "@/components/ui";
+import { Button, Card, EmptyState, Field, Input, Select, useToast } from "@/components/ui";
 import { Combobox } from "@/components/combobox";
 import { DateField } from "@/components/date-field";
 import { IconChevronLeft } from "@/components/icons";
@@ -350,7 +350,7 @@ export default function CargoSobreFacturaPage() {
               </div>
             </div>
             {lineasSel.length === 0 ? (
-              <div className="empty" style={{ padding: "16px 0" }}>No hay líneas seleccionadas. Volvé al paso anterior para elegirlas.</div>
+              <EmptyState title="No hay líneas seleccionadas." hint="Volvé al paso anterior para elegirlas." />
             ) : (
               <div className="ds-table-wrap" style={{ boxShadow: "none" }}>
                 <table className="ds-table">
