@@ -611,7 +611,9 @@ h1, h2, h3, h4, p { margin: 0; }
 .topbar__user { display: flex; align-items: center; gap: var(--ds-space-3); }
 .topbar__avatar { width: 36px; height: 36px; border-radius: 50%; background: var(--ds-color-gray-200); display: grid; place-items: center; font-weight: 600; color: var(--ds-color-gray-500); }
 
-.page { width: 100%; max-width: 1480px; margin: 0 auto; padding: var(--ds-space-10) var(--ds-space-6) 80px; flex: 1; }
+/* padding-bottom deja aire para el FAB de acción (abajo-der): el contenido al
+   final del scroll no queda tapado por él. */
+.page { width: 100%; max-width: 1480px; margin: 0 auto; padding: var(--ds-space-10) var(--ds-space-6) calc(var(--ds-space-10) * 2 + var(--ds-space-4)); flex: 1; }
 .page--wide { max-width: 1480px; }
 .page__head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--ds-space-4); margin-bottom: var(--ds-space-6); flex-wrap: wrap; }
 .page__title { display: flex; flex-direction: column; gap: 4px; }
