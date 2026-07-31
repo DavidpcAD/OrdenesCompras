@@ -1,7 +1,8 @@
 "use client";
 
 import { useMemo } from "react";
-import { Badge, Card, Tile } from "@/components/ui";
+import { Badge, Card, EmptyState, Tile } from "@/components/ui";
+import { IconCheck } from "@/components/icons";
 import { useStore } from "@/lib/store";
 import { money, formatDate } from "@/lib/helpers";
 
@@ -40,7 +41,7 @@ export default function RecibidasPage() {
         </div>
 
         {lista.length === 0 ? (
-          <Card className="mt-6"><div className="empty" style={{ lineHeight: 1.6 }}>Todavía no recibiste material.<br /><span className="ds-muted ds-body-sm">Cuando registres una recepción en <strong>Órdenes por recibir</strong>, aparece acá.</span></div></Card>
+          <Card className="mt-6"><EmptyState icon={<IconCheck size={24} />} title="Todavía no recibiste material." hint={<>Cuando registres una recepción en <strong>Órdenes por recibir</strong>, aparece acá.</>} /></Card>
         ) : (
           <div className="col gap-3 mt-6">
             {lista.map((r) => {

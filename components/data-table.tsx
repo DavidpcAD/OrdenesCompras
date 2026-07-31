@@ -7,7 +7,7 @@ import {
   getFacetedRowModel, getFacetedUniqueValues, flexRender,
   type Column, type ColumnDef, type FilterFn, type SortingState, type ColumnFiltersState, type VisibilityState, type ColumnOrderState, type PaginationState,
 } from "@tanstack/react-table";
-import { Button, Card, ConfirmDialog, Input, Select } from "@/components/ui";
+import { Button, Card, ConfirmDialog, EmptyState, Input, Select } from "@/components/ui";
 import { IconTable } from "@/components/icons";
 import { useStore } from "@/lib/store";
 
@@ -312,7 +312,7 @@ export function DataTable<T>({
 
       {/* Vista Grid (tarjetas) */}
       {modo === "grid" ? (
-        rows.length === 0 ? <div className="empty">{vacio}</div> : (
+        rows.length === 0 ? <EmptyState title={vacio} /> : (
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))", gap: 12 }}>
             {rows.map((row) => (
               <Card key={row.id} className={rowClassName?.(row.original) ?? ""} interactive={!!onRowClick} onClick={onRowClick ? () => onRowClick(row.original) : undefined} style={{ minWidth: 0 }}>
@@ -379,7 +379,7 @@ export function DataTable<T>({
                 ))}
               </thead>
               <tbody>
-                {rows.length === 0 && <tr><td colSpan={table.getVisibleLeafColumns().length + (renderExpanded ? 1 : 0)}><div className="empty">{vacio}</div></td></tr>}
+                {rows.length === 0 && <tr><td colSpan={table.getVisibleLeafColumns().length + (renderExpanded ? 1 : 0)}><EmptyState title={vacio} /></td></tr>}
                 {rows.map((row) => {
                   const open = expanded.has(row.id);
                   return (

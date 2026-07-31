@@ -3,7 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 import type { ColumnDef } from "@tanstack/react-table";
-import { Badge, Button, Card, Modal, useToast } from "@/components/ui";
+import { Badge, Button, Card, EmptyState, Modal, useToast } from "@/components/ui";
 import { DataTable } from "@/components/data-table";
 import { VistaToggle } from "@/components/vista-toggle";
 import { IconEye, IconReceipt, IconList } from "@/components/icons";
@@ -153,10 +153,7 @@ export default function ProveeduriaMaterialesPage() {
         ]} />
 
         {baseRows.length === 0 ? (
-          <Card className="mt-4"><div className="empty" style={{ padding: "56px 16px", lineHeight: 1.6 }}>
-            No hay líneas pendientes por ordenar.<br />
-            <span className="ds-muted ds-body-sm">Cuando Ingeniería apruebe nuevas solicitudes, van a aparecer acá.</span>
-          </div></Card>
+          <Card className="mt-4"><EmptyState icon={<IconList size={24} />} title="No hay líneas pendientes por ordenar." hint="Cuando Ingeniería apruebe nuevas solicitudes, van a aparecer acá." /></Card>
         ) : (
         <div className="md-layout mt-2">
           {/* pedidos */}

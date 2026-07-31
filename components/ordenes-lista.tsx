@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { ColumnDef } from "@tanstack/react-table";
-import { Badge, ProgressBar } from "@/components/ui";
+import { Badge, ProgressBar, EmptyState } from "@/components/ui";
 import { DataTable } from "@/components/data-table";
 import { IconChevronDown } from "@/components/icons";
 import { useStore } from "@/lib/store";
@@ -116,7 +116,7 @@ export function OrdenesLista({
           renderExpanded={renderLineas}
         />
       ) : grupos.length === 0 ? (
-        <div className="empty">{vacio}</div>
+        <EmptyState title={vacio} />
       ) : (
         <div className="col gap-3">
           {grupos.map((g) => {
