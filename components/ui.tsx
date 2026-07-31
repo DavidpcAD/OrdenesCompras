@@ -215,6 +215,20 @@ export function ProgressBar({
   );
 }
 
+// ---------------------------------------------------------------- EmptyState
+// Estado vacío unificado del DS: ícono opcional en círculo + título + pista.
+export function EmptyState({ icon, title, hint }: {
+  icon?: React.ReactNode; title: React.ReactNode; hint?: React.ReactNode;
+}) {
+  return (
+    <div className="ds-empty">
+      {icon && <span className="ds-empty__icon">{icon}</span>}
+      <p className="ds-empty__title">{title}</p>
+      {hint && <p className="ds-empty__hint">{hint}</p>}
+    </div>
+  );
+}
+
 // ---------------------------------------------------------------- Modal
 export function Modal({ title, onClose, children, footer, wide }: {
   title: string; onClose: () => void; children: React.ReactNode; footer?: React.ReactNode; wide?: boolean;

@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useMemo } from "react";
-import { Badge, Card, Tile } from "@/components/ui";
+import { Badge, Card, EmptyState, Tile } from "@/components/ui";
+import { IconEdit } from "@/components/icons";
 import { useStore } from "@/lib/store";
 import { money, formatDate } from "@/lib/helpers";
 import type { MotivoNC } from "@/lib/types";
@@ -48,7 +49,7 @@ export default function NotasCreditoPage() {
         </div>
 
         {grupos.length === 0 ? (
-          <Card className="mt-6"><div className="empty" style={{ lineHeight: 1.6 }}>No hay líneas para nota de crédito.<br /><span className="ds-muted ds-body-sm">Al registrar una factura en <strong>Por recibir</strong>, marcá las líneas que vengan mal (precio, cantidad o dañadas) y aparecen acá.</span></div></Card>
+          <Card className="mt-6"><EmptyState icon={<IconEdit size={24} />} title="No hay líneas para nota de crédito." hint={<>Al registrar una factura en <strong>Por recibir</strong>, marcá las líneas que vengan mal (precio, cantidad o dañadas) y aparecen acá.</>} /></Card>
         ) : (
           <div className="col gap-4 mt-6">
             {grupos.map((g, gi) => (
