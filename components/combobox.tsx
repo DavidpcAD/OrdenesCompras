@@ -19,6 +19,7 @@ export function Combobox<T>({
   placeholder = "Buscar…",
   max = 50,
   minChars = 0,
+  id,
 }: {
   items: T[];
   value: string;
@@ -35,6 +36,8 @@ export function Combobox<T>({
   // Mínimo de caracteres para mostrar opciones. Con 0 (default) al abrir muestra
   // todo (útil para listas cortas). Con >0 no precarga nada: hay que escribir.
   minChars?: number;
+  // id del input (para asociar un <label htmlFor> — lo pasa Field automáticamente).
+  id?: string;
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -113,6 +116,7 @@ export function Combobox<T>({
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="7" /><path d="M21 21l-4.3-4.3" /></svg>
       </span>
       <input
+        id={id}
         className="ds-form-field__input combo__input"
         placeholder={placeholder}
         value={open ? query : sel ? getLabel(sel) : ""}

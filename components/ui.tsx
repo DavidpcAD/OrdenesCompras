@@ -1,6 +1,6 @@
 "use client";
 
-import React, { createContext, useCallback, useContext, useState } from "react";
+import React, { createContext, useCallback, useContext, useId, useState } from "react";
 import { IconClose, IconChevronDown } from "@/components/icons";
 import { haptic } from "@/lib/haptic";
 
@@ -35,10 +35,19 @@ export function Button({
 export function Field({
   label, help, warning, children,
 }: { label: string; help?: string; warning?: boolean; children: React.ReactNode }) {
+  // Asocia el label con el input (a11y): si el hijo es un elemento simple, le
+  // inyecta un id y apunta el htmlFor ahí. Si ya trae id, se respeta. Si el hijo
+  // no es un elemento único (fragmento/varios), cae a no asociar (sin romper).
+  const autoId = useId();
+  const isEl = React.isValidElement(children);
+  const childId = isEl ? ((children as React.ReactElement).props.id ?? autoId) : undefined;
+  const child = isEl && !(children as React.ReactElement).props.id
+    ? React.cloneElement(children as React.ReactElement, { id: autoId })
+    : children;
   return (
     <div className={`ds-form-field ${warning ? "ds-form-field--advertencia" : ""}`}>
-      <label className="ds-form-field__label">{label}</label>
-      <div className="ds-form-field__input-wrap">{children}</div>
+      <label className="ds-form-field__label" htmlFor={childId}>{label}</label>
+      <div className="ds-form-field__input-wrap">{child}</div>
       {help && <span className="ds-form-field__help">{help}</span>}
     </div>
   );
@@ -59,7 +68,7 @@ const textOf = (n: React.ReactNode): string => {
   return "";
 };
 export function Select({
-  value, onChange, children, disabled, className = "", style, placeholder = "Seleccioná…",
+  value, onChange, children, disabled, className = "", style, placeholder = "Seleccioná…", id,
 }: {
   value?: string | number;
   onChange?: (e: { target: { value: string } }) => void;
@@ -68,6 +77,7 @@ export function Select({
   className?: string;
   style?: React.CSSProperties;
   placeholder?: string;
+  id?: string;
 }) {
   const [open, setOpen] = useState(false);
   const options = React.Children.toArray(children).flatMap((c) =>
@@ -80,7 +90,7 @@ export function Select({
   const pick = (v: string) => { onChange?.({ target: { value: v } }); setOpen(false); };
   return (
     <div className={`combo ds-select ${className}`} style={style}>
-      <button type="button" className="ds-form-field__input ds-select__trigger" disabled={disabled}
+      <button type="button" id={id} className="ds-form-field__input ds-select__trigger" disabled={disabled}
         aria-haspopup="listbox" aria-expanded={open} onClick={() => { if (!disabled) setOpen((o) => !o); }}>
         <span className={sel ? "" : "ds-select__ph"}>{sel ? sel.label : placeholder}</span>
         <IconChevronDown size={20} className="ds-select__chev" />
