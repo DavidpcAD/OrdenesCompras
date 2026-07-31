@@ -2,7 +2,8 @@
 
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
-import { Badge, Button, Card, Field, Input, Select, useToast } from "@/components/ui";
+import { Badge, Button, Card, EmptyState, Field, Input, Select, useToast } from "@/components/ui";
+import { IconWarning } from "@/components/icons";
 import { Combobox } from "@/components/combobox";
 import { useStore } from "@/lib/store";
 import { money, ordenEsDirecta, ordenPedidos, almacenesFisicos } from "@/lib/helpers";
@@ -65,7 +66,7 @@ export default function EditarOrdenPage() {
   const total = subtotal + fleteNum + ivaTotal;
   const [guardando, setGuardando] = useState(false);
 
-  if (!orden) return <><main className="page"><div className="empty">Orden no encontrada.</div></main></>;
+  if (!orden) return <><main className="page"><EmptyState icon={<IconWarning size={24} />} title="Orden no encontrada." /></main></>;
   // No se puede editar una orden que ya tiene recepciones: reescribir las líneas
   // rompería la trazabilidad de lo recibido/facturado (y su enlace a las recepciones).
   const tieneRecepciones = recepciones.some((r) => r.ordenId === orden.id)
@@ -73,13 +74,13 @@ export default function EditarOrdenPage() {
   if (tieneRecepciones) {
     return <><main className="page">
       <div className="back-link" onClick={() => router.push(`/proveeduria/ordenes/${id}`)}>Volver a la orden</div>
-      <div className="empty" style={{ padding: "48px 16px" }}>Esta orden ya tiene recepciones registradas, así que no se puede editar: se perdería la trazabilidad de lo recibido y facturado.</div>
+      <EmptyState icon={<IconWarning size={24} />} title="No se puede editar" hint="Esta orden ya tiene recepciones registradas: editarla reescribiría las líneas y se perdería la trazabilidad de lo recibido y facturado." />
     </main></>;
   }
   if (orden.estado !== "abierto" && orden.estado !== "rechazado") {
     return <><main className="page">
       <div className="back-link" onClick={() => router.push(`/proveeduria/ordenes/${id}`)}>Volver a la orden</div>
-      <div className="empty" style={{ padding: "48px 16px" }}>Esta orden ya no se puede editar: solo se permite mientras está Abierta o Rechazada.</div>
+      <EmptyState icon={<IconWarning size={24} />} title="No se puede editar" hint="Solo se puede editar mientras la orden está Abierta o Rechazada." />
     </main></>;
   }
 
