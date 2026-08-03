@@ -859,7 +859,10 @@ h1, h2, h3, h4, p { margin: 0; }
 .md-item.is-active { border-color: var(--ds-color-green-100); box-shadow: 0 0 0 3px color-mix(in srgb, var(--ds-color-green-100) 18%, transparent); }
 .md-item__top { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
 .md-pill { font-size: var(--ds-font-size-body-sm); font-weight: 700; background: var(--ds-color-green-100); color: #000; border-radius: 999px; padding: 1px 8px; }
-@media (max-width: 560px) { .md-layout { grid-template-columns: 1fr; height: auto; min-height: 0; } .md-list { overflow: visible; height: auto; } }
+/* Colapsa a 1 columna en tablet y móvil: con sidebar 250px + tabla, por debajo
+   de ~900px la tabla queda muy angosta y su toolbar desborda. Apilado le da a la
+   tabla el ancho completo. */
+@media (max-width: 900px) { .md-layout { grid-template-columns: 1fr; height: auto; min-height: 0; } .md-list { overflow: visible; height: auto; } }
 
 /* misc */
 .divider { height: 1px; background: var(--ds-color-gray-100); border: 0; margin: var(--ds-space-5) 0; }
