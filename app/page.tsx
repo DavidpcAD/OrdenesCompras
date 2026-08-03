@@ -51,15 +51,15 @@ export default function LoginPage() {
 
         <div className="col gap-3">
           <div className="ds-form-field">
-            <label className="ds-form-field__label">Usuario</label>
-            <input className="ds-form-field__input" value={username} autoFocus autoCapitalize="off" autoCorrect="off"
+            <label className="ds-form-field__label" htmlFor="username">Usuario</label>
+            <input id="username" name="username" autoComplete="username" className="ds-form-field__input" value={username} autoFocus autoCapitalize="off" autoCorrect="off"
               placeholder="username" onChange={(e) => setUsername(e.target.value)}
               onKeyDown={(e) => { if (e.key === "Enter") document.getElementById("pw")?.focus(); }} />
           </div>
           <div className="ds-form-field">
-            <label className="ds-form-field__label">Contraseña</label>
+            <label className="ds-form-field__label" htmlFor="pw">Contraseña</label>
             <div style={{ position: "relative" }}>
-              <input id="pw" className="ds-form-field__input" type={showPw ? "text" : "password"} value={password}
+              <input id="pw" name="password" autoComplete="current-password" className="ds-form-field__input" type={showPw ? "text" : "password"} value={password}
                 placeholder="••••••••" onChange={(e) => setPassword(e.target.value)} style={{ paddingRight: 46 }}
                 onKeyDown={(e) => { if (e.key === "Enter") entrar(); }} />
               <button type="button" onClick={() => setShowPw((v) => !v)} aria-label={showPw ? "Ocultar contraseña" : "Ver contraseña"} title={showPw ? "Ocultar contraseña" : "Ver contraseña"}
