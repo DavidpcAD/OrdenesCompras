@@ -82,13 +82,13 @@ export function AppShell({ role, children }: { role: Role; children: React.React
   useEffect(() => { if (ready) try { localStorage.setItem("adelante_oc_navpin", pinned ? "1" : "0"); } catch {} }, [pinned, ready]);
   // Cerrar el drawer móvil al navegar.
   useEffect(() => { if (isMobile()) setNavOpen(false); }, [pathname]);
-  // Cerrar el drawer móvil con Escape.
+  // Cerrar con Escape el drawer móvil y el panel de notificaciones.
   useEffect(() => {
-    if (!navOpen) return;
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setNavOpen(false); };
+    if (!navOpen && !notifOpen) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") { setNavOpen(false); setNotifOpen(false); } };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [navOpen]);
+  }, [navOpen, notifOpen]);
   function cerrarSesion() {
     setLogoutOpen(false);
     // Borra la cookie de sesión del server además del estado local.
