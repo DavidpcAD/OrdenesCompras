@@ -1,6 +1,6 @@
 "use client";
 
-import React, { createContext, useCallback, useContext, useEffect, useId, useState } from "react";
+import React, { createContext, useCallback, useContext, useEffect, useId, useRef, useState } from "react";
 import { IconClose, IconChevronDown } from "@/components/icons";
 import { haptic } from "@/lib/haptic";
 
@@ -244,15 +244,37 @@ export function Modal({ title, onClose, children, footer, wide }: {
   title: string; onClose: () => void; children: React.ReactNode; footer?: React.ReactNode; wide?: boolean;
 }) {
   const titleId = useId();
-  // Cerrar con Escape (a11y/UX estándar de diálogos).
+  const modalRef = useRef<HTMLDivElement>(null);
+  const prevFocus = useRef<HTMLElement | null>(null);
+  // onClose vía ref para que el efecto corra UNA sola vez (montar/desmontar) y no
+  // se re-ejecute robando el foco cuando el padre re-renderiza (p.ej. al tipear).
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+  // Diálogo accesible: cerrar con Escape, llevar el foco adentro al abrir,
+  // atraparlo (Tab cicla dentro) y restaurarlo al disparador al cerrar.
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    prevFocus.current = document.activeElement as HTMLElement | null;
+    const el = modalRef.current;
+    const focusables = () => Array.from(
+      el?.querySelectorAll<HTMLElement>('button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])') ?? []
+    );
+    (focusables()[0] ?? el)?.focus();
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") { onCloseRef.current(); return; }
+      if (e.key === "Tab" && el) {
+        const items = focusables();
+        if (items.length === 0) { e.preventDefault(); el.focus(); return; }
+        const first = items[0], last = items[items.length - 1], active = document.activeElement;
+        if (e.shiftKey && (active === first || !el.contains(active))) { e.preventDefault(); last.focus(); }
+        else if (!e.shiftKey && (active === last || !el.contains(active))) { e.preventDefault(); first.focus(); }
+      }
+    };
     window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+    return () => { window.removeEventListener("keydown", onKey); prevFocus.current?.focus?.(); };
+  }, []);
   return (
     <div className="modal-overlay" onClick={onClose}>
-      <div className={`modal ${wide ? "modal--wide" : ""}`} role="dialog" aria-modal="true" aria-labelledby={titleId} onClick={(e) => e.stopPropagation()}>
+      <div ref={modalRef} tabIndex={-1} className={`modal ${wide ? "modal--wide" : ""}`} role="dialog" aria-modal="true" aria-labelledby={titleId} onClick={(e) => e.stopPropagation()}>
         <div className="row row--between" style={{ marginBottom: 16 }}>
           <h3 className="ds-subtitle-lg" id={titleId}>{title}</h3>
           <button className="modal-close" onClick={onClose} aria-label="Cerrar"><IconClose size={18} /></button>
