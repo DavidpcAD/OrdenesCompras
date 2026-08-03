@@ -301,7 +301,10 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
       {children}
       <div className="toast-wrap">
         {toasts.map((t) => (
-          <div key={t.id} className={`toast ${t.tone === "success" ? "toast--success" : t.tone === "error" ? "toast--error" : ""}`}>
+          <div key={t.id}
+            role={t.tone === "error" ? "alert" : "status"}
+            aria-live={t.tone === "error" ? "assertive" : "polite"}
+            className={`toast ${t.tone === "success" ? "toast--success" : t.tone === "error" ? "toast--error" : ""}`}>
             {t.text}
           </div>
         ))}
