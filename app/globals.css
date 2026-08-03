@@ -884,7 +884,9 @@ h1, h2, h3, h4, p { margin: 0; }
    (teclado), no molesta con el mouse. */
 .icon-btn:focus-visible, .app-nav__item:focus-visible, .app-nav__burger:focus-visible,
 .app-nav__close:focus-visible, .notif-bell:focus-visible, .segmented__btn:focus-visible,
-.filter-chip:focus-visible, .topnav__item:focus-visible {
+.filter-chip:focus-visible, .topnav__item:focus-visible,
+.dt-hpill__label:focus-visible, .dt-hpill__filter:focus-visible, .dt-filter-row:focus-visible,
+.ds-cbx:focus-visible {
   outline: 3px solid color-mix(in srgb, var(--ds-color-green-100) 60%, transparent); outline-offset: 2px;
 }
 /* Botón "Quitar" (remover línea): más grande y en rojo del DS, bien visible. */
