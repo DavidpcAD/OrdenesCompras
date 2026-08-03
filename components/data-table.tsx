@@ -188,6 +188,10 @@ export function DataTable<T>({
   // Toma el `loading` explícito o el `cargando` global del store (carga inicial SQL/BC).
   const showSkeleton = (loading || cargando) && rows.length === 0;
   const skeletonRows = Array.from({ length: 6 });
+  // ¿La tabla está vacía por un filtro/búsqueda activos? Cambia el mensaje del vacío.
+  const filtrando = globalFilter.trim() !== "" || columnFilters.length > 0;
+  const emptyTitle = filtrando ? "Sin resultados" : vacio;
+  const emptyHint = filtrando ? "Probá ajustar la búsqueda o quitar los filtros." : undefined;
 
   // --- Exportar (CSV / PDF) — usa las filas FILTRADAS y las columnas visibles ---
   const valCelda = (row: any, colId: string): string => {
@@ -349,7 +353,7 @@ export function DataTable<T>({
               </Card>
             ))}
           </div>
-        ) : rows.length === 0 ? <EmptyState icon={EMPTY_ICON} title={vacio} /> : (
+        ) : rows.length === 0 ? <EmptyState icon={EMPTY_ICON} title={emptyTitle} hint={emptyHint} /> : (
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))", gap: 12 }}>
             {rows.map((row) => (
               <Card key={row.id} className={rowClassName?.(row.original) ?? ""} interactive={!!onRowClick} onClick={onRowClick ? () => onRowClick(row.original) : undefined} style={{ minWidth: 0 }}>
@@ -425,7 +429,7 @@ export function DataTable<T>({
                     })}
                   </tr>
                 ))}
-                {!showSkeleton && rows.length === 0 && <tr><td colSpan={table.getVisibleLeafColumns().length + (renderExpanded ? 1 : 0)}><EmptyState icon={EMPTY_ICON} title={vacio} /></td></tr>}
+                {!showSkeleton && rows.length === 0 && <tr><td colSpan={table.getVisibleLeafColumns().length + (renderExpanded ? 1 : 0)}><EmptyState icon={EMPTY_ICON} title={emptyTitle} hint={emptyHint} /></td></tr>}
                 {rows.map((row) => {
                   const open = expanded.has(row.id);
                   return (
