@@ -159,7 +159,7 @@ export default function OrdenDirectaPage() {
             <Button variant="outline" onClick={agregarLinea} disabled={!qaCode || !(Number(qaQty) > 0) || variantePendiente}>+ Agregar línea</Button>
           </div>
           {qaCode && qaVariantesError && (
-            <div className="ds-body-sm" style={{ color: "var(--ds-color-red-100)", padding: "0 16px 10px" }}>
+            <div role="alert" className="ds-body-sm" style={{ color: "var(--ds-color-red-100)", padding: "0 16px 10px" }}>
               No se pudieron cargar las variantes de este material. Si requiere variante, la orden podría fallar en Business Central.
             </div>
           )}
