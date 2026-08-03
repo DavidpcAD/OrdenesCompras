@@ -75,6 +75,8 @@ export function DataTable<T>({
   const toggleExpanded = (id: string) => setExpanded((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
   const [filterCol, setFilterCol] = useState<string | null>(null);
   const [filterAnchor, setFilterAnchor] = useState<{ left: number; top: number }>({ left: 0, top: 0 });
+  const filterBtnRef = useRef<HTMLElement | null>(null);   // disparador del popover, para devolverle el foco al cerrar
+  const cerrarFiltro = () => { setFilterCol(null); filterBtnRef.current?.focus(); };
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
   const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({});
   const [columnOrder, setColumnOrder] = useState<ColumnOrderState>(() => columns.map((c) => c.id!).filter(Boolean));
@@ -110,6 +112,7 @@ export function DataTable<T>({
     if (left + W > window.innerWidth - M) left = r.right - W;
     left = Math.max(M, Math.min(left, window.innerWidth - W - M));
     setFilterAnchor({ left, top: r.bottom + 6 });
+    filterBtnRef.current = btn;
     setFilterCol(colId);
   }
 
@@ -448,7 +451,7 @@ export function DataTable<T>({
       {filterCol && (() => {
         const col = table.getColumn(filterCol);
         if (!col) return null;
-        return <ColumnFilterPopover col={col} label={labelDe(filterCol)} anchor={filterAnchor} onClose={() => setFilterCol(null)} />;
+        return <ColumnFilterPopover col={col} label={labelDe(filterCol)} anchor={filterAnchor} onClose={cerrarFiltro} />;
       })()}
     </>
   );
