@@ -544,10 +544,11 @@ function ColumnFilterPopover<T>({ col, label, anchor, onClose }: {
       <div className="dt-filter-scrim" onClick={onClose} />
       <div ref={popRef} className="dt-filter-pop" style={{ left: anchor.left, top }} onClick={(e) => e.stopPropagation()}>
         <div className="dt-filter-pop__search">
-          <input autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder={`Buscar en ${label}…`} />
+          <input autoFocus value={q} onChange={(e) => setQ(e.target.value)}
+            aria-label={`Buscar en ${label}`} placeholder={`Buscar en ${label}…`} />
         </div>
-        <div className="dt-filter-pop__list">
-          <button type="button" className="dt-filter-row" onClick={() => col.setFilterValue(undefined)}>
+        <div className="dt-filter-pop__list" role="group" aria-label={`Filtrar por ${label}`}>
+          <button type="button" role="checkbox" aria-checked={todos} className="dt-filter-row" onClick={() => col.setFilterValue(undefined)}>
             <span className={`dt-check${todos ? " is-checked" : ""}`} aria-hidden>{todos ? "✓" : ""}</span>
             <span className="dt-strong">Todos</span>
           </button>
@@ -555,7 +556,7 @@ function ColumnFilterPopover<T>({ col, label, anchor, onClose }: {
           {visibles.map((opt) => {
             const on = sel.has(opt);
             return (
-              <button key={opt} type="button" className="dt-filter-row" onClick={() => toggle(opt)}>
+              <button key={opt} type="button" role="checkbox" aria-checked={on} className="dt-filter-row" onClick={() => toggle(opt)}>
                 <span className={`dt-check${on ? " is-checked" : ""}`} aria-hidden>{on ? "✓" : ""}</span>
                 <span>{opt}</span>
               </button>
