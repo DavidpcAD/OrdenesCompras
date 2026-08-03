@@ -775,20 +775,21 @@ h1, h2, h3, h4, p { margin: 0; }
 /* Ítems: íconos centrados en colapsado; ícono+texto al expandir. */
 .app-nav__item {
   display: flex; align-items: center; gap: var(--ds-space-3);
-  width: 100%; min-height: 48px; padding: 0; justify-content: center;
-  border: 0; border-radius: var(--ds-radius-xl);
-  background: var(--ds-color-black); color: var(--ds-color-white);
+  width: 100%; min-height: 46px; padding: 0; justify-content: center;
+  border: 0; border-radius: var(--ds-radius-lg);
+  background: transparent; color: rgba(255, 255, 255, 0.66);
   font-family: inherit; font-size: var(--ds-font-size-body-md); font-weight: var(--ds-font-weight-semibold);
-  cursor: pointer; white-space: nowrap; overflow: hidden; box-shadow: var(--ds-shadow-02-soft);
-  transition: background .12s, color .12s, box-shadow .12s, padding .2s cubic-bezier(.34, 1.2, .5, 1);
+  cursor: pointer; white-space: nowrap; overflow: hidden;
+  transition: background .14s ease, color .14s ease, padding .2s cubic-bezier(.34, 1.2, .5, 1);
 }
 .app-nav__ic { display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; flex-shrink: 0; }
 .app-nav__ic svg { flex-shrink: 0; }
-.app-nav__item:hover { box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.16); }
+.app-nav__item:hover { background: rgba(255, 255, 255, 0.10); color: var(--ds-color-white); }
 .app-nav__item.is-active { background: var(--ds-color-green-100); color: var(--ds-color-black); }
+.app-nav__item.is-active:hover { background: var(--ds-color-green-100); color: var(--ds-color-black); }
 .app-nav__label { overflow: hidden; white-space: nowrap; max-width: 0; opacity: 0; transition: max-width .26s cubic-bezier(.34, 1.2, .5, 1), opacity .18s ease; }
 .app-nav__salir { margin-top: auto; }
-.app-nav__salir:hover { color: var(--ds-color-red-100); box-shadow: 0 0 0 3px color-mix(in srgb, var(--ds-color-red-100) 30%, transparent); }
+.app-nav__salir:hover { background: color-mix(in srgb, var(--ds-color-red-100) 20%, transparent); color: var(--ds-color-red-100); }
 
 /* Al FIJAR: mostrar textos y alinear ítems a la izquierda. */
 .app-shell.pinned .app-nav__label,
