@@ -100,8 +100,16 @@ export function DataTable<T>({
   function abrirFiltro(colId: string, btn: HTMLElement) {
     if (filterCol === colId) { setFilterCol(null); return; }
     const r = btn.getBoundingClientRect();
-    const left = Math.min(r.left, window.innerWidth - 330 - 12);
-    setFilterAnchor({ left: Math.max(12, left), top: r.bottom + 6 });
+    const W = 300;   // debe coincidir con `.dt-filter-pop { width }` en globals.css
+    const M = 12;    // margen mínimo contra el borde del viewport
+    // Por defecto alinea el borde izquierdo del popover con el del botón. Si se
+    // saldría por la derecha (columnas del extremo derecho, p.ej. Estado), lo
+    // alinea por el borde derecho del botón → abre hacia la izquierda y queda
+    // pegado a su columna en vez de "flotar" desalineado tras el clamp.
+    let left = r.left;
+    if (left + W > window.innerWidth - M) left = r.right - W;
+    left = Math.max(M, Math.min(left, window.innerWidth - W - M));
+    setFilterAnchor({ left, top: r.bottom + 6 });
     setFilterCol(colId);
   }
 
