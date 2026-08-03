@@ -238,7 +238,7 @@ export function DataTable<T>({
     <>
       {/* Toolbar */}
       <div className="row row--between wrap gap-3 dt-toolbar" style={{ marginBottom: 14, alignItems: "center", position: "relative" }}>
-        <Input value={globalFilter} onChange={(e) => setGlobalFilter(e.target.value)} placeholder={buscarPlaceholder} style={{ flex: "1 1 340px", minWidth: 220, maxWidth: 560 }} />
+        <Input value={globalFilter} onChange={(e) => setGlobalFilter(e.target.value)} aria-label={buscarPlaceholder} placeholder={buscarPlaceholder} style={{ flex: "1 1 340px", minWidth: 220, maxWidth: 560 }} />
         <div className="row gap-2" style={{ alignItems: "center" }}>
           <div className="segmented">
             <button type="button" className={`segmented__btn ${modo === "tabla" ? "is-active" : ""}`} onClick={() => setModo("tabla")}><IconTable size={15} />Tabla</button>
