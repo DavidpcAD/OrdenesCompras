@@ -194,7 +194,7 @@ export function AppShell({ role, children }: { role: Role; children: React.React
           {navOpen && <div className="app-nav-overlay" onClick={() => setNavOpen(false)} aria-hidden />}
           {/* En móvil abierto actúa como drawer modal → role=dialog/aria-modal
               (solo con navOpen; en desktop el mismo <aside> es el rail, no modal). */}
-          <aside className={`app-nav${navOpen ? " is-open" : ""}`} aria-label="Secciones"
+          <nav className={`app-nav${navOpen ? " is-open" : ""}`} aria-label="Secciones"
             role={navOpen ? "dialog" : undefined} aria-modal={navOpen ? true : undefined}>
             <div className="app-nav__head">
               {/* Desktop: hamburguesa que abre/fija (empuja) y encoge el riel. Siempre visible. */}
@@ -228,7 +228,7 @@ export function AppShell({ role, children }: { role: Role; children: React.React
               <span className="app-nav__ic"><IconLogout size={20} /></span>
               <span className="app-nav__label">Salir</span>
             </button>
-          </aside>
+          </nav>
         </>
       )}
 
