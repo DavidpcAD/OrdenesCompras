@@ -92,6 +92,13 @@ export function DataTable<T>({
   const [globalFilter, setGlobalFilter] = useState("");
   const [pagination, setPagination] = useState<PaginationState>({ pageIndex: 0, pageSize: 50 });
   const [panel, setPanel] = useState<null | "cols" | "vistas" | "export">(null);
+  // Cerrar el panel (Columnas/Vistas/Exportar) con Escape, como el resto de popovers.
+  useEffect(() => {
+    if (!panel) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setPanel(null); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [panel]);
   const [modo, setModo] = useState<"tabla" | "grid">(modoInicial);
   const [vistaABorrar, setVistaABorrar] = useState<Vista | null>(null);
 
