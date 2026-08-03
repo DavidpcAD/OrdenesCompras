@@ -472,6 +472,17 @@ function ColumnFilterPopover<T>({ col, label, anchor, onClose }: {
     return Array.from(set).sort((a, b) => a.localeCompare(b, "es", { numeric: true }));
   }, [col]);
 
+  // Clamp vertical: tras montar medimos la altura real y, si el popover se
+  // saldría por debajo del viewport (encabezado bajo en la página), lo subimos
+  // para que siempre quede visible. `left` ya viene acotado desde abrirFiltro.
+  const popRef = useRef<HTMLDivElement>(null);
+  const [top, setTop] = useState(anchor.top);
+  useEffect(() => {
+    const el = popRef.current; if (!el) return;
+    const M = 12;
+    setTop(Math.max(M, Math.min(anchor.top, window.innerHeight - el.offsetHeight - M)));
+  }, [mounted, anchor.top]);
+
   // Se portaliza a <body> para que el `position: fixed` quede anclado al
   // viewport (no a un ancestro con transform, que lo hacía flotar fuera de la
   // tabla). Requiere estar montado en cliente.
@@ -490,7 +501,7 @@ function ColumnFilterPopover<T>({ col, label, anchor, onClose }: {
     return createPortal(
       <>
         <div className="dt-filter-scrim" onClick={onClose} />
-        <div className="dt-filter-pop" style={{ left: anchor.left, top: anchor.top }} onClick={(e) => e.stopPropagation()}>
+        <div ref={popRef} className="dt-filter-pop" style={{ left: anchor.left, top }} onClick={(e) => e.stopPropagation()}>
           <div className="dt-filter-pop__list" style={{ padding: 14, gap: 12, display: "flex", flexDirection: "column" }}>
             <div className="dt-date-quick">
               <button type="button" onClick={() => setRange({ from: hoyIso, to: hoyIso })}>Hoy</button>
@@ -524,7 +535,7 @@ function ColumnFilterPopover<T>({ col, label, anchor, onClose }: {
   return createPortal(
     <>
       <div className="dt-filter-scrim" onClick={onClose} />
-      <div className="dt-filter-pop" style={{ left: anchor.left, top: anchor.top }} onClick={(e) => e.stopPropagation()}>
+      <div ref={popRef} className="dt-filter-pop" style={{ left: anchor.left, top }} onClick={(e) => e.stopPropagation()}>
         <div className="dt-filter-pop__search">
           <input autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder={`Buscar en ${label}…`} />
         </div>
