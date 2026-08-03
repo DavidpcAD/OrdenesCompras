@@ -7,7 +7,7 @@ import {
   getFacetedRowModel, getFacetedUniqueValues, flexRender,
   type Column, type ColumnDef, type FilterFn, type SortingState, type ColumnFiltersState, type VisibilityState, type ColumnOrderState, type PaginationState,
 } from "@tanstack/react-table";
-import { Button, Card, ConfirmDialog, EmptyState, Input, Select } from "@/components/ui";
+import { Button, Card, ConfirmDialog, EmptyState, Input, Select, Skeleton } from "@/components/ui";
 import { IconTable } from "@/components/icons";
 import { useStore } from "@/lib/store";
 
@@ -49,7 +49,7 @@ type Vista = { id: number; nombre: string; config: VistaCfg; esPredeterminada: b
 
 export function DataTable<T>({
   data, columns, tablaKey, getRowId, onRowClick, rowClassName, vacio = "No hay registros.", modoInicial = "tabla", renderExpanded,
-  titulo = "Reporte", buscarPlaceholder = "Buscar en la tabla…",
+  titulo = "Reporte", buscarPlaceholder = "Buscar en la tabla…", loading = false,
 }: {
   data: T[];
   columns: ColumnDef<T, any>[];
@@ -66,8 +66,10 @@ export function DataTable<T>({
   titulo?: string;
   // Placeholder de la barra de búsqueda: ideal pasar un ejemplo de lo que se busca.
   buscarPlaceholder?: string;
+  // Si true y aún no hay datos, muestra filas/tarjetas skeleton (carga de SQL/BC).
+  loading?: boolean;
 }) {
-  const { usuario } = useStore();
+  const { usuario, cargando } = useStore();
   // Inyecta el filtro multi-selección a las columnas que no traigan uno propio.
   const cols = useMemo(() => columns.map((c) => (c.filterFn ? c : { ...c, filterFn: isDateCol(c) ? dateRangeFilter : multiFilter })), [columns]);
   const [sorting, setSorting] = useState<SortingState>([]);
@@ -175,6 +177,10 @@ export function DataTable<T>({
   });
   const labelDe = (colId: string) => (leaf.find((x) => x.id === colId)?.columnDef.meta as ColMeta | undefined)?.label ?? colId;
   const rows = table.getRowModel().rows;
+  // Mostrar skeletons mientras carga y todavía no hay datos (evita "salto" de vacío→datos).
+  // Toma el `loading` explícito o el `cargando` global del store (carga inicial SQL/BC).
+  const showSkeleton = (loading || cargando) && rows.length === 0;
+  const skeletonRows = Array.from({ length: 6 });
 
   // --- Exportar (CSV / PDF) — usa las filas FILTRADAS y las columnas visibles ---
   const valCelda = (row: any, colId: string): string => {
@@ -323,7 +329,20 @@ export function DataTable<T>({
 
       {/* Vista Grid (tarjetas) */}
       {modo === "grid" ? (
-        rows.length === 0 ? <EmptyState title={vacio} /> : (
+        showSkeleton ? (
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))", gap: 12 }}>
+            {skeletonRows.map((_, i) => (
+              <Card key={`sk-${i}`} style={{ minWidth: 0 }}>
+                {Array.from({ length: 4 }).map((__, j) => (
+                  <div key={j} style={{ display: "grid", gridTemplateColumns: "minmax(64px, 38%) 1fr", gap: 8, padding: "4px 0" }}>
+                    <Skeleton className="ds-skeleton--text" style={{ display: "block", width: "70%" }} />
+                    <Skeleton className="ds-skeleton--text" style={{ display: "block", width: "50%", marginLeft: "auto" }} />
+                  </div>
+                ))}
+              </Card>
+            ))}
+          </div>
+        ) : rows.length === 0 ? <EmptyState title={vacio} /> : (
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))", gap: 12 }}>
             {rows.map((row) => (
               <Card key={row.id} className={rowClassName?.(row.original) ?? ""} interactive={!!onRowClick} onClick={onRowClick ? () => onRowClick(row.original) : undefined} style={{ minWidth: 0 }}>
@@ -390,7 +409,16 @@ export function DataTable<T>({
                 ))}
               </thead>
               <tbody>
-                {rows.length === 0 && <tr><td colSpan={table.getVisibleLeafColumns().length + (renderExpanded ? 1 : 0)}><EmptyState title={vacio} /></td></tr>}
+                {showSkeleton && skeletonRows.map((_, i) => (
+                  <tr key={`sk-${i}`} className="dt-skeleton-row" aria-hidden>
+                    {renderExpanded && <td className="dt-xcell" />}
+                    {table.getVisibleLeafColumns().map((col) => {
+                      const meta = col.columnDef.meta as ColMeta | undefined;
+                      return <td key={col.id} className={meta?.num ? "ds-num" : ""}><Skeleton className="ds-skeleton--text" style={{ display: "block", width: meta?.num ? "60%" : "80%", marginLeft: meta?.num ? "auto" : undefined }} /></td>;
+                    })}
+                  </tr>
+                ))}
+                {!showSkeleton && rows.length === 0 && <tr><td colSpan={table.getVisibleLeafColumns().length + (renderExpanded ? 1 : 0)}><EmptyState title={vacio} /></td></tr>}
                 {rows.map((row) => {
                   const open = expanded.has(row.id);
                   return (
