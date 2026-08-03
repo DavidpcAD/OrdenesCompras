@@ -136,6 +136,8 @@ export function AppShell({ role, children }: { role: Role; children: React.React
 
   return (
     <div className={`app-shell${pinned ? " pinned" : ""}${navOpen ? " nav-open" : ""}${ready ? " is-ready" : ""}`}>
+      {/* Skip link (a11y, WCAG 2.4.1): primer foco de teclado; salta el nav. */}
+      <a href="#contenido-principal" className="skip-link">Saltar al contenido</a>
       <header className="topbar">
         <div className="topbar__spacer" />
         <div className="topbar__user">
@@ -231,7 +233,7 @@ export function AppShell({ role, children }: { role: Role; children: React.React
       )}
 
       <div className="app-body">
-        <div className={`app-content${showActionFab ? " has-fab" : ""}`}>{children}</div>
+        <div id="contenido-principal" tabIndex={-1} className={`app-content${showActionFab ? " has-fab" : ""}`}>{children}</div>
       </div>
 
       {/* FAB menú (arriba-izquierda) — solo cuando el drawer está cerrado. */}

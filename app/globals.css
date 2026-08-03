@@ -1225,3 +1225,16 @@ button.ana-kpi:active { transform: translateY(1px); }
   /* Evitar cortar tarjetas y filas de tabla entre páginas. */
   tr, .ds-card, .tile { break-inside: avoid; }
 }
+
+/* Skip link (a11y): oculto fuera de vista hasta que recibe foco por teclado,
+   cuando aparece arriba-izquierda para saltar la navegación e ir al contenido. */
+.skip-link {
+  position: fixed; top: 10px; left: 10px; z-index: 200;
+  transform: translateY(-160%); transition: transform .18s ease;
+  background: var(--ds-color-black); color: var(--ds-color-white);
+  padding: 10px 16px; border-radius: var(--ds-radius-md);
+  font-weight: var(--ds-font-weight-semibold); text-decoration: none;
+  box-shadow: var(--ds-shadow-02-soft);
+}
+.skip-link:focus-visible { transform: translateY(0); outline: 3px solid var(--ds-color-green-100); outline-offset: 2px; }
+#contenido-principal:focus { outline: none; }
