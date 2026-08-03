@@ -10,12 +10,12 @@ export function ProveeduriaTabs() {
   const enOrdenes = pathname.startsWith("/proveeduria/ordenes");
 
   return (
-    <div className="segmented">
-      <button className={`segmented__btn ${!enOrdenes ? "is-active" : ""}`}
+    <div className="segmented" role="group" aria-label="Sección de proveeduría">
+      <button className={`segmented__btn ${!enOrdenes ? "is-active" : ""}`} aria-current={!enOrdenes ? "page" : undefined}
         onClick={() => { if (enOrdenes) router.push("/proveeduria"); }}>
         Líneas por ordenar
       </button>
-      <button className={`segmented__btn ${enOrdenes ? "is-active" : ""}`}
+      <button className={`segmented__btn ${enOrdenes ? "is-active" : ""}`} aria-current={enOrdenes ? "page" : undefined}
         onClick={() => { if (!enOrdenes) router.push("/proveeduria/ordenes"); }}>
         Órdenes creadas
       </button>
