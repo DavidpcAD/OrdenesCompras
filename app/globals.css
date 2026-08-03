@@ -1209,3 +1209,19 @@ button.ana-kpi:active { transform: translateY(1px); }
   .ds-skeleton { animation: none; }
   .ds-reveal { animation: none; opacity: 1; transform: none; }
 }
+
+/* =====================  IMPRESIÓN  =====================
+   Al imprimir (p. ej. una orden con el botón Imprimir) se oculta todo el chrome
+   de navegación y las acciones flotantes, y el contenido ocupa la hoja completa
+   con fondo blanco y sin sombras. Solo aplica en impresión. */
+@media print {
+  .app-nav, .topbar, .fab, .fab--action, .fab--menu, .action-bar,
+  .notif-panel, .notif-overlay, .app-nav-overlay { display: none !important; }
+  .app-content,
+  .app-shell.pinned .app-content { margin-left: 0 !important; }
+  .page { padding: var(--ds-space-6) 0 !important; max-width: none !important; }
+  body, .app-shell, .app-content { background: #fff !important; }
+  .ds-card, .tile, .md-detail, .ds-table-wrap, .totals { box-shadow: none !important; }
+  /* Evitar cortar tarjetas y filas de tabla entre páginas. */
+  tr, .ds-card, .tile { break-inside: avoid; }
+}
