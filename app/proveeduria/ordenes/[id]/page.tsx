@@ -1,7 +1,7 @@
 "use client";
 
 import { useParams, useRouter } from "next/navigation";
-import { Button, EmptyState, useToast } from "@/components/ui";
+import { Button, EmptyState, Skeleton, useToast } from "@/components/ui";
 import { IconWarning } from "@/components/icons";
 import { OrdenDetalle } from "@/components/orden-detalle";
 import { useStore } from "@/lib/store";
@@ -10,10 +10,19 @@ export default function ProvOrdenDetallePage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
   const toast = useToast();
-  const { ordenes, pedidos, setOrdenEstado } = useStore();
+  const { ordenes, pedidos, setOrdenEstado, cargando } = useStore();
 
   const orden = ordenes.find((o) => o.id === id);
   if (!orden) {
+    // Durante la carga inicial (SQL/BC) el store aún está vacío: mostrar skeleton
+    // en vez de parpadear "no encontrada".
+    if (cargando) {
+      return <main className="page"><div className="col gap-4" aria-busy="true">
+        <Skeleton style={{ display: "block", width: 240, height: 30, borderRadius: 8 }} />
+        <Skeleton style={{ display: "block", width: 360, height: 16, borderRadius: 6 }} />
+        <Skeleton style={{ display: "block", width: "100%", height: 340, borderRadius: 16, marginTop: 8 }} />
+      </div></main>;
+    }
     return <><main className="page"><EmptyState icon={<IconWarning size={24} />} title="Orden no encontrada." /></main></>;
   }
   // Link de cada línea a su solicitud de origen (para ver quién la pidió).

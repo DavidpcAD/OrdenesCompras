@@ -2,7 +2,7 @@
 
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
-import { Badge, Button, Card, EmptyState, Field, Input, Select, useToast } from "@/components/ui";
+import { Badge, Button, Card, EmptyState, Field, Input, Select, useToast, Skeleton } from "@/components/ui";
 import { IconWarning } from "@/components/icons";
 import { Combobox } from "@/components/combobox";
 import { useStore } from "@/lib/store";
@@ -16,7 +16,7 @@ export default function EditarOrdenPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
   const toast = useToast();
-  const { ordenes, proveedores, almacenes, recepciones, pedidos, updateOrden } = useStore();
+  const { ordenes, proveedores, almacenes, recepciones, pedidos, updateOrden, cargando } = useStore();
   const orden = ordenes.find((o) => o.id === id);
   // id del pedido (solicitud) de origen de una línea, para enlazar a su detalle.
   const pedidoIdDe = (pedidoLineaId?: string, pedidoNumero?: string) =>
@@ -66,7 +66,13 @@ export default function EditarOrdenPage() {
   const total = subtotal + fleteNum + ivaTotal;
   const [guardando, setGuardando] = useState(false);
 
-  if (!orden) return <><main className="page"><EmptyState icon={<IconWarning size={24} />} title="Orden no encontrada." /></main></>;
+  if (!orden) {
+    if (cargando) return <main className="page"><div className="col gap-4" aria-busy="true">
+      <Skeleton style={{ display: "block", width: 240, height: 30, borderRadius: 8 }} />
+      <Skeleton style={{ display: "block", width: "100%", height: 340, borderRadius: 16, marginTop: 8 }} />
+    </div></main>;
+    return <><main className="page"><EmptyState icon={<IconWarning size={24} />} title="Orden no encontrada." /></main></>;
+  }
   // No se puede editar una orden que ya tiene recepciones: reescribir las líneas
   // rompería la trazabilidad de lo recibido/facturado (y su enlace a las recepciones).
   const tieneRecepciones = recepciones.some((r) => r.ordenId === orden.id)

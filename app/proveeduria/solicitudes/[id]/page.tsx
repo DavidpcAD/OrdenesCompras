@@ -2,7 +2,7 @@
 
 import { useParams, useRouter } from "next/navigation";
 import { useState } from "react";
-import { Badge, Button, Card, EmptyState, Modal, Textarea, useToast, QtyRing } from "@/components/ui";
+import { Badge, Button, Card, EmptyState, Modal, Textarea, useToast, QtyRing, Skeleton } from "@/components/ui";
 import { IconWarning } from "@/components/icons";
 import { Timeline } from "@/components/timeline";
 import { useStore } from "@/lib/store";
@@ -12,12 +12,20 @@ export default function ProveeduriaPedidoDetallePage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
   const toast = useToast();
-  const { pedidos, ordenes, setBorrador, devolverPedido } = useStore();
+  const { pedidos, ordenes, setBorrador, devolverPedido, cargando } = useStore();
   const [devolverOpen, setDevolverOpen] = useState(false);
   const [motivo, setMotivo] = useState("");
 
   const pedido = pedidos.find((p) => p.id === id);
   if (!pedido) {
+    // Skeleton mientras carga (SQL/BC): evita parpadear "no encontrada".
+    if (cargando) {
+      return <main className="page"><div className="col gap-4" aria-busy="true">
+        <Skeleton style={{ display: "block", width: 240, height: 30, borderRadius: 8 }} />
+        <Skeleton style={{ display: "block", width: 360, height: 16, borderRadius: 6 }} />
+        <Skeleton style={{ display: "block", width: "100%", height: 340, borderRadius: 16, marginTop: 8 }} />
+      </div></main>;
+    }
     return <><main className="page"><EmptyState icon={<IconWarning size={24} />} title="Solicitud no encontrada." /></main></>;
   }
   const b = pedidoBadge(pedido.estado);

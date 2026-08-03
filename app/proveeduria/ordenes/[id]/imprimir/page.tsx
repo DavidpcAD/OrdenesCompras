@@ -23,10 +23,14 @@ export default function ImprimirOrdenPage() {
   const params = useParams();
   const router = useRouter();
   const id = String(params?.id ?? "");
-  const { ordenes, proveedores } = useStore();
+  const { ordenes, proveedores, cargando } = useStore();
   const orden = ordenes.find((o) => o.id === id);
 
   if (!orden) {
+    // Durante la carga (SQL/BC) el store aún está vacío: no mostrar "no encontrada".
+    if (cargando) {
+      return <div style={{ padding: 40, fontFamily: "Roboto, system-ui, sans-serif", color: "#666" }}>Cargando la orden…</div>;
+    }
     return (
       <div style={{ padding: 40, fontFamily: "Roboto, system-ui, sans-serif" }}>
         Orden no encontrada.{" "}
