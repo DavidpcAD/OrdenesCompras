@@ -483,6 +483,13 @@ function ColumnFilterPopover<T>({ col, label, anchor, onClose }: {
     setTop(Math.max(M, Math.min(anchor.top, window.innerHeight - el.offsetHeight - M)));
   }, [mounted, anchor.top]);
 
+  // Cerrar con Escape (consistente con el Modal accesible del proyecto).
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") { e.stopPropagation(); onClose(); } };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
   // Se portaliza a <body> para que el `position: fixed` quede anclado al
   // viewport (no a un ancestro con transform, que lo hacía flotar fuera de la
   // tabla). Requiere estar montado en cliente.
