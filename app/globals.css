@@ -815,6 +815,11 @@ h1, h2, h3, h4, p { margin: 0; }
   .app-shell:not(.pinned) .app-nav:focus-within .app-nav__brand-name { max-width: 200px; opacity: 1; }
   .app-shell:not(.pinned) .app-nav:hover .app-nav__head,
   .app-shell:not(.pinned) .app-nav:focus-within .app-nav__head { justify-content: flex-start; }
+  /* Intención de hover: espera ~130ms antes de expandir para que un roce rápido
+     del mouse por el borde no abra el riel. El colapso (al salir) y el foco de
+     teclado (:focus-within) siguen siendo inmediatos. */
+  .app-shell.is-ready:not(.pinned) .app-nav:hover { transition-delay: 0.13s; }
+  .app-shell.is-ready:not(.pinned) .app-nav:focus-within { transition-delay: 0s; }
 }
 
 /* Hamburguesa del riel (desktop): abre/fija (empuja) y encoge. Siempre visible. */
