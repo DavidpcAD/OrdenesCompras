@@ -832,7 +832,7 @@ h1, h2, h3, h4, p { margin: 0; }
 
 @media (prefers-reduced-motion: reduce) {
   .app-shell.is-ready .app-nav, .app-shell.is-ready .topbar, .app-shell.is-ready .app-content,
-  .app-nav__item, .app-nav__label, .app-nav__brand-name { transition: none; }
+  .app-nav__item, .app-nav__label, .app-nav__brand-name, .skip-link { transition: none; }
 }
 
 /* ── Móvil: el riel se vuelve DRAWER off-canvas (overlay); lo abre el FAB de menú. ── */
