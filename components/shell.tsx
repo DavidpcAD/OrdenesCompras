@@ -119,6 +119,8 @@ export function AppShell({ role, children }: { role: Role; children: React.React
 
   const meta = ROLE_META[role];
   const hasNav = meta.nav.length > 1;
+  // FAB de acción visible → el contenido necesita espacio inferior para no quedar tapado.
+  const showActionFab = !!meta.action && pathname !== meta.action.href && !pathname.includes("/nueva");
   // Cuál item del nav está activo (match más largo por href/alt).
   const activeHref = meta.nav
     .map((n) => {
@@ -226,7 +228,7 @@ export function AppShell({ role, children }: { role: Role; children: React.React
       )}
 
       <div className="app-body">
-        <div className="app-content">{children}</div>
+        <div className={`app-content${showActionFab ? " has-fab" : ""}`}>{children}</div>
       </div>
 
       {/* FAB menú (arriba-izquierda) — solo cuando el drawer está cerrado. */}
@@ -238,7 +240,7 @@ export function AppShell({ role, children }: { role: Role; children: React.React
 
       {/* FAB de la acción principal del rol (abajo-derecha). No en su propia
           pantalla ni en flujos de creación (ahí ya hay barra de acciones). */}
-      {meta.action && pathname !== meta.action.href && !pathname.includes("/nueva") && (
+      {showActionFab && meta.action && (
         <button type="button" className="ds-btn ds-btn--green fab fab--action" onClick={() => router.push(meta.action!.href)}>
           <IconPlus size={20} /><span>{meta.action.label}</span>
         </button>

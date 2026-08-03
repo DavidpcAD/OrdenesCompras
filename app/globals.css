@@ -739,6 +739,9 @@ h1, h2, h3, h4, p { margin: 0; }
 /* ── Layout: RIEL de íconos (desktop, hover-expand + fijar) / DRAWER (móvil) ── */
 .app-body { display: flex; }
 .app-content { flex: 1; min-width: 0; width: 100%; }
+/* Cuando hay FAB de acción (abajo-derecha), reservar espacio para que la última
+   fila/contenido no quede tapado al llegar al fondo del scroll. */
+.app-content.has-fab { padding-bottom: 92px; }
 
 /* Riel angosto de solo íconos. Al pasar el mouse se expande como OVERLAY (preview);
    con el toggle queda FIJO (pinned) y empuja el contenido. */
