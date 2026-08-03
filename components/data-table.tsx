@@ -14,6 +14,13 @@ import { useStore } from "@/lib/store";
 // Texto plano de un valor de celda (para opciones y comparación de filtro).
 const asText = (v: unknown): string => v == null ? "" : String(v);
 
+// Ícono por defecto para el estado vacío de las tablas (documento con líneas).
+const EMPTY_ICON = (
+  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+    <rect x="4" y="3" width="16" height="18" rx="2" /><path d="M8 8h8M8 12h8M8 16h5" />
+  </svg>
+);
+
 // Filtro multi-selección: el valor del filtro es un arreglo de valores permitidos.
 // Vacío/undefined = sin filtro (todas). Coincide si el texto de la celda está en el set.
 const multiFilter: FilterFn<any> = (row, colId, value) => {
@@ -342,7 +349,7 @@ export function DataTable<T>({
               </Card>
             ))}
           </div>
-        ) : rows.length === 0 ? <EmptyState title={vacio} /> : (
+        ) : rows.length === 0 ? <EmptyState icon={EMPTY_ICON} title={vacio} /> : (
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))", gap: 12 }}>
             {rows.map((row) => (
               <Card key={row.id} className={rowClassName?.(row.original) ?? ""} interactive={!!onRowClick} onClick={onRowClick ? () => onRowClick(row.original) : undefined} style={{ minWidth: 0 }}>
@@ -418,7 +425,7 @@ export function DataTable<T>({
                     })}
                   </tr>
                 ))}
-                {!showSkeleton && rows.length === 0 && <tr><td colSpan={table.getVisibleLeafColumns().length + (renderExpanded ? 1 : 0)}><EmptyState title={vacio} /></td></tr>}
+                {!showSkeleton && rows.length === 0 && <tr><td colSpan={table.getVisibleLeafColumns().length + (renderExpanded ? 1 : 0)}><EmptyState icon={EMPTY_ICON} title={vacio} /></td></tr>}
                 {rows.map((row) => {
                   const open = expanded.has(row.id);
                   return (
