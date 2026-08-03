@@ -777,7 +777,7 @@ h1, h2, h3, h4, p { margin: 0; }
   display: flex; align-items: center; gap: var(--ds-space-3);
   width: 100%; min-height: 46px; padding: 0; justify-content: center;
   border: 0; border-radius: var(--ds-radius-lg);
-  background: transparent; color: rgba(255, 255, 255, 0.66);
+  background: transparent; color: rgba(255, 255, 255, 0.74);
   font-family: inherit; font-size: var(--ds-font-size-body-md); font-weight: var(--ds-font-weight-semibold);
   cursor: pointer; white-space: nowrap; overflow: hidden;
   transition: background .14s ease, color .14s ease, padding .2s cubic-bezier(.34, 1.2, .5, 1);
@@ -785,7 +785,7 @@ h1, h2, h3, h4, p { margin: 0; }
 .app-nav__ic { display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; flex-shrink: 0; }
 .app-nav__ic svg { flex-shrink: 0; }
 .app-nav__item:hover { background: rgba(255, 255, 255, 0.10); color: var(--ds-color-white); }
-.app-nav__item.is-active { background: var(--ds-color-green-100); color: var(--ds-color-black); }
+.app-nav__item.is-active { background: var(--ds-color-green-100); color: var(--ds-color-black); box-shadow: 0 2px 12px color-mix(in srgb, var(--ds-color-green-100) 32%, transparent); }
 .app-nav__item.is-active:hover { background: var(--ds-color-green-100); color: var(--ds-color-black); }
 .app-nav__label { overflow: hidden; white-space: nowrap; max-width: 0; opacity: 0; transition: max-width .26s cubic-bezier(.34, 1.2, .5, 1), opacity .18s ease; }
 .app-nav__salir { margin-top: auto; }
