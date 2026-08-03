@@ -267,9 +267,9 @@ export function DataTable<T>({
               Grid
             </button>
           </div>
-          <Button variant="ghost" size="sm" onClick={() => setPanel(panel === "cols" ? null : "cols")}>Columnas</Button>
-          <Button variant="ghost" size="sm" onClick={() => setPanel(panel === "vistas" ? null : "vistas")}>Vistas</Button>
-          <Button variant="ghost" size="sm" className={panel === "export" ? "is-active" : ""} onClick={() => setPanel(panel === "export" ? null : "export")} title="Exportar (CSV / PDF)">
+          <Button variant="ghost" size="sm" aria-haspopup="menu" aria-expanded={panel === "cols"} onClick={() => setPanel(panel === "cols" ? null : "cols")}>Columnas</Button>
+          <Button variant="ghost" size="sm" aria-haspopup="menu" aria-expanded={panel === "vistas"} onClick={() => setPanel(panel === "vistas" ? null : "vistas")}>Vistas</Button>
+          <Button variant="ghost" size="sm" className={panel === "export" ? "is-active" : ""} aria-haspopup="menu" aria-expanded={panel === "export"} onClick={() => setPanel(panel === "export" ? null : "export")} title="Exportar (CSV / PDF)">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: 6 }}><path d="M12 3v12" /><path d="M7 10l5 5 5-5" /><path d="M5 21h14" /></svg>
             Exportar
           </Button>
@@ -407,6 +407,8 @@ export function DataTable<T>({
                             {canFilter && (
                               <button type="button" className={`dt-hpill__filter${activos ? " is-active" : ""}${filterCol === h.column.id ? " is-open" : ""}`}
                                 title={activos ? `${activos} filtro(s)` : "Filtrar"}
+                                aria-label={`Filtrar ${labelDe(h.column.id)}${activos ? ` (${activos} activo${activos > 1 ? "s" : ""})` : ""}`}
+                                aria-haspopup="dialog" aria-expanded={filterCol === h.column.id}
                                 onClick={(e) => { e.stopPropagation(); abrirFiltro(h.column.id, e.currentTarget); }}>
                                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 5h18l-7 8v6l-4 2v-8z" /></svg>
                                 {activos > 0 && <span className="dt-hpill__badge">{activos}</span>}

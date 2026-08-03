@@ -143,7 +143,7 @@ export function AppShell({ role, children }: { role: Role; children: React.React
         <div className="topbar__user">
           {/* Campanita de notificaciones */}
           <div style={{ position: "relative" }}>
-            <button className="notif-bell" title="Notificaciones" onClick={toggleNotif} aria-label="Notificaciones">
+            <button className="notif-bell" title="Notificaciones" onClick={toggleNotif} aria-label="Notificaciones" aria-haspopup="menu" aria-expanded={notifOpen}>
               <IconBell size={20} />{noLeidas > 0 && <span className="notif-bell__dot">{noLeidas > 9 ? "9+" : noLeidas}</span>}
             </button>
             {notifOpen && (
