@@ -89,10 +89,6 @@ export function AppShell({ role, children }: { role: Role; children: React.React
   // Tema (claro/oscuro). El valor real vive en <html data-theme>; el script
   // no-flash del layout lo fija antes de pintar. Aquí solo lo reflejamos/alternamos.
   const [theme, setTheme] = useState<"light" | "dark">("light");
-  // Al ENCOGER con la hamburguesa, el mouse queda sobre el riel y el hover-preview
-  // lo volvería a expandir al instante. Este flag desactiva el preview hasta que el
-  // mouse sale del riel, para que "encoger" se vea de una.
-  const [noPreview, setNoPreview] = useState(false);
   const isMobile = () => typeof window !== "undefined" && window.matchMedia("(max-width: 760px)").matches;
   const closeNavOnMobile = () => { if (isMobile()) setNavOpen(false); };
   useEffect(() => {
@@ -224,18 +220,12 @@ export function AppShell({ role, children }: { role: Role; children: React.React
           {navOpen && <div className="app-nav-overlay" onClick={() => setNavOpen(false)} aria-hidden />}
           {/* En móvil abierto actúa como drawer modal → role=dialog/aria-modal
               (solo con navOpen; en desktop el mismo <aside> es el rail, no modal). */}
-          <nav className={`app-nav${navOpen ? " is-open" : ""}${noPreview ? " no-preview" : ""}`} aria-label="Secciones"
-            onMouseLeave={() => setNoPreview(false)}
+          <nav className={`app-nav${navOpen ? " is-open" : ""}`} aria-label="Secciones"
             role={navOpen ? "dialog" : undefined} aria-modal={navOpen ? true : undefined}>
             <div className="app-nav__head">
-              {/* Desktop: hamburguesa que abre/fija (empuja) y encoge el riel. Siempre visible. */}
+              {/* Desktop: hamburguesa que abre/cierra el riel (binario). Siempre visible. */}
               <button type="button" className="app-nav__burger"
-                onClick={(e) => {
-                  // Al ENCOGER: suprimir el hover-preview (mouse encima) y soltar el
-                  // foco del botón, porque :focus-within lo volvería a expandir.
-                  if (pinned) { setNoPreview(true); e.currentTarget.blur(); }
-                  setPinned((p) => !p);
-                }}
+                onClick={() => setPinned((p) => !p)}
                 aria-label={pinned ? "Encoger menú" : "Expandir menú"} title={pinned ? "Encoger menú" : "Expandir menú"} aria-pressed={pinned}>
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><path d="M3 6h18M3 12h18M3 18h18" /></svg>
               </button>
