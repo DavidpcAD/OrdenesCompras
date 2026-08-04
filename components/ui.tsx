@@ -193,7 +193,7 @@ export function QtyRing({ recibida, total }: { recibida: number; total: number }
         className="ds-qty-selector__ring"
         style={{ background: `conic-gradient(${color} ${pct * 360}deg, transparent 0deg)` }}
       />
-      <span className="ds-qty-selector__inner" style={{ background: "var(--ds-color-white)", width: 34, height: 34, borderRadius: "50%", display: "grid", placeItems: "center" }}>
+      <span className="ds-qty-selector__inner" style={{ background: "var(--ds-surface)", width: 34, height: 34, borderRadius: "50%", display: "grid", placeItems: "center" }}>
         {Math.round(pct * 100)}%
       </span>
     </span>

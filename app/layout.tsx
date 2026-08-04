@@ -18,8 +18,15 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   // en el App Service sin rebuild. Cae al flag público de build si no está.
   const useApi = process.env.USE_API === "1" || process.env.NEXT_PUBLIC_USE_API === "1";
   return (
-    <html lang="es">
+    <html lang="es" suppressHydrationWarning>
       <head>
+        {/* Tema: fijar data-theme ANTES de pintar para no parpadear. Lee la
+            preferencia guardada; si no hay, sigue al sistema. */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `(function(){try{var t=localStorage.getItem('adelante_oc_theme');if(!t){t=matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';}document.documentElement.setAttribute('data-theme',t);}catch(e){}})();`,
+          }}
+        />
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="" />
         <link

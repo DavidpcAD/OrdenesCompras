@@ -310,7 +310,7 @@ export default function CargoSobreFacturaPage() {
                         {resultados.map((l) => {
                           const checked = !!seleccion[lineKey(l)];
                           return (
-                            <tr key={lineKey(l)} style={checked ? { background: "color-mix(in srgb, var(--ds-color-green-100) 8%, #fff)" } : undefined}>
+                            <tr key={lineKey(l)} style={checked ? { background: "color-mix(in srgb, var(--ds-color-green-100) 8%, var(--ds-tint-base))" } : undefined}>
                               <td className="ds-num"><input type="checkbox" className="ds-cbx" checked={checked} onChange={() => toggleLinea(l)} /></td>
                               <td className="ds-body-sm ds-strong">{l.documentNo}<span className="ds-muted"> · {l.lineNo}</span></td>
                               <td className="ds-body-sm">{l.itemNo}</td>

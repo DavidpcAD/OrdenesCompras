@@ -72,7 +72,7 @@ export default function ProveeduriaPedidoDetallePage() {
         </div>
 
         {pedido.notas && (
-          <Card className="mt-2" style={{ background: "color-mix(in srgb, var(--ds-color-yellow) 8%, #fff)" }}>
+          <Card className="mt-2" style={{ background: "color-mix(in srgb, var(--ds-color-yellow) 8%, var(--ds-tint-base))" }}>
             <span className="ds-label ds-muted">Comentario</span>
             <p style={{ margin: "4px 0 0" }}>{pedido.notas}</p>
           </Card>

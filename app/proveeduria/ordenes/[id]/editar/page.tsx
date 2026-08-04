@@ -148,7 +148,7 @@ export default function EditarOrdenPage() {
 
         <Card className="mt-4" style={{ padding: 0, overflow: "hidden" }}>
           {esDirecta ? (
-            <div className="row wrap gap-2" style={{ alignItems: "flex-end", padding: "12px 16px", borderBottom: "1.5px solid var(--ds-color-gray-100)", background: "color-mix(in srgb, var(--ds-color-green-100) 6%, #fff)" }}>
+            <div className="row wrap gap-2" style={{ alignItems: "flex-end", padding: "12px 16px", borderBottom: "1.5px solid var(--ds-color-gray-100)", background: "color-mix(in srgb, var(--ds-color-green-100) 6%, var(--ds-tint-base))" }}>
               <div style={{ flex: "1 1 280px", minWidth: 220 }}>
                 <label className="ds-label ds-muted" style={{ display: "block", marginBottom: 4 }}>Agregar artículo</label>
                 <Combobox items={itemsBc} value={qaCode} onChange={(k) => { setQaCode(k); const it = itemsBc.find((x) => x.code === k); if (it?.precioUltimo) setQaPrecio(String(it.precioUltimo)); }} getKey={(i) => i.code} getLabel={(i) => `${i.code} — ${i.descripcion}`} getSearch={(i) => `${i.code} ${i.descripcion}`} minChars={2} placeholder="Buscar artículo del catálogo…" />
@@ -158,7 +158,7 @@ export default function EditarOrdenPage() {
               <Button variant="outline" onClick={agregarLinea} disabled={!qaCode || !(Number(qaQty) > 0)}>+ Agregar línea</Button>
             </div>
           ) : (
-            <div className="ds-body-sm ds-muted" style={{ padding: "12px 16px", borderBottom: "1.5px solid var(--ds-color-gray-100)", background: "color-mix(in srgb, var(--ds-color-green-100) 6%, #fff)" }}>
+            <div className="ds-body-sm ds-muted" style={{ padding: "12px 16px", borderBottom: "1.5px solid var(--ds-color-gray-100)", background: "color-mix(in srgb, var(--ds-color-green-100) 6%, var(--ds-tint-base))" }}>
               Las líneas provienen de la solicitud ({peds.join(", ")}). Podés ajustar cantidad, precio, descuento o quitar líneas, pero no agregar artículos sueltos. Para compras libres usá una <span className="ds-strong">orden directa</span>.
             </div>
           )}

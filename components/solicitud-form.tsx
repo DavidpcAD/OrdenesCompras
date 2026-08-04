@@ -548,7 +548,7 @@ export function SolicitudForm({
   return (
     <>
       {planContexto && (
-        <Card className="mt-0" style={{ marginBottom: 12, background: "color-mix(in srgb, var(--ds-color-green-100) 12%, #fff)", borderColor: "var(--ds-color-green-200)" }}>
+        <Card className="mt-0" style={{ marginBottom: 12, background: "color-mix(in srgb, var(--ds-color-green-100) 12%, var(--ds-tint-base))", borderColor: "var(--ds-color-green-200)" }}>
           <div className="row row--between wrap gap-2" style={{ alignItems: "center" }}>
             <span className="ds-body-sm"><span className="ds-strong">Armando pedido desde Planificación</span> · {planContexto.modelo} {planContexto.lote ? `· lote ${planContexto.lote}` : ""}</span>
             <button type="button" className="link-btn" onClick={() => setPlanContexto(null)}>Quitar contexto</button>

@@ -328,7 +328,7 @@ export default function ArmarOrdenPage() {
         <Card className="mt-4" style={{ padding: 0, overflow: "hidden" }}>
           {/* En una OC armada desde solicitudes SOLO se agregan líneas que alguien ya
               pidió. Material sin solicitud (limpieza, etc.) va por Compra directa. */}
-          <div className="row row--between wrap gap-3" style={{ alignItems: "center", padding: "12px 16px", borderBottom: "1.5px solid var(--ds-color-gray-100)", background: "color-mix(in srgb, var(--ds-color-green-100) 6%, #fff)" }}>
+          <div className="row row--between wrap gap-3" style={{ alignItems: "center", padding: "12px 16px", borderBottom: "1.5px solid var(--ds-color-gray-100)", background: "color-mix(in srgb, var(--ds-color-green-100) 6%, var(--ds-tint-base))" }}>
             <div className="col" style={{ gap: 2 }}>
               <span className="ds-strong ds-body-sm">Líneas de la orden</span>
               <span className="ds-muted ds-body-sm">Solo materiales de solicitudes ya hechas. ¿Material sin solicitud? Usá <span className="ds-strong">Compra directa</span>.</span>
@@ -380,7 +380,7 @@ export default function ArmarOrdenPage() {
                 {/* Cargos de producto también como líneas (igual que en BC). Se editan
                     arriba en "Cargos de producto"; acá se muestran junto a los artículos. */}
                 {cargos.map((c, i) => cargoImporte(c) > 0 ? (
-                  <tr key={`cargo-${i}`} style={{ background: "color-mix(in srgb, var(--ds-color-yellow) 7%, #fff)" }}>
+                  <tr key={`cargo-${i}`} style={{ background: "color-mix(in srgb, var(--ds-color-yellow) 7%, var(--ds-tint-base))" }}>
                     <td><Badge tone="yellow">Cargo</Badge></td>
                     <td><div className="ds-truncate" title={c.descripcion} style={{ maxWidth: 200 }}>{c.chargeNo ? `${c.chargeNo} · ` : ""}{c.descripcion}</div></td>
                     <td className="ds-muted ds-body-sm">—</td>

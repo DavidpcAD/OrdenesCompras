@@ -14,6 +14,19 @@ import {
 
 const cap = (s: string) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : s);
 
+// Íconos de tema (sol/luna). SVG inline como la hamburguesa/cerrar del riel.
+const IconMoon = () => (
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+    <path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z" />
+  </svg>
+);
+const IconSun = () => (
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+    <circle cx="12" cy="12" r="4" />
+    <path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" />
+  </svg>
+);
+
 // Ícono por tipo de notificación (el color lo da la clase notif-item__icon--<tipo>).
 const NOTIF_ICON: Record<Notificacion["tipo"], React.ReactNode> = {
   pedido: <IconList size={18} />,
@@ -73,12 +86,29 @@ export function AppShell({ role, children }: { role: Role; children: React.React
   const [navOpen, setNavOpen] = useState(false);
   const [ready, setReady] = useState(false); // evita animar el riel al cargar
   const [logoutOpen, setLogoutOpen] = useState(false);
+  // Tema (claro/oscuro). El valor real vive en <html data-theme>; el script
+  // no-flash del layout lo fija antes de pintar. Aquí solo lo reflejamos/alternamos.
+  const [theme, setTheme] = useState<"light" | "dark">("light");
+  // Al ENCOGER con la hamburguesa, el mouse queda sobre el riel y el hover-preview
+  // lo volvería a expandir al instante. Este flag desactiva el preview hasta que el
+  // mouse sale del riel, para que "encoger" se vea de una.
+  const [noPreview, setNoPreview] = useState(false);
   const isMobile = () => typeof window !== "undefined" && window.matchMedia("(max-width: 760px)").matches;
   const closeNavOnMobile = () => { if (isMobile()) setNavOpen(false); };
   useEffect(() => {
     setPinned(localStorage.getItem("adelante_oc_navpin") === "1");
+    const t = (document.documentElement.getAttribute("data-theme") as "light" | "dark") || "light";
+    setTheme(t);
     setReady(true);
   }, []);
+  function toggleTheme() {
+    setTheme((prev) => {
+      const next = prev === "dark" ? "light" : "dark";
+      document.documentElement.setAttribute("data-theme", next);
+      try { localStorage.setItem("adelante_oc_theme", next); } catch {}
+      return next;
+    });
+  }
   useEffect(() => { if (ready) try { localStorage.setItem("adelante_oc_navpin", pinned ? "1" : "0"); } catch {} }, [pinned, ready]);
   // Cerrar el drawer móvil al navegar.
   useEffect(() => { if (isMobile()) setNavOpen(false); }, [pathname]);
@@ -194,11 +224,18 @@ export function AppShell({ role, children }: { role: Role; children: React.React
           {navOpen && <div className="app-nav-overlay" onClick={() => setNavOpen(false)} aria-hidden />}
           {/* En móvil abierto actúa como drawer modal → role=dialog/aria-modal
               (solo con navOpen; en desktop el mismo <aside> es el rail, no modal). */}
-          <nav className={`app-nav${navOpen ? " is-open" : ""}`} aria-label="Secciones"
+          <nav className={`app-nav${navOpen ? " is-open" : ""}${noPreview ? " no-preview" : ""}`} aria-label="Secciones"
+            onMouseLeave={() => setNoPreview(false)}
             role={navOpen ? "dialog" : undefined} aria-modal={navOpen ? true : undefined}>
             <div className="app-nav__head">
               {/* Desktop: hamburguesa que abre/fija (empuja) y encoge el riel. Siempre visible. */}
-              <button type="button" className="app-nav__burger" onClick={() => setPinned((p) => !p)}
+              <button type="button" className="app-nav__burger"
+                onClick={(e) => {
+                  // Al ENCOGER: suprimir el hover-preview (mouse encima) y soltar el
+                  // foco del botón, porque :focus-within lo volvería a expandir.
+                  if (pinned) { setNoPreview(true); e.currentTarget.blur(); }
+                  setPinned((p) => !p);
+                }}
                 aria-label={pinned ? "Encoger menú" : "Expandir menú"} title={pinned ? "Encoger menú" : "Expandir menú"} aria-pressed={pinned}>
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><path d="M3 6h18M3 12h18M3 18h18" /></svg>
               </button>
@@ -211,6 +248,7 @@ export function AppShell({ role, children }: { role: Role; children: React.React
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><path d="M6 6l12 12M18 6L6 18" /></svg>
               </button>
             </div>
+            <span className="app-nav__section app-nav__label">Menú</span>
             {meta.nav.map((n) => {
               const Icon = n.icon;
               const active = activeHref === n.href;
@@ -223,11 +261,29 @@ export function AppShell({ role, children }: { role: Role; children: React.React
                 </button>
               );
             })}
-            <button className="app-nav__item app-nav__salir" title="Salir"
-              onClick={() => { setNavOpen(false); setLogoutOpen(true); }}>
-              <span className="app-nav__ic"><IconLogout size={20} /></span>
-              <span className="app-nav__label">Salir</span>
-            </button>
+
+            {/* Pie del sidebar: cambio de tema + tarjeta de usuario + salir. */}
+            <div className="app-nav__foot">
+              <button type="button" className="app-nav__item app-nav__theme" onClick={toggleTheme}
+                title={theme === "dark" ? "Cambiar a modo claro" : "Cambiar a modo oscuro"}
+                aria-pressed={theme === "dark"}>
+                <span className="app-nav__ic">{theme === "dark" ? <IconSun /> : <IconMoon />}</span>
+                <span className="app-nav__label">{theme === "dark" ? "Modo claro" : "Modo oscuro"}</span>
+                <span className={`app-nav__switch${theme === "dark" ? " is-on" : ""} app-nav__label`} aria-hidden><i /></span>
+              </button>
+
+              <div className="app-nav__user">
+                <span className="app-nav__avatar">{(usuario ?? meta.persona).slice(0, 2).toUpperCase()}</span>
+                <span className="app-nav__user-meta app-nav__label">
+                  <span className="app-nav__user-name">{cap(usuario ?? meta.persona)}</span>
+                  <span className="app-nav__user-role">{meta.label}</span>
+                </span>
+                <button type="button" className="app-nav__logout app-nav__label" title="Salir"
+                  onClick={() => { setNavOpen(false); setLogoutOpen(true); }} aria-label="Cerrar sesión">
+                  <IconLogout size={18} />
+                </button>
+              </div>
+            </div>
           </nav>
         </>
       )}
