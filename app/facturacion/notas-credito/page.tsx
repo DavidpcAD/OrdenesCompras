@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo } from "react";
+import Link from "next/link";
 import { Badge, Card, EmptyState, Tile } from "@/components/ui";
 import { IconEdit } from "@/components/icons";
 import { useStore } from "@/lib/store";
@@ -22,9 +23,9 @@ export default function NotasCreditoPage() {
 
   const pend = useMemo(() => notasCredito.filter((n) => n.estado !== "resuelta"), [notasCredito]);
   const grupos = useMemo(() => {
-    const m = new Map<string, { ordenNumero: string; proveedor?: string; lineas: typeof pend }>();
+    const m = new Map<string, { ordenId: string; ordenNumero: string; proveedor?: string; lineas: typeof pend }>();
     for (const n of pend) {
-      if (!m.has(n.ordenId)) m.set(n.ordenId, { ordenNumero: n.ordenNumero, proveedor: n.proveedor, lineas: [] });
+      if (!m.has(n.ordenId)) m.set(n.ordenId, { ordenId: n.ordenId, ordenNumero: n.ordenNumero, proveedor: n.proveedor, lineas: [] });
       m.get(n.ordenId)!.lineas.push(n);
     }
     return [...m.values()].sort((a, b) => (b.lineas[0]?.fecha || "").localeCompare(a.lineas[0]?.fecha || ""));
@@ -54,10 +55,13 @@ export default function NotasCreditoPage() {
           <div className="col gap-4 mt-6">
             {grupos.map((g, gi) => (
               <Card key={gi} style={{ padding: 0, overflow: "hidden" }}>
-                <div className="row row--between wrap gap-3" style={{ padding: "12px 16px", borderBottom: "1.5px solid var(--ds-color-gray-100)" }}>
+                <Link href={`/facturacion/ver/${g.ordenId}`} className="nc-grp-head" title={`Abrir la orden ${g.ordenNumero}`}>
                   <span className="ds-strong">{g.ordenNumero}{g.proveedor ? <span className="ds-muted"> · {g.proveedor}</span> : null}</span>
-                  <span className="ds-body-sm ds-muted">{g.lineas.length} línea(s)</span>
-                </div>
+                  <span className="row gap-2" style={{ alignItems: "center" }}>
+                    <span className="ds-body-sm ds-muted">{g.lineas.length} línea(s)</span>
+                    <span className="nc-grp-head__go" aria-hidden>Ver orden →</span>
+                  </span>
+                </Link>
                 <div className="ds-table-wrap" style={{ boxShadow: "none" }}>
                   <table className="ds-table">
                     <thead><tr><th>Material</th><th>Motivo</th><th className="ds-num">Cantidad</th><th className="ds-num">Precio unit.</th><th className="ds-num">Importe</th><th>Fecha</th></tr></thead>

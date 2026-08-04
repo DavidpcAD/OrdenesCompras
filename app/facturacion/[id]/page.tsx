@@ -2,7 +2,7 @@
 
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
-import { Badge, Button, Card, EmptyState, Field, Input, Modal, Select, useToast } from "@/components/ui";
+import { Badge, Button, Card, EmptyState, Field, Input, Modal, Select, Skeleton, useToast } from "@/components/ui";
 import { IconWarning } from "@/components/icons";
 import { DateField } from "@/components/date-field";
 import { useStore } from "@/lib/store";
@@ -61,7 +61,8 @@ export default function RegistrarFacturaPage() {
   const [preview, setPreview] = useState(false);
   const [guardando, setGuardando] = useState(false);
   // Confirmación de inventario (stock BC antes → después de registrar).
-  const [confirmInv, setConfirmInv] = useState<null | { itemNo: string; desc: string; antes: number | null; recibido: number; despues: number | null }[]>(null);
+  // despues: number = stock BC verificado · null = BC no devolvió · undefined = verificando.
+  const [confirmInv, setConfirmInv] = useState<null | { itemNo: string; desc: string; antes: number | null; recibido: number; despues?: number | null }[]>(null);
   // Líneas marcadas para NOTA DE CRÉDITO (dañado / menos cantidad / precio distinto).
   const [marcadas, setMarcadas] = useState<Record<string, { motivo: MotivoNC; cantidad: string; precio: string }>>({});
   const marcarLinea = (l: { id: string; cantidad: number; precioUnitario: number }) =>
@@ -191,13 +192,17 @@ export default function RegistrarFacturaPage() {
       const falloBc = aviso.includes("NO se pudo") || aviso.includes("no disponible");
       toast(`Factura ${numeroFactura} registrada${completaOrden ? " — orden completada" : " (parcial)"}${aviso}`, falloBc ? "info" : "success");
       if (bcOk) {
-        // Stock DESPUÉS → mostramos la confirmación antes→después (el modal navega al cerrar).
-        const despues = await stockDeItems(items);
+        // Mostramos el modal de inmediato (antes + facturado) y desbloqueamos; la
+        // verificación del stock "después" en BC se consulta en segundo plano (no
+        // re-bloquea el POST ya lento). despues=undefined → "verificando…".
         setConfirmInv(items.map((it) => {
           const qty = bcLineas.filter((l) => l.itemNo === it).reduce((s, l) => s + l.qty, 0);
-          return { itemNo: it, desc: articulo.find((a) => a.articuloId === it)?.descripcion ?? it, antes: antes[it] ?? null, recibido: qty, despues: despues[it] ?? null };
+          return { itemNo: it, desc: articulo.find((a) => a.articuloId === it)?.descripcion ?? it, antes: antes[it] ?? null, recibido: qty, despues: undefined };
         }));
         setGuardando(false);
+        stockDeItems(items)
+          .then((despues) => setConfirmInv((prev) => prev && prev.map((x) => ({ ...x, despues: despues[x.itemNo] ?? null }))))
+          .catch(() => setConfirmInv((prev) => prev && prev.map((x) => ({ ...x, despues: null }))));
       } else {
         router.push(`/facturacion`);
       }
@@ -325,24 +330,30 @@ export default function RegistrarFacturaPage() {
                     <tr key={l.id} className={pend > 0 && val < pend ? "row-pending" : ""}>
                       <td className="ds-num"><input type="checkbox" className="ds-cbx" checked={pend > 0 && val >= pend} disabled={pend <= 0} title="Marcar recibido completo" onChange={(e) => setRecibir((r) => ({ ...r, [l.id]: e.target.checked ? String(pend) : "0" }))} /></td>
                       <td>
-                        {l.descripcion}
-                        <div className="ds-body-sm ds-muted">
-                          {[l.pedidoNumero, l.proyecto && `Proy. ${l.proyecto}`, l.taskNo && `Tarea ${l.taskNo}`, l.descuentoPct ? `−${l.descuentoPct}%` : null].filter(Boolean).join(" · ")}
-                        </div>
-                        {marcadas[l.id] ? (
-                          <div className="col gap-2" style={{ marginTop: 8, padding: 8, borderRadius: 10, background: "color-mix(in srgb, var(--ds-color-red-100) 8%, var(--ds-tint-base))", border: "1.5px solid color-mix(in srgb, var(--ds-color-red-100) 30%, var(--ds-tint-base))" }}>
-                            <div className="row gap-2 wrap" style={{ alignItems: "center" }}>
-                              <span className="ds-body-sm ds-strong" style={{ color: "var(--ds-color-red-200)" }}>Nota de crédito:</span>
-                              <select className="ds-cell-input" value={marcadas[l.id].motivo} onChange={(e) => setMarca(l.id, { motivo: e.target.value as MotivoNC })} style={{ minWidth: 130 }}>
-                                {MOTIVO_NC.map((mo) => <option key={mo.v} value={mo.v}>{mo.label}</option>)}
-                              </select>
-                              <input className="ds-cell-input" type="number" min={0} style={{ width: 70 }} title="Cantidad afectada" value={marcadas[l.id].cantidad} onChange={(e) => setMarca(l.id, { cantidad: e.target.value })} placeholder="Cant." />
-                              <input className="ds-cell-input" type="number" min={0} style={{ width: 90 }} title="Precio unitario" value={marcadas[l.id].precio} onChange={(e) => setMarca(l.id, { precio: e.target.value })} placeholder="Precio unit." />
-                              <button type="button" className="link-btn" onClick={() => quitarMarca(l.id)}>Quitar</button>
+                        <div className="row row--between" style={{ alignItems: "flex-start", gap: 8 }}>
+                          <div style={{ minWidth: 0 }}>
+                            {l.descripcion}
+                            <div className="ds-body-sm ds-muted">
+                              {[l.pedidoNumero, l.proyecto && `Proy. ${l.proyecto}`, l.taskNo && `Tarea ${l.taskNo}`, l.descuentoPct ? `−${l.descuentoPct}%` : null].filter(Boolean).join(" · ")}
                             </div>
                           </div>
-                        ) : (
-                          <button type="button" className="link-btn" style={{ marginTop: 4, color: "var(--ds-color-red-200)" }} onClick={() => marcarLinea(l)}>⚠ Marcar para nota de crédito</button>
+                          {!marcadas[l.id] && (
+                            <button type="button" className="nc-flag" onClick={() => marcarLinea(l)}
+                              title="Marcar para nota de crédito" aria-label={`Marcar "${l.descripcion}" para nota de crédito`}>
+                              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" /><line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" /></svg>
+                            </button>
+                          )}
+                        </div>
+                        {marcadas[l.id] && (
+                          <div className="nc-mark" style={{ marginTop: 8 }}>
+                            <span className="nc-mark__label">Nota de crédito</span>
+                            <Select value={marcadas[l.id].motivo} onChange={(e) => setMarca(l.id, { motivo: e.target.value as MotivoNC })} style={{ minWidth: 168 }}>
+                              {MOTIVO_NC.map((mo) => <option key={mo.v} value={mo.v}>{mo.label}</option>)}
+                            </Select>
+                            <input className="ds-cell-input" type="number" min={0} style={{ width: 74 }} aria-label="Cantidad afectada" title="Cantidad afectada" value={marcadas[l.id].cantidad} onChange={(e) => setMarca(l.id, { cantidad: e.target.value })} placeholder="Cant." />
+                            <input className="ds-cell-input" type="number" min={0} style={{ width: 96 }} aria-label="Precio unitario" title="Precio unitario" value={marcadas[l.id].precio} onChange={(e) => setMarca(l.id, { precio: e.target.value })} placeholder="Precio unit." />
+                            <button type="button" className="link-btn nc-mark__quitar" onClick={() => quitarMarca(l.id)}>Quitar</button>
+                          </div>
                         )}
                       </td>
                       <td className="ds-muted hide-mobile">{l.almacen}</td>
@@ -454,6 +465,12 @@ export default function RegistrarFacturaPage() {
             <Button variant="ghost" onClick={recibirEnRevision} disabled={!algoRecibido || guardando} title="El material llegó bien pero la factura tiene problemas: recibí el material y mandá la factura a revisión.">Recibir sin factura (a revisión)</Button>
             <Button variant="red" onClick={registrar} disabled={!algoRecibido || !numeroFactura.trim() || guardando}>{guardando ? "Registrando…" : "Registrar factura"}</Button>
           </div>
+          {guardando && (
+            <p className="ds-body-sm ds-muted" role="status" style={{ marginTop: 10, display: "flex", alignItems: "center", gap: 8 }}>
+              <span className="ds-spinner" aria-hidden />
+              Registrando en Business Central (recibo + factura + movimientos de inventario). Puede tardar hasta ~1&nbsp;min; no cierres esta pantalla.
+            </p>
+          )}
         </div>
 
         {preview && (
@@ -502,15 +519,16 @@ export default function RegistrarFacturaPage() {
                 <thead><tr><th>Artículo</th><th className="ds-num">Antes</th><th className="ds-num">Facturado</th><th className="ds-num">Después</th><th></th></tr></thead>
                 <tbody>
                   {confirmInv.map((x) => {
-                    const sd = x.antes == null || x.despues == null;
-                    const ok = !sd && Math.abs((x.despues as number) - ((x.antes as number) + x.recibido)) < 1e-6;
+                    const verificando = x.despues === undefined;
+                    const sd = !verificando && (x.antes == null || x.despues == null);
+                    const ok = !verificando && !sd && Math.abs((x.despues as number) - ((x.antes as number) + x.recibido)) < 1e-6;
                     return (
                       <tr key={x.itemNo}>
                         <td>{x.desc}<div className="ds-body-sm ds-muted">{x.itemNo}</div></td>
                         <td className="ds-num">{x.antes == null ? "—" : num.format(x.antes)}</td>
                         <td className="ds-num ds-strong" style={{ color: "var(--ds-color-green-300)" }}>+{num.format(x.recibido)}</td>
-                        <td className="ds-num ds-strong">{x.despues == null ? "—" : num.format(x.despues)}</td>
-                        <td className="ds-num">{sd ? <span className="ds-muted" title="BC no devolvió stock">s/d</span> : ok ? "✅" : <span title="El cambio no coincide con lo facturado" style={{ color: "var(--ds-color-red-200)" }}>⚠️</span>}</td>
+                        <td className="ds-num ds-strong">{verificando ? <Skeleton style={{ display: "inline-block", width: 48, height: 14, borderRadius: 6 }} /> : x.despues == null ? "—" : num.format(x.despues)}</td>
+                        <td className="ds-num">{verificando ? <span className="ds-muted" title="Verificando en BC…">…</span> : sd ? <span className="ds-muted" title="BC no devolvió stock">s/d</span> : ok ? "✅" : <span title="El cambio no coincide con lo facturado" style={{ color: "var(--ds-color-red-200)" }}>⚠️</span>}</td>
                       </tr>
                     );
                   })}
