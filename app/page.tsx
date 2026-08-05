@@ -36,18 +36,63 @@ export default function LoginPage() {
 
   return (
     <div className="login">
-      <div className="login__card">
-        <div className="row gap-3" style={{ marginBottom: 8 }}>
+      {/* Panel de marca (siempre oscuro), estilo "Sistema interno" */}
+      <aside className="login__aside">
+        <div className="login__brand">
           <span className="topbar__logo" style={{ width: 44, height: 44, fontSize: 22 }}>A</span>
           <div>
-            <h1 className="ds-subtitle-lg">Compras Adelante</h1>
+            <div className="login__brand-name">Adelante</div>
+            <div className="login__brand-sub">Desarrollos</div>
+          </div>
+        </div>
+
+        <div className="login__aside-mid">
+          <span className="login__eyebrow">Sistema interno</span>
+          <h1 className="login__headline">Proveeduría</h1>
+          <p className="login__lead">
+            Solicitudes y órdenes de compra, recepción de material y facturación. Integrado con Business Central.
+          </p>
+          <div className="login__features">
+            <div className="login__feature">
+              <span className="login__feature-ic">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01" /></svg>
+              </span>
+              <span>Solicitudes y órdenes de compra</span>
+            </div>
+            <div className="login__feature">
+              <span className="login__feature-ic">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 3h15v13H1zM16 8h4l3 3v5h-7z" /><circle cx="5.5" cy="18.5" r="2" /><circle cx="18.5" cy="18.5" r="2" /></svg>
+              </span>
+              <span>Recepción de material y facturación</span>
+            </div>
+            <div className="login__feature">
+              <span className="login__feature-ic">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><ellipse cx="12" cy="5" rx="8" ry="3" /><path d="M4 5v6c0 1.7 3.6 3 8 3s8-1.3 8-3V5M4 11v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6" /></svg>
+              </span>
+              <span>Integrado con Business Central + SQL</span>
+            </div>
+          </div>
+        </div>
+
+        <div className="login__aside-foot">© 2026 Adelante Desarrollos · Sistema interno</div>
+      </aside>
+
+      {/* Panel del formulario */}
+      <main className="login__main">
+      <div className="login__card">
+        {/* Marca compacta: solo visible en móvil (en desktop está en el panel izquierdo) */}
+        <div className="login__card-brand">
+          <span className="topbar__logo" style={{ width: 40, height: 40, fontSize: 20 }}>A</span>
+          <div>
+            <h1 className="ds-subtitle">Compras Adelante</h1>
             <p className="ds-muted ds-body-sm">Solicitud de material a proveedores</p>
           </div>
         </div>
 
-        <p className="ds-muted ds-label mt-4" style={{ marginBottom: 12 }}>
-          Iniciá sesión con tu usuario
-        </p>
+        <div className="login__form-head">
+          <h2 className="ds-subtitle">Iniciar sesión</h2>
+          <p className="ds-muted ds-body-sm">Ingresá tu usuario y contraseña para continuar</p>
+        </div>
 
         <div className="col gap-3">
           <div className="ds-form-field">
@@ -96,6 +141,7 @@ export default function LoginPage() {
           Tu rol define a qué módulo entrás · Conectado a Business Central + SQL
         </p>
       </div>
+      </main>
     </div>
   );
 }
