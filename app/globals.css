@@ -771,6 +771,27 @@ h1, h2, h3, h4, p { margin: 0; }
 /* truncate long cell text to keep rows on one line */
 .ds-truncate { max-width: 280px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
+/* Recibidas (Bodega): tarjeta expandible con las líneas recibidas. */
+.rec-card__toggle {
+  display: inline-flex; align-items: center; gap: 6px; margin-top: var(--ds-space-3);
+  border: 0; background: none; padding: 6px 8px; margin-left: -8px; border-radius: var(--ds-radius-md);
+  color: var(--ds-color-green-200); font: inherit; font-size: var(--ds-font-size-label); font-weight: var(--ds-font-weight-semibold);
+  cursor: pointer; transition: background-color .12s ease;
+}
+.rec-card__toggle:hover { background: color-mix(in srgb, var(--ds-color-green-100) 12%, var(--ds-tint-base)); }
+.rec-card__chev { transition: transform .2s cubic-bezier(.34, 1.4, .5, 1); }
+.rec-card__chev.is-open { transform: rotate(180deg); }
+@media (prefers-reduced-motion: reduce) { .rec-card__chev { transition: none; } }
+.rec-lines { margin-top: var(--ds-space-2); border-top: 1px solid var(--ds-color-gray-100); }
+.rec-line {
+  display: grid; grid-template-columns: 1fr auto auto; align-items: center; gap: var(--ds-space-4);
+  padding: 10px 2px; border-bottom: 1px solid var(--ds-color-gray-100);
+}
+.rec-line:last-child { border-bottom: 0; }
+.rec-line__desc { min-width: 0; font-size: var(--ds-font-size-label); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rec-line__qty { font-size: var(--ds-font-size-label); font-weight: var(--ds-font-weight-semibold); white-space: nowrap; }
+.rec-line__price { font-size: var(--ds-font-size-body-sm); white-space: nowrap; min-width: 84px; text-align: right; }
+
 /* sticky action bar (appears when there's a selection) */
 .action-bar { position: fixed; left: 72px; right: 0; bottom: 0; z-index: 45; background: var(--ds-surface); box-shadow: 0 -4px 18px #0000001f; padding: var(--ds-space-3) var(--ds-space-6); animation: barUp .2s ease; transition: left .26s cubic-bezier(.34, 1.2, .5, 1); }
 /* La barra sigue al riel: 72px colapsado, nav-w fijado, 0 en móvil. */

@@ -1,8 +1,8 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { Badge, Card, EmptyState, Tile } from "@/components/ui";
-import { IconCheck } from "@/components/icons";
+import { IconCheck, IconChevronDown } from "@/components/icons";
 import { useStore } from "@/lib/store";
 import { money, formatDate } from "@/lib/helpers";
 
@@ -10,6 +10,14 @@ import { money, formatDate } from "@/lib/helpers";
 // Pensada para celular/tablet: tarjetas grandes, sin tablas anchas.
 export default function RecibidasPage() {
   const { recepciones, ordenes, proveedores } = useStore();
+  // Qué tarjetas tienen las líneas desplegadas (permite varias abiertas a la vez).
+  const [abiertas, setAbiertas] = useState<Set<string>>(new Set());
+  const toggleLineas = (id: string) =>
+    setAbiertas((prev) => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
   const ordenDe = (ordenId: string) => ordenes.find((o) => o.id === ordenId);
   const provNombre = (ordenId: string) => {
     const o = ordenDe(ordenId);
@@ -75,6 +83,32 @@ export default function RecibidasPage() {
                       <span className="ds-body-sm ds-strong">{r.numeroFactura || "—"}</span>
                     </span>
                   </div>
+                  {(() => {
+                    const open = abiertas.has(r.id);
+                    return (
+                      <>
+                        <button type="button" className="rec-card__toggle" onClick={() => toggleLineas(r.id)} aria-expanded={open}>
+                          <IconChevronDown size={16} className={`rec-card__chev${open ? " is-open" : ""}`} />
+                          {open ? "Ocultar líneas" : `Ver líneas (${r.lineas.length})`}
+                        </button>
+                        {open && (
+                          <div className="rec-lines">
+                            {r.lineas.map((rl, i) => {
+                              const ol = o?.lineas.find((l) => l.id === rl.ordenLineaId);
+                              const precio = rl.precioFactura ?? ol?.precioUnitario;
+                              return (
+                                <div key={i} className="rec-line">
+                                  <span className="rec-line__desc">{ol?.descripcion ?? "Línea"}</span>
+                                  <span className="rec-line__qty ds-num">{rl.cantidadRecibida} {ol?.unidad ?? "und"}</span>
+                                  <span className="rec-line__price ds-num ds-muted">{precio != null ? money(precio) : ""}</span>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </>
+                    );
+                  })()}
                 </Card>
               );
             })}
