@@ -15,6 +15,23 @@ const MOTIVO_NC: { v: MotivoNC; label: string }[] = [
   { v: "danado", label: "Material dañado" },
 ];
 
+// Input de precio para la nota de crédito: mientras se edita muestra el número
+// crudo; al perder el foco lo formatea como moneda (miles + 2 decimales, ₡).
+// Guarda internamente el valor con punto decimal para que Number(...) lo parsee.
+function PrecioNCInput({ value, onChange, currencyCode }: { value: string; onChange: (v: string) => void; currencyCode?: string }) {
+  const [focused, setFocused] = useState(false);
+  const n = Number(String(value).replace(",", "."));
+  const display = focused || value === "" || Number.isNaN(n) ? value : money(n, currencyCode);
+  return (
+    <input className="ds-cell-input" type="text" inputMode="decimal" style={{ width: 132, textAlign: "right" }}
+      aria-label="Precio unitario" title="Precio unitario" placeholder="Precio unit."
+      value={display}
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
+      onChange={(e) => onChange(e.target.value.replace(/[^\d.,]/g, "").replace(",", ".").replace(/\.(?=.*\.)/g, ""))} />
+  );
+}
+
 // Cómo reparte BC el cargo de producto entre las líneas recibidas.
 const METODOS_CARGO: { v: string; label: string }[] = [
   { v: "Amount", label: "Por importe" },
@@ -66,7 +83,7 @@ export default function RegistrarFacturaPage() {
   // Líneas marcadas para NOTA DE CRÉDITO (dañado / menos cantidad / precio distinto).
   const [marcadas, setMarcadas] = useState<Record<string, { motivo: MotivoNC; cantidad: string; precio: string }>>({});
   const marcarLinea = (l: { id: string; cantidad: number; precioUnitario: number }) =>
-    setMarcadas((m) => ({ ...m, [l.id]: { motivo: "precio_distinto", cantidad: String(recibir[l.id] || l.cantidad), precio: String(l.precioUnitario ?? "") } }));
+    setMarcadas((m) => ({ ...m, [l.id]: { motivo: "precio_distinto", cantidad: String(recibir[l.id] || l.cantidad), precio: l.precioUnitario != null ? String(Math.round(l.precioUnitario * 100) / 100) : "" } }));
   const quitarMarca = (id: string) => setMarcadas((m) => { const n = { ...m }; delete n[id]; return n; });
   const setMarca = (id: string, patch: Partial<{ motivo: MotivoNC; cantidad: string; precio: string }>) =>
     setMarcadas((m) => ({ ...m, [id]: { ...m[id], ...patch } }));
@@ -351,7 +368,7 @@ export default function RegistrarFacturaPage() {
                               {MOTIVO_NC.map((mo) => <option key={mo.v} value={mo.v}>{mo.label}</option>)}
                             </Select>
                             <input className="ds-cell-input" type="number" min={0} style={{ width: 74 }} aria-label="Cantidad afectada" title="Cantidad afectada" value={marcadas[l.id].cantidad} onChange={(e) => setMarca(l.id, { cantidad: e.target.value })} placeholder="Cant." />
-                            <input className="ds-cell-input" type="number" min={0} style={{ width: 96 }} aria-label="Precio unitario" title="Precio unitario" value={marcadas[l.id].precio} onChange={(e) => setMarca(l.id, { precio: e.target.value })} placeholder="Precio unit." />
+                            <PrecioNCInput value={marcadas[l.id].precio} onChange={(v) => setMarca(l.id, { precio: v })} currencyCode={orden.currencyCode} />
                             <button type="button" className="link-btn nc-mark__quitar" onClick={() => quitarMarca(l.id)}>Quitar</button>
                           </div>
                         )}

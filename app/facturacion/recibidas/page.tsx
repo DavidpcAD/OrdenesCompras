@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Badge, Card, EmptyState, Tile } from "@/components/ui";
 import { IconCheck, IconChevronDown } from "@/components/icons";
 import { useStore } from "@/lib/store";
@@ -9,7 +9,10 @@ import { money, formatDate } from "@/lib/helpers";
 // Bodega (recibe): historial de lo que se recibió, con quién lo recibió.
 // Pensada para celular/tablet: tarjetas grandes, sin tablas anchas.
 export default function RecibidasPage() {
-  const { recepciones, ordenes, proveedores } = useStore();
+  const { recepciones, ordenes, proveedores, notasCredito, cargarNotasCredito } = useStore();
+  // Las notas de crédito las marca Bodega al recibir (por defecto sin marcar).
+  // Las cargamos para etiquetar cada recepción como "Factura OK" o "Nota de crédito".
+  useEffect(() => { cargarNotasCredito(); /* eslint-disable-next-line */ }, []);
   // Qué tarjetas tienen las líneas desplegadas (permite varias abiertas a la vez).
   const [abiertas, setAbiertas] = useState<Set<string>>(new Set());
   const toggleLineas = (id: string) =>
@@ -56,6 +59,18 @@ export default function RecibidasPage() {
               const o = ordenDe(r.ordenId);
               const enRevision = !!r.facturaEnRevision || !r.numeroFactura;
               const unidades = r.lineas.reduce((s, l) => s + (Number(l.cantidadRecibida) || 0), 0);
+              // Totales tal cual BC (precio del pedido, con descuento e IVA por línea).
+              const tot = r.lineas.reduce((acc, rl) => {
+                const ol = o?.lineas.find((l) => l.id === rl.ordenLineaId);
+                const base = (ol?.precioUnitario ?? 0) * (Number(rl.cantidadRecibida) || 0) * (1 - (ol?.descuentoPct ?? 0) / 100);
+                acc.subtotal += base;
+                acc.iva += base * ((ol?.ivaPct ?? 0) / 100);
+                return acc;
+              }, { subtotal: 0, iva: 0 });
+              const total = tot.subtotal + tot.iva;
+              // ¿Marcada para nota de crédito? La marca Bodega al recibir (línea a línea).
+              const lineIds = new Set(r.lineas.map((l) => l.ordenLineaId));
+              const tieneNC = notasCredito.some((nc) => String(nc.ordenId) === String(o?.id ?? "") && (!nc.ordenLineaId || lineIds.has(nc.ordenLineaId)));
               return (
                 <Card key={r.id} className="rec-card">
                   <div className="row row--between wrap gap-2" style={{ alignItems: "flex-start" }}>
@@ -63,7 +78,10 @@ export default function RecibidasPage() {
                       <span className="ds-strong" style={{ fontSize: "var(--ds-font-size-subtitle)" }}>{o?.numero ?? "—"}</span>
                       <span className="ds-body-sm ds-muted ds-truncate">{provNombre(r.ordenId)}</span>
                     </div>
-                    {enRevision ? <Badge tone="yellow">En revisión</Badge> : (r.parcial ? <Badge tone="yellow">Parcial</Badge> : <Badge tone="green">Completa</Badge>)}
+                    <div className="row gap-2 wrap" style={{ justifyContent: "flex-end" }}>
+                      {r.parcial ? <Badge tone="yellow">Parcial</Badge> : <Badge tone="green">Completa</Badge>}
+                      {enRevision ? <Badge tone="gray">Factura en revisión</Badge> : tieneNC ? <Badge tone="red">Nota de crédito</Badge> : <Badge tone="green">Factura OK</Badge>}
+                    </div>
                   </div>
                   <div className="row wrap gap-4 mt-3" style={{ alignItems: "center" }}>
                     <span className="col" style={{ gap: 1 }}>
@@ -79,7 +97,11 @@ export default function RecibidasPage() {
                       <span className="ds-body-sm ds-strong">{r.lineas.length} · {unidades} und</span>
                     </span>
                     <span className="col" style={{ gap: 1, marginLeft: "auto", textAlign: "right" }}>
-                      <span className="ds-label ds-muted">{enRevision ? "Total est." : "Factura"}</span>
+                      <span className="ds-label ds-muted">Total {enRevision ? "(est.)" : "(con IVA)"}</span>
+                      <span className="ds-body-sm ds-strong">{money(total)}</span>
+                    </span>
+                    <span className="col" style={{ gap: 1, textAlign: "right" }}>
+                      <span className="ds-label ds-muted">Factura</span>
                       <span className="ds-body-sm ds-strong">{r.numeroFactura || "—"}</span>
                     </span>
                   </div>
@@ -123,6 +145,12 @@ export default function RecibidasPage() {
                                   </div>
                                 );
                               })}
+                            </div>
+                            {/* Totales de la recepción (mismo formato que la pantalla de recibir). */}
+                            <div className="rec-totals">
+                              <div className="rec-totals__row"><span className="ds-muted">Subtotal recibido</span><span className="ds-num">{money(tot.subtotal)}</span></div>
+                              <div className="rec-totals__row"><span className="ds-muted">IVA</span><span className="ds-num">{money(tot.iva)}</span></div>
+                              <div className="rec-totals__row rec-totals__row--grand"><span>Total {enRevision ? "estimado" : "factura (con IVA)"}</span><span className="ds-num">{money(total)}</span></div>
                             </div>
                           </div>
                         )}

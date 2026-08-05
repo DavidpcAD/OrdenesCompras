@@ -801,6 +801,10 @@ h1, h2, h3, h4, p { margin: 0; }
 .rec-line__price { font-size: var(--ds-font-size-label); white-space: nowrap; text-align: right; }
 .rec-line__iva { font-size: var(--ds-font-size-body-sm); white-space: nowrap; text-align: right; }
 .rec-line__amt { font-size: var(--ds-font-size-label); font-weight: var(--ds-font-weight-semibold); white-space: nowrap; text-align: right; }
+/* Pie de totales de la recepción. */
+.rec-totals { margin-top: var(--ds-space-3); margin-left: auto; width: max-content; min-width: 260px; display: flex; flex-direction: column; gap: 4px; }
+.rec-totals__row { display: flex; justify-content: space-between; gap: var(--ds-space-6); font-size: var(--ds-font-size-label); }
+.rec-totals__row--grand { margin-top: 4px; padding-top: 8px; border-top: 1.5px solid var(--ds-color-gray-200); font-size: var(--ds-font-size-body-md); font-weight: var(--ds-font-weight-semibold); }
 
 /* sticky action bar (appears when there's a selection) */
 .action-bar { position: fixed; left: 72px; right: 0; bottom: 0; z-index: 45; background: var(--ds-surface); box-shadow: 0 -4px 18px #0000001f; padding: var(--ds-space-3) var(--ds-space-6); animation: barUp .2s ease; transition: left .26s cubic-bezier(.34, 1.2, .5, 1); }
