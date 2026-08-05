@@ -674,7 +674,7 @@ h1, h2, h3, h4, p { margin: 0; }
 
 /* padding-bottom deja aire para el FAB de acción (abajo-der): el contenido al
    final del scroll no queda tapado por él. */
-.page { width: 100%; max-width: 1480px; margin: 0 auto; padding: var(--ds-space-10) var(--ds-space-6) calc(var(--ds-space-10) * 2 + var(--ds-space-4)); flex: 1; }
+.page { width: 100%; max-width: 1480px; margin: 0 auto; padding: var(--ds-space-10) var(--ds-space-6) calc(var(--ds-space-10) * 2 + var(--ds-space-4)); flex: 1; animation: ds-reveal-in .32s cubic-bezier(.22, .61, .36, 1) both; }
 .page--wide { max-width: 1480px; }
 .page__head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--ds-space-4); margin-bottom: var(--ds-space-6); flex-wrap: wrap; }
 .page__title { display: flex; flex-direction: column; gap: 4px; }
@@ -1026,6 +1026,15 @@ h1, h2, h3, h4, p { margin: 0; }
 .ds-cbx:focus-visible {
   outline: 3px solid color-mix(in srgb, var(--ds-color-green-100) 60%, transparent); outline-offset: 2px;
 }
+/* BASELINE de foco de teclado (WCAG 2.4.7): cualquier elemento interactivo que no
+   tenga un anillo propio recibe uno visible. `:where()` = 0 de especificidad, así
+   las reglas específicas de arriba y de .ds-btn/.skip-link siguen ganando. Se
+   excluyen los inputs (usan borde) para no duplicar. */
+:where(a[href], button, [role="button"], [role="option"], [tabindex]:not([tabindex="-1"])):focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--ds-color-green-100) 60%, transparent);
+  outline-offset: 2px;
+  border-radius: var(--ds-radius-sm);
+}
 /* Botón "Quitar" (remover línea): más grande y en rojo del DS, bien visible. */
 .icon-btn--quitar { width: 36px; height: 36px; font-size: 22px; line-height: 1; color: var(--ds-color-red-200); border-radius: var(--ds-radius-md); }
 .icon-btn--quitar:hover { background: var(--ds-color-red-100); color: var(--ds-color-red-200); }
@@ -1317,7 +1326,7 @@ button.ana-kpi:active { transform: translateY(1px); }
 
 @media (prefers-reduced-motion: reduce) {
   .ds-skeleton { animation: none; }
-  .ds-reveal { animation: none; opacity: 1; transform: none; }
+  .ds-reveal, .page { animation: none; opacity: 1; transform: none; }
 }
 
 /* =====================  IMPRESIÓN  =====================

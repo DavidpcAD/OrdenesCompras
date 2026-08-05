@@ -87,18 +87,37 @@ export function Select({
   );
   const cur = String(value ?? "");
   const sel = options.find((o) => o.value === cur);
-  const pick = (v: string) => { onChange?.({ target: { value: v } }); setOpen(false); };
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const pick = (v: string) => { onChange?.({ target: { value: v } }); setOpen(false); triggerRef.current?.focus(); };
+  const closeAndFocus = () => { setOpen(false); triggerRef.current?.focus(); };
+  // Al abrir, llevar el foco a la opción seleccionada (o la primera) para navegar
+  // con teclado. Solo :focus-visible muestra el anillo, así que con mouse no molesta.
+  useEffect(() => {
+    if (!open) return;
+    const items = Array.from(menuRef.current?.querySelectorAll<HTMLButtonElement>('[role="option"]') ?? []);
+    (items.find((b) => b.getAttribute("aria-selected") === "true") ?? items[0])?.focus();
+  }, [open]);
+  const onMenuKey = (e: React.KeyboardEvent) => {
+    const items = Array.from(menuRef.current?.querySelectorAll<HTMLButtonElement>('[role="option"]') ?? []);
+    const idx = items.indexOf(document.activeElement as HTMLButtonElement);
+    if (e.key === "Escape") { e.preventDefault(); closeAndFocus(); }
+    else if (e.key === "ArrowDown") { e.preventDefault(); (items[idx + 1] ?? items[0])?.focus(); }
+    else if (e.key === "ArrowUp") { e.preventDefault(); (items[idx - 1] ?? items[items.length - 1])?.focus(); }
+  };
   return (
     <div className={`combo ds-select ${className}`} style={style}>
-      <button type="button" id={id} className="ds-form-field__input ds-select__trigger" disabled={disabled}
-        aria-haspopup="listbox" aria-expanded={open} onClick={() => { if (!disabled) setOpen((o) => !o); }}>
+      <button ref={triggerRef} type="button" id={id} className="ds-form-field__input ds-select__trigger" disabled={disabled}
+        aria-haspopup="listbox" aria-expanded={open}
+        onClick={() => { if (!disabled) setOpen((o) => !o); }}
+        onKeyDown={(e) => { if (!disabled && !open && (e.key === "ArrowDown" || e.key === "Enter" || e.key === " ")) { e.preventDefault(); setOpen(true); } }}>
         <span className={sel ? "" : "ds-select__ph"}>{sel ? sel.label : placeholder}</span>
         <IconChevronDown size={20} className="ds-select__chev" />
       </button>
       {open && !disabled && (
         <>
           <div className="ds-select__overlay" onClick={() => setOpen(false)} />
-          <div className="combo__menu" role="listbox">
+          <div ref={menuRef} className="combo__menu" role="listbox" onKeyDown={onMenuKey}>
             {options.length === 0 && <div className="combo__empty">Sin opciones.</div>}
             {options.map((o) => (
               <button key={o.value} type="button" role="option" aria-selected={o.value === cur}
@@ -254,6 +273,10 @@ export function Modal({ title, onClose, children, footer, wide }: {
   // atraparlo (Tab cicla dentro) y restaurarlo al disparador al cerrar.
   useEffect(() => {
     prevFocus.current = document.activeElement as HTMLElement | null;
+    // Bloquear el scroll del fondo mientras el diálogo está abierto (evita el
+    // "scroll detrás" del overlay). Se restaura al cerrar.
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
     const el = modalRef.current;
     const focusables = () => Array.from(
       el?.querySelectorAll<HTMLElement>('button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])') ?? []
@@ -270,7 +293,7 @@ export function Modal({ title, onClose, children, footer, wide }: {
       }
     };
     window.addEventListener("keydown", onKey);
-    return () => { window.removeEventListener("keydown", onKey); prevFocus.current?.focus?.(); };
+    return () => { window.removeEventListener("keydown", onKey); document.body.style.overflow = prevOverflow; prevFocus.current?.focus?.(); };
   }, []);
   return (
     <div className="modal-overlay" onClick={onClose}>
