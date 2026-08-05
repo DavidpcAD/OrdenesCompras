@@ -93,17 +93,37 @@ export default function RecibidasPage() {
                         </button>
                         {open && (
                           <div className="rec-lines">
-                            {r.lineas.map((rl, i) => {
-                              const ol = o?.lineas.find((l) => l.id === rl.ordenLineaId);
-                              const precio = rl.precioFactura ?? ol?.precioUnitario;
-                              return (
-                                <div key={i} className="rec-line">
-                                  <span className="rec-line__desc">{ol?.descripcion ?? "Línea"}</span>
-                                  <span className="rec-line__qty ds-num">{rl.cantidadRecibida} {ol?.unidad ?? "und"}</span>
-                                  <span className="rec-line__price ds-num ds-muted">{precio != null ? money(precio) : ""}</span>
-                                </div>
-                              );
-                            })}
+                            <div className="rec-lines__scroll">
+                              <div className="rec-line rec-line--head">
+                                <span>Artículo</span>
+                                <span className="ds-num">Cant.</span>
+                                <span className="ds-num">P. unit · BC</span>
+                                <span className="ds-num">IVA</span>
+                                <span className="ds-num">Importe</span>
+                              </div>
+                              {r.lineas.map((rl, i) => {
+                                const ol = o?.lineas.find((l) => l.id === rl.ordenLineaId);
+                                // Precio TAL CUAL viaja a BC = directUnitCost = precioUnitario de la
+                                // línea de la orden (la factura NO manda precio; BC usa el del pedido).
+                                const precio = ol?.precioUnitario ?? 0;
+                                const desc = ol?.descuentoPct ?? 0;
+                                const cant = Number(rl.cantidadRecibida) || 0;
+                                const importe = precio * cant * (1 - desc / 100); // Line Amount Excl. VAT
+                                return (
+                                  <div key={i} className="rec-line">
+                                    <span className="rec-line__desc">
+                                      {(ol?.articuloId || ol?.tipo === "cargo") && <span className="rec-line__code">{ol?.articuloId || (ol?.chargeNo ?? "CARGO")}</span>}
+                                      <span className="rec-line__name">{ol?.descripcion ?? "Línea"}</span>
+                                      {desc > 0 && <span className="rec-line__meta">Desc. {desc}%</span>}
+                                    </span>
+                                    <span className="rec-line__qty ds-num">{cant} {ol?.unidad ?? "und"}</span>
+                                    <span className="rec-line__price ds-num">{money(precio)}</span>
+                                    <span className="rec-line__iva ds-num ds-muted">{ol?.ivaPct ?? 0}%</span>
+                                    <span className="rec-line__amt ds-num">{money(importe)}</span>
+                                  </div>
+                                );
+                              })}
+                            </div>
                           </div>
                         )}
                       </>

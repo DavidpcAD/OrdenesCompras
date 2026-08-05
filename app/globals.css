@@ -783,14 +783,24 @@ h1, h2, h3, h4, p { margin: 0; }
 .rec-card__chev.is-open { transform: rotate(180deg); }
 @media (prefers-reduced-motion: reduce) { .rec-card__chev { transition: none; } }
 .rec-lines { margin-top: var(--ds-space-2); border-top: 1px solid var(--ds-color-gray-100); }
+.rec-lines__scroll { overflow-x: auto; }
 .rec-line {
-  display: grid; grid-template-columns: 1fr auto auto; align-items: center; gap: var(--ds-space-4);
+  display: grid; grid-template-columns: minmax(220px, 1fr) 96px 128px 56px 128px;
+  align-items: center; gap: var(--ds-space-4);
   padding: 10px 2px; border-bottom: 1px solid var(--ds-color-gray-100);
 }
 .rec-line:last-child { border-bottom: 0; }
-.rec-line__desc { min-width: 0; font-size: var(--ds-font-size-label); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.rec-line__qty { font-size: var(--ds-font-size-label); font-weight: var(--ds-font-weight-semibold); white-space: nowrap; }
-.rec-line__price { font-size: var(--ds-font-size-body-sm); white-space: nowrap; min-width: 84px; text-align: right; }
+/* Encabezado de columnas (como la línea de compra en BC). */
+.rec-line--head { padding: 8px 2px; border-bottom: 1.5px solid var(--ds-color-gray-200); }
+.rec-line--head > span { font-size: var(--ds-font-size-body-sm); color: var(--ds-color-gray-400); font-weight: var(--ds-font-weight-semibold); }
+.rec-line__desc { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.rec-line__code { font-size: 11px; font-weight: 700; letter-spacing: .02em; color: var(--ds-color-gray-400); }
+.rec-line__name { font-size: var(--ds-font-size-label); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rec-line__meta { font-size: 11px; color: var(--ds-color-red-200); }
+.rec-line__qty { font-size: var(--ds-font-size-label); font-weight: var(--ds-font-weight-semibold); white-space: nowrap; text-align: right; }
+.rec-line__price { font-size: var(--ds-font-size-label); white-space: nowrap; text-align: right; }
+.rec-line__iva { font-size: var(--ds-font-size-body-sm); white-space: nowrap; text-align: right; }
+.rec-line__amt { font-size: var(--ds-font-size-label); font-weight: var(--ds-font-weight-semibold); white-space: nowrap; text-align: right; }
 
 /* sticky action bar (appears when there's a selection) */
 .action-bar { position: fixed; left: 72px; right: 0; bottom: 0; z-index: 45; background: var(--ds-surface); box-shadow: 0 -4px 18px #0000001f; padding: var(--ds-space-3) var(--ds-space-6); animation: barUp .2s ease; transition: left .26s cubic-bezier(.34, 1.2, .5, 1); }
@@ -935,7 +945,7 @@ h1, h2, h3, h4, p { margin: 0; }
 .app-nav__user-role { font-size: 11px; color: rgba(255, 255, 255, 0.55); }
 /* Colapsado: se OCULTA (un grid no colapsa con max-width como los <span> label),
    así el avatar queda centrado. Se muestra en los estados expandidos. */
-.app-nav__logout { flex-shrink: 0; display: none; place-items: center; width: 32px; height: 32px; border: 0; border-radius: var(--ds-radius-md); background: transparent; color: rgba(255, 255, 255, 0.6); cursor: pointer; transition: background .12s ease, color .12s ease; }
+.app-nav__logout { flex-shrink: 0; display: none; margin-left: auto; place-items: center; width: 34px; height: 34px; border: 0; border-radius: var(--ds-radius-md); background: transparent; color: rgba(255, 255, 255, 0.85); cursor: pointer; transition: background .12s ease, color .12s ease; }
 .app-nav__logout:hover { background: color-mix(in srgb, var(--ds-color-red-100) 24%, transparent); color: var(--ds-color-red-100); }
 /* Tarjeta de usuario alineada a la izquierda cuando el riel está expandido. */
 .app-shell.pinned .app-nav__user { justify-content: flex-start; }

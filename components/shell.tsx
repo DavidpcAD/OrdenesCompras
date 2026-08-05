@@ -270,7 +270,7 @@ export function AppShell({ role, children }: { role: Role; children: React.React
                 </span>
                 <button type="button" className="app-nav__logout app-nav__label" title="Salir"
                   onClick={() => { setNavOpen(false); setLogoutOpen(true); }} aria-label="Cerrar sesión">
-                  <IconLogout size={18} />
+                  <IconLogout size={20} />
                 </button>
               </div>
             </div>
