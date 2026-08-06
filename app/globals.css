@@ -806,10 +806,22 @@ h1, h2, h3, h4, p { margin: 0; }
 .rec-totals__row { display: flex; justify-content: space-between; gap: var(--ds-space-6); font-size: var(--ds-font-size-label); }
 .rec-totals__row--grand { margin-top: 4px; padding-top: 8px; border-top: 1.5px solid var(--ds-color-gray-200); font-size: var(--ds-font-size-body-md); font-weight: var(--ds-font-weight-semibold); }
 
-/* Lista de ayuda del panel ⓘ ("qué es esta pantalla"). */
+/* Panel de ayuda ⓘ ("qué es esta pantalla" + paso a paso). */
+.help-sec { margin-bottom: var(--ds-space-5); }
+.help-sec:last-child { margin-bottom: 0; }
+.help-sec__h { font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--ds-color-gray-400); margin-bottom: var(--ds-space-3); }
 .help-list { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: var(--ds-space-3); }
 .help-list li { position: relative; padding-left: 22px; font-size: var(--ds-font-size-label); line-height: 1.5; color: var(--ds-text); }
 .help-list li::before { content: ""; position: absolute; left: 4px; top: 8px; width: 7px; height: 7px; border-radius: 50%; background: var(--ds-color-green-100); }
+.help-list--tips li::before { background: var(--ds-color-yellow); }
+/* Paso a paso: números en burbuja verde. */
+.help-steps { margin: 0; padding: 0; list-style: none; counter-reset: paso; display: flex; flex-direction: column; gap: var(--ds-space-3); }
+.help-steps li { position: relative; counter-increment: paso; padding-left: 36px; min-height: 24px; font-size: var(--ds-font-size-label); line-height: 1.5; color: var(--ds-text); }
+.help-steps li::before {
+  content: counter(paso); position: absolute; left: 0; top: 0;
+  width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center;
+  background: var(--ds-color-green-100); color: #000; font-size: 12px; font-weight: 700;
+}
 
 /* Tooltip con estilo. Uso: className="ds-tip" data-tip="texto". Solo en chrome sin
    overflow:hidden (topbar); en el riel colapsado se usa el title nativo. */

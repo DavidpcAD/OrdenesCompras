@@ -308,11 +308,30 @@ export function AppShell({ role, children }: { role: Role; children: React.React
       {helpOpen && (() => {
         const h = helpForPath(pathname);
         return (
-          <Modal title={h.titulo} onClose={() => setHelpOpen(false)}>
-            <p className="ds-muted" style={{ lineHeight: 1.5, marginBottom: "var(--ds-space-4)" }}>{h.resumen}</p>
-            <ul className="help-list">
-              {h.detalle.map((d, i) => <li key={i}>{d}</li>)}
-            </ul>
+          <Modal title={h.titulo} onClose={() => setHelpOpen(false)} wide>
+            <p className="ds-muted" style={{ lineHeight: 1.5, marginBottom: "var(--ds-space-5)" }}>{h.resumen}</p>
+            <div className="help-sec">
+              <h4 className="help-sec__h">Para qué sirve</h4>
+              <ul className="help-list">
+                {h.detalle.map((d, i) => <li key={i}>{d}</li>)}
+              </ul>
+            </div>
+            {h.pasos && h.pasos.length > 0 && (
+              <div className="help-sec">
+                <h4 className="help-sec__h">Paso a paso</h4>
+                <ol className="help-steps">
+                  {h.pasos.map((p, i) => <li key={i}>{p}</li>)}
+                </ol>
+              </div>
+            )}
+            {h.tips && h.tips.length > 0 && (
+              <div className="help-sec">
+                <h4 className="help-sec__h">Tips</h4>
+                <ul className="help-list help-list--tips">
+                  {h.tips.map((t, i) => <li key={i}>{t}</li>)}
+                </ul>
+              </div>
+            )}
           </Modal>
         );
       })()}

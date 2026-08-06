@@ -1,11 +1,14 @@
 // Ayuda contextual por pantalla. La topbar tiene un botón ⓘ que, según la ruta
-// actual, muestra qué es la pantalla y para qué sirve. Un solo lugar para todo el
-// texto de ayuda de la app (los 3 roles). Ver components/shell.tsx.
+// actual, muestra qué es la pantalla, para qué sirve y un PASO A PASO para usarla.
+// Un solo lugar para todo el texto de ayuda de la app (los 3 roles).
+// Ver components/shell.tsx.
 
 export type HelpEntry = {
   titulo: string;
   resumen: string;      // una línea
-  detalle: string[];    // viñetas: para qué sirve / qué podés hacer / tips
+  detalle: string[];    // "Para qué sirve" — viñetas
+  pasos?: string[];     // "Paso a paso" — instrucciones numeradas
+  tips?: string[];      // consejos / atajos (opcional)
 };
 
 // ─────────────────────────── Proveeduría (Angie) ───────────────────────────
@@ -15,35 +18,57 @@ const DASHBOARD: HelpEntry = {
   detalle: [
     "Vista general de Proveeduría: cuánto se pidió en total, cuánto ha entregado cada proveedor y cuánto queda pendiente.",
     "Las tarjetas de arriba (Pedido total, Entregado, % global, Pendiente) resumen todas tus órdenes.",
-    "La tabla agrupa por proveedor; abrí una fila (chevron) para ver el detalle de sus líneas.",
-    "Podés buscar, ordenar, cambiar a vista Grid, elegir columnas y guardar vistas; con Exportar bajás CSV o PDF.",
+    "La tabla agrupa por proveedor: una fila por proveedor con sus totales.",
   ],
+  pasos: [
+    "Mirá las 4 tarjetas de arriba para el panorama general del período.",
+    "Escribí en “Buscar proveedor…” para encontrar uno por nombre.",
+    "Tocá el chevron (v) al inicio de una fila para desplegar las líneas de ese proveedor.",
+    "Ordená tocando el encabezado de una columna (▲▼); filtrá con el embudo de “Proveedor”.",
+    "Cambiá entre “Tabla” y “Grid”, y con “Columnas” elegí qué datos mostrar.",
+    "Con “Vistas” guardás la configuración actual (filtros/orden/columnas) para reusarla; con “Exportar” bajás CSV o PDF.",
+  ],
+  tips: ["El % de entregado se colorea: verde = al día, amarillo = parcial, rojo = sin entregar."],
 };
 const SOLICITUDES: HelpEntry = {
   titulo: "Solicitudes de Ingeniería",
   resumen: "Pedidos de material que llegan de Ingeniería para convertir en órdenes.",
   detalle: [
     "Acá llegan las solicitudes de material que Ingeniería envía desde la app de Producción.",
-    "Desde una solicitud armás la orden de compra al proveedor (botón para crear la orden).",
-    "Los estados te dicen si la solicitud está pendiente, ya está en una orden o cerrada.",
-    "Podés alternar la vista por documento o por línea con el toggle de arriba.",
+    "Cada solicitud tiene un destino/obra, un solicitante y sus líneas de material.",
+    "El estado indica si está pendiente, ya está en una orden o cerrada.",
   ],
+  pasos: [
+    "Revisá la lista de solicitudes; usá el buscador o los filtros para acotar.",
+    "Abrí una solicitud (clic) para ver sus líneas y a qué obra van.",
+    "Elegí la(s) solicitud(es) o línea(s) que vas a comprar.",
+    "Tocá el botón para armar la orden de compra con lo seleccionado.",
+    "Alterná “por documento” / “por línea” con el toggle si querés juntar materiales de varias solicitudes.",
+  ],
+  tips: ["Las líneas en borrador (sin enviar) se resaltan en amarillo para que no se te pasen."],
 };
 const SOLICITUDES_LINEA: HelpEntry = {
   titulo: "Materiales solicitados (por línea)",
   resumen: "Las líneas de todas las solicitudes, para armar órdenes por artículo.",
   detalle: [
-    "Es la misma información de Solicitudes pero desglosada línea por línea (artículo por artículo).",
+    "Es la misma información de Solicitudes pero desglosada artículo por artículo.",
     "Útil para juntar materiales de varias solicitudes en una sola orden a un proveedor.",
-    "Filtrá y seleccioná las líneas que querés incluir en la orden.",
+  ],
+  pasos: [
+    "Filtrá por estado o por columna para encontrar los materiales que querés comprar.",
+    "Seleccioná las líneas a incluir en la orden.",
+    "Armá la orden con lo seleccionado y elegí el proveedor.",
   ],
 };
 const SOLICITUD_DET: HelpEntry = {
   titulo: "Detalle de la solicitud",
   resumen: "Todo lo que pidió Ingeniería en esta solicitud.",
   detalle: [
-    "Ves el encabezado (obra/destino, solicitante, fecha) y todas las líneas de material pedidas.",
-    "Desde acá podés avanzar la solicitud a una orden de compra.",
+    "Ves el encabezado (obra/destino, solicitante, fecha) y todas las líneas pedidas.",
+  ],
+  pasos: [
+    "Revisá las líneas y cantidades solicitadas.",
+    "Si vas a comprar, avanzá la solicitud a una orden de compra desde acá.",
   ],
 };
 const ORDENES: HelpEntry = {
@@ -51,9 +76,14 @@ const ORDENES: HelpEntry = {
   resumen: "Las órdenes enviadas a proveedores y su estado.",
   detalle: [
     "Lista de las órdenes que armaste. Quedan abiertas hasta recibir el 100% del material.",
+    "Los paneles de arriba cuentan las órdenes por estado.",
+  ],
+  pasos: [
     "Tocá un panel de arriba para filtrar por estado (abiertas, pendientes de aprobación, rechazadas, completadas).",
-    "Clic en una orden para ver su detalle, estados y las facturas asociadas.",
-    "Alterná ver por orden o por línea, y agrupá por proveedor.",
+    "Buscá por N.º de orden o proveedor.",
+    "Clic en una orden para ver su detalle, estados e historial y las facturas asociadas.",
+    "Desde el detalle podés editar (si está Abierta), enviar a aprobación, imprimir o revisar recepciones.",
+    "Con el toggle ves por orden o por línea, y podés agrupar por proveedor.",
   ],
 };
 const ORDEN_DET: HelpEntry = {
@@ -61,7 +91,12 @@ const ORDEN_DET: HelpEntry = {
   resumen: "Líneas, estado, historial y facturas de la orden.",
   detalle: [
     "Ves el proveedor, las líneas con cantidades y precios, el estado y el historial de movimientos.",
-    "Según el estado podés editarla (si está Abierta), enviarla a aprobación, imprimirla o consultar sus recepciones.",
+  ],
+  pasos: [
+    "Revisá las líneas y el estado actual (arriba).",
+    "Si está Abierta, usá “Editar” para ajustarla, o enviala a aprobación.",
+    "Si ya está lanzada/recibida, consultá sus recepciones y facturas asociadas.",
+    "Con “Imprimir” generás el PDF de la orden.",
   ],
 };
 const ORDEN_EDITAR: HelpEntry = {
@@ -69,25 +104,38 @@ const ORDEN_EDITAR: HelpEntry = {
   resumen: "Ajustar proveedor, almacén, líneas y precios.",
   detalle: [
     "Solo se puede editar mientras la orden esté Abierta (antes de enviarla a aprobación).",
-    "Podés cambiar el proveedor y el almacén de recepción, agregar/quitar líneas y corregir cantidades y precios.",
     "El precio que dejes acá es el que viaja a Business Central como costo unitario de la línea.",
+  ],
+  pasos: [
+    "Cambiá el proveedor y/o el almacén de recepción si hace falta.",
+    "Agregá o quitá líneas y corregí cantidades y precios.",
+    "Revisá el total; guardá los cambios.",
+    "Cuando esté lista, enviala a aprobación.",
   ],
 };
 const ORDEN_IMPRIMIR: HelpEntry = {
   titulo: "Imprimir orden",
   resumen: "Versión imprimible / PDF de la orden de compra.",
-  detalle: [
-    "Muestra la orden en formato documento para imprimir o guardar como PDF.",
-    "Siempre sale en claro (papel blanco, tinta negra), aunque tengas la app en modo oscuro.",
+  detalle: ["Muestra la orden en formato documento para imprimir o guardar como PDF."],
+  pasos: [
+    "Revisá que los datos del documento sean correctos.",
+    "Usá el botón de imprimir (o Ctrl/Cmd+P) y elegí impresora o “Guardar como PDF”.",
   ],
+  tips: ["Siempre sale en claro (papel blanco, tinta negra), aunque tengas la app en modo oscuro."],
 };
 const NUEVA: HelpEntry = {
   titulo: "Armar orden de compra",
   resumen: "Revisá y ajustá lo que se va a enviar al proveedor.",
   detalle: [
     "Se arma tomando líneas de solicitudes de Ingeniería.",
-    "Confirmá proveedor, moneda y almacén; ajustá cantidades y precios antes de enviar.",
-    "Podés guardarla como Abierta (borrador) o enviarla a aprobación.",
+    "El precio que pongas es el costo unitario que se manda a Business Central.",
+  ],
+  pasos: [
+    "Confirmá el proveedor (hereda términos y moneda), la moneda y el almacén de recepción.",
+    "Revisá las líneas que traés de la solicitud; ajustá las cantidades.",
+    "Corregí los precios unitarios si difieren de lo cotizado.",
+    "(Opcional) agregá un cargo de flete/transporte que se reparte entre las líneas.",
+    "Guardá como “Abierta” (borrador) o “Enviar a aprobación”.",
   ],
 };
 const DIRECTA: HelpEntry = {
@@ -95,16 +143,23 @@ const DIRECTA: HelpEntry = {
   resumen: "Compra que no viene de una solicitud de Ingeniería.",
   detalle: [
     "Para comprar material que no pasó por una solicitud: agregás los artículos del catálogo directamente.",
-    "Elegí proveedor, moneda y almacén; buscá artículos y poné cantidad y precio.",
-    "Podés sumar un cargo de flete/transporte que se reparte entre las líneas.",
+  ],
+  pasos: [
+    "Elegí el proveedor (hereda términos y moneda), la moneda y el almacén de recepción.",
+    "Buscá un artículo del catálogo, poné la cantidad y el precio, y tocá “+ Agregar línea”.",
+    "Repetí para cada material que necesites.",
+    "(Opcional) activá el cargo de flete/transporte.",
+    "Revisá Subtotal / IVA / Total y guardá como abierta o enviá a aprobación.",
   ],
 };
 const PEDIDAS: HelpEntry = {
   titulo: "Líneas pedidas",
   resumen: "Todos los materiales ya ordenados a proveedores.",
-  detalle: [
-    "Reporte de todas las líneas que ya se ordenaron, sin importar la orden.",
-    "Filtrá por estado o por columna y exportá el detalle a PDF.",
+  detalle: ["Reporte de todas las líneas ya ordenadas, sin importar la orden."],
+  pasos: [
+    "Filtrá por estado o por columna para encontrar lo que buscás.",
+    "Ordená por la columna que necesites.",
+    "Exportá el detalle a PDF con el botón de exportar.",
   ],
 };
 const PEDIDO_DET: HelpEntry = {
@@ -118,7 +173,11 @@ const INVENTARIOS: HelpEntry = {
   detalle: [
     "Consultá cuánto hay de cada artículo y en qué ubicación, leído en vivo de Business Central.",
     "Sirve para saber si hace falta comprar antes de armar una orden.",
-    "Si BC no responde, la existencia aparece como “s/d”.",
+  ],
+  pasos: [
+    "Buscá el artículo por nombre o código.",
+    "Mirá la existencia por ubicación/almacén.",
+    "Si aparece “s/d”, Business Central no respondió en ese momento — reintentá.",
   ],
 };
 
@@ -128,19 +187,33 @@ const ORDENES_POR_RECIBIR: HelpEntry = {
   resumen: "Registrá la recepción y la factura cuando llega el material.",
   detalle: [
     "Lista de las órdenes lanzadas que esperan material en bodega. Soporta entregas parciales.",
-    "Abrí una orden para registrar cuánto llegó de cada línea.",
-    "Los paneles de arriba resumen: por recibir, con recepción parcial, completadas y total en sistema.",
+    "Los paneles resumen: por recibir, con recepción parcial, completadas y total en sistema.",
   ],
+  pasos: [
+    "Buscá la orden del material que llegó (por N.º o proveedor).",
+    "Tocá “Registrar factura” en esa orden para abrir la recepción.",
+    "Registrá lo que llegó (ver la ayuda de esa pantalla).",
+  ],
+  tips: ["El anillo de % muestra cuánto de la orden ya se recibió."],
 };
 const RECIBIR: HelpEntry = {
   titulo: "Recibir / registrar factura",
   resumen: "Anotá lo que llegó y registrá (o dejá en revisión) la factura.",
   detalle: [
-    "Poné en “A recibir” la cantidad que llegó por línea (o usá “Recibir todo lo pendiente”).",
-    "Dos formas de registrar: “Registrar factura” (todo bien) o “Recibir sin factura (a revisión)” cuando la factura tiene un problema y la revisa Contabilidad después.",
-    "Si una línea llegó dañada, con menos cantidad o a otro precio, marcala con el ⚠ para generar una nota de crédito.",
-    "Podés agregar un cargo de transporte de esa entrega; se reparte entre las líneas recibidas.",
+    "Acá confirmás cuánto material entró a bodega y registrás la factura del proveedor.",
     "Abajo ves el Subtotal, IVA y Total de la factura tal cual va a Business Central.",
+  ],
+  pasos: [
+    "Contá el material y ponelo en la columna “A recibir” por línea (o usá “Recibir todo lo pendiente”).",
+    "Si una línea llegó dañada, con menos cantidad o a otro precio, tocá el ⚠ y elegí el motivo: eso genera una nota de crédito para Contabilidad.",
+    "(Opcional) si la entrega trajo su propio flete, activá “Agregar cargo”, poné el monto y el método de reparto.",
+    "Revisá el Subtotal / IVA / Total de abajo.",
+    "Si la factura está bien → “Registrar factura” y escribí el N.º de factura del proveedor.",
+    "Si el material está bien pero la factura tiene un problema → “Recibir sin factura (a revisión)”: Contabilidad la registra después.",
+  ],
+  tips: [
+    "Podés recibir parcial: registrás lo que llegó y la orden queda abierta para el resto.",
+    "Usá “Vista previa” para revisar antes de registrar en BC.",
   ],
 };
 const RECIBIDAS: HelpEntry = {
@@ -148,8 +221,12 @@ const RECIBIDAS: HelpEntry = {
   resumen: "Historial del material que ya recibiste en bodega.",
   detalle: [
     "Cada tarjeta es una recepción registrada; queda guardado quién la recibió.",
-    "Tocá “Ver líneas” para ver el detalle tal cual viaja a BC: artículo, cantidad, precio unitario, IVA e importe, con el total.",
     "La etiqueta de la factura indica si está OK, si va a Nota de crédito o si quedó En revisión.",
+  ],
+  pasos: [
+    "Mirá la tarjeta: N.º de orden, proveedor, fecha, quién recibió, total y estado.",
+    "Tocá “Ver líneas” para el detalle tal cual viaja a BC: artículo, cantidad, precio unitario, IVA e importe.",
+    "Al final de las líneas ves el Subtotal, IVA y Total de la factura.",
   ],
 };
 const RECEPCION_DET: HelpEntry = {
@@ -169,8 +246,13 @@ const NOTAS_CREDITO: HelpEntry = {
   resumen: "Líneas de facturas con problema para cobrar al proveedor.",
   detalle: [
     "Acá llegan las líneas que Bodega marcó al recibir por dañado, menos cantidad o precio distinto.",
-    "Cada una indica el motivo, la cantidad y el monto; desde el encabezado podés abrir la orden.",
-    "Gestionás la nota de crédito con el proveedor y la marcás como resuelta.",
+    "Cada una indica el motivo, la cantidad y el monto.",
+  ],
+  pasos: [
+    "Revisá las líneas pendientes y su motivo.",
+    "Tocá el encabezado de un grupo para abrir la orden relacionada y ver el contexto.",
+    "Gestioná la nota de crédito con el proveedor (por fuera del sistema).",
+    "Cuando se resuelva, marcala como resuelta para sacarla de pendientes.",
   ],
 };
 const CARGO: HelpEntry = {
@@ -179,23 +261,33 @@ const CARGO: HelpEntry = {
   detalle: [
     "Se usa cuando un tercero factura aparte —por ejemplo el flete— de un material que ya se recibió.",
     "Se crea un pedido con solo la línea de cargo y se asigna a las líneas de la recepción ya registrada.",
-    "Elegí el método de reparto del cargo entre las líneas (por importe, peso, volumen o partes iguales).",
+  ],
+  pasos: [
+    "Elegí la orden/recepción sobre la que se aplica el cargo.",
+    "Ingresá la descripción y el monto del cargo (p. ej. transporte).",
+    "Elegí el método de reparto entre las líneas (por importe, peso, volumen o partes iguales).",
+    "Registrá: se crea el pedido de solo cargo y se asigna en Business Central.",
   ],
 };
 const TODAS: HelpEntry = {
   titulo: "Todas las órdenes",
   resumen: "Consulta global de todas las órdenes y sus facturas.",
-  detalle: [
-    "Vista de contabilidad de todas las órdenes de la app.",
-    "Tocá un panel para filtrar y clic en una orden para ver su detalle, estados y facturas asociadas.",
+  detalle: ["Vista de contabilidad de todas las órdenes de la app."],
+  pasos: [
+    "Tocá un panel para filtrar por estado.",
+    "Buscá por N.º o proveedor.",
+    "Clic en una orden para ver su detalle, estados y facturas asociadas.",
   ],
 };
 const ARCHIVO: HelpEntry = {
   titulo: "Archivo y recepciones",
   resumen: "Órdenes cerradas y facturas registradas.",
   detalle: [
-    "Historial de órdenes recibidas al 100% y todas las facturas registradas.",
-    "Sirve de consulta y respaldo; no se editan.",
+    "Historial de órdenes recibidas al 100% y todas las facturas registradas. Es consulta/respaldo; no se editan.",
+  ],
+  pasos: [
+    "Buscá o filtrá la orden/factura que necesitás.",
+    "Abrila para ver el detalle y las facturas asociadas.",
   ],
 };
 
@@ -207,13 +299,17 @@ const DEVOLUCIONES: HelpEntry = {
     "Registro de lo que se devolvió al proveedor (material rechazado o sobrante).",
     "Queda para trazabilidad y para cruzar con notas de crédito.",
   ],
+  pasos: [
+    "Revisá la lista de devoluciones y su motivo.",
+    "Abrí una para ver las líneas devueltas y su estado.",
+  ],
 };
 const GENERIC: HelpEntry = {
   titulo: "Compras Adelante",
   resumen: "Solicitud de material, órdenes de compra y recepción, integrado con Business Central.",
   detalle: [
     "Usá el menú de la izquierda para moverte entre las secciones de tu rol.",
-    "Este botón (ⓘ) siempre te explica qué es la pantalla en la que estás.",
+    "Este botón (ⓘ) siempre te explica qué es la pantalla en la que estás y cómo usarla.",
   ],
 };
 
