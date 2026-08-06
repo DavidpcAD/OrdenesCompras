@@ -4,9 +4,10 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { useStore } from "@/lib/store";
-import { ConfirmDialog } from "@/components/ui";
+import { ConfirmDialog, Modal } from "@/components/ui";
 import type { Role, Notificacion } from "@/lib/types";
 import { formatDate } from "@/lib/helpers";
+import { helpForPath } from "@/lib/help";
 import {
   IconBell, IconList, IconReceipt, IconCheck, IconDelivery, IconFolder,
   IconPlus, IconLogout, IconBox, IconWarning, IconDashboard, IconEdit,
@@ -86,6 +87,7 @@ export function AppShell({ role, children }: { role: Role; children: React.React
   const [navOpen, setNavOpen] = useState(false);
   const [ready, setReady] = useState(false); // evita animar el riel al cargar
   const [logoutOpen, setLogoutOpen] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(false); // panel ⓘ "qué es esta pantalla"
   // Tema (claro/oscuro). El valor real vive en <html data-theme>; el script
   // no-flash del layout lo fija antes de pintar. Aquí solo lo reflejamos/alternamos.
   const [theme, setTheme] = useState<"light" | "dark">("light");
@@ -167,9 +169,14 @@ export function AppShell({ role, children }: { role: Role; children: React.React
       <header className="topbar">
         <div className="topbar__spacer" />
         <div className="topbar__user">
+          {/* Ayuda de la pantalla (qué es / para qué sirve) */}
+          <button type="button" className="notif-bell ds-tip" data-tip="Qué es esta pantalla" title="Qué es esta pantalla"
+            onClick={() => setHelpOpen(true)} aria-label="Ayuda de esta pantalla" aria-haspopup="dialog">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><circle cx="12" cy="12" r="9" /><path d="M12 16v-4" /><path d="M12 8h.01" /></svg>
+          </button>
           {/* Campanita de notificaciones */}
           <div style={{ position: "relative" }}>
-            <button className="notif-bell" title="Notificaciones" onClick={toggleNotif} aria-label="Notificaciones" aria-haspopup="menu" aria-expanded={notifOpen}>
+            <button className="notif-bell ds-tip" data-tip="Notificaciones" title="Notificaciones" onClick={toggleNotif} aria-label="Notificaciones" aria-haspopup="menu" aria-expanded={notifOpen}>
               <IconBell size={20} />{noLeidas > 0 && <span className="notif-bell__dot">{noLeidas > 9 ? "9+" : noLeidas}</span>}
             </button>
             {notifOpen && (
@@ -296,6 +303,19 @@ export function AppShell({ role, children }: { role: Role; children: React.React
           <IconPlus size={20} /><span>{meta.action.label}</span>
         </button>
       )}
+
+      {/* Ayuda contextual: qué es la pantalla actual y para qué sirve. */}
+      {helpOpen && (() => {
+        const h = helpForPath(pathname);
+        return (
+          <Modal title={h.titulo} onClose={() => setHelpOpen(false)}>
+            <p className="ds-muted" style={{ lineHeight: 1.5, marginBottom: "var(--ds-space-4)" }}>{h.resumen}</p>
+            <ul className="help-list">
+              {h.detalle.map((d, i) => <li key={i}>{d}</li>)}
+            </ul>
+          </Modal>
+        );
+      })()}
 
       {/* Confirmar cierre de sesión (DS ConfirmDialog). */}
       {logoutOpen && (
