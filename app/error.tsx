@@ -20,7 +20,7 @@ export default function Error({ error, reset }: { error: Error & { digest?: stri
           <button type="button" className="ds-btn ds-btn--green" onClick={() => reset()}>
             Reintentar
           </button>
-          <Link href="/" className="ds-btn ds-btn--ghost" style={{ textDecoration: "none" }}>
+          <Link href="/" className="ds-btn ds-btn--white" style={{ textDecoration: "none" }}>
             Volver al inicio
           </Link>
         </div>

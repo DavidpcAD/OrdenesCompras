@@ -291,7 +291,7 @@ export function AppShell({ role, children }: { role: Role; children: React.React
 
       {/* FAB menú (arriba-izquierda) — solo cuando el drawer está cerrado. */}
       {hasNav && !navOpen && (
-        <button type="button" className="ds-btn ds-btn--black ds-btn--icon fab fab--menu" onClick={() => setNavOpen(true)} aria-label="Abrir menú">
+        <button type="button" className="ds-btn ds-btn--black ds-btn--layout-icon fab fab--menu" onClick={() => setNavOpen(true)} aria-label="Abrir menú">
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M3 6h18M3 12h18M3 18h18" /></svg>
         </button>
       )}

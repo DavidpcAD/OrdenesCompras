@@ -15,11 +15,15 @@ export function Button({
 }: React.ButtonHTMLAttributes<HTMLButtonElement> & {
   variant?: BtnVariant; size?: BtnSize; block?: boolean; icon?: boolean;
 }) {
+  // El DS solo tiene variantes green/red/white/black/gray. ghost/outline/yellow son
+  // aliases de la app que se RENDERIZAN como clases reales del DS (secundario = white).
+  const DS_VARIANT: Record<string, string> = { ghost: "white", outline: "white", yellow: "green" };
+  const dsVariant = DS_VARIANT[variant] ?? variant;
   const cls = [
-    "ds-btn", `ds-btn--${variant}`,
+    "ds-btn", `ds-btn--${dsVariant}`,
     size !== "md" ? `ds-btn--${size}` : "",
-    block ? "ds-btn--block" : "",
-    icon ? "ds-btn--icon" : "", className,
+    block ? "ds-btn--full" : "",
+    icon ? "ds-btn--layout-icon" : "", className,
   ].filter(Boolean).join(" ");
   // Haptic del DS: vibración semántica al presionar (delete para destructiva).
   // El anillo de "pressed" lo maneja el CSS vía :active. onClick nativo se mantiene
@@ -145,7 +149,7 @@ export function Badge({ tone = "gray", children }: { tone?: string; children: Re
 export function Card({
   className = "", interactive, flat, children, ...rest
 }: React.HTMLAttributes<HTMLDivElement> & { interactive?: boolean; flat?: boolean }) {
-  const cls = ["ds-card", flat ? "ds-card--flat" : "", interactive ? "ds-card--interactive" : "", className]
+  const cls = ["ds-card", flat ? "ds-card--outlined" : "", interactive ? "ds-card--interactive" : "", className]
     .filter(Boolean).join(" ");
   return <div className={cls} {...rest}>{children}</div>;
 }

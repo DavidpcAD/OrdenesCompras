@@ -112,7 +112,6 @@
    siendo OSCURO (esos fondos no cambian). --ds-text es claro en oscuro, así que
    forzamos negro en esos casos puntuales. */
 :root[data-theme="dark"] .ds-btn--green,
-:root[data-theme="dark"] .ds-btn--yellow,
 :root[data-theme="dark"] .filter-chip.is-active,
 :root[data-theme="dark"] .topnav__item.is-active,
 :root[data-theme="dark"] .seg-mini button.is-active,
@@ -181,36 +180,26 @@ h1, h2, h3, h4, p { margin: 0; }
 }
 
 /* Colores (DS: green / red / white / black / gray) */
+/* Variantes del DS (únicas oficiales): green / red / white / black / gray.
+   ghost/outline/yellow NO existen en el DS; el componente Button las mapea a estas. */
 .ds-btn--green  { background: var(--ds-color-green-100); color: var(--ds-text); }
 .ds-btn--red    { background: var(--ds-color-red-100);   color: var(--ds-color-white); }
-.ds-btn--white  { background: var(--ds-surface);     color: var(--ds-text); }
+.ds-btn--white  { background: var(--ds-surface);     color: var(--ds-text); box-shadow: var(--ds-shadow-02-soft); }
 .ds-btn--black  { background: var(--ds-color-black);     color: var(--ds-color-white); }
-.ds-btn--yellow { background: var(--ds-color-yellow);    color: var(--ds-text); }
 
 /* Pressed — anillo exterior de 8px (Figma) */
 .ds-btn--green:active,  .ds-btn--green.ds-btn--pressed  { box-shadow: 0 0 0 8px var(--ds-color-green-200), var(--ds-shadow-03-big); }
 .ds-btn--red:active,    .ds-btn--red.ds-btn--pressed    { background: var(--ds-color-red-200); box-shadow: 0 0 0 8px var(--ds-color-red-100), var(--ds-shadow-03-big); }
-.ds-btn--white:active,  .ds-btn--white.ds-btn--pressed  { box-shadow: 0 0 0 8px var(--ds-color-surface), var(--ds-shadow-03-big); }
+.ds-btn--white:active,  .ds-btn--white.ds-btn--pressed  { box-shadow: 0 0 0 8px var(--ds-color-surface), var(--ds-shadow-02-soft); }
 .ds-btn--black:active,  .ds-btn--black.ds-btn--pressed  { box-shadow: 0 0 0 8px rgba(0, 0, 0, 0.8), var(--ds-shadow-03-big); }
-.ds-btn--yellow:active, .ds-btn--yellow.ds-btn--pressed { box-shadow: 0 0 0 8px var(--ds-color-green-200), var(--ds-shadow-03-big); }
-
-/* ghost = botón blanco del DS (secundario neutro) */
-.ds-btn--ghost { background: var(--ds-surface); color: var(--ds-text); box-shadow: var(--ds-shadow-02-soft); }
-.ds-btn--ghost:active, .ds-btn--ghost.ds-btn--pressed { box-shadow: 0 0 0 8px var(--ds-color-surface), var(--ds-shadow-02-soft); }
-
-/* outline = baja énfasis (borde gris, sin sombra) — mantiene el press-ring del DS */
-.ds-btn--outline { background: transparent; color: var(--ds-color-gray-500); box-shadow: none; border: 1.5px solid var(--ds-color-gray-200); }
-.ds-btn--outline:hover { border-color: var(--ds-color-gray-400); color: var(--ds-text); }
-.ds-btn--outline:active, .ds-btn--outline.ds-btn--pressed { box-shadow: 0 0 0 8px var(--ds-color-gray-100); }
 
 /* Tamaños (DS: sm = 44px, radius-xl, shadow-01) */
 .ds-btn--sm { min-height: 44px; padding: var(--ds-space-2) var(--ds-space-4); font-size: var(--ds-font-size-body-sm); border-radius: var(--ds-radius-xl); box-shadow: var(--ds-shadow-01); }
-.ds-btn--sm.ds-btn--outline { box-shadow: none; }
 .ds-btn--lg { min-height: 64px; padding: var(--ds-space-5) var(--ds-space-6); font-size: var(--ds-font-size-subtitle); }
-.ds-btn--block, .ds-btn--full { width: 100%; }
-/* Icon-only (DS layout=icon): cuadrado 56px, sm=círculo 44px */
-.ds-btn--icon { width: 56px; height: 56px; padding: var(--ds-space-4); }
-.ds-btn--sm.ds-btn--icon { width: 44px; height: 44px; border-radius: 50%; padding: 0; }
+.ds-btn--full { width: 100%; }
+/* Icon-only (DS: layout=icon): cuadrado 56px, sm=círculo 44px */
+.ds-btn--layout-icon { width: 56px; height: 56px; padding: var(--ds-space-4); }
+.ds-btn--sm.ds-btn--layout-icon { width: 44px; height: 44px; border-radius: 50%; padding: 0; }
 
 /* =====================  FORM FIELD  =====================
    Alineado a react/design-system.css del Adelante DS:
@@ -274,7 +263,6 @@ h1, h2, h3, h4, p { margin: 0; }
   box-shadow: var(--ds-shadow-01);
   padding: var(--ds-space-6);
 }
-.ds-card--flat { box-shadow: none; border: 1.5px solid var(--ds-color-gray-100); }
 .ds-card--outlined { box-shadow: none; border: 1px solid var(--ds-color-gray-300); }  /* DS Card --outlined */
 .ds-card--filled { background: var(--ds-color-gray-100); }                            /* DS Card --filled */
 .ds-card--interactive { cursor: pointer; transition: transform .12s ease, box-shadow .15s ease; }
@@ -293,7 +281,7 @@ h1, h2, h3, h4, p { margin: 0; }
 .ds-badge::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
 .ds-badge--gray { background: var(--ds-color-gray-100); color: var(--ds-color-gray-500); }
 .ds-badge--green { background: color-mix(in srgb, var(--ds-color-green-100) 22%, var(--ds-tint-base)); color: var(--ds-color-green-200); }
-.ds-badge--yellow { background: color-mix(in srgb, var(--ds-color-yellow) 26%, var(--ds-tint-base)); color: #8a7400; }
+.ds-badge--yellow { background: color-mix(in srgb, var(--ds-color-yellow) 26%, var(--ds-tint-base)); color: var(--ds-color-black-100); }
 .ds-badge--red { background: color-mix(in srgb, var(--ds-color-red-100) 22%, var(--ds-tint-base)); color: var(--ds-color-red-200); }
 .ds-badge--blueish { background: var(--ds-color-gray-100); color: var(--ds-color-gray-500); }
 
@@ -429,7 +417,7 @@ h1, h2, h3, h4, p { margin: 0; }
 .combo__row-main { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
 .combo__row-main > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .combo__tag { flex-shrink: 0; font-size: 11px; font-weight: 700; padding: 2px 10px; border-radius: 999px; }
-.combo__tag--bodega { background: color-mix(in srgb, var(--ds-color-yellow) 26%, var(--ds-tint-base)); color: #8a7400; }
+.combo__tag--bodega { background: color-mix(in srgb, var(--ds-color-yellow) 26%, var(--ds-tint-base)); color: var(--ds-color-black-100); }
 .combo__tag--general { background: color-mix(in srgb, var(--ds-color-green-100) 22%, var(--ds-tint-base)); color: var(--ds-color-green-200); }
 .combo__empty { padding: 10px 12px; color: var(--ds-color-gray-400); font-size: var(--ds-font-size-body-sm); }
 .combo__more { padding: 7px 12px; color: var(--ds-color-gray-400); font-size: 11px; border-top: 1px solid var(--ds-color-gray-100); position: sticky; bottom: 0; background: var(--ds-surface); }
