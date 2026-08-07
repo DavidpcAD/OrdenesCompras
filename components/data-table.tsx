@@ -7,7 +7,7 @@ import {
   getFacetedRowModel, getFacetedUniqueValues, flexRender,
   type Column, type ColumnDef, type FilterFn, type SortingState, type ColumnFiltersState, type VisibilityState, type ColumnOrderState, type PaginationState,
 } from "@tanstack/react-table";
-import { Button, Card, ConfirmDialog, EmptyState, Input, Select, Skeleton } from "@/components/ui";
+import { Button, Card, ConfirmDialog, EmptyState, Field, Input, Modal, Select, Skeleton, useToast } from "@/components/ui";
 import { IconTable } from "@/components/icons";
 import { useStore } from "@/lib/store";
 
@@ -101,6 +101,11 @@ export function DataTable<T>({
   }, [panel]);
   const [modo, setModo] = useState<"tabla" | "grid">(modoInicial);
   const [vistaABorrar, setVistaABorrar] = useState<Vista | null>(null);
+  // Alta de vista con diálogo del DS (reemplaza window.prompt/confirm).
+  const [guardarVistaOpen, setGuardarVistaOpen] = useState(false);
+  const [nombreVista, setNombreVista] = useState("");
+  const [predVista, setPredVista] = useState(false);
+  const toast = useToast();
 
   const table = useReactTable({
     data, columns: cols,
@@ -156,14 +161,19 @@ export function DataTable<T>({
     setGlobalFilter(c.globalFilter ?? ""); setModo(c.modo ?? "tabla");
     setPagination((p) => ({ ...p, pageSize: c.pageSize ?? p.pageSize, pageIndex: 0 })); setPanel(null);
   }
-  async function guardarVista() {
-    const nombre = window.prompt("Nombre de la vista:"); if (!nombre?.trim()) return;
+  function guardarVista() {
+    setNombreVista(""); setPredVista(false); setGuardarVistaOpen(true);
+  }
+  async function confirmarGuardarVista() {
+    const nombre = nombreVista.trim(); if (!nombre) return;
     const config: VistaCfg = { columnOrder, columnVisibility, sorting, columnFilters, globalFilter, pageSize: pagination.pageSize, modo };
-    const pred = window.confirm("¿Marcar como predeterminada (se aplica al abrir)?");
     try {
-      const r = await fetch("/api/vistas", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ usuario, tabla: tablaKey, nombre: nombre.trim(), config, esPredeterminada: pred }) });
-      if (!r.ok) throw new Error(); await cargarVistas();
-    } catch { alert("No se pudo guardar la vista."); }
+      const r = await fetch("/api/vistas", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ usuario, tabla: tablaKey, nombre, config, esPredeterminada: predVista }) });
+      if (!r.ok) throw new Error();
+      setGuardarVistaOpen(false);
+      await cargarVistas();
+      toast("Vista guardada.", "success");
+    } catch { toast("No se pudo guardar la vista.", "error"); }
   }
   async function borrarVista(v: Vista) {
     try { await fetch(`/api/vistas/${v.id}?usuario=${encodeURIComponent(usuario ?? "")}`, { method: "DELETE" }); await cargarVistas(); } catch { /* noop */ }
@@ -343,6 +353,27 @@ export function DataTable<T>({
           onConfirm={() => borrarVista(vistaABorrar)}
           onCancel={() => setVistaABorrar(null)}
         />
+      )}
+
+      {guardarVistaOpen && (
+        <Modal
+          title="Guardar vista"
+          onClose={() => setGuardarVistaOpen(false)}
+          footer={<>
+            <Button variant="outline" onClick={() => setGuardarVistaOpen(false)}>Cancelar</Button>
+            <Button variant="green" disabled={!nombreVista.trim()} onClick={confirmarGuardarVista}>Guardar</Button>
+          </>}
+        >
+          <Field label="Nombre de la vista" help="Con la configuración actual de columnas, orden y filtros.">
+            <Input value={nombreVista} autoFocus placeholder="Ej. Pendientes por proveedor"
+              onChange={(e) => setNombreVista(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter" && nombreVista.trim()) confirmarGuardarVista(); }} />
+          </Field>
+          <label style={{ display: "flex", alignItems: "center", gap: "var(--ds-space-2)", marginTop: "var(--ds-space-4)", cursor: "pointer" }}>
+            <input type="checkbox" className="ds-cbx" checked={predVista} onChange={(e) => setPredVista(e.target.checked)} />
+            <span>Marcar como predeterminada <span className="ds-muted ds-body-sm">(se aplica al abrir)</span></span>
+          </label>
+        </Modal>
       )}
 
       {/* Vista Grid (tarjetas) */}
