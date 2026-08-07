@@ -136,8 +136,8 @@ export function Select({
   );
 }
 
-export const Textarea = (p: React.TextareaHTMLAttributes<HTMLTextAreaElement>) => (
-  <textarea {...p} />
+export const Textarea = ({ className = "", ...p }: React.TextareaHTMLAttributes<HTMLTextAreaElement>) => (
+  <textarea className={`ds-form-field__textarea ${className}`.trim()} {...p} />
 );
 
 // ---------------------------------------------------------------- Checkbox

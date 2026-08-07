@@ -216,7 +216,8 @@ h1, h2, h3, h4, p { margin: 0; }
 .ds-form-field__input-wrap { position: relative; display: flex; align-items: center; }
 .ds-form-field__input,
 .ds-form-field__select,
-.ds-form-field textarea {
+.ds-form-field textarea,
+.ds-form-field__textarea {
   width: 100%;
   background: var(--ds-surface);
   color: var(--ds-text);
@@ -230,13 +231,16 @@ h1, h2, h3, h4, p { margin: 0; }
   transition: border-color 120ms ease, box-shadow 120ms ease;
   outline: none;
 }
-.ds-form-field textarea { border-radius: var(--ds-radius-lg); resize: vertical; min-height: 96px; }
+.ds-form-field textarea,
+.ds-form-field__textarea { border-radius: var(--ds-radius-lg); resize: vertical; min-height: 96px; }
 .ds-form-field__input::placeholder,
-.ds-form-field textarea::placeholder { color: var(--ds-color-gray-300); }
+.ds-form-field textarea::placeholder,
+.ds-form-field__textarea::placeholder { color: var(--ds-color-gray-300); }
 /* Foco / activo (DS --active) — borde negro, sin sombra */
 .ds-form-field__input:focus,
 .ds-form-field__select:focus,
 .ds-form-field textarea:focus,
+.ds-form-field__textarea:focus,
 .ds-form-field--active .ds-form-field__input {
   border-color: var(--ds-text);
   box-shadow: none;
@@ -248,7 +252,8 @@ h1, h2, h3, h4, p { margin: 0; }
 .ds-form-field--advertencia .ds-form-field__help { color: var(--ds-color-red-200); }
 .ds-form-field__help { font-size: var(--ds-font-size-body-sm); color: var(--ds-color-gray-400); padding-left: var(--ds-space-2); }
 .ds-form-field__input:disabled,
-.ds-form-field__select:disabled {
+.ds-form-field__select:disabled,
+.ds-form-field__textarea:disabled {
   background: var(--ds-color-gray-100);
   color: rgba(170, 175, 182, 0.5); /* DS: gray-300 @ 50% */
   border-color: transparent;
