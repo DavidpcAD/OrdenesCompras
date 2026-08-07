@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import * as XLSX from "xlsx";
 import { Button, Card, Field, Select, Textarea, useToast } from "@/components/ui";
 import { IconTrash, IconPlus } from "@/components/icons";
 import { Combobox } from "@/components/combobox";
@@ -336,6 +335,8 @@ export function SolicitudForm({
 
   async function importarExcel(file: File) {
     try {
+      // xlsx se carga solo al importar (fuera del bundle inicial de la ruta).
+      const XLSX = await import("xlsx");
       const buf = await file.arrayBuffer();
       const wb = XLSX.read(buf, { type: "array" });
       const ws = wb.Sheets[wb.SheetNames[0]];
@@ -378,7 +379,9 @@ export function SolicitudForm({
   // importador entiende (Código / Obra / Cantidad) — precargada con las líneas
   // actuales si las hay — más una hoja "Catálogo BC" para buscar códigos. Se edita
   // en local (agregar filas) y se vuelve a subir con "Importar Excel".
-  function descargarExcel() {
+  async function descargarExcel() {
+    // xlsx se carga solo al descargar (fuera del bundle inicial de la ruta).
+    const XLSX = await import("xlsx");
     const filas = lineas.length
       ? lineas.map((l) => {
           const a = catArticulos.find((x) => x.id === l.articuloId);
