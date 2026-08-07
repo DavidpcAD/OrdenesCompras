@@ -19,6 +19,14 @@ const NOMBRE_POR_CODIGO: Record<string, string> = {
 const CODIGO_POR_NOMBRE: Record<string, string> = Object.fromEntries(
   Object.entries(NOMBRE_POR_CODIGO).map(([c, n]) => [n, c])
 );
+// Normaliza un nombre de estado (sin acentos, sin espacios extra, minúsculas) para
+// tolerar cómo lo escriba otra app en la MISMA dbo.Estado (p. ej. Producción):
+// "Aprobado" / "aprobado" / "APROBADO" / "En Orden" / "En orden" → mismo código.
+const DIACRITICOS = new RegExp("[\u0300-\u036f]", "g");
+const norm = (s: string) => (s ?? "").normalize("NFD").replace(DIACRITICOS, "").trim().toLowerCase();
+const CODIGO_POR_NOMBRE_NORM: Record<string, string> = Object.fromEntries(
+  Object.entries(NOMBRE_POR_CODIGO).map(([c, n]) => [norm(n), c])
+);
 
 let estadoNombreToId: Map<string, number> | null = null;
 let estadoIdToNombre: Map<number, string> | null = null;
@@ -35,14 +43,16 @@ async function ensureEstados() {
       "INSERT dbo.Estado(estado,modulo,fechaCreacion,creadoPor) VALUES(@n,'Compras',SYSUTCDATETIME(),'sistema')"
     );
   }
-  // Solo los estados del módulo Compras, para no colisionar con los de otros módulos.
-  const r = await pool.request().query("SELECT idEstado, estado FROM dbo.Estado WHERE modulo='Compras'");
+  // ESCRITURA (nombre→id): solo módulo Compras, para no agarrar un id de boletas.
+  const rC = await pool.request().query("SELECT idEstado, estado FROM dbo.Estado WHERE modulo='Compras'");
   estadoNombreToId = new Map();
+  for (const row of rC.recordset) estadoNombreToId.set(row.estado, row.idEstado);
+  // LECTURA (id→nombre): TODOS los módulos. Así un pedido cuyo idEstado lo escribió
+  // otra app (p. ej. Producción, aunque el estado viva en otro módulo) igual resuelve
+  // su nombre real y NO cae por defecto a "borrador" (que lo escondería).
+  const rAll = await pool.request().query("SELECT idEstado, estado FROM dbo.Estado");
   estadoIdToNombre = new Map();
-  for (const row of r.recordset) {
-    estadoNombreToId.set(row.estado, row.idEstado);
-    estadoIdToNombre.set(row.idEstado, row.estado);
-  }
+  for (const row of rAll.recordset) estadoIdToNombre.set(row.idEstado, row.estado);
 }
 
 async function idDeEstado(codigo?: string): Promise<number | null> {
@@ -54,7 +64,9 @@ async function idDeEstado(codigo?: string): Promise<number | null> {
 function codigoDeId(id: number | null): string | undefined {
   if (id == null || !estadoIdToNombre) return undefined;
   const nombre = estadoIdToNombre.get(id);
-  return nombre ? (CODIGO_POR_NOMBRE[nombre] ?? nombre) : undefined;
+  if (!nombre) return undefined;
+  // Exacto → normalizado (tolera mayúsculas/acentos de otra app) → nombre crudo.
+  return CODIGO_POR_NOMBRE[nombre] ?? CODIGO_POR_NOMBRE_NORM[norm(nombre)] ?? nombre;
 }
 
 // ----------------------------------------------------------------- health
