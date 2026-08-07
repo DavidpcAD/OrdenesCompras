@@ -2,7 +2,7 @@
 
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
-import { Badge, Button, Card, EmptyState, Field, Input, Modal, Select, Skeleton, useToast } from "@/components/ui";
+import { Badge, Button, Card, Checkbox, EmptyState, Field, Input, Modal, Select, Skeleton, useToast } from "@/components/ui";
 import { IconWarning } from "@/components/icons";
 import { DateField } from "@/components/date-field";
 import { useStore } from "@/lib/store";
@@ -436,10 +436,8 @@ export default function RegistrarFacturaPage() {
               <span className="ds-strong">Cargo de transporte de esta factura</span>
               <p className="ds-label ds-muted" style={{ margin: "2px 0 0" }}>Si esta entrega trae su propio flete, agregalo acá: se registra en la orden de BC y se reparte entre las líneas que estás recibiendo.</p>
             </div>
-            <label className="row gap-2" style={{ cursor: "pointer" }}>
-              <input type="checkbox" checked={cargoOn} onChange={(e) => setCargoOn(e.target.checked)} />
-              <span className="ds-label">Agregar cargo</span>
-            </label>
+            <Checkbox checked={cargoOn} onChange={(e) => setCargoOn(e.target.checked)}
+              label={<span className="ds-label">Agregar cargo</span>} />
           </div>
           {cargoOn && (
             <div className="grid-2 mt-3">
