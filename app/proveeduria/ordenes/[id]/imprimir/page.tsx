@@ -3,6 +3,7 @@
 import { useParams, useRouter } from "next/navigation";
 import { useStore } from "@/lib/store";
 import { num, formatDate, ordenLineaImporte } from "@/lib/helpers";
+import { Button } from "@/components/ui";
 
 // Datos de la empresa (Adelante) para el encabezado del documento.
 const EMPRESA = {
@@ -29,12 +30,12 @@ export default function ImprimirOrdenPage() {
   if (!orden) {
     // Durante la carga (SQL/BC) el store aún está vacío: no mostrar "no encontrada".
     if (cargando) {
-      return <div style={{ padding: 40, fontFamily: "Roboto, system-ui, sans-serif", color: "#666" }}>Cargando la orden…</div>;
+      return <div style={{ padding: 40, fontFamily: "var(--ds-font-family)", color: "var(--ds-color-gray-500)" }}>Cargando la orden…</div>;
     }
     return (
-      <div style={{ padding: 40, fontFamily: "Roboto, system-ui, sans-serif" }}>
-        Orden no encontrada.{" "}
-        <button onClick={() => router.back()} style={{ cursor: "pointer" }}>Volver</button>
+      <div style={{ padding: 40, fontFamily: "var(--ds-font-family)", display: "flex", flexDirection: "column", alignItems: "flex-start", gap: "var(--ds-space-4)" }}>
+        <span>Orden no encontrada.</span>
+        <Button variant="outline" size="sm" onClick={() => router.back()}>Volver</Button>
       </div>
     );
   }
