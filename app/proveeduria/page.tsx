@@ -158,8 +158,7 @@ export default function ProveeduriaMaterialesPage() {
         <div className="md-layout mt-2">
           {/* pedidos */}
           <div className="md-list" style={{ maxHeight: "calc(100vh - 210px)", overflowY: "auto", paddingRight: 4 }}>
-            <input value={pedFiltro} onChange={(e) => setPedFiltro(e.target.value)} aria-label="Filtrar pedido u obra" placeholder="Filtrar pedido u obra…"
-              style={{ width: "100%", boxSizing: "border-box", marginBottom: 8, borderRadius: 8, padding: "7px 10px", fontSize: 13, font: "inherit", border: "1.5px solid var(--ds-color-gray-100)", background: "var(--ds-surface)", color: "var(--ds-text)", position: "sticky", top: 0, zIndex: 1 }} />
+            <input className="md-filtro" value={pedFiltro} onChange={(e) => setPedFiltro(e.target.value)} aria-label="Filtrar pedido u obra" placeholder="Filtrar pedido u obra…" />
             <button className={`md-item ${filtro === "all" ? "is-active" : ""}`} onClick={() => setFiltro("all")}>
               <div className="md-item__top">
                 <span className="ds-strong">Todos los pedidos</span>
