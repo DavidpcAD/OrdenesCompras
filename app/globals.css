@@ -265,8 +265,9 @@ h1, h2, h3, h4, p { margin: 0; }
 }
 .ds-card--outlined { box-shadow: none; border: 1px solid var(--ds-color-gray-300); }  /* DS Card --outlined */
 .ds-card--filled { background: var(--ds-color-gray-100); }                            /* DS Card --filled */
-.ds-card--interactive { cursor: pointer; transition: transform .12s ease, box-shadow .15s ease; }
-.ds-card--interactive:hover { transform: translateY(-2px); box-shadow: var(--ds-shadow-03-big); }
+.ds-card--interactive { cursor: pointer; transition: box-shadow .15s ease; }
+/* DS: sin hover-lift; el afordance es profundizar la sombra, no desplazar. */
+.ds-card--interactive:hover { box-shadow: var(--ds-shadow-03-big); }
 
 /* =====================  ICON  ===================== */
 .ds-icon { display: inline-block; flex-shrink: 0; }  /* DS Icon — usa currentColor */
@@ -748,9 +749,10 @@ h1, h2, h3, h4, p { margin: 0; }
   display: flex; align-items: center; gap: var(--ds-space-4); width: 100%; text-align: left;
   background: var(--ds-surface); border: 2px solid var(--ds-color-gray-100); border-radius: var(--ds-radius-lg);
   padding: var(--ds-space-4) var(--ds-space-5); cursor: pointer;
-  transition: border-color .15s ease, transform .12s ease, box-shadow .15s ease;
+  transition: border-color .15s ease, box-shadow .15s ease;
 }
-.role-option:hover { transform: translateY(-2px); box-shadow: var(--ds-shadow-01); }
+/* DS: sin hover-lift; hover = borde/sombra sutil, sin desplazamiento. */
+.role-option:hover { border-color: var(--ds-color-gray-300); box-shadow: var(--ds-shadow-01); }
 .role-option.is-selected { border-color: var(--ds-color-green-100); box-shadow: 0 0 0 4px color-mix(in srgb, var(--ds-color-green-100) 18%, transparent); }
 .role-option__icon { width: 48px; height: 48px; border-radius: var(--ds-radius-md); display: grid; place-items: center; font-size: 22px; flex-shrink: 0; }
 .role-option__title { font-weight: var(--ds-font-weight-semibold); }
@@ -1193,12 +1195,12 @@ h1, h2, h3, h4, p { margin: 0; }
   padding: 10px 32px 10px 16px;
   border-radius: var(--ds-radius-md); border: 1.5px solid var(--ds-color-gray-100); background: var(--ds-surface);
   cursor: pointer; text-align: left;
-  transition: border-color .12s, background .12s, transform .08s, box-shadow .12s;
+  transition: border-color .12s, background .12s, box-shadow .12s;
 }
 .tpl-card::before { content: ""; position: absolute; left: 0; top: 10px; bottom: 10px; width: 3px; border-radius: 0 3px 3px 0; background: var(--ds-color-gray-200); transition: background .12s; }
-.tpl-card:hover { border-color: var(--ds-color-green-100); box-shadow: var(--ds-shadow-01); transform: translateY(-1px); }
+/* DS: sin hover-lift; hover = borde verde + sombra sutil. */
+.tpl-card:hover { border-color: var(--ds-color-green-100); box-shadow: var(--ds-shadow-01); }
 .tpl-card:hover::before { background: var(--ds-color-green-100); }
-.tpl-card:active { transform: translateY(0); }
 .tpl-card.is-active { border-color: var(--ds-color-green-200); background: color-mix(in srgb, var(--ds-color-green-100) 12%, var(--ds-tint-base)); }
 .tpl-card.is-active::before { background: var(--ds-color-green-200); }
 .tpl-card__name { font-weight: var(--ds-font-weight-semibold); font-size: 13px; color: var(--ds-text); line-height: 1.25; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
