@@ -75,9 +75,9 @@
      (texto sobre botón de color, encabezado de tabla, checkmarks, toast…). */
   --ds-bg: var(--ds-color-surface);      /* fondo de la página */
   --ds-surface: var(--ds-color-white);   /* tarjetas, inputs, popovers, topbar */
-  --ds-surface-2: #fff;                  /* superficie levemente elevada / base de gradientes */
+  --ds-surface-2: var(--ds-color-white);                  /* superficie levemente elevada / base de gradientes */
   --ds-text: var(--ds-color-black);      /* texto primario del cuerpo */
-  --ds-tint-base: #fff;                  /* base para los color-mix sutiles */
+  --ds-tint-base: var(--ds-color-white);                  /* base para los color-mix sutiles */
   color-scheme: light;
 }
 
@@ -543,7 +543,7 @@ h1, h2, h3, h4, p { margin: 0; }
 .dt-hpill__filter:hover { background: rgba(255, 255, 255, 0.16); color: var(--ds-color-white); }
 .dt-hpill__filter.is-active { color: var(--ds-text); background: var(--ds-color-green-100); }
 .dt-hpill__filter.is-open { box-shadow: 0 0 0 2px var(--ds-color-green-100); }
-.dt-hpill__badge { position: absolute; top: -2px; right: -2px; min-width: 14px; height: 14px; padding: 0 3px; border-radius: 999px; background: var(--ds-color-green-100); color: #000; font-size: 9px; font-weight: 700; display: grid; place-items: center; }
+.dt-hpill__badge { position: absolute; top: -2px; right: -2px; min-width: 14px; height: 14px; padding: 0 3px; border-radius: 999px; background: var(--ds-color-green-100); color: var(--ds-color-black); font-size: 9px; font-weight: 700; display: grid; place-items: center; }
 
 /* Botón ⇕ de expandir por fila */
 .dt-xcell { width: 52px; text-align: center; }
@@ -648,7 +648,7 @@ h1, h2, h3, h4, p { margin: 0; }
   padding: var(--ds-space-3) var(--ds-space-6);
 }
 .topbar__brand { display: flex; align-items: center; gap: var(--ds-space-3); font-weight: var(--ds-font-weight-semibold); font-size: var(--ds-font-size-subtitle); }
-.topbar__logo { width: 32px; height: 32px; border-radius: var(--ds-radius-md); background: var(--ds-color-green-100); display: grid; place-items: center; font-weight: 700; color: #000; }
+.topbar__logo { width: 32px; height: 32px; border-radius: var(--ds-radius-md); background: var(--ds-color-green-100); display: grid; place-items: center; font-weight: 700; color: var(--ds-color-black); }
 .topbar__nav { display: flex; gap: var(--ds-space-1); margin-left: var(--ds-space-4); }
 .topbar__link {
   padding: var(--ds-space-2) var(--ds-space-4); border-radius: var(--ds-radius-lg);
@@ -656,7 +656,7 @@ h1, h2, h3, h4, p { margin: 0; }
   transition: background-color .12s ease, color .12s ease;
 }
 .topbar__link:hover { background: var(--ds-color-gray-100); color: var(--ds-text); }
-.topbar__link.is-active { background: var(--ds-color-green-100); color: #000; }
+.topbar__link.is-active { background: var(--ds-color-green-100); color: var(--ds-color-black); }
 .topbar__spacer { flex: 1; }
 .topbar__user { display: flex; align-items: center; gap: var(--ds-space-3); }
 .topbar__avatar { width: 36px; height: 36px; border-radius: 50%; background: var(--ds-color-gray-200); display: grid; place-items: center; font-weight: 600; color: var(--ds-color-gray-500); }
@@ -710,7 +710,7 @@ h1, h2, h3, h4, p { margin: 0; }
 
 /* Panel izquierdo: marca "Sistema interno" — SIEMPRE oscuro (como el sidebar). */
 .login__aside {
-  position: relative; overflow: hidden; color: #fff; background: #16181d;
+  position: relative; overflow: hidden; color: var(--ds-color-white); background: #16181d;
   display: grid; grid-template-rows: auto 1fr auto; gap: var(--ds-space-6);
   padding: clamp(32px, 5vw, 72px);
 }
@@ -810,7 +810,7 @@ h1, h2, h3, h4, p { margin: 0; }
 .help-steps li::before {
   content: counter(paso); position: absolute; left: 0; top: 0;
   width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center;
-  background: var(--ds-color-green-100); color: #000; font-size: 12px; font-weight: 700;
+  background: var(--ds-color-green-100); color: var(--ds-color-black); font-size: 12px; font-weight: 700;
 }
 
 /* Tooltip con estilo. Uso: className="ds-tip" data-tip="texto". Solo en chrome sin
@@ -841,7 +841,7 @@ h1, h2, h3, h4, p { margin: 0; }
 /* segmented control */
 .segmented { display: inline-flex; background: var(--ds-color-gray-100); border-radius: var(--ds-radius-xl); padding: 4px; gap: 4px; }
 .segmented__btn { padding: 8px 16px; border-radius: var(--ds-radius-lg); border: 0; background: transparent; font-family: inherit; font-weight: var(--ds-font-weight-semibold); font-size: var(--ds-font-size-label); color: var(--ds-color-gray-500); cursor: pointer; transition: background-color .12s, color .12s; }
-.segmented__btn.is-active { background: var(--ds-surface); color: #000; box-shadow: var(--ds-shadow-02-soft); }
+.segmented__btn.is-active { background: var(--ds-surface); color: var(--ds-color-black); box-shadow: var(--ds-shadow-02-soft); }
 
 /* Filtros de estado como "chips" (pills con contador) — lenguaje visual distinto
    del toggle de vista, para que no se vean como una barra doble amontonada. */
@@ -856,7 +856,7 @@ h1, h2, h3, h4, p { margin: 0; }
 .filter-chip:hover { border-color: var(--ds-color-gray-300); color: var(--ds-text); }
 .filter-chip.is-active { background: var(--ds-color-green-100); border-color: var(--ds-color-green-100); color: var(--ds-text); }
 .filter-chip__count { display: inline-flex; align-items: center; justify-content: center; min-width: 20px; height: 20px; padding: 0 6px; border-radius: 999px; background: color-mix(in srgb, var(--ds-color-gray-500) 14%, transparent); font-size: var(--ds-font-size-body-sm); font-weight: var(--ds-font-weight-semibold); color: inherit; }
-.filter-chip.is-active .filter-chip__count { background: color-mix(in srgb, #000 16%, transparent); }
+.filter-chip.is-active .filter-chip__count { background: color-mix(in srgb, var(--ds-color-black) 16%, transparent); }
 /* navegación de rol (espejo de .ds-nav del DS: activo = verde-100 + texto negro) */
 .topnav { display: flex; align-items: center; gap: var(--ds-space-1); }
 .topnav__item {
@@ -919,7 +919,7 @@ h1, h2, h3, h4, p { margin: 0; }
 /* Cabecera: hamburguesa (siempre) + marca (solo al fijar). */
 .app-nav__head { display: flex; align-items: center; justify-content: center; gap: var(--ds-space-2); min-height: 44px; margin-bottom: var(--ds-space-2); }
 .app-shell.pinned .app-nav__head { justify-content: flex-start; }
-.app-nav__brand { display: none; align-items: center; gap: var(--ds-space-2); min-width: 0; flex: 1; color: #fff; text-decoration: none; overflow: hidden; }
+.app-nav__brand { display: none; align-items: center; gap: var(--ds-space-2); min-width: 0; flex: 1; color: var(--ds-color-white); text-decoration: none; overflow: hidden; }
 .app-shell.pinned .app-nav__brand { display: flex; }
 .app-nav__brand .topbar__logo { flex-shrink: 0; }
 .app-nav__brand-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 0; opacity: 0; font-weight: var(--ds-font-weight-semibold); font-size: var(--ds-font-size-body-md); transition: max-width .26s cubic-bezier(.34, 1.2, .5, 1), opacity .18s ease; }
@@ -958,16 +958,16 @@ h1, h2, h3, h4, p { margin: 0; }
    derecha al expandir; colapsada, ambas quedan en ancho 0 y el ícono se centra. */
 .app-nav__theme .app-nav__label:not(.app-nav__switch) { flex: 1; }
 .app-nav__switch { flex: 0 0 auto; width: 38px; height: 22px; border-radius: 999px; background: rgba(255, 255, 255, 0.18); position: relative; transition: background .18s ease; }
-.app-nav__switch i { position: absolute; top: 3px; left: 3px; width: 16px; height: 16px; border-radius: 50%; background: #fff; transition: transform .2s cubic-bezier(.34, 1.4, .5, 1); }
+.app-nav__switch i { position: absolute; top: 3px; left: 3px; width: 16px; height: 16px; border-radius: 50%; background: var(--ds-color-white); transition: transform .2s cubic-bezier(.34, 1.4, .5, 1); }
 .app-nav__switch.is-on { background: var(--ds-color-green-100); }
 .app-nav__switch.is-on i { transform: translateX(16px); }
 
 /* Tarjeta de usuario: avatar siempre; nombre/rol/salir solo al expandir.
    Colapsada se centra (como los ítems); al fijar/hover/móvil se alinea a la izq. */
 .app-nav__user { display: flex; align-items: center; justify-content: center; gap: 0; padding: 6px; border-radius: var(--ds-radius-lg); background: rgba(255, 255, 255, 0.06); }
-.app-nav__avatar { flex-shrink: 0; width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center; background: var(--ds-color-green-100); color: #000; font-weight: 700; font-size: 13px; }
+.app-nav__avatar { flex-shrink: 0; width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center; background: var(--ds-color-green-100); color: var(--ds-color-black); font-weight: 700; font-size: 13px; }
 .app-nav__user-meta { display: flex; flex-direction: column; min-width: 0; line-height: 1.2; }
-.app-nav__user-name { font-size: var(--ds-font-size-label); font-weight: var(--ds-font-weight-semibold); color: #fff; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.app-nav__user-name { font-size: var(--ds-font-size-label); font-weight: var(--ds-font-weight-semibold); color: var(--ds-color-white); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .app-nav__user-role { font-size: 11px; color: rgba(255, 255, 255, 0.55); }
 /* Colapsado: se OCULTA (un grid no colapsa con max-width como los <span> label),
    así el avatar queda centrado. Se muestra en los estados expandidos. */
@@ -987,7 +987,7 @@ h1, h2, h3, h4, p { margin: 0; }
    NO se expande al pasar el mouse ni al enfocar (sin hover-preview). */
 
 /* Hamburguesa del riel (desktop): abre/fija (empuja) y encoge. Siempre visible. */
-.app-nav__burger { display: inline-flex; align-items: center; justify-content: center; width: 44px; height: 44px; flex-shrink: 0; border: 0; border-radius: var(--ds-radius-lg); background: rgba(255, 255, 255, .08); color: #fff; cursor: pointer; transition: background .12s ease; }
+.app-nav__burger { display: inline-flex; align-items: center; justify-content: center; width: 44px; height: 44px; flex-shrink: 0; border: 0; border-radius: var(--ds-radius-lg); background: rgba(255, 255, 255, .08); color: var(--ds-color-white); cursor: pointer; transition: background .12s ease; }
 .app-nav__burger:hover { background: rgba(255, 255, 255, .2); }
 
 /* Cerrar (X): solo móvil. */
@@ -1055,7 +1055,7 @@ h1, h2, h3, h4, p { margin: 0; }
 .md-item:hover { border-color: var(--ds-color-gray-300); }
 .md-item.is-active { border-color: var(--ds-color-green-100); box-shadow: 0 0 0 3px color-mix(in srgb, var(--ds-color-green-100) 18%, transparent); }
 .md-item__top { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
-.md-pill { font-size: var(--ds-font-size-body-sm); font-weight: 700; background: var(--ds-color-green-100); color: #000; border-radius: 999px; padding: 1px 8px; }
+.md-pill { font-size: var(--ds-font-size-body-sm); font-weight: 700; background: var(--ds-color-green-100); color: var(--ds-color-black); border-radius: 999px; padding: 1px 8px; }
 /* Colapsa a 1 columna en tablet y móvil: con sidebar 250px + tabla, por debajo
    de ~900px la tabla queda muy angosta y su toolbar desborda. Apilado le da a la
    tabla el ancho completo. */
@@ -1137,15 +1137,15 @@ h1, h2, h3, h4, p { margin: 0; }
 .timeline::before { content: ""; position: absolute; left: 5px; top: 6px; bottom: 6px; width: 2px; background: var(--ds-color-gray-100); }
 .timeline__item { position: relative; padding: 6px 0 14px 10px; }
 .timeline__item:last-child { padding-bottom: 0; }
-.timeline__dot { position: absolute; left: -21px; top: 8px; width: 12px; height: 12px; border-radius: 50%; border: 2px solid #fff; box-shadow: 0 0 0 1px var(--ds-color-gray-200); }
+.timeline__dot { position: absolute; left: -21px; top: 8px; width: 12px; height: 12px; border-radius: 50%; border: 2px solid var(--ds-color-white); box-shadow: 0 0 0 1px var(--ds-color-gray-200); }
 .timeline__title { font-weight: var(--ds-font-weight-semibold); font-size: var(--ds-font-size-label); }
 .timeline__meta { color: var(--ds-color-gray-400); font-size: var(--ds-font-size-body-sm); }
 
 /* toast */
 .toast-wrap { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); z-index: 100; display: flex; flex-direction: column; gap: 8px; align-items: center; }
-.toast { background: var(--ds-color-black); color: #fff; padding: 12px 20px; border-radius: var(--ds-radius-lg); box-shadow: var(--ds-shadow-03-big); font-size: var(--ds-font-size-label); animation: toastIn .2s ease; }
+.toast { background: var(--ds-color-black); color: var(--ds-color-white); padding: 12px 20px; border-radius: var(--ds-radius-lg); box-shadow: var(--ds-shadow-03-big); font-size: var(--ds-font-size-label); animation: toastIn .2s ease; }
 .toast--error { background: var(--ds-color-red-200); }
-.toast--success { background: var(--ds-color-green-200); color: #fff; }
+.toast--success { background: var(--ds-color-green-200); color: var(--ds-color-white); }
 @keyframes toastIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
 
 /* modal */
@@ -1395,7 +1395,7 @@ button.ana-kpi:active { transform: translateY(1px); }
      light aunque la app esté en modo oscuro (papel blanco, tinta negra). */
   :root, :root[data-theme="dark"] {
     color-scheme: light;
-    --ds-bg: #fff; --ds-surface: #fff; --ds-surface-2: #fff; --ds-text: #000; --ds-tint-base: #fff;
+    --ds-bg: var(--ds-color-white); --ds-surface: var(--ds-color-white); --ds-surface-2: var(--ds-color-white); --ds-text: var(--ds-color-black); --ds-tint-base: var(--ds-color-white);
     --ds-color-surface: #f3f3f3;
     --ds-color-gray-100: #ebebeb; --ds-color-gray-200: #d9d9d9; --ds-color-gray-300: #aaafb6;
     --ds-color-gray-400: #747b86; --ds-color-gray-500: #5d636c;
@@ -1405,7 +1405,7 @@ button.ana-kpi:active { transform: translateY(1px); }
   .app-content,
   .app-shell.pinned .app-content { margin-left: 0 !important; }
   .page { padding: var(--ds-space-6) 0 !important; max-width: none !important; }
-  body, .app-shell, .app-content { background: #fff !important; }
+  body, .app-shell, .app-content { background: var(--ds-color-white) !important; }
   .ds-card, .tile, .md-detail, .ds-table-wrap, .totals { box-shadow: none !important; }
   /* Evitar cortar tarjetas y filas de tabla entre páginas. */
   tr, .ds-card, .tile { break-inside: avoid; }
