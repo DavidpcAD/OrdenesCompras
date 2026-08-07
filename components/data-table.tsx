@@ -7,7 +7,7 @@ import {
   getFacetedRowModel, getFacetedUniqueValues, flexRender,
   type Column, type ColumnDef, type FilterFn, type SortingState, type ColumnFiltersState, type VisibilityState, type ColumnOrderState, type PaginationState,
 } from "@tanstack/react-table";
-import { Button, Card, ConfirmDialog, EmptyState, Field, Input, Modal, Select, Skeleton, useToast } from "@/components/ui";
+import { Button, Card, Checkbox, ConfirmDialog, EmptyState, Field, Input, Modal, Select, Skeleton, useToast } from "@/components/ui";
 import { IconTable } from "@/components/icons";
 import { useStore } from "@/lib/store";
 
@@ -300,9 +300,7 @@ export function DataTable<T>({
               const col = leaf.find((c) => c.id === cid); if (!col) return null;
               return (
                 <div key={cid} className="row row--between gap-2" style={{ alignItems: "center", padding: "5px 8px", borderRadius: 8 }}>
-                  <label className="row gap-2 ds-body-sm" style={{ alignItems: "center", cursor: "pointer" }}>
-                    <input type="checkbox" className="ds-cbx" checked={col.getIsVisible()} onChange={col.getToggleVisibilityHandler()} /> {labelDe(cid)}
-                  </label>
+                  <Checkbox className="ds-body-sm" checked={col.getIsVisible()} onChange={col.getToggleVisibilityHandler()} label={labelDe(cid)} />
                   <span className="row gap-1">
                     <button type="button" className="icon-btn" title="Subir" aria-label="Subir columna" onClick={() => moveCol(cid, -1)}>↑</button>
                     <button type="button" className="icon-btn" title="Bajar" aria-label="Bajar columna" onClick={() => moveCol(cid, 1)}>↓</button>
@@ -369,10 +367,8 @@ export function DataTable<T>({
               onChange={(e) => setNombreVista(e.target.value)}
               onKeyDown={(e) => { if (e.key === "Enter" && nombreVista.trim()) confirmarGuardarVista(); }} />
           </Field>
-          <label style={{ display: "flex", alignItems: "center", gap: "var(--ds-space-2)", marginTop: "var(--ds-space-4)", cursor: "pointer" }}>
-            <input type="checkbox" className="ds-cbx" checked={predVista} onChange={(e) => setPredVista(e.target.checked)} />
-            <span>Marcar como predeterminada <span className="ds-muted ds-body-sm">(se aplica al abrir)</span></span>
-          </label>
+          <Checkbox className="mt-4" checked={predVista} onChange={(e) => setPredVista(e.target.checked)}
+            label={<>Marcar como predeterminada <span className="ds-muted ds-body-sm">(se aplica al abrir)</span></>} />
         </Modal>
       )}
 

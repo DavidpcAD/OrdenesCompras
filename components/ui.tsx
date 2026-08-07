@@ -140,6 +140,27 @@ export const Textarea = (p: React.TextareaHTMLAttributes<HTMLTextAreaElement>) =
   <textarea {...p} />
 );
 
+// ---------------------------------------------------------------- Checkbox
+// Casilla del DS (.ds-cbx) + etiqueta, envueltas en un <label> accesible.
+// Unifica el patrón repetido `<label><input className="ds-cbx"/> …</label>`.
+export function Checkbox({
+  checked, onChange, label, disabled, className = "", ...rest
+}: Omit<React.InputHTMLAttributes<HTMLInputElement>, "type" | "onChange"> & {
+  checked?: boolean;
+  onChange?: (e: React.ChangeEvent<HTMLInputElement>) => void;
+  label?: React.ReactNode;
+  disabled?: boolean;
+  className?: string;
+}) {
+  const cls = ["ds-cbx-field", disabled ? "ds-cbx-field--disabled" : "", className].filter(Boolean).join(" ");
+  return (
+    <label className={cls}>
+      <input type="checkbox" className="ds-cbx" checked={checked} disabled={disabled} onChange={onChange} {...rest} />
+      {label != null && <span>{label}</span>}
+    </label>
+  );
+}
+
 // ---------------------------------------------------------------- Badge
 export function Badge({ tone = "gray", children }: { tone?: string; children: React.ReactNode }) {
   return <span className={`ds-badge ds-badge--${tone}`}>{children}</span>;

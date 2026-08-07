@@ -506,6 +506,9 @@ h1, h2, h3, h4, p { margin: 0; }
 .ds-cbx:checked { background: var(--ds-color-black); border-color: var(--ds-text); }
 .ds-cbx:checked::after { opacity: 1; }
 .ds-cbx:hover:not(:disabled) { border-color: var(--ds-color-gray-400); }
+/* Campo de checkbox del DS: casilla + etiqueta alineadas (componente Checkbox). */
+.ds-cbx-field { display: inline-flex; align-items: center; gap: var(--ds-space-2); cursor: pointer; }
+.ds-cbx-field--disabled { cursor: not-allowed; opacity: .6; }
 .ds-cbx:disabled { opacity: .45; cursor: not-allowed; }
 
 /* Filtro de fecha (rango): chips + inputs Desde/Hasta */
