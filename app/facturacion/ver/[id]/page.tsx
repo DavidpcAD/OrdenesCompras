@@ -17,7 +17,7 @@ export default function BodegaOrdenDetallePage() {
   }
 
   const acciones = orden.estado === "lanzado" ? (
-    <Button variant="red" onClick={() => router.push(`/facturacion/${orden.id}`)}>Registrar factura</Button>
+    <Button variant="green" onClick={() => router.push(`/facturacion/${orden.id}`)}>Registrar factura</Button>
   ) : null;
 
   return (

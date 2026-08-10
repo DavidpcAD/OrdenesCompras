@@ -409,7 +409,7 @@ export default function CargoSobreFacturaPage() {
                 <span style={{ display: "inline-flex", transform: "rotate(180deg)" }}><IconChevronLeft size={22} /></span>
               </Button>
             ) : (
-              <Button variant="red" onClick={registrar} disabled={!puedeRegistrar || registrando}>
+              <Button variant="green" onClick={registrar} disabled={!puedeRegistrar || registrando}>
                 {registrando ? "Registrando…" : "Registrar cargo en BC"}
               </Button>
             )}

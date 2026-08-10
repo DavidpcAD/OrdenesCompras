@@ -103,7 +103,7 @@ export default function ArchivoPage() {
                         <td className="ds-body-sm">{(o ? (o.proveedorNombre ?? prov(o.proveedorId)?.nombre) : "") ?? "—"}</td>
                         <td className="ds-body-sm ds-muted">{formatDate(r.fechaRecepcion)} · {r.lineas.length} línea(s)</td>
                         <td className="ds-num">{money(r.total, o?.currencyCode)}</td>
-                        <td className="ds-num"><Button variant="red" size="sm" onClick={() => { setNumFac(""); setFacObj(r); }}>Registrar factura</Button></td>
+                        <td className="ds-num"><Button variant="green" size="sm" onClick={() => { setNumFac(""); setFacObj(r); }}>Registrar factura</Button></td>
                       </tr>
                     );
                   })}
@@ -118,7 +118,7 @@ export default function ArchivoPage() {
 
         {facObj && (
           <Modal title={`Registrar factura · ${ordenDe(facObj)?.numero ?? ""}`} onClose={() => setFacObj(null)}
-            footer={<><Button variant="outline" onClick={() => setFacObj(null)}>Cancelar</Button><Button variant="red" onClick={confirmarFactura} disabled={!numFac.trim() || guardando}>{guardando ? "Registrando…" : "Registrar factura"}</Button></>}>
+            footer={<><Button variant="outline" onClick={() => setFacObj(null)}>Cancelar</Button><Button variant="green" onClick={confirmarFactura} disabled={!numFac.trim() || guardando}>{guardando ? "Registrando…" : "Registrar factura"}</Button></>}>
             <p className="ds-muted ds-body-sm" style={{ marginTop: 0 }}>El material ya se recibió. Registrá la factura del proveedor (se contabiliza en BC lo ya recibido).</p>
             <Field label="N.º de factura del proveedor">
               <Input value={numFac} onChange={(e) => setNumFac(e.target.value)} placeholder="Ej. F-0099281" />

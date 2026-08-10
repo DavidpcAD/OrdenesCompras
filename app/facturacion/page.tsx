@@ -57,7 +57,7 @@ export default function FacturacionPage() {
                       <span className="ds-strong">{money(total, o.currencyCode)}</span>
                       <span className="ds-muted ds-body-sm">total orden</span>
                     </div>
-                    <Button variant="red">Registrar factura</Button>
+                    <Button variant="green">Registrar factura</Button>
                   </div>
                 </div>
               </Card>
