@@ -5,7 +5,7 @@ import { useEffect, useId, useMemo, useState } from "react";
 import { Badge, Button, Card, Field, Input, Select, useToast } from "@/components/ui";
 import { Combobox } from "@/components/combobox";
 import { useStore } from "@/lib/store";
-import { money, almacenesFisicos } from "@/lib/helpers";
+import { money, almacenesFisicos, monedaApp } from "@/lib/helpers";
 import type { OrdenLinea } from "@/lib/types";
 
 // Orden DIRECTA: compra armada por Proveeduría sin partir de una solicitud de
@@ -73,7 +73,7 @@ export default function OrdenDirectaPage() {
   function elegirProveedor(id: string) {
     setProveedorId(id);
     const p = catProv.find((x) => x.id === id);
-    if (p) setCurrency(p.currencyCode ?? "");
+    if (p) setCurrency(monedaApp(p.currencyCode));
   }
 
   async function crear(aprobar: boolean) {

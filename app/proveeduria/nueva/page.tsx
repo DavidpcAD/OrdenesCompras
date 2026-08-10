@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 import { Badge, Button, Card, EmptyState, Field, Input, Modal, Select, useToast } from "@/components/ui";
 import { Combobox } from "@/components/combobox";
 import { useStore } from "@/lib/store";
-import { money, ultimoPrecioProveedor, almacenesFisicos, pedidoLineaPendiente } from "@/lib/helpers";
+import { money, ultimoPrecioProveedor, almacenesFisicos, pedidoLineaPendiente, monedaApp } from "@/lib/helpers";
 import type { OrdenLinea } from "@/lib/types";
 
 interface Row {
@@ -195,7 +195,7 @@ export default function ArmarOrdenPage() {
   function elegirProveedor(id: string) {
     setProveedorId(id);
     const p = catProv.find((x) => x.id === id);
-    if (p) setCurrency(p.currencyCode ?? "");
+    if (p) setCurrency(monedaApp(p.currencyCode));
   }
 
   const [guardando, setGuardando] = useState(false);

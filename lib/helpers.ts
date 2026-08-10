@@ -55,6 +55,14 @@ export function money(amount: number, currencyCode?: string): string {
   return new Intl.NumberFormat("es-CR", { style: "currency", currency: cur, minimumFractionDigits: 2 }).format(amount || 0);
 }
 
+// El selector de Moneda de la app usa "" = CRC (colones) y "USD". BC devuelve
+// "CRC" para proveedores en colones, que NO matchea la opción "" y dejaba el
+// Select en "Seleccioná…". Normaliza el código de BC al valor del selector.
+export function monedaApp(code?: string): string {
+  const c = (code ?? "").trim().toUpperCase();
+  return c === "CRC" ? "" : c;
+}
+
 export function formatDate(iso: string): string {
   if (!iso) return "—";
   // Fechas "solo día" (YYYY-MM-DD) se formatean directo, SIN convertir zona horaria:

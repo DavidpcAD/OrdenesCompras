@@ -6,7 +6,7 @@ import { Badge, Button, Card, EmptyState, Field, Input, Select, useToast, Skelet
 import { IconWarning } from "@/components/icons";
 import { Combobox } from "@/components/combobox";
 import { useStore } from "@/lib/store";
-import { money, ordenEsDirecta, ordenPedidos, almacenesFisicos } from "@/lib/helpers";
+import { money, ordenEsDirecta, ordenPedidos, almacenesFisicos, monedaApp } from "@/lib/helpers";
 import type { OrdenLinea } from "@/lib/types";
 
 interface Row { key: string; articuloId: string; descripcion: string; unidad: string; obra: string; cantidad: string; precio: string; iva: string; descuento: string; proyecto?: string; taskNo?: string; pedidoLineaId?: string; pedidoNumero?: string; }
@@ -37,7 +37,7 @@ export default function EditarOrdenPage() {
 
   const cargo = orden?.lineas.find((l) => l.tipo === "cargo");
   const [proveedorId, setProveedorId] = useState(orden?.proveedorId ?? "");
-  const [currency, setCurrency] = useState(orden?.currencyCode ?? "");
+  const [currency, setCurrency] = useState(monedaApp(orden?.currencyCode));
   const [flete, setFlete] = useState(cargo ? String(cargo.precioUnitario) : "");
   const [almacen, setAlmacen] = useState(orden?.almacenRecepcion ?? "ALM-GRAL");
   const [rows, setRows] = useState<Row[]>(
@@ -129,7 +129,7 @@ export default function EditarOrdenPage() {
           <h3 className="ds-subtitle" style={{ marginBottom: 16 }}>Datos de la orden</h3>
           <div className="grid-3">
             <Field label="Proveedor" help="Hereda términos y moneda">
-              <Combobox items={catProv} value={proveedorId} onChange={(k) => { setProveedorId(k); const p = catProv.find((x) => x.id === k); if (p) setCurrency(p.currencyCode ?? ""); }}
+              <Combobox items={catProv} value={proveedorId} onChange={(k) => { setProveedorId(k); const p = catProv.find((x) => x.id === k); if (p) setCurrency(monedaApp(p.currencyCode)); }}
                 getKey={(p) => p.id} getLabel={(p) => `${p.code} — ${p.nombre}`} getSearch={(p) => `${p.code} ${p.nombre}`} placeholder="Buscar proveedor…" />
             </Field>
             <Field label="Moneda">
