@@ -505,7 +505,7 @@ export function DataTable<T>({
       )}
 
       {/* Paginación */}
-      <div className="row row--between wrap gap-3 mt-4" style={{ alignItems: "center" }}>
+      <div className="row row--between wrap gap-3 mt-4 dt-pagination" style={{ alignItems: "center" }}>
         <span className="ds-body-sm ds-muted">Página {table.getState().pagination.pageIndex + 1} de {Math.max(1, table.getPageCount())}</span>
         <div className="row gap-2" style={{ alignItems: "center" }}>
           <Select value={String(pagination.pageSize)} onChange={(e) => setPagination((p) => ({ ...p, pageSize: Number(e.target.value), pageIndex: 0 }))} style={{ width: "auto", minWidth: 120 }}>

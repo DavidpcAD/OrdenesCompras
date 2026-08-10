@@ -902,6 +902,12 @@ h1, h2, h3, h4, p { margin: 0; }
 /* Cuando hay FAB de acción (abajo-derecha), reservar espacio para que la última
    fila/contenido no quede tapado al llegar al fondo del scroll. */
 .app-content.has-fab { padding-bottom: 92px; }
+/* Con FAB (abajo-derecha), en escritorio la fila de paginación reserva espacio a
+   la derecha para que sus controles (selector + flechas) no queden tapados por el
+   FAB cuando el contenido llega al fondo (dashboard/seguimiento). */
+@media (min-width: 761px) {
+  .app-content.has-fab .dt-pagination { padding-right: 190px; }
+}
 
 /* Riel angosto de solo íconos. Al pasar el mouse se expande como OVERLAY (preview);
    con el toggle queda FIJO (pinned) y empuja el contenido. */
