@@ -424,7 +424,7 @@ export default function ArmarOrdenPage() {
       <div className="action-bar">
         <div className="action-bar__inner">
           <span className="ds-muted">{rows.length} línea(s) · {pedidosDistintos.length} pedido(s) · <span className="ds-strong">{money(total, currency)}</span></span>
-          <div className="row gap-3">
+          <div className="row gap-3 action-bar__cta">
             <Button variant="outline" onClick={() => crear(false)} disabled={!puedeCrear || guardando}>Guardar como abierta</Button>
             <Button onClick={() => crear(true)} disabled={!puedeCrear || guardando}>{guardando ? "Enviando…" : "Enviar a aprobación"}</Button>
           </div>

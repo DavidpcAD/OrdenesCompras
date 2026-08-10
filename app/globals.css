@@ -847,6 +847,11 @@ h1, h2, h3, h4, p { margin: 0; }
 .app-shell.pinned .action-bar { left: var(--nav-w); }
 @media (max-width: 760px) {
   .action-bar, .app-shell.pinned .action-bar { left: 0; }
+  /* Menos padding y CTAs a ancho completo apiladas para que los 2 botones (p.ej.
+     "Guardar como abierta" + "Enviar a aprobación") no se corten en móvil. */
+  .action-bar { padding: var(--ds-space-3) var(--ds-space-4); }
+  .action-bar__cta { flex-wrap: wrap; width: 100%; }
+  .action-bar__cta > .ds-btn { flex: 1 1 100%; }
 }
 .action-bar__inner { max-width: 1180px; margin: 0 auto; display: flex; align-items: center; justify-content: space-between; gap: var(--ds-space-4); flex-wrap: wrap; }
 @keyframes barUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
