@@ -531,11 +531,6 @@ export async function bcVariantsEx(itemNo: string): Promise<BcVariantsResult> {
   return { variantes: [], disponible: false };
 }
 
-// Compatibilidad: versión que solo devuelve la lista (sin el flag).
-export async function bcVariants(itemNo: string): Promise<BcVariante[]> {
-  return (await bcVariantsEx(itemNo)).variantes;
-}
-
 // Resuelve el código de variante de un item a su itemVariantId (systemId GUID),
 // que es lo que exige la línea estándar de BC (igual que locationId). Cachea por
 // item+code. Usa la API estándar de itemVariants (devuelve id).
@@ -821,39 +816,6 @@ export async function bcFacturarRecibido(orderNo: string, vendorInvoiceNo: strin
   if (!res.ok) throw new Error(`BC facturar ${res.status}: ${(await res.text()).slice(0, 250)}`);
   const d: any = await res.json().catch(() => ({}));
   return d?.value ?? "Facturado";
-}
-
-// Crea el Pedido en BC (queda Abierto) y lo LANZA enseguida -> "Lanzado".
-// Si el create funciona pero el release falla (p.ej. AdelantePO no publicado aún),
-// devuelve el pedido creado con released=false para que la UI avise sin romperse.
-export async function bcCrearYLanzarPedido(input: { vendorNo: string; currencyCode?: string; locationCode?: string; lineas: NuevaLineaBc[]; cargos?: CargoBc[]; metodo?: string; flete?: { monto: number; descripcion?: string } }):
-  Promise<{ number: string; id: string; omitidas: string[]; creadas: number; lineError?: string; cargoError?: string; cargosCreados?: number; released: boolean; releaseError?: string }> {
-  const { number, id, omitidas, creadas, lineError, cargoError, cargosCreados } = await bcCrearPedido(input);
-  // Si NINGUNA línea entró a BC, no tiene sentido intentar lanzar (BC responde
-  // "nothing to release"). Devolvemos released=false con el motivo real de la línea.
-  if (creadas === 0) {
-    return { number, id, omitidas, creadas, lineError, cargoError, cargosCreados, released: false, releaseError: lineError ?? "BC rechazó todas las líneas del pedido." };
-  }
-  // FORZAR EL PRECIO DE LA APP: al insertar la línea, la API estándar valida el
-  // N.º del artículo y autocompleta el "Direct Unit Cost" desde la ficha del ítem,
-  // PISANDO el precio que mandamos en el POST (si el ítem no tiene costo, lo deja
-  // en blanco → no se puede facturar). Re-sincronizamos con PATCH para que el
-  // precio NEGOCIADO en la app sea el que queda en BC. No debe tumbar el lanzamiento.
-  try { await bcResyncPedidoLines(number, input.lineas); } catch (e) { console.warn(`BC resync de precios en ${number} falló:`, e); }
-  // Cargos con método distinto de importe: reasignar explícitamente (Igualmente/
-  // Peso/Volumen). El default "Amount" ya lo hace el codeunit al registrar, así que
-  // solo llamamos cuando el método NO es Amount. No debe tumbar el lanzamiento.
-  const met = (input.metodo ?? "").trim();
-  const hayCargos = (input.cargos && input.cargos.length) || (input.flete && input.flete.monto > 0);
-  if (hayCargos && met && met.toLowerCase() !== "amount") {
-    try { await bcAssignItemCharges(number, met); } catch (e) { console.warn(`BC asignar cargo (${met}) en ${number} falló:`, e); }
-  }
-  try {
-    await bcReleasePedido(number);
-    return { number, id, omitidas, creadas, lineError, cargoError, cargosCreados, released: true };
-  } catch (e: any) {
-    return { number, id, omitidas, creadas, lineError, cargoError, cargosCreados, released: false, releaseError: String(e?.message ?? e) };
-  }
 }
 
 // Crea una línea de Cargo de producto (Item Charge) en un pedido, vía el codeunit
