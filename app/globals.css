@@ -438,6 +438,10 @@ h1, h2, h3, h4, p { margin: 0; }
 .fac-det__colhead { color: var(--ds-color-gray-500); font-weight: var(--ds-font-weight-semibold); font-size: var(--ds-font-size-body-sm); background: color-mix(in srgb, var(--ds-color-surface) 60%, var(--ds-tint-base)); }
 .fac-det__num { text-align: right; font-variant-numeric: tabular-nums; }
 .fac-det__total { display: grid; grid-template-columns: 1fr 150px; gap: var(--ds-space-3); padding: var(--ds-space-3) var(--ds-space-4); background: var(--ds-color-surface); font-weight: var(--ds-font-weight-semibold); }
+/* Botón "ver/ocultar" del detalle de factura (accesible por teclado; hereda el
+   gris del td .ds-muted, se alinea a la derecha como el texto anterior). */
+.fac-ver-btn { display: inline-flex; align-items: center; gap: 4px; border: 0; background: transparent; padding: 2px 4px; cursor: pointer; font: inherit; color: inherit; border-radius: var(--ds-radius-sm); transition: color .12s ease; }
+.fac-ver-btn:hover { color: var(--ds-text); }
 
 /* inline cell input */
 .ds-cell-input {

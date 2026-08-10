@@ -162,10 +162,12 @@ export function OrdenDetalle({
                         <td className="ds-num">{money(r.total, orden.currencyCode)}</td>
                         <td>{r.parcial ? <Badge tone="yellow">Parcial</Badge> : <Badge tone="green">Completa</Badge>}</td>
                         <td className="ds-num ds-muted">
-                          <span className="row gap-1" style={{ justifyContent: "flex-end", alignItems: "center" }}>
+                          <button type="button" className="fac-ver-btn" aria-expanded={abierto}
+                            aria-label={`${abierto ? "Ocultar" : "Ver"} detalle de la factura ${r.numeroFactura}`}
+                            onClick={(e) => { e.stopPropagation(); setVerFactura(abierto ? null : r.id); }}>
                             {abierto ? "ocultar" : "ver"}
                             <IconChevronDown size={16} style={{ transform: abierto ? "rotate(180deg)" : "none", transition: "transform .15s ease" }} />
-                          </span>
+                          </button>
                         </td>
                       </tr>
                       {abierto && (
