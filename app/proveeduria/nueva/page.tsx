@@ -241,7 +241,7 @@ export default function ArmarOrdenPage() {
   return (
     <>
       <main className="page page--wide" style={{ paddingBottom: 120 }}>
-        <div className="back-link" onClick={() => router.push("/proveeduria")}>Volver a materiales</div>
+        <button type="button" className="back-link" onClick={() => router.push("/proveeduria")}>Volver a materiales</button>
         <div className="page__head">
           <div className="page__title">
             <h1 className="ds-heading">Armar orden de compra</h1>

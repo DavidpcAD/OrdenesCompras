@@ -54,7 +54,7 @@ export default function ProveeduriaPedidoDetallePage() {
   return (
     <>
       <main className="page">
-        <div className="back-link" onClick={() => router.push("/proveeduria/solicitudes")}>Volver a solicitudes</div>
+        <button type="button" className="back-link" onClick={() => router.push("/proveeduria/solicitudes")}>Volver a solicitudes</button>
         <div className="page__head">
           <div className="page__title">
             <div className="row gap-3">

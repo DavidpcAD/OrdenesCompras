@@ -79,13 +79,13 @@ export default function EditarOrdenPage() {
     || orden.lineas.some((l) => l.cantidadRecibida > 0 || l.cantidadFacturada > 0);
   if (tieneRecepciones) {
     return <><main className="page">
-      <div className="back-link" onClick={() => router.push(`/proveeduria/ordenes/${id}`)}>Volver a la orden</div>
+      <button type="button" className="back-link" onClick={() => router.push(`/proveeduria/ordenes/${id}`)}>Volver a la orden</button>
       <EmptyState icon={<IconWarning size={24} />} title="No se puede editar" hint="Esta orden ya tiene recepciones registradas: editarla reescribiría las líneas y se perdería la trazabilidad de lo recibido y facturado." />
     </main></>;
   }
   if (orden.estado !== "abierto" && orden.estado !== "rechazado") {
     return <><main className="page">
-      <div className="back-link" onClick={() => router.push(`/proveeduria/ordenes/${id}`)}>Volver a la orden</div>
+      <button type="button" className="back-link" onClick={() => router.push(`/proveeduria/ordenes/${id}`)}>Volver a la orden</button>
       <EmptyState icon={<IconWarning size={24} />} title="No se puede editar" hint="Solo se puede editar mientras la orden está Abierta o Rechazada." />
     </main></>;
   }
@@ -117,7 +117,7 @@ export default function EditarOrdenPage() {
   return (
     <>
       <main className="page page--wide" style={{ paddingBottom: 120 }}>
-        <div className="back-link" onClick={() => router.push(`/proveeduria/ordenes/${id}`)}>Volver a la orden</div>
+        <button type="button" className="back-link" onClick={() => router.push(`/proveeduria/ordenes/${id}`)}>Volver a la orden</button>
         <div className="page__head">
           <div className="page__title">
             <div className="row gap-3"><h1 className="ds-heading">Editar {orden.numero}</h1><Badge tone="gray">Abierta</Badge></div>

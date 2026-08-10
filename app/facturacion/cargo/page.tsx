@@ -185,7 +185,7 @@ export default function CargoSobreFacturaPage() {
   return (
     <>
       <main className="page page--wide" style={{ paddingBottom: 120 }}>
-        <div className="back-link" onClick={() => router.push("/facturacion")}>Volver a órdenes por recibir</div>
+        <button type="button" className="back-link" onClick={() => router.push("/facturacion")}>Volver a órdenes por recibir</button>
         <div className="page__head">
           <div className="page__title">
             <h1 className="ds-heading">Cargo sobre factura recibida</h1>

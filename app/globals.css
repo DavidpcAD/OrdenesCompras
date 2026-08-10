@@ -1140,6 +1140,12 @@ h1, h2, h3, h4, p { margin: 0; }
 .back-link:hover { color: var(--ds-text); }
 .back-link:hover::before { box-shadow: var(--ds-shadow-03-big); }
 .back-link:active::before { transform: scale(.94); }
+.back-link:focus-visible::before { box-shadow: 0 0 0 3px color-mix(in srgb, var(--ds-color-green-100) 60%, transparent), var(--ds-shadow-01); }
+/* En oscuro el chevron negro quedaba casi invisible sobre la superficie oscura →
+   chevron claro (gris-500 del tema). */
+:root[data-theme="dark"] .back-link::before {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 24 24' fill='none' stroke='%23c3c8d1' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M15 18l-6-6 6-6'/%3E%3C/svg%3E");
+}
 
 /* Enlace en línea (p.ej. Nº de solicitud en una tabla) */
 .linklike {

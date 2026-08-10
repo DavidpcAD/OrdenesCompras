@@ -35,7 +35,7 @@ export default function RecepcionDetallePage() {
   return (
     <>
       <main className="page page--wide">
-        <div className="back-link" onClick={() => router.push("/facturacion/archivo")}>Volver a archivo y recepciones</div>
+        <button type="button" className="back-link" onClick={() => router.push("/facturacion/archivo")}>Volver a archivo y recepciones</button>
         <div className="page__head">
           <div className="page__title">
             <div className="row gap-3">

@@ -78,7 +78,7 @@ export function OrdenDetalle({
 
   return (
     <main className="page">
-      <div className="back-link" onClick={() => router.push(volverHref)}>{volverLabel}</div>
+      <button type="button" className="back-link" onClick={() => router.push(volverHref)}>{volverLabel}</button>
       <div className="page__head">
         <div className="page__title">
           <div className="row gap-3">

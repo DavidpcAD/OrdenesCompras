@@ -282,7 +282,7 @@ export default function RegistrarFacturaPage() {
   return (
     <>
       <main className="page page--wide">
-        <div className="back-link" onClick={() => router.push("/facturacion")}>Volver a órdenes por recibir</div>
+        <button type="button" className="back-link" onClick={() => router.push("/facturacion")}>Volver a órdenes por recibir</button>
         <div className="page__head">
           <div className="page__title">
             <div className="row gap-3">
