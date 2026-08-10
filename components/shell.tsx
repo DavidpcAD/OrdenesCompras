@@ -138,7 +138,7 @@ export function AppShell({ role, children }: { role: Role; children: React.React
   useEffect(() => {
     if (!hydrated) return;
     if (current === null) router.replace("/");
-    else if (current !== role) router.replace(ROLE_META[current].home);
+    else if (current !== role) router.replace(ROLE_META[current]?.home ?? "/");
   }, [current, role, router, hydrated]);
 
   if (!hydrated || current !== role) {

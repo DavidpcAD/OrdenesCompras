@@ -161,8 +161,14 @@ export function StoreProvider({ children, useApi }: { children: React.ReactNode;
 
   // hidratación
   useEffect(() => {
-    const r = localStorage.getItem("adelante_oc_role") as Role | null;
-    if (r) setRole(r);
+    // Validar el rol persistido: versiones anteriores tenían roles hoy inexistentes
+    // ("aprobacion"/"ingenieria"). Un valor obsoleto cacheado hacía que el shell
+    // leyera ROLE_META[rolInválido] === undefined y se cayera al error boundary al
+    // recargar. Si el rol guardado no es válido, se ignora y se limpia (→ login).
+    const ROLES_VALIDOS: Role[] = ["proveeduria", "facturacion", "contabilidad"];
+    const r = localStorage.getItem("adelante_oc_role");
+    if (r && ROLES_VALIDOS.includes(r as Role)) setRole(r as Role);
+    else if (r) localStorage.removeItem("adelante_oc_role");
     const u = localStorage.getItem("adelante_oc_usuario");
     if (u) setUsuario(u);
     if (USE_API) {
