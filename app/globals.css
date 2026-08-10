@@ -112,7 +112,6 @@
    siendo OSCURO (esos fondos no cambian). --ds-text es claro en oscuro, así que
    forzamos negro en esos casos puntuales. */
 :root[data-theme="dark"] .ds-btn--green,
-:root[data-theme="dark"] .filter-chip.is-active,
 :root[data-theme="dark"] .topnav__item.is-active,
 :root[data-theme="dark"] .seg-mini button.is-active,
 :root[data-theme="dark"] .dt-hpill__filter.is-active,
@@ -862,9 +861,10 @@ h1, h2, h3, h4, p { margin: 0; }
   font-size: var(--ds-font-size-label); cursor: pointer; transition: border-color .12s, color .12s, background-color .12s;
 }
 .filter-chip:hover { border-color: var(--ds-color-gray-300); color: var(--ds-text); }
-.filter-chip.is-active { background: var(--ds-color-green-100); border-color: var(--ds-color-green-100); color: var(--ds-text); }
+/* DS canónico: chip activo = negro sólido + texto blanco (no verde). */
+.filter-chip.is-active { background: var(--ds-color-black); border-color: var(--ds-color-black); color: var(--ds-color-white); }
 .filter-chip__count { display: inline-flex; align-items: center; justify-content: center; min-width: 20px; height: 20px; padding: 0 6px; border-radius: 999px; background: color-mix(in srgb, var(--ds-color-gray-500) 14%, transparent); font-size: var(--ds-font-size-body-sm); font-weight: var(--ds-font-weight-semibold); color: inherit; }
-.filter-chip.is-active .filter-chip__count { background: color-mix(in srgb, var(--ds-color-black) 16%, transparent); }
+.filter-chip.is-active .filter-chip__count { background: color-mix(in srgb, var(--ds-color-white) 22%, transparent); color: var(--ds-color-white); }
 /* navegación de rol (espejo de .ds-nav del DS: activo = verde-100 + texto negro) */
 .topnav { display: flex; align-items: center; gap: var(--ds-space-1); }
 .topnav__item {
