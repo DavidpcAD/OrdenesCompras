@@ -202,7 +202,7 @@ export default function EditarOrdenPage() {
       <div className="action-bar">
         <div className="action-bar__inner">
           <span className="ds-muted">{rows.length} línea(s) · <span className="ds-strong">{money(total, currency)}</span></span>
-          <div className="row gap-3">
+          <div className="row gap-3 action-bar__cta">
             <Button variant="outline" onClick={() => router.push(`/proveeduria/ordenes/${id}`)}>Cancelar</Button>
             <Button onClick={guardar} disabled={guardando}>{guardando ? "Guardando…" : "Guardar cambios"}</Button>
           </div>
