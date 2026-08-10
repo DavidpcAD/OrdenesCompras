@@ -260,7 +260,13 @@ export async function listOrdenes(): Promise<Orden[]> {
   await ensureEstados();
   const pool = await getPool();
   const h = await pool.request().query("SELECT * FROM dbo.OrdenCompra WHERE esEliminada = 0 ORDER BY idOrdenCompra DESC");
-  const d = await pool.request().query("SELECT * FROM dbo.OrdenCompraDet ORDER BY idOrdenCompraDet");
+  // pedidoNumero se resuelve desde el vínculo idPedidoCompraDet → PedidoCompra.pedidoNo
+  // (si no, la orden se veía siempre como "Directa" aunque naciera de un pedido).
+  const d = await pool.request().query(`SELECT det.*, pc.pedidoNo AS pedidoNumero
+      FROM dbo.OrdenCompraDet det
+      LEFT JOIN dbo.PedidoCompraDet pcd ON pcd.idPedidoCompraDet = det.idPedidoCompraDet
+      LEFT JOIN dbo.PedidoCompra pc ON pc.idPedidoCompra = pcd.idPedidoCompra
+      ORDER BY det.idOrdenCompraDet`);
   return h.recordset.map((o) => mapOrden(o, d.recordset.filter((x) => x.idOrdenCompra === o.idOrdenCompra)));
 }
 
@@ -269,13 +275,18 @@ export async function getOrden(id: number): Promise<Orden | null> {
   const pool = await getPool();
   const h = await pool.request().input("id", sql.Int, id).query("SELECT * FROM dbo.OrdenCompra WHERE idOrdenCompra=@id");
   if (!h.recordset.length) return null;
-  const d = await pool.request().input("id", sql.Int, id).query("SELECT * FROM dbo.OrdenCompraDet WHERE idOrdenCompra=@id ORDER BY idOrdenCompraDet");
+  const d = await pool.request().input("id", sql.Int, id).query(`SELECT det.*, pc.pedidoNo AS pedidoNumero
+      FROM dbo.OrdenCompraDet det
+      LEFT JOIN dbo.PedidoCompraDet pcd ON pcd.idPedidoCompraDet = det.idPedidoCompraDet
+      LEFT JOIN dbo.PedidoCompra pc ON pc.idPedidoCompra = pcd.idPedidoCompra
+      WHERE det.idOrdenCompra=@id ORDER BY det.idOrdenCompraDet`);
   return mapOrden(h.recordset[0], d.recordset);
 }
 
 function mapOrden(o: any, lineas: any[]): Orden {
   return {
     id: String(o.idOrdenCompra), numero: o.ordenNo ?? "", proveedorId: o.proveedorNo ?? "",
+    proveedorNo: o.proveedorNo ?? undefined, proveedorNombre: o.proveedorNombre ?? undefined,
     fecha: (o.fechaEmision?.toISOString?.() ?? o.fechaCreacion?.toISOString?.() ?? "").slice(0, 10),
     currencyCode: o.currencyCode ?? "",
     estado: (codigoDeId(o.idEstado) ?? "abierto") as Orden["estado"],
@@ -284,7 +295,7 @@ function mapOrden(o: any, lineas: any[]): Orden {
     lineas: lineas.map((l): OrdenLinea => ({
       id: String(l.idOrdenCompraDet), tipo: (l.tipoLinea === "cargo" ? "cargo" : "articulo"),
       articuloId: l.itemNo ?? undefined, variantCode: l.variantCode ?? undefined, pedidoLineaId: l.idPedidoCompraDet ? String(l.idPedidoCompraDet) : undefined,
-      pedidoNumero: undefined, descripcion: l.descripcion ?? "", cantidad: Number(l.quantity ?? 0),
+      pedidoNumero: l.pedidoNumero ?? undefined, descripcion: l.descripcion ?? "", cantidad: Number(l.quantity ?? 0),
       unidad: l.unitOfMeasureCode ?? "", almacen: l.locationCode ?? "", precioUnitario: Number(l.directUnitCost ?? 0),
       ivaPct: Number(l.vatPct ?? 0), descuentoPct: Number(l.lineDiscountPct ?? 0) || undefined,
       proyecto: l.jobNo ?? undefined, taskNo: l.taskNo ?? undefined,
