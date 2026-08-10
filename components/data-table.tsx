@@ -470,7 +470,10 @@ export function DataTable<T>({
                   const open = expanded.has(row.id);
                   return (
                     <Fragment key={row.id}>
-                      <tr className={[onRowClick ? "is-clickable" : "", rowClassName?.(row.original) ?? ""].filter(Boolean).join(" ")} onClick={onRowClick ? () => onRowClick(row.original) : undefined}>
+                      <tr className={[onRowClick ? "is-clickable" : "", rowClassName?.(row.original) ?? ""].filter(Boolean).join(" ")}
+                        onClick={onRowClick ? () => onRowClick(row.original) : undefined}
+                        tabIndex={onRowClick ? 0 : undefined}
+                        onKeyDown={onRowClick ? (e) => { if ((e.key === "Enter" || e.key === " ") && e.target === e.currentTarget) { e.preventDefault(); onRowClick(row.original); } } : undefined}>
                         {renderExpanded && (
                           <td className="dt-xcell" onClick={(e) => e.stopPropagation()}>
                             <button type="button" className={`dt-exp-btn${open ? " is-open" : ""}`} aria-expanded={open}

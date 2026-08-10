@@ -351,6 +351,8 @@ h1, h2, h3, h4, p { margin: 0; }
 .ds-table tbody tr:last-child td { border-bottom: 0; }
 .ds-table tbody tr.is-clickable { cursor: pointer; transition: background-color .12s ease; }
 .ds-table tbody tr.is-clickable:hover { background: var(--ds-color-gray-100); }
+/* Foco de teclado en filas clickeables (a11y): outline inset para no recortarse. */
+.ds-table tbody tr.is-clickable:focus-visible { outline: 2px solid var(--ds-color-green-100); outline-offset: -2px; }
 .ds-table tbody tr.row-pending td { background: color-mix(in srgb, var(--ds-color-red-100) 8%, var(--ds-tint-base)); }
 /* Solicitudes en borrador (sin enviar): acento amarillo + tinte para que se noten */
 .ds-table tbody tr.row-borrador td { background: color-mix(in srgb, var(--ds-color-yellow) 10%, var(--ds-tint-base)); }

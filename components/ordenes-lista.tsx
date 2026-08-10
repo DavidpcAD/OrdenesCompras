@@ -144,7 +144,8 @@ export function OrdenesLista({
                         {g.ords.map((o) => {
                           const peds = ordenPedidos(o); const dir = ordenEsDirecta(o); const b = ordenBadge(o.estado);
                           return (
-                            <tr key={o.id} className="is-clickable" onClick={() => router.push(hrefDetalle(o.id))} style={{ cursor: "pointer" }}>
+                            <tr key={o.id} className="is-clickable" onClick={() => router.push(hrefDetalle(o.id))} style={{ cursor: "pointer" }}
+                              tabIndex={0} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); router.push(hrefDetalle(o.id)); } }}>
                               <td className="ds-strong">{o.numero}</td>
                               <td><div className="row gap-2 wrap">{dir && <Badge tone="yellow">Directa</Badge>}{peds.slice(0, 2).map((n) => <Badge key={n} tone="gray">{n}</Badge>)}{peds.length > 2 && <span className="ds-muted ds-body-sm">+{peds.length - 2}</span>}</div></td>
                               <td className="ds-body-sm">{formatDate(o.fecha)}</td>
