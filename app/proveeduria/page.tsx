@@ -172,7 +172,10 @@ export default function ProveeduriaMaterialesPage() {
               const n = p.lineas.filter((l) => pedidoLineaPendiente(l) > 0).length;
               const sel = seleccionPorPedido(p.id);
               return (
-                <div key={p.id} className={`md-item ${filtro === p.id ? "is-active" : ""}`} style={{ cursor: "pointer" }} onClick={() => setFiltro(p.id)}>
+                <div key={p.id} role="button" tabIndex={0} aria-pressed={filtro === p.id}
+                  className={`md-item ${filtro === p.id ? "is-active" : ""}`} style={{ cursor: "pointer" }}
+                  onClick={() => setFiltro(p.id)}
+                  onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setFiltro(p.id); } }}>
                   <div className="md-item__top">
                     <span className="row gap-2" style={{ alignItems: "center" }}>{dot(p.tipoSolicitud === "repuesto" ? "yellow" : "green")} <span className="ds-strong">{p.numero}</span></span>
                     <span className="row gap-2" style={{ alignItems: "center" }}>
