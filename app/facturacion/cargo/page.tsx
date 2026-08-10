@@ -343,7 +343,7 @@ export default function CargoSobreFacturaPage() {
                 <span className="ds-label ds-muted" style={{ display: "block", marginBottom: 4 }}>Método de asignación</span>
                 <Select value={metodo} onChange={(e) => setMetodo(e.target.value)}>
                   <option value="Amount">Por importe</option>
-                  <option value="Equally">Igualmente</option>
+                  <option value="Equally">Equitativo (por línea)</option>
                   <option value="Weight">Por peso</option>
                   <option value="Volume">Por volumen</option>
                 </Select>
