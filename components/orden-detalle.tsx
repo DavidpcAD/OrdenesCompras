@@ -53,13 +53,21 @@ export function OrdenDetalle({
       const lineas = orden.lineas
         .filter((l) => l.tipo === "articulo" && l.articuloId && l.cantidad > 0)
         .map((l) => ({ itemNo: l.articuloId!, cantidad: l.cantidad, precio: l.precioUnitario || 0, descripcion: l.descripcion, variantCode: l.variantCode }));
+      // Cargos de producto de la orden: se re-agregan (idempotente por tipo en BC) y
+      // se reasigna el método, para que "Reintentar" también COMPLETE un cargo que no
+      // entró en el primer lanzamiento o corrija el método (Equitativo/Peso/Volumen).
+      const cargoLineas = orden.lineas.filter((l) => l.tipo === "cargo" && l.precioUnitario > 0);
+      const cargos = cargoLineas.map((l) => ({ chargeNo: l.chargeNo, descripcion: l.descripcion, cantidad: l.cantidad || 1, precio: l.precioUnitario }));
+      const metodo = cargoLineas.find((l) => l.chargeMethod)?.chargeMethod || "Amount";
       const r = await fetch("/api/bc/relanzar", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ orderNo: orden.bcNumber, lineas }),
+        body: JSON.stringify({ orderNo: orden.bcNumber, lineas, cargos, metodo }),
       });
       const d = await r.json().catch(() => ({}));
-      if (r.ok) toast(`BC ${orden.bcNumber}: ${d.status ?? "lanzado"} (líneas sincronizadas)`, "success");
-      else toast(`No se pudo lanzar en BC: ${d.error ?? r.status}`, "error");
+      if (r.ok) {
+        if (d.cargoError) toast(`BC ${orden.bcNumber}: lanzado, pero el cargo no se aplicó — ${d.cargoError}`, "error");
+        else toast(`BC ${orden.bcNumber}: ${d.status ?? "lanzado"}${cargos.length ? " (líneas y cargos sincronizados)" : " (líneas sincronizadas)"}`, "success");
+      } else toast(`No se pudo lanzar en BC: ${d.error ?? r.status}`, "error");
     } catch (e: any) {
       toast(`No se pudo lanzar en BC: ${String(e?.message ?? e)}`, "error");
     } finally {
