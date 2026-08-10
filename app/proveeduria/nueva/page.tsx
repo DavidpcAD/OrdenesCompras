@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Badge, Button, Card, EmptyState, Field, Input, Modal, Select, useToast } from "@/components/ui";
 import { Combobox } from "@/components/combobox";
 import { useStore } from "@/lib/store";
@@ -102,7 +102,12 @@ export default function ArmarOrdenPage() {
     })
   );
 
-  useEffect(() => { if (borrador.length === 0) router.replace("/proveeduria"); }, [borrador, router]);
+  // Al entrar sin borrador (nav directa/refresh) volvemos a materiales. PERO no
+  // cuando acabamos de crear la orden y estamos navegando a su detalle: ahí
+  // vaciamos el borrador a propósito y este redirect pisaba el push al detalle
+  // (la orden quedaba creada pero caías en "Materiales" en vez de verla).
+  const navegandoRef = useRef(false);
+  useEffect(() => { if (borrador.length === 0 && !navegandoRef.current) router.replace("/proveeduria"); }, [borrador, router]);
 
   // Último precio de compra por BC: con proveedor trae el precio FACTURADO a ese
   // proveedor; SIN proveedor cae al último costo directo del item. Así el precio
@@ -229,6 +234,7 @@ export default function ArmarOrdenPage() {
     }
     const orden = await createOrden({ proveedorId, proveedorNo: provSel?.code, proveedorNombre: provSel?.nombre, currencyCode: currency, almacenRecepcion: almacen, lineas: ls });
     if (aprobar) await setOrdenEstado(orden.id, "pendiente_aprobacion");
+    navegandoRef.current = true; // evita que el redirect de borrador-vacío pise el push al detalle
     setBorrador([]);
     toast(`Orden ${orden.numero} ${aprobar ? "enviada a aprobación" : "guardada como abierta"}`, "success");
     router.push(`/proveeduria/ordenes/${orden.id}`);
