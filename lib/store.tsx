@@ -584,7 +584,10 @@ export function StoreProvider({ children, useApi }: { children: React.ReactNode;
       planContexto, setPlanContexto,
       borrador, setBorrador,
     };
-  }, [role, usuario, data, borrador, planContexto, cargando]);
+    // OJO: notasCredito y hydrated deben ir en las deps o el value del store queda
+    // "congelado" con su valor viejo — así las notas de crédito cargadas por
+    // cargarNotasCredito() nunca llegaban a Contabilidad (se veía la lista vacía).
+  }, [role, usuario, data, borrador, planContexto, cargando, notasCredito, hydrated]);
 
   return <StoreCtx.Provider value={api2}>{children}</StoreCtx.Provider>;
 }
