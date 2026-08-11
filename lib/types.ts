@@ -212,6 +212,7 @@ export interface NotaCreditoLinea {
   nota?: string;
   fecha: string;                 // ISO
   estado: "pendiente" | "resuelta";
+  bcUrl?: string;                // deep link al Pedido de compra en Business Central
 }
 
 // ============================ BITÁCORA / MOVIMIENTOS ========================

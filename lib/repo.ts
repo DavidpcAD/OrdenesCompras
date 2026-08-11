@@ -1,4 +1,5 @@
 import { getPool, sql } from "./db";
+import { bcDeepLinkPedido } from "./bc";
 import type { Orden, OrdenLinea, Pedido, PedidoLinea, Recepcion, RecepcionLinea, Role, NotaCreditoLinea } from "./types";
 
 /* ============================================================================
@@ -981,7 +982,7 @@ export async function listNotasCredito(): Promise<NotaCreditoLinea[]> {
   const pool = await getPool();
   const r = await pool.request().query(`
     SELECT nc.idNotaCreditoDet, nc.idOrdenCompra, nc.idOrdenCompraDet, nc.articuloNo, nc.descripcion,
-           nc.motivo, nc.cantidad, nc.precioUnitario, nc.nota, nc.estado, nc.fechaCreacion, o.ordenNo
+           nc.motivo, nc.cantidad, nc.precioUnitario, nc.nota, nc.estado, nc.fechaCreacion, o.ordenNo, o.bcNo
     FROM dbo.NotaCreditoDet nc
     LEFT JOIN dbo.OrdenCompra o ON o.idOrdenCompra = nc.idOrdenCompra
     WHERE ISNULL(nc.esEliminada,0)=0
@@ -999,5 +1000,8 @@ export async function listNotasCredito(): Promise<NotaCreditoLinea[]> {
     nota: x.nota ?? undefined,
     fecha: x.fechaCreacion instanceof Date ? x.fechaCreacion.toISOString() : String(x.fechaCreacion ?? ""),
     estado: (x.estado ?? "pendiente") as NotaCreditoLinea["estado"],
+    // Deep link al Pedido de compra en BC (por N.º BC; si no hay, cae al N.º de la
+    // app). Así Contabilidad salta de la NC directo al documento en Business Central.
+    bcUrl: (x.bcNo || x.ordenNo) ? bcDeepLinkPedido(String(x.bcNo || x.ordenNo)) : undefined,
   }));
 }
