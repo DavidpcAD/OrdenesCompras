@@ -72,11 +72,6 @@ export default function ProveeduriaMaterialesPage() {
   // Líneas del pedido elegido en el panel izquierdo (o todas). La DataTable maneja
   // búsqueda, filtros por columna, columnas/vistas y exportar.
   const dataTabla = rows.filter((r) => filtro === "all" || r.pedidoId === filtro);
-  const selIds = new Set(dataTabla.map((r) => r.pedidoLineaId));
-  const allSel = dataTabla.length > 0 && dataTabla.every((r) => r.incluir);
-  const someSel = dataTabla.some((r) => r.incluir);
-  const toggleAll = (check: boolean) =>
-    setRows((rs) => rs.map((r) => (selIds.has(r.pedidoLineaId) ? { ...r, incluir: check } : r)));
 
   const incluidas = rows.filter((r) => r.incluir && Number(r.cantidad) > 0);
   const seleccionPorPedido = (pid: string) => rows.filter((r) => r.pedidoId === pid && r.incluir).length;
@@ -115,11 +110,25 @@ export default function ProveeduriaMaterialesPage() {
   const columns: ColumnDef<Row, any>[] = [
     {
       id: "sel", enableColumnFilter: false, enableSorting: false,
-      header: () => (
-        <input type="checkbox" className="ds-cbx" title="Seleccionar todas" aria-label="Seleccionar todas"
-          checked={allSel} ref={(el) => { if (el) el.indeterminate = someSel && !allSel; }}
-          onClick={stop} onChange={(e) => toggleAll(e.target.checked)} />
-      ),
+      // El "seleccionar todas" respeta el filtro/búsqueda ACTIVOS de la tabla:
+      // marca solo las filas visibles (filtradas). Como `incluir` es persistente
+      // por fila, al filtrar otro material y volver a marcar, la selección se
+      // ACUMULA (no toca las que quedaron fuera del filtro).
+      header: ({ table }) => {
+        const vis = table.getFilteredRowModel().rows;
+        const marcadas = vis.filter((rr) => (rr.original as Row).incluir).length;
+        const allSel = vis.length > 0 && marcadas === vis.length;
+        const someSel = marcadas > 0;
+        const toggleVisibles = (check: boolean) => {
+          const ids = new Set(vis.map((rr) => (rr.original as Row).pedidoLineaId));
+          setRows((rs) => rs.map((r) => (ids.has(r.pedidoLineaId) ? { ...r, incluir: check } : r)));
+        };
+        return (
+          <input type="checkbox" className="ds-cbx" title="Seleccionar todas las filtradas" aria-label="Seleccionar todas las filtradas"
+            checked={allSel} ref={(el) => { if (el) el.indeterminate = someSel && !allSel; }}
+            onClick={stop} onChange={(e) => toggleVisibles(e.target.checked)} />
+        );
+      },
       cell: (c) => { const r = c.row.original; return (
         <input type="checkbox" className="ds-cbx" aria-label={`Incluir ${r.articuloId} en la orden`} checked={r.incluir} onClick={stop}
           onChange={(e) => setRow(r.pedidoLineaId, { incluir: e.target.checked })} />

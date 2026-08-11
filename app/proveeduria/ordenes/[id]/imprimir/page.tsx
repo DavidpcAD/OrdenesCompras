@@ -40,6 +40,18 @@ export default function ImprimirOrdenPage() {
     );
   }
 
+  // El PDF que se envía al proveedor solo se genera si la orden fue APROBADA
+  // (Lanzada en BC) — o ya completada. Bloquea también la navegación directa por URL.
+  if (orden.estado !== "lanzado" && orden.estado !== "completado") {
+    return (
+      <div style={{ padding: 40, fontFamily: "var(--ds-font-family)", display: "flex", flexDirection: "column", alignItems: "flex-start", gap: "var(--ds-space-4)" }}>
+        <span style={{ fontWeight: 700 }}>El PDF para el proveedor aún no está disponible.</span>
+        <span style={{ color: "var(--ds-color-gray-500)", maxWidth: 540 }}>La orden <strong>{orden.numero}</strong> debe estar <strong>aprobada (Lanzada)</strong> antes de generar el documento que se envía al proveedor.</span>
+        <Button variant="outline" size="sm" onClick={() => router.back()}>Volver</Button>
+      </div>
+    );
+  }
+
   const prov = proveedores.find((p) => p.id === orden.proveedorId);
   const cur = orden.currencyCode || "CRC";
   const articulos = orden.lineas.filter((l) => l.tipo === "articulo");
