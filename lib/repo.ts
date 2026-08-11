@@ -12,7 +12,7 @@ import type { Orden, OrdenLinea, Pedido, PedidoLinea, Recepcion, RecepcionLinea,
 
 const NOMBRE_POR_CODIGO: Record<string, string> = {
   // pedido
-  borrador: "Borrador", aprobado: "Aprobado", en_orden: "En orden", cerrado: "Cerrado",
+  borrador: "Borrador", aprobado: "Aprobado", en_orden: "En orden", cerrado: "Cerrado", devuelto: "Devuelto",
   // orden
   abierto: "Abierto", pendiente_aprobacion: "Pendiente de aprobación", rechazado: "Rechazado", lanzado: "Lanzado", completado: "Completado",
 };
@@ -233,15 +233,23 @@ export async function updatePedido(input: EditPedidoDB): Promise<void> {
   }
 }
 
-export async function setPedidoEstado(id: number, estado: string, usuario: string, rol: Role) {
+export async function setPedidoEstado(id: number, estado: string, usuario: string, rol: Role, motivo?: string) {
   const pool = await getPool();
-  const prev = await pool.request().input("id", sql.Int, id).query("SELECT idEstado, pedidoNo FROM dbo.PedidoCompra WHERE idPedidoCompra=@id");
+  const prev = await pool.request().input("id", sql.Int, id).query("SELECT idEstado, pedidoNo, notaCreador FROM dbo.PedidoCompra WHERE idPedidoCompra=@id");
   const idEstado = await idDeEstado(estado);
-  await pool.request().input("id", sql.Int, id).input("e", sql.Int, idEstado)
-    .input("u", sql.NVarChar(100), usuario)
-    .query("UPDATE dbo.PedidoCompra SET idEstado=@e, fechaModificacion=getdate(), modificadoPor=@u WHERE idPedidoCompra=@id");
+  const req = pool.request().input("id", sql.Int, id).input("e", sql.Int, idEstado).input("u", sql.NVarChar(100), usuario);
+  // Al DEVOLVER a Ingeniería, guardamos el motivo en la nota del pedido (mismo
+  // formato que el modo local) para que la bandeja de Devoluciones lo muestre en
+  // ambas apps (Proveeduría e Ingeniería/Producción, que comparten esta tabla).
+  let setNota = "";
+  if (motivo && estado === "devuelto") {
+    const prevNota = prev.recordset[0]?.notaCreador ?? "";
+    req.input("nota", sql.NVarChar(sql.MAX), `↩ Devuelto: ${motivo}${prevNota ? ` · ${prevNota}` : ""}`);
+    setNota = ", notaCreador=@nota";
+  }
+  await req.query(`UPDATE dbo.PedidoCompra SET idEstado=@e, fechaModificacion=getdate(), modificadoPor=@u${setNota} WHERE idPedidoCompra=@id`);
   const tx = new sql.Transaction(pool); await tx.begin();
-  await logMov(tx, { entidad: "pedido", idEntidad: id, documentoNo: prev.recordset[0]?.pedidoNo ?? "", tipoMovimiento: estado, estadoAnterior: codigoDeId(prev.recordset[0]?.idEstado), estadoNuevo: estado, usuario, rol });
+  await logMov(tx, { entidad: "pedido", idEntidad: id, documentoNo: prev.recordset[0]?.pedidoNo ?? "", tipoMovimiento: estado, estadoAnterior: codigoDeId(prev.recordset[0]?.idEstado), estadoNuevo: estado, detalle: motivo ? `Motivo: ${motivo}` : undefined, usuario, rol });
   await tx.commit();
 }
 

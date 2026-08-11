@@ -469,6 +469,13 @@ export function StoreProvider({ children, useApi }: { children: React.ReactNode;
 
     // ---------------- DEVOLVER PEDIDO AL INGENIERO ----------------
     const devolverPedido: StoreShape["devolverPedido"] = async (id, motivo) => {
+      if (USE_API) {
+        // Persistir el "devuelto" en el SQL compartido (antes solo cambiaba el
+        // estado local y el ingeniero en Producción nunca lo veía).
+        await api.patchPedidoEstado(id, { estado: "devuelto", usuario: persona, rol: rolActual, motivo });
+        await refreshFromApi();
+        return;
+      }
       setData((d) => {
         const prev = d.pedidos.find((p) => p.id === id);
         const mov = mkMov({ entidad: "pedido", idEntidad: id, documentoNo: prev?.numero ?? "", tipoMovimiento: "devuelto", estadoAnterior: prev?.estado, estadoNuevo: "devuelto", detalle: motivo ? `Motivo: ${motivo}` : "Devuelto a Ingeniería" });
