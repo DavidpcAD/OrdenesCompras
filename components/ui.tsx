@@ -84,6 +84,7 @@ export function Select({
   id?: string;
 }) {
   const [open, setOpen] = useState(false);
+  const [q, setQ] = useState("");
   const options = React.Children.toArray(children).flatMap((c) =>
     React.isValidElement(c) && c.type === "option"
       ? [{ value: String((c.props as any).value ?? ""), label: textOf((c.props as any).children) }]
@@ -91,17 +92,22 @@ export function Select({
   );
   const cur = String(value ?? "");
   const sel = options.find((o) => o.value === cur);
+  // Dropdowns con varias opciones: buscador para escribir y filtrar (los muy cortos
+  // no lo necesitan). Con buscador, el foco de apertura va al input.
+  const searchable = options.length > 4;
+  const visibles = searchable && q.trim() ? options.filter((o) => o.label.toLowerCase().includes(q.trim().toLowerCase())) : options;
   const triggerRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
-  const pick = (v: string) => { onChange?.({ target: { value: v } }); setOpen(false); triggerRef.current?.focus(); };
-  const closeAndFocus = () => { setOpen(false); triggerRef.current?.focus(); };
+  const pick = (v: string) => { onChange?.({ target: { value: v } }); setOpen(false); setQ(""); triggerRef.current?.focus(); };
+  const closeAndFocus = () => { setOpen(false); setQ(""); triggerRef.current?.focus(); };
   // Al abrir, llevar el foco a la opción seleccionada (o la primera) para navegar
-  // con teclado. Solo :focus-visible muestra el anillo, así que con mouse no molesta.
+  // con teclado. Con buscador, se deja el foco en el input (autoFocus).
   useEffect(() => {
-    if (!open) return;
+    if (!open) { setQ(""); return; }
+    if (searchable) return;
     const items = Array.from(menuRef.current?.querySelectorAll<HTMLButtonElement>('[role="option"]') ?? []);
     (items.find((b) => b.getAttribute("aria-selected") === "true") ?? items[0])?.focus();
-  }, [open]);
+  }, [open, searchable]);
   const onMenuKey = (e: React.KeyboardEvent) => {
     const items = Array.from(menuRef.current?.querySelectorAll<HTMLButtonElement>('[role="option"]') ?? []);
     const idx = items.indexOf(document.activeElement as HTMLButtonElement);
@@ -122,8 +128,15 @@ export function Select({
         <>
           <div className="ds-select__overlay" onClick={() => setOpen(false)} />
           <div ref={menuRef} className="combo__menu" role="listbox" onKeyDown={onMenuKey}>
-            {options.length === 0 && <div className="combo__empty">Sin opciones.</div>}
-            {options.map((o) => (
+            {searchable && (
+              <div style={{ padding: 8, borderBottom: "1.5px solid var(--ds-color-gray-100)", position: "sticky", top: 0, background: "var(--ds-surface)", zIndex: 1 }}>
+                <input autoFocus value={q} onChange={(e) => setQ(e.target.value)} className="ds-cell-input" style={{ width: "100%" }}
+                  aria-label="Buscar opción" placeholder="Buscar…"
+                  onKeyDown={(e) => { if (e.key === "ArrowDown") { e.preventDefault(); menuRef.current?.querySelector<HTMLButtonElement>('[role="option"]')?.focus(); } }} />
+              </div>
+            )}
+            {visibles.length === 0 && <div className="combo__empty">{options.length === 0 ? "Sin opciones." : "Sin coincidencias."}</div>}
+            {visibles.map((o) => (
               <button key={o.value} type="button" role="option" aria-selected={o.value === cur}
                 className={`combo__item ${o.value === cur ? "is-active" : ""}`} onClick={() => pick(o.value)}>
                 {o.label}
