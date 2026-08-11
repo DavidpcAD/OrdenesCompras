@@ -213,6 +213,7 @@ export interface NotaCreditoLinea {
   fecha: string;                 // ISO
   estado: "pendiente" | "resuelta";
   bcUrl?: string;                // deep link al Pedido de compra en Business Central
+  bcFacturaUrl?: string;         // deep link a las Facturas de compra registradas en BC
 }
 
 // ============================ BITÁCORA / MOVIMIENTOS ========================

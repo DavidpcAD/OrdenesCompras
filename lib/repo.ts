@@ -1,5 +1,5 @@
 import { getPool, sql } from "./db";
-import { bcDeepLinkPedido } from "./bc";
+import { bcDeepLinkPedido, bcDeepLinkFacturaRegistrada } from "./bc";
 import type { Orden, OrdenLinea, Pedido, PedidoLinea, Recepcion, RecepcionLinea, Role, NotaCreditoLinea } from "./types";
 
 /* ============================================================================
@@ -1000,8 +1000,10 @@ export async function listNotasCredito(): Promise<NotaCreditoLinea[]> {
     nota: x.nota ?? undefined,
     fecha: x.fechaCreacion instanceof Date ? x.fechaCreacion.toISOString() : String(x.fechaCreacion ?? ""),
     estado: (x.estado ?? "pendiente") as NotaCreditoLinea["estado"],
-    // Deep link al Pedido de compra en BC (por N.º BC; si no hay, cae al N.º de la
-    // app). Así Contabilidad salta de la NC directo al documento en Business Central.
+    // Deep links a BC (por N.º BC; si no hay, cae al N.º de la app):
+    //  • bcFacturaUrl → Facturas de compra registradas (para hacer la NC).
+    //  • bcUrl → el Pedido de compra (la orden que armó Proveeduría).
+    bcFacturaUrl: (x.bcNo || x.ordenNo) ? bcDeepLinkFacturaRegistrada(String(x.bcNo || x.ordenNo)) : undefined,
     bcUrl: (x.bcNo || x.ordenNo) ? bcDeepLinkPedido(String(x.bcNo || x.ordenNo)) : undefined,
   }));
 }

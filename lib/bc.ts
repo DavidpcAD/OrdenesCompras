@@ -906,12 +906,23 @@ export async function bcPostChargeOnReceipts(input: {
   return d?.value ?? "Registrado";
 }
 
-// Deep link al Pedido recién creado, en la lista de Pedidos de compra de BC.
-export function bcDeepLinkPedido(numero: string): string {
+// Base de un deep link a BC apuntando a una `page` con un `filtro` OData de la UI.
+function bcDeepLink(page: number, filtro: string): string {
   const { tenant, environment } = tenantYEntorno();
   const company = process.env.BC_COMPANY || "ADELANTE_DESARROLLOS_NUEVA";
-  const filtro = encodeURIComponent(`'No.' IS '${numero}'`);
-  return `https://businesscentral.dynamics.com/${tenant}/${environment}?company=${encodeURIComponent(company)}&page=9307&filter=${filtro}`;
+  return `https://businesscentral.dynamics.com/${tenant}/${environment}?company=${encodeURIComponent(company)}&page=${page}&filter=${encodeURIComponent(filtro)}`;
+}
+
+// Deep link al Pedido de compra en BC (Purchase Orders, page 9307), por su N.º.
+export function bcDeepLinkPedido(numero: string): string {
+  return bcDeepLink(9307, `'No.' IS '${numero}'`);
+}
+
+// Deep link a las Facturas de compra REGISTRADAS de BC (Posted Purchase Invoices,
+// page 146), filtradas por el N.º del pedido que las originó — para que Contabilidad
+// vea contra cuál factura hacer la nota de crédito.
+export function bcDeepLinkFacturaRegistrada(orderNo: string): string {
+  return bcDeepLink(146, `'Order No.' IS '${orderNo}'`);
 }
 
 function decodeJwt(token: string): any {
