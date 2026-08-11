@@ -185,6 +185,20 @@ export function StoreProvider({ children, useApi }: { children: React.ReactNode;
     }
   }, []);
 
+  // Auto-refresh (modo API): recarga los datos SOLA, sin tener que recargar la
+  // página a mano. Así los pedidos creados en Producción aparecen en Proveeduría
+  // (comparten la misma base). Poll cada 45s con la pestaña visible + refresco al
+  // volver a la pestaña (instantáneo al cambiar de app). No corre oculta (ahorra).
+  useEffect(() => {
+    if (!USE_API || !hydrated) return;
+    const refrescar = () => { if (!document.hidden) refreshFromApi().catch(() => {}); };
+    const id = setInterval(refrescar, 45000);
+    document.addEventListener("visibilitychange", refrescar);
+    window.addEventListener("focus", refrescar);
+    return () => { clearInterval(id); document.removeEventListener("visibilitychange", refrescar); window.removeEventListener("focus", refrescar); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hydrated]);
+
   // persistencia local solo en modo mock
   useEffect(() => {
     if (!hydrated || USE_API) return;
