@@ -923,7 +923,38 @@ export interface NewNotaCreditoDB {
   lineas: { ordenLineaId?: string; articuloNo?: string; descripcion: string; motivo: string; cantidad: number; precioUnitario?: number; nota?: string }[];
 }
 
+// Auto-provisiona la tabla si no existe (igual que ensureEstados con el catálogo).
+// Antes dependía de correr sql/notas_credito.sql a mano en la base; si no se
+// corría, el INSERT/SELECT fallaba y el error se tragaba → las NC "desaparecían".
+let notasCreditoTableReady = false;
+async function ensureNotasCreditoTable() {
+  if (notasCreditoTableReady) return;
+  const pool = await getPool();
+  await pool.request().query(`
+    IF NOT EXISTS (SELECT 1 FROM sys.tables WHERE name = 'NotaCreditoDet' AND schema_id = SCHEMA_ID('dbo'))
+    BEGIN
+      CREATE TABLE dbo.NotaCreditoDet (
+        idNotaCreditoDet  INT IDENTITY(1,1) PRIMARY KEY,
+        idOrdenCompra     INT            NOT NULL,
+        idOrdenCompraDet  INT            NULL,
+        articuloNo        NVARCHAR(40)   NULL,
+        descripcion       NVARCHAR(200)  NULL,
+        motivo            NVARCHAR(30)   NOT NULL,
+        cantidad          DECIMAL(18,4)  NOT NULL,
+        precioUnitario    DECIMAL(18,4)  NULL,
+        nota              NVARCHAR(300)  NULL,
+        estado            NVARCHAR(20)   NOT NULL CONSTRAINT DF_NotaCreditoDet_estado DEFAULT ('pendiente'),
+        esEliminada       BIT            NOT NULL CONSTRAINT DF_NotaCreditoDet_elim   DEFAULT (0),
+        fechaCreacion     DATETIME       NOT NULL CONSTRAINT DF_NotaCreditoDet_fc     DEFAULT (getdate()),
+        creadoPor         NVARCHAR(100)  NULL
+      );
+      CREATE INDEX IX_NotaCreditoDet_orden ON dbo.NotaCreditoDet(idOrdenCompra);
+    END`);
+  notasCreditoTableReady = true;
+}
+
 export async function createNotasCredito(input: NewNotaCreditoDB): Promise<number> {
+  await ensureNotasCreditoTable();
   const pool = await getPool();
   let n = 0;
   for (const l of input.lineas) {
@@ -946,6 +977,7 @@ export async function createNotasCredito(input: NewNotaCreditoDB): Promise<numbe
 }
 
 export async function listNotasCredito(): Promise<NotaCreditoLinea[]> {
+  await ensureNotasCreditoTable();
   const pool = await getPool();
   const r = await pool.request().query(`
     SELECT nc.idNotaCreditoDet, nc.idOrdenCompra, nc.idOrdenCompraDet, nc.articuloNo, nc.descripcion,
