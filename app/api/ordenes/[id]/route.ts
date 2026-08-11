@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getOrden, setOrdenEstado } from "@/lib/repo";
+import { getOrden, setOrdenEstado, updateOrden } from "@/lib/repo";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -18,6 +18,16 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   try {
     const { estado, usuario, rol, motivo, bcNumber } = await req.json();
     await setOrdenEstado(Number(params.id), estado, usuario, rol, motivo, bcNumber);
+    return NextResponse.json({ ok: true });
+  } catch (e: any) {
+    return NextResponse.json({ error: String(e?.message ?? e) }, { status: 500 });
+  }
+}
+
+export async function PUT(req: Request, { params }: { params: { id: string } }) {
+  try {
+    const body = await req.json();
+    await updateOrden(Number(params.id), body);
     return NextResponse.json({ ok: true });
   } catch (e: any) {
     return NextResponse.json({ error: String(e?.message ?? e) }, { status: 500 });

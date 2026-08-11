@@ -376,6 +376,77 @@ export async function createOrden(input: NewOrdenDB): Promise<number> {
   }
 }
 
+export interface UpdateOrdenDB {
+  proveedorNo: string; proveedorNombre?: string; currencyCode: string; usuario: string; rol: Role;
+  lineas: NewOrdenDB["lineas"];
+}
+
+// Reescribe una orden ABIERTA/RECHAZADA (encabezado + líneas) y reajusta el saldo
+// (quantityOrdenado) de los pedidos de origen: revierte el consumo de las líneas
+// viejas y aplica el de las nuevas. Se bloquea si la orden ya tiene recepciones.
+export async function updateOrden(id: number, input: UpdateOrdenDB) {
+  const pool = await getPool();
+  const rec = await pool.request().input("id", sql.Int, id)
+    .query("SELECT COUNT(*) AS n FROM dbo.RecepcionCompra WHERE idOrdenCompra=@id AND esEliminada=0");
+  if ((rec.recordset[0]?.n ?? 0) > 0) throw new Error("La orden ya tiene recepciones registradas; no se puede editar.");
+  const head = await pool.request().input("id", sql.Int, id)
+    .query("SELECT ordenNo FROM dbo.OrdenCompra WHERE idOrdenCompra=@id AND esEliminada=0");
+  if (!head.recordset.length) throw new Error("Orden no encontrada.");
+  const ordenNo = head.recordset[0].ordenNo ?? "";
+  const lineas = (input.lineas ?? []).filter((l) => l.tipoLinea !== "articulo" || (l.itemNo && l.cantidad > 0) || l.cantidad > 0);
+  const tx = new sql.Transaction(pool); await tx.begin();
+  try {
+    // 1) revertir el saldo consumido por las líneas ACTUALES
+    await new sql.Request(tx).input("id", sql.Int, id).query(`
+      UPDATE pcd SET pcd.quantityOrdenado = ISNULL(pcd.quantityOrdenado,0) - ocd.quantity
+      FROM dbo.PedidoCompraDet pcd
+      JOIN dbo.OrdenCompraDet ocd ON ocd.idPedidoCompraDet = pcd.idPedidoCompraDet
+      WHERE ocd.idOrdenCompra = @id AND ocd.idPedidoCompraDet IS NOT NULL`);
+    // 2) borrar líneas actuales
+    await new sql.Request(tx).input("id", sql.Int, id).query("DELETE FROM dbo.OrdenCompraDet WHERE idOrdenCompra=@id");
+    // 3) encabezado
+    await new sql.Request(tx).input("id", sql.Int, id)
+      .input("proveedorNo", sql.NVarChar(20), input.proveedorNo)
+      .input("proveedorNombre", sql.NVarChar(150), input.proveedorNombre ?? null)
+      .input("currencyCode", sql.NVarChar(10), input.currencyCode || null)
+      .input("u", sql.NVarChar(100), input.usuario)
+      .query("UPDATE dbo.OrdenCompra SET proveedorNo=@proveedorNo, proveedorNombre=@proveedorNombre, currencyCode=@currencyCode, fechaModificacion=getdate(), modificadoPor=@u WHERE idOrdenCompra=@id");
+    // 4) reinsertar líneas + reaplicar saldo
+    let line = 10000;
+    for (const l of lineas) {
+      await new sql.Request(tx)
+        .input("idOrdenCompra", sql.Int, id)
+        .input("idPedidoCompraDet", sql.Int, l.idPedidoCompraDet ?? null)
+        .input("lineNum", sql.Int, line)
+        .input("tipoLinea", sql.NVarChar(30), l.tipoLinea)
+        .input("descripcion", sql.NVarChar(250), l.descripcion)
+        .input("itemNo", sql.NVarChar(50), l.itemNo ?? null)
+        .input("variantCode", sql.NVarChar(20), l.variantCode ?? null)
+        .input("unitOfMeasureCode", sql.NVarChar(20), l.unidad)
+        .input("locationCode", sql.NVarChar(20), l.almacen)
+        .input("quantity", sql.Decimal(18, 4), l.cantidad)
+        .input("directUnitCost", sql.Decimal(18, 4), l.precioUnitario)
+        .input("vatPct", sql.Decimal(9, 4), l.ivaPct)
+        .input("lineDiscountPct", sql.Decimal(9, 4), l.descuentoPct ?? 0)
+        .input("jobNo", sql.NVarChar(20), l.jobNo ?? null)
+        .input("taskNo", sql.NVarChar(15), l.taskNo ?? null)
+        .input("creadoPor", sql.NVarChar(100), input.usuario)
+        .query(`INSERT dbo.OrdenCompraDet (idOrdenCompra,idPedidoCompraDet,lineNum,tipoLinea,descripcion,itemNo,variantCode,unitOfMeasureCode,locationCode,quantity,quantityRecibida,quantityFacturada,directUnitCost,vatPct,lineDiscountPct,jobNo,taskNo,fechaCreacion,creadoPor)
+                VALUES (@idOrdenCompra,@idPedidoCompraDet,@lineNum,@tipoLinea,@descripcion,@itemNo,@variantCode,@unitOfMeasureCode,@locationCode,@quantity,0,0,@directUnitCost,@vatPct,@lineDiscountPct,@jobNo,@taskNo,getdate(),@creadoPor)`);
+      if (l.idPedidoCompraDet) {
+        await new sql.Request(tx).input("id", sql.Int, l.idPedidoCompraDet).input("q", sql.Decimal(18, 4), l.cantidad)
+          .query("UPDATE dbo.PedidoCompraDet SET quantityOrdenado = ISNULL(quantityOrdenado,0) + @q WHERE idPedidoCompraDet=@id");
+      }
+      line += 10000;
+    }
+    await logMov(tx, { entidad: "orden", idEntidad: id, documentoNo: ordenNo, tipoMovimiento: "editado", detalle: `${lineas.filter((l) => l.tipoLinea === "articulo").length} línea(s)`, usuario: input.usuario, rol: input.rol });
+    await tx.commit();
+  } catch (e) {
+    await tx.rollback();
+    throw e;
+  }
+}
+
 export async function setOrdenEstado(id: number, estado: string, usuario: string, rol: Role, motivo?: string, bcNumber?: string) {
   const pool = await getPool();
   const prev = await pool.request().input("id", sql.Int, id).query("SELECT idEstado, ordenNo FROM dbo.OrdenCompra WHERE idOrdenCompra=@id");

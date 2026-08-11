@@ -44,6 +44,8 @@ export const api = {
   getOrden: (id: string): Promise<Orden> => fetch(`/api/ordenes/${id}`).then(jsonOrThrow),
   patchOrdenEstado: (id: string, body: unknown) =>
     fetch(`/api/ordenes/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }).then(jsonOrThrow),
+  updateOrden: (id: string, body: unknown) =>
+    fetch(`/api/ordenes/${id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }).then(jsonOrThrow),
 
   createRecepcion: (body: unknown): Promise<{ idRecepcionCompra: number }> =>
     fetch("/api/recepciones", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }).then(jsonOrThrow),

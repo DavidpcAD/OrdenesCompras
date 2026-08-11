@@ -356,6 +356,22 @@ export function StoreProvider({ children, useApi }: { children: React.ReactNode;
     // Editar una orden ABIERTA (aún no enviada/recibida): reemplaza líneas, proveedor,
     // moneda y almacén. Solo mock/local (la orden todavía no viajó a BC).
     const updateOrden: StoreShape["updateOrden"] = async (id, input) => {
+      if (USE_API) {
+        // Persistir el edit al SQL (antes solo cambiaba el estado local → se perdía
+        // al refrescar). Reescribe líneas y reajusta el saldo del pedido en el server.
+        const p = prov(input.proveedorId);
+        await api.updateOrden(id, {
+          proveedorNo: input.proveedorNo ?? p?.code ?? input.proveedorId, proveedorNombre: input.proveedorNombre ?? p?.nombre,
+          currencyCode: input.currencyCode, usuario: persona, rol: rolActual,
+          lineas: input.lineas.map((l) => ({
+            tipoLinea: l.tipo, itemNo: l.articuloId, variantCode: l.variantCode, idPedidoCompraDet: l.pedidoLineaId ? Number(l.pedidoLineaId) : undefined,
+            descripcion: l.descripcion, cantidad: l.cantidad, unidad: l.unidad, almacen: l.almacen,
+            precioUnitario: l.precioUnitario, ivaPct: l.ivaPct, descuentoPct: l.descuentoPct, jobNo: l.proyecto, taskNo: l.taskNo,
+          })),
+        });
+        await refreshFromApi();
+        return;
+      }
       setData((d) => {
         const prevo = d.ordenes.find((o) => o.id === id);
         // Conservar recibido/facturado (y el id) de la línea previa que corresponda,
