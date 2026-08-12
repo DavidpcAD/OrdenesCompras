@@ -46,6 +46,10 @@ interface RegistrarRecepcionInput {
   lineas: RecepcionLinea[];
   // MODO 2: recibir el material dejando la factura EN REVISIÓN (sin registrarla).
   facturaEnRevision?: boolean;
+  // Bodega avisa a Contabilidad (Kattya) que esta factura trae un cargo de
+  // producto adicional (flete u otro) para que ella lo agregue. Se recibe y
+  // registra la factura igual; esto solo dispara la notificación.
+  cargoAviso?: { nota: string; monto?: number };
 }
 
 interface StoreShape {
@@ -464,7 +468,16 @@ export function StoreProvider({ children, useApi }: { children: React.ReactNode;
         const notif = enRevision
           ? mkNotif("factura", `Material recibido en ${orden.numero} — factura EN REVISIÓN (registrala en Bodega)`, `/facturacion/archivo`, "facturacion")
           : mkNotif("factura", `Factura ${input.numeroFactura} registrada en ${orden.numero}${completada ? " (orden completada)" : " (parcial)"}`, `/proveeduria/ordenes/${orden.id}`, "proveeduria");
-        return { ...d, ordenes, recepciones: [created, ...d.recepciones], movimientos: [movOrd, movRec, ...d.movimientos], notificaciones: [notif, ...d.notificaciones] };
+        // Aviso a Contabilidad (Kattya) si la factura trae un cargo de producto
+        // adicional que ella debe agregar.
+        const notifs = [notif];
+        if (input.cargoAviso) {
+          const montoTxt = input.cargoAviso.monto ? ` (~₡${Number(input.cargoAviso.monto).toLocaleString("es-CR")})` : "";
+          notifs.unshift(mkNotif("factura",
+            `Cargo de producto por agregar en ${orden.numero} (factura ${input.numeroFactura || "en revisión"}): ${input.cargoAviso.nota}${montoTxt}`,
+            `/facturacion/ver/${orden.id}`, "contabilidad"));
+        }
+        return { ...d, ordenes, recepciones: [created, ...d.recepciones], movimientos: [movOrd, movRec, ...d.movimientos], notificaciones: [...notifs, ...d.notificaciones] };
       });
       return created;
     };

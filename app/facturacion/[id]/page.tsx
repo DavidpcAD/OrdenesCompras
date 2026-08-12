@@ -1,8 +1,8 @@
 "use client";
 
 import { useParams, useRouter } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
-import { Badge, Button, Card, Checkbox, EmptyState, Field, Input, Modal, Select, Skeleton, useToast } from "@/components/ui";
+import { useMemo, useState } from "react";
+import { Badge, Button, Card, Checkbox, EmptyState, Field, Input, Modal, Select, Skeleton, Textarea, useToast } from "@/components/ui";
 import { IconWarning } from "@/components/icons";
 import { DateField } from "@/components/date-field";
 import { useStore } from "@/lib/store";
@@ -15,42 +15,25 @@ const MOTIVO_NC: { v: MotivoNC; label: string }[] = [
   { v: "danado", label: "Material dañado" },
 ];
 
-// Input de precio para la nota de crédito: mientras se edita muestra el número
-// crudo; al perder el foco lo formatea como moneda (miles + 2 decimales, ₡).
-// Guarda internamente el valor con punto decimal para que Number(...) lo parsee.
-function PrecioNCInput({ value, onChange, currencyCode }: { value: string; onChange: (v: string) => void; currencyCode?: string }) {
-  const [focused, setFocused] = useState(false);
-  const n = Number(String(value).replace(",", "."));
-  const display = focused || value === "" || Number.isNaN(n) ? value : money(n, currencyCode);
-  return (
-    <input className="ds-cell-input" type="text" inputMode="decimal" style={{ width: 132, textAlign: "right" }}
-      aria-label="Precio unitario" title="Precio unitario" placeholder="Precio unit."
-      value={display}
-      onFocus={() => setFocused(true)}
-      onBlur={() => setFocused(false)}
-      onChange={(e) => onChange(e.target.value.replace(/[^\d.,]/g, "").replace(",", ".").replace(/\.(?=.*\.)/g, ""))} />
-  );
-}
-
-// Cómo reparte BC el cargo de producto entre las líneas recibidas.
-const METODOS_CARGO: { v: string; label: string }[] = [
-  { v: "Amount", label: "Por importe" },
-  { v: "Equally", label: "Equitativo (por línea)" },
-  { v: "Weight", label: "Por peso" },
-  { v: "Volume", label: "Por volumen" },
-];
-const IVA_CARGO = 0.13; // BC recalcula; esto es solo el estimado que se muestra.
-
 export default function RegistrarFacturaPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
   const toast = useToast();
-  const { ordenes, proveedores, registrarRecepcion, marcarNotasCredito } = useStore();
+  const { ordenes, proveedores, registrarRecepcion, marcarNotasCredito, role } = useStore();
+  // La vista se elige por ROL, no por ancho de pantalla: Contabilidad usa la TABLA
+  // (escritorio); Bodega (Pedro) usa siempre las TARJETAS, porque todo lo de Bodega
+  // es en tablet/celular.
+  const esContabilidad = role === "contabilidad";
 
   const orden = ordenes.find((o) => o.id === id);
 
   const articulo = (orden?.lineas ?? []).filter((l) => l.tipo === "articulo");
   const cargo = (orden?.lineas ?? []).find((l) => l.tipo === "cargo");
+  // Para MOSTRAR: solo las líneas que todavía tienen pendiente (lo ya recibido
+  // completo no aparece) y SIEMPRE en orden alfabético. Los cálculos usan `articulo`.
+  const articuloVisible = articulo
+    .filter((l) => ordenLineaPendiente(l) > 1e-9)
+    .sort((a, b) => a.descripcion.localeCompare(b.descripcion, "es"));
 
   const [recibir, setRecibir] = useState<Record<string, string>>(() => {
     const init: Record<string, string> = {};
@@ -60,18 +43,6 @@ export default function RegistrarFacturaPage() {
     return init;
   });
   const [numeroFactura, setNumeroFactura] = useState("");
-  // Cargo de transporte de ESTA factura/viaje (opcional). Se agrega a la OC en BC
-  // y se reparte entre lo recibido según el método elegido.
-  const [cargoOn, setCargoOn] = useState(false);
-  const [cargoTipo, setCargoTipo] = useState("");
-  const [cargoMonto, setCargoMonto] = useState("");
-  const [cargoMetodo, setCargoMetodo] = useState("Amount");
-  const [itemCharges, setItemCharges] = useState<{ no: string; descripcion: string }[]>([]);
-  useEffect(() => {
-    fetch("/api/bc/itemcharges").then((r) => (r.ok ? r.json() : { itemCharges: [] }))
-      .then((d) => { const l = d.itemCharges ?? d.charges ?? d.value ?? []; if (Array.isArray(l)) setItemCharges(l.map((c: any) => ({ no: c.no ?? c.code ?? c.number, descripcion: c.descripcion ?? c.description ?? c.no }))); })
-      .catch(() => {});
-  }, []);
   const [fechaFactura, setFechaFactura] = useState(todayISO());
   const [fechaRegistro, setFechaRegistro] = useState(todayISO());
   const [fechaRecepcion, setFechaRecepcion] = useState(todayISO());
@@ -81,12 +52,27 @@ export default function RegistrarFacturaPage() {
   // despues: number = stock BC verificado · null = BC no devolvió · undefined = verificando.
   const [confirmInv, setConfirmInv] = useState<null | { itemNo: string; desc: string; antes: number | null; recibido: number; despues?: number | null }[]>(null);
   // Líneas marcadas para NOTA DE CRÉDITO (dañado / menos cantidad / precio distinto).
-  const [marcadas, setMarcadas] = useState<Record<string, { motivo: MotivoNC; cantidad: string; precio: string }>>({});
+  // Cantidad y precio se toman por defecto de la línea; Bodega elige el tipo y deja
+  // un comentario (nota) de qué pasó con esa línea.
+  const [marcadas, setMarcadas] = useState<Record<string, { motivo: MotivoNC; cantidad: string; precio: string; nota: string }>>({});
   const marcarLinea = (l: { id: string; cantidad: number; precioUnitario: number }) =>
-    setMarcadas((m) => ({ ...m, [l.id]: { motivo: "precio_distinto", cantidad: String(recibir[l.id] || l.cantidad), precio: l.precioUnitario != null ? String(Math.round(l.precioUnitario * 100) / 100) : "" } }));
+    setMarcadas((m) => ({ ...m, [l.id]: { motivo: "precio_distinto", cantidad: String(recibir[l.id] || l.cantidad), precio: l.precioUnitario != null ? String(Math.round(l.precioUnitario * 100) / 100) : "", nota: "" } }));
   const quitarMarca = (id: string) => setMarcadas((m) => { const n = { ...m }; delete n[id]; return n; });
-  const setMarca = (id: string, patch: Partial<{ motivo: MotivoNC; cantidad: string; precio: string }>) =>
+  const setMarca = (id: string, patch: Partial<{ motivo: MotivoNC; cantidad: string; precio: string; nota: string }>) =>
     setMarcadas((m) => ({ ...m, [id]: { ...m[id], ...patch } }));
+  // Menú kebab (⋮) abierto por línea (id de la línea, o null).
+  const [menuOpen, setMenuOpen] = useState<string | null>(null);
+  // Popup de nota de crédito (borrador): se edita acá y se confirma con "Guardar".
+  // No expande la línea; es un modal aparte (tipo + comentario).
+  const [ncModal, setNcModal] = useState<null | { lineId: string; descripcion: string; motivo: MotivoNC; cantidad: string; precio: string; nota: string }>(null);
+  // Aviso a Contabilidad: esta factura trae un cargo de producto adicional (flete
+  // u otro) que Kattya debe agregar. Bodega recibe y registra la factura igual.
+  const [avisarCargo, setAvisarCargo] = useState(false);
+  const [cargoAvisoDesc, setCargoAvisoDesc] = useState("");
+  const [cargoAvisoMonto, setCargoAvisoMonto] = useState("");
+  const cargoAvisoPayload = () => avisarCargo && cargoAvisoDesc.trim()
+    ? { nota: cargoAvisoDesc.trim(), monto: Number(cargoAvisoMonto) || undefined }
+    : undefined;
 
   // ¿esta recepción completa toda la orden?
   const completaOrden = useMemo(() => {
@@ -106,25 +92,20 @@ export default function RegistrarFacturaPage() {
   );
   // El flete ORIGINAL de la orden (el que puso proveeduría) va en la PRIMERA
   // factura, repartido entre los materiales que se reciben en esa entrega — no
-  // espera a completar. En entregas siguientes ya está facturado: no se re-cobra
-  // (ahí, si el proveedor trae otro flete, Bodega lo agrega como cargo nuevo).
+  // espera a completar. En entregas siguientes ya está facturado: no se re-cobra.
+  // Bodega NO agrega fletes: eso lo maneja Proveeduría (Angie) o Contabilidad.
   const nadaRecibidoAun = useMemo(
     () => articulo.every((l) => (l.cantidadRecibida ?? 0) <= 1e-9),
     [articulo]
   );
   const fleteAplicado = nadaRecibidoAun && cargo ? cargo.precioUnitario : 0;
-  // Cargo de transporte de ESTA factura/viaje (lo agrega Bodega). Se suma a la
-  // factura y se reparte en BC entre lo recibido según el método elegido.
-  const cargoNuevoMonto = cargoOn ? (Number(cargoMonto) || 0) : 0;
-  const cargoNuevoDesc = itemCharges.find((c) => c.no === cargoTipo)?.descripcion || "Transporte";
-  const totalFactura = subtotalRecibido + fleteAplicado + cargoNuevoMonto;
+  const totalFactura = subtotalRecibido + fleteAplicado;
   // IVA de la factura: por línea según su ivaPct + IVA del flete (BC aplica IVA
   // también al cargo). Así la app muestra el mismo total con IVA que BC.
   const ivaFactura = useMemo(
     () => articulo.reduce((s, l) => s + importeRecibir(l) * ((l.ivaPct ?? 0) / 100), 0)
-      + fleteAplicado * ((cargo?.ivaPct ?? 0) / 100)
-      + cargoNuevoMonto * IVA_CARGO,
-    [articulo, recibir, fleteAplicado, cargo, cargoNuevoMonto] // eslint-disable-line react-hooks/exhaustive-deps
+      + fleteAplicado * ((cargo?.ivaPct ?? 0) / 100),
+    [articulo, recibir, fleteAplicado, cargo] // eslint-disable-line react-hooks/exhaustive-deps
   );
   const totalConIva = totalFactura + ivaFactura;
   const algoRecibido = articulo.some((l) => Number(recibir[l.id] || 0) > 0);
@@ -139,6 +120,55 @@ export default function RegistrarFacturaPage() {
   const distrib = fleteAplicado
     ? distribuirCargo(fleteAplicado, articulo.map((l) => ({ ...l, cantidad: Number(recibir[l.id] || 0) })))
     : {};
+
+  // Setear "a recibir" acotado a [0, pendiente] (lo usa el selector − valor + móvil).
+  const setQty = (l: { id: string }, n: number, pend: number) =>
+    setRecibir((r) => ({ ...r, [l.id]: String(Math.max(0, Math.min(n, pend))) }));
+  const recibirTodoPend = () => setRecibir(Object.fromEntries(articulo.map((l) => [l.id, String(ordenLineaPendiente(l))])));
+  const limpiarCant = () => setRecibir(Object.fromEntries(articulo.map((l) => [l.id, "0"])));
+
+  // Bloque "marcar para nota de crédito" (compartido tabla desktop + tarjeta móvil):
+  // tipo de nota + comentario por línea. Cantidad y precio se toman de la línea.
+  const ncMark = (l: { id: string }) => (
+    <div className="nc-mark nc-mark--stack">
+      <div className="nc-mark__row">
+        <span className="nc-mark__label">Nota de crédito</span>
+        <Select value={marcadas[l.id].motivo} onChange={(e) => setMarca(l.id, { motivo: e.target.value as MotivoNC })} style={{ minWidth: 168 }}>
+          {MOTIVO_NC.map((mo) => <option key={mo.v} value={mo.v}>{mo.label}</option>)}
+        </Select>
+        <button type="button" className="link-btn nc-mark__quitar" onClick={() => quitarMarca(l.id)}>Quitar</button>
+      </div>
+      <div className="nc-mark__row">
+        <Textarea rows={2} style={{ width: "100%" }} aria-label="Comentario de la nota de crédito"
+          placeholder="Comentario: qué pasó con esta línea (opcional)…"
+          value={marcadas[l.id].nota} onChange={(e) => setMarca(l.id, { nota: e.target.value })} />
+      </div>
+    </div>
+  );
+
+  // Abrir el popup de nota de crédito para una línea (borrador desde lo ya marcado).
+  // La cantidad arranca en lo que se recibe y el precio en el de la orden; según el
+  // tipo el popup pide el precio de la factura (precio distinto) o la cantidad.
+  const abrirNc = (l: { id: string; descripcion: string; cantidad?: number; precioUnitario?: number }) => {
+    const ex = marcadas[l.id];
+    setNcModal({
+      lineId: l.id, descripcion: l.descripcion,
+      motivo: ex?.motivo ?? "precio_distinto",
+      cantidad: ex?.cantidad ?? String(recibir[l.id] || l.cantidad || ""),
+      precio: ex?.precio ?? (l.precioUnitario != null ? String(Math.round(l.precioUnitario * 100) / 100) : ""),
+      nota: ex?.nota ?? "",
+    });
+    setMenuOpen(null);
+  };
+  // Confirmar el popup: guarda tipo + cantidad + precio + comentario en la línea.
+  const guardarNc = () => {
+    if (!ncModal) return;
+    setMarcadas((m) => ({
+      ...m,
+      [ncModal.lineId]: { motivo: ncModal.motivo, cantidad: ncModal.cantidad, precio: ncModal.precio, nota: ncModal.nota },
+    }));
+    setNcModal(null);
+  };
 
   // Stock total (todas las ubicaciones) por artículo, desde BC — para confirmar
   // el "antes → después" al registrar. null = BC no devolvió stock.
@@ -157,7 +187,7 @@ export default function RegistrarFacturaPage() {
   async function registrar() {
     if (!numeroFactura.trim()) { toast("Ingresá el número de factura.", "error"); return; }
     if (!algoRecibido) { toast("Indicá al menos una cantidad a recibir.", "error"); return; }
-    if (cargoOn && !(cargoTipo && cargoNuevoMonto > 0)) { toast("Completá el tipo y el monto del cargo de transporte (o quitalo).", "error"); return; }
+    if (avisarCargo && !cargoAvisoDesc.trim()) { toast("Escribí qué cargo de producto trae la factura para avisarle a Contabilidad (o desmarcá la casilla).", "error"); return; }
     const excede = articulo.find((l) => Number(recibir[l.id] || 0) > ordenLineaPendiente(l) + 1e-9);
     if (excede) { toast(`No podés recibir más de lo pendiente en "${excede.descripcion}".`, "error"); return; }
     const lineas = articulo
@@ -182,7 +212,6 @@ export default function RegistrarFacturaPage() {
             method: "POST", headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               orderNo: orden!.bcNumber, vendorInvoiceNo: numeroFactura.trim(), lineas: bcLineas, postingDate: fechaRegistro,
-              cargo: cargoOn && cargoTipo && cargoNuevoMonto > 0 ? { itemChargeNo: cargoTipo, descripcion: cargoNuevoDesc, monto: cargoNuevoMonto, metodo: cargoMetodo } : undefined,
             }),
           });
           const d = await r.json().catch(() => ({}));
@@ -202,12 +231,13 @@ export default function RegistrarFacturaPage() {
       await registrarRecepcion({
         ordenId: orden!.id, numeroFactura: numeroFactura.trim(),
         fechaFactura, fechaRecepcion, fechaRegistro, total: totalFactura, lineas,
+        cargoAviso: cargoAvisoPayload(),
       });
       // Líneas marcadas → notas de crédito (no bloquea el registro).
-      const nc = articulo.filter((l) => marcadas[l.id]).map((l) => ({ ordenLineaId: l.id, articuloNo: l.articuloId, descripcion: l.descripcion, motivo: marcadas[l.id].motivo, cantidad: Number(marcadas[l.id].cantidad) || 0, precioUnitario: Number(marcadas[l.id].precio) || 0 }));
+      const nc = articulo.filter((l) => marcadas[l.id]).map((l) => ({ ordenLineaId: l.id, articuloNo: l.articuloId, descripcion: l.descripcion, motivo: marcadas[l.id].motivo, cantidad: Number(marcadas[l.id].cantidad) || 0, precioUnitario: Number(marcadas[l.id].precio) || 0, nota: marcadas[l.id].nota || undefined }));
       if (nc.length) { try { await marcarNotasCredito(orden!.id, orden!.numero, orden!.proveedorNombre ?? prov?.nombre, nc); } catch { /* no bloquear */ } }
       const falloBc = aviso.includes("NO se pudo") || aviso.includes("no disponible");
-      toast(`Factura ${numeroFactura} registrada${completaOrden ? " — orden completada" : " (parcial)"}${aviso}`, falloBc ? "info" : "success");
+      toast(`Factura ${numeroFactura} registrada${completaOrden ? " — orden completada" : " (parcial)"}${aviso}${cargoAvisoPayload() ? " · se avisó a Contabilidad del cargo adicional" : ""}`, falloBc ? "info" : "success");
       if (bcOk) {
         // Mostramos el modal de inmediato (antes + facturado) y desbloqueamos; la
         // verificación del stock "después" en BC se consulta en segundo plano (no
@@ -233,6 +263,7 @@ export default function RegistrarFacturaPage() {
   // el material (BC: solo recepción) y la factura queda EN REVISIÓN para Kattya.
   async function recibirEnRevision() {
     if (!algoRecibido) { toast("Indicá al menos una cantidad a recibir.", "error"); return; }
+    if (avisarCargo && !cargoAvisoDesc.trim()) { toast("Escribí qué cargo de producto trae la factura para avisarle a Contabilidad (o desmarcá la casilla).", "error"); return; }
     const excede = articulo.find((l) => Number(recibir[l.id] || 0) > ordenLineaPendiente(l) + 1e-9);
     if (excede) { toast(`No podés recibir más de lo pendiente en "${excede.descripcion}".`, "error"); return; }
     const lineas = articulo
@@ -267,11 +298,12 @@ export default function RegistrarFacturaPage() {
       await registrarRecepcion({
         ordenId: orden!.id, numeroFactura: "", fechaFactura, fechaRecepcion, fechaRegistro,
         total: subtotalRecibido, lineas, facturaEnRevision: true,
+        cargoAviso: cargoAvisoPayload(),
       });
-      const nc = articulo.filter((l) => marcadas[l.id]).map((l) => ({ ordenLineaId: l.id, articuloNo: l.articuloId, descripcion: l.descripcion, motivo: marcadas[l.id].motivo, cantidad: Number(marcadas[l.id].cantidad) || 0, precioUnitario: Number(marcadas[l.id].precio) || 0 }));
+      const nc = articulo.filter((l) => marcadas[l.id]).map((l) => ({ ordenLineaId: l.id, articuloNo: l.articuloId, descripcion: l.descripcion, motivo: marcadas[l.id].motivo, cantidad: Number(marcadas[l.id].cantidad) || 0, precioUnitario: Number(marcadas[l.id].precio) || 0, nota: marcadas[l.id].nota || undefined }));
       if (nc.length) { try { await marcarNotasCredito(orden!.id, orden!.numero, orden!.proveedorNombre ?? prov?.nombre, nc); } catch { /* no bloquear */ } }
       const falloBc = aviso.includes("NO se pudo") || aviso.includes("no disponible");
-      toast(`Material recibido — factura EN REVISIÓN${aviso}`, falloBc ? "info" : "success");
+      toast(`Material recibido — factura EN REVISIÓN${aviso}${cargoAvisoPayload() ? " · se avisó a Contabilidad del cargo adicional" : ""}`, falloBc ? "info" : "success");
       router.push(`/facturacion`);
     } catch (e: any) {
       toast(String(e?.message ?? e), "error");
@@ -281,21 +313,15 @@ export default function RegistrarFacturaPage() {
 
   return (
     <>
-      <main className="page page--wide">
+      <main className={esContabilidad ? "page page--wide" : "page"} style={esContabilidad ? undefined : { maxWidth: 760 }}>
         <button type="button" className="back-link" onClick={() => router.push("/facturacion")}>Volver a órdenes por recibir</button>
         <div className="page__head">
           <div className="page__title">
             <div className="row gap-3">
-              <h1 className="ds-heading">Registrar factura · {orden.numero}</h1>
+              <h1 className="ds-heading">Registrar factura · {orden.bcNumber ?? orden.numero}</h1>
               <Badge tone={ordenBadge(orden.estado).tone}>{ordenBadge(orden.estado).label}</Badge>
             </div>
-            <p className="ds-muted">{orden.proveedorNo ?? prov?.code} · {orden.proveedorNombre ?? prov?.nombre} · recibido {ordenRecibidoPct(orden)}%{orden.currencyCode ? ` · ${orden.currencyCode}` : ""}</p>
-            {orden.almacenRecepcion && <p className="ds-body-sm ds-muted">Recepción en almacén <span className="ds-strong">{orden.almacenRecepcion}</span></p>}
-            <div className="row gap-2 wrap mt-2">
-              <span className="ds-muted ds-body-sm">Solicitudes origen:</span>
-              {[...new Set(orden.lineas.filter((l) => l.pedidoNumero).map((l) => l.pedidoNumero!))].map((n) => <Badge key={n} tone="gray">{n}</Badge>)}
-              {orden.lineas.every((l) => !l.pedidoNumero) && <span className="ds-muted ds-body-sm">—</span>}
-            </div>
+            <p className="ds-muted">{orden.proveedorNombre ?? prov?.nombre} · recibido {ordenRecibidoPct(orden)}%</p>
           </div>
         </div>
 
@@ -305,26 +331,36 @@ export default function RegistrarFacturaPage() {
             <Field label="N.º de factura del proveedor">
               <Input value={numeroFactura} onChange={(e) => setNumeroFactura(e.target.value)} placeholder="Ej. F-0099281" />
             </Field>
-            <Field label="Fecha de recepción en bodega">
-              <DateField value={fechaRecepcion} onChange={setFechaRecepcion} />
-            </Field>
             <Field label="Fecha de la factura">
-              <DateField value={fechaFactura} onChange={(v) => { setFechaFactura(v); setFechaRegistro(v); }} />
+              <DateField value={fechaFactura} onChange={(v) => { setFechaFactura(v); setFechaRegistro(v); setFechaRecepcion(v); }} />
             </Field>
-            <Field label="Fecha de registro (contable)"
-              warning={!fechasCoinciden}
-              help={fechasCoinciden ? "Coincide con la fecha de factura ✓" : "Debe coincidir con la fecha de factura para que cuadre con el estado de cuenta del proveedor."}>
-              <DateField value={fechaRegistro} onChange={setFechaRegistro} />
-            </Field>
+            {/* Bodega: una sola fecha (recepción y registro se llevan por detrás
+                igual a la factura). Contabilidad: se editan las tres. */}
+            {!esContabilidad && (
+              <div className="ds-body-sm ds-muted" style={{ gridColumn: "1 / -1", marginTop: -6 }}>
+                Se usa también como fecha de recepción en bodega y de registro contable.
+              </div>
+            )}
+            {esContabilidad && <>
+              <Field label="Fecha de recepción en bodega">
+                <DateField value={fechaRecepcion} onChange={setFechaRecepcion} />
+              </Field>
+              <Field label="Fecha de registro (contable)"
+                warning={!fechasCoinciden}
+                help={fechasCoinciden ? "Coincide con la fecha de factura ✓" : "Debe coincidir con la fecha de factura para que cuadre con el estado de cuenta del proveedor."}>
+                <DateField value={fechaRegistro} onChange={setFechaRegistro} />
+              </Field>
+            </>}
           </div>
         </Card>
 
+        {esContabilidad && (
         <Card className="mt-4" style={{ padding: 0, overflow: "hidden" }}>
           <div className="row row--between" style={{ padding: "12px 16px", borderBottom: "1.5px solid var(--ds-color-gray-100)" }}>
-            <span className="ds-label ds-muted">{articulo.length} línea(s) de artículo</span>
+            <span className="ds-label ds-muted">{articuloVisible.length} línea(s) de artículo</span>
             <div className="row gap-3">
-              <button className="link-btn" title="Poner en 'a recibir' toda la cantidad pendiente de cada línea" onClick={() => setRecibir(Object.fromEntries(articulo.map((l) => [l.id, String(ordenLineaPendiente(l))])))}>Recibir todo lo pendiente</button>
-              <button className="link-btn" title="Dejar en 0 las cantidades a recibir" onClick={() => setRecibir(Object.fromEntries(articulo.map((l) => [l.id, "0"])))}>Limpiar cantidades</button>
+              <button className="link-btn" title="Poner en 'a recibir' toda la cantidad pendiente de cada línea" onClick={recibirTodoPend}>Recibir todo lo pendiente</button>
+              <button className="link-btn" title="Dejar en 0 las cantidades a recibir" onClick={limpiarCant}>Limpiar cantidades</button>
             </div>
           </div>
           <div className="ds-table-wrap" style={{ boxShadow: "none" }}>
@@ -339,7 +375,7 @@ export default function RegistrarFacturaPage() {
                 </tr>
               </thead>
               <tbody>
-                {articulo.map((l) => {
+                {articuloVisible.map((l) => {
                   const pend = ordenLineaPendiente(l);
                   const val = Number(recibir[l.id] || 0);
                   const importe = importeRecibir(l);
@@ -361,17 +397,7 @@ export default function RegistrarFacturaPage() {
                             </button>
                           )}
                         </div>
-                        {marcadas[l.id] && (
-                          <div className="nc-mark" style={{ marginTop: 8 }}>
-                            <span className="nc-mark__label">Nota de crédito</span>
-                            <Select value={marcadas[l.id].motivo} onChange={(e) => setMarca(l.id, { motivo: e.target.value as MotivoNC })} style={{ minWidth: 168 }}>
-                              {MOTIVO_NC.map((mo) => <option key={mo.v} value={mo.v}>{mo.label}</option>)}
-                            </Select>
-                            <input className="ds-cell-input" type="number" min={0} style={{ width: 74 }} aria-label="Cantidad afectada" title="Cantidad afectada" value={marcadas[l.id].cantidad} onChange={(e) => setMarca(l.id, { cantidad: e.target.value })} placeholder="Cant." />
-                            <PrecioNCInput value={marcadas[l.id].precio} onChange={(v) => setMarca(l.id, { precio: v })} currencyCode={orden.currencyCode} />
-                            <button type="button" className="link-btn nc-mark__quitar" onClick={() => quitarMarca(l.id)}>Quitar</button>
-                          </div>
-                        )}
+                        {marcadas[l.id] && <div style={{ marginTop: 8 }}>{ncMark(l)}</div>}
                       </td>
                       <td className="ds-muted hide-mobile">{l.almacen}</td>
                       <td className="ds-num hide-mobile">{num.format(l.cantidad)} {l.unidad}</td>
@@ -404,6 +430,112 @@ export default function RegistrarFacturaPage() {
             </table>
           </div>
         </Card>
+        )}
+
+        {/* Vista BODEGA (Pedro): cada línea es una tarjeta con campo de cantidad.
+            Es la vista por defecto salvo Contabilidad (que ve la tabla de arriba). */}
+        {!esContabilidad && (
+        <Card className="mt-4">
+          <div className="recv-head">
+            <span className="ds-label ds-muted">{articuloVisible.length} artículo(s) a recibir</span>
+          </div>
+          <div className="recv-head__actions">
+            <Button variant="green" size="sm" onClick={recibirTodoPend}>Recibir todo</Button>
+            <Button variant="outline" size="sm" onClick={limpiarCant}>Limpiar</Button>
+          </div>
+          <div className="recv-list">
+            {articuloVisible.map((l) => {
+              const pend = ordenLineaPendiente(l);
+              const val = Number(recibir[l.id] || 0);
+              const full = pend > 0 && val >= pend;
+              const zero = pend > 0 && val <= 0;
+              const marcada = !!marcadas[l.id];
+              // Progreso de la línea (entregas parciales): lo ya recibido antes,
+              // lo que se recibe ahora y lo que quedaría pendiente.
+              const total = l.cantidad;
+              const recibidoAntes = l.cantidadRecibida ?? 0;
+              const pctDone = total > 0 ? (recibidoAntes / total) * 100 : 0;
+              const pctNow = total > 0 ? (Math.min(val, pend) / total) * 100 : 0;
+              const faltanDespues = Math.max(0, pend - val);
+              return (
+                <div key={l.id} className={`recv-card ${marcada ? "is-nc" : full ? "is-full" : zero ? "is-zero" : ""}`}>
+                  <div className="recv-card__row">
+                    <div className="recv-card__name">{l.descripcion}</div>
+                    <button type="button" className={`kebab ${marcada ? "is-marked" : ""}`}
+                      aria-label="Más opciones" aria-haspopup="menu" aria-expanded={menuOpen === l.id}
+                      onClick={() => setMenuOpen(menuOpen === l.id ? null : l.id)}>
+                      <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden><circle cx="12" cy="5" r="1.7" /><circle cx="12" cy="12" r="1.7" /><circle cx="12" cy="19" r="1.7" /></svg>
+                    </button>
+                    {menuOpen === l.id && (
+                      <>
+                        <div className="kebab__overlay" onClick={() => setMenuOpen(null)} />
+                        <div className="kebab-menu" role="menu">
+                          {pend > 0 && val < pend && (
+                            <button type="button" className="kebab-menu__item" role="menuitem" onClick={() => { setQty(l, pend, pend); setMenuOpen(null); }}>
+                              Recibir todo ({num.format(pend)})
+                            </button>
+                          )}
+                          {!marcada
+                            ? <button type="button" className="kebab-menu__item kebab-menu__item--nc" role="menuitem" onClick={() => abrirNc(l)}>Marcar nota de crédito</button>
+                            : <>
+                                <button type="button" className="kebab-menu__item" role="menuitem" onClick={() => abrirNc(l)}>Editar nota de crédito</button>
+                                <button type="button" className="kebab-menu__item kebab-menu__item--nc" role="menuitem" onClick={() => { quitarMarca(l.id); setMenuOpen(null); }}>Quitar nota de crédito</button>
+                              </>}
+                        </div>
+                      </>
+                    )}
+                  </div>
+                  {marcada && (
+                    <button type="button" className="recv-nc-chip" onClick={() => abrirNc(l)}
+                      title="Editar nota de crédito">
+                      Nota de crédito · {MOTIVO_NC.find((mo) => mo.v === marcadas[l.id].motivo)?.label}
+                    </button>
+                  )}
+                  <div className="recv-card__row2">
+                    <span className="recv-card__price">
+                      <b>{money(l.precioUnitario, orden.currencyCode)}</b> c/u
+                    </span>
+                    <div className="qty-field">
+                      <input className={`qty-input ${val > 0 && pend > 0 ? "is-active" : ""}`} type="number" inputMode="numeric" min={0} max={pend} value={recibir[l.id] ?? ""} disabled={pend <= 0}
+                        aria-label={`Cantidad a recibir de ${l.descripcion}`}
+                        onChange={(e) => { const v = e.target.value; if (v === "") return setRecibir((r) => ({ ...r, [l.id]: "" })); setQty(l, Number(v) || 0, pend); }}
+                        onBlur={(e) => { if (e.target.value === "") setRecibir((r) => ({ ...r, [l.id]: "0" })); }} />
+                      {l.unidad && <span className="qty-field__unit">{l.unidad}</span>}
+                    </div>
+                  </div>
+                  {/* Progreso de la orden para esta línea (entregas parciales). */}
+                  <div className="recv-prog">
+                    <div className="recv-prog__bar" role="img"
+                      aria-label={`Recibido ${num.format(recibidoAntes)} de ${num.format(total)}${l.unidad ? " " + l.unidad : ""}`}>
+                      <span className="recv-prog__seg recv-prog__seg--done" style={{ width: `${pctDone}%` }} />
+                      <span className="recv-prog__seg recv-prog__seg--now" style={{ width: `${pctNow}%` }} />
+                    </div>
+                    <span className="recv-prog__lbl">
+                      {recibidoAntes > 0
+                        ? `Ya recibiste ${num.format(recibidoAntes)} de ${num.format(total)} ${l.unidad ?? ""}`.trim()
+                        : `Pedido ${num.format(total)} ${l.unidad ?? ""}`.trim()} ·{" "}
+                      {faltanDespues > 0
+                        ? <span className="recv-prog__falta">faltan {num.format(faltanDespues)} por recibir</span>
+                        : <span className="recv-prog__done">se completa ✓</span>}
+                    </span>
+                  </div>
+                </div>
+              );
+            })}
+            {cargo && (
+              <div className="recv-cargo" style={{ opacity: nadaRecibidoAun ? 1 : 0.6 }}>
+                <Badge tone="yellow">Cargo</Badge>
+                <div style={{ minWidth: 0, flex: 1 }}>
+                  <div className="ds-strong">{cargo.descripcion}</div>
+                  <div className="ds-body-sm ds-muted">
+                    {nadaRecibidoAun ? `Se factura en esta entrega · ${money(fleteAplicado, orden.currencyCode)}` : "Ya se facturó en la primera entrega"}
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        </Card>
+        )}
 
         {cargo && nadaRecibidoAun && !completaOrden && (
           <Card flat className="mt-4 ds-form-field--advertencia">
@@ -413,60 +545,40 @@ export default function RegistrarFacturaPage() {
                 <div className="ds-strong">El flete de la orden se factura en esta entrega</div>
                 <p className="ds-label ds-muted">
                   Como es la primera recepción, el flete (cargo de producto) de la orden se reparte entre los materiales
-                  que estás recibiendo ahora. Las líneas faltantes quedan pendientes; si su factura trae otro transporte,
-                  lo agregás abajo como cargo nuevo.
+                  que estás recibiendo ahora. Las líneas faltantes quedan pendientes.
                 </p>
               </div>
             </div>
           </Card>
         )}
-        {cargo && !nadaRecibidoAun && (
-          <Card flat className="mt-4">
-            <p className="ds-label ds-muted" style={{ margin: 0 }}>
-              El flete de la orden ya se facturó en la primera entrega. Si esta factura trae su propio transporte, agregalo abajo como cargo nuevo.
-            </p>
-          </Card>
-        )}
 
-        {/* Cargo de transporte de ESTE viaje/factura: se agrega a la OC en BC y se
-            reparte entre lo recibido. Para entregas parciales que traen su flete. */}
+        {/* Aviso a Contabilidad: la factura trae un cargo de producto adicional
+            (flete u otro) que Kattya debe agregar. Solo Bodega (Contabilidad es
+            quien lo agrega, no se avisa a sí misma). */}
+        {!esContabilidad && (
         <Card className="mt-4">
-          <div className="row row--between wrap gap-2" style={{ alignItems: "center" }}>
-            <div>
-              <span className="ds-strong">Cargo de transporte de esta factura</span>
-              <p className="ds-label ds-muted" style={{ margin: "2px 0 0" }}>Si esta entrega trae su propio flete, agregalo acá: se registra en la orden de BC y se reparte entre las líneas que estás recibiendo.</p>
-            </div>
-            <Checkbox checked={cargoOn} onChange={(e) => setCargoOn(e.target.checked)}
-              label={<span className="ds-label">Agregar cargo</span>} />
-          </div>
-          {cargoOn && (
+          <Checkbox checked={avisarCargo} onChange={(e) => setAvisarCargo(e.target.checked)}
+            label={<span className="ds-strong">Esta factura trae un cargo de producto adicional</span>} />
+          <p className="ds-label ds-muted" style={{ margin: "6px 0 0" }}>
+            Si viene un flete u otro cargo de producto extra, marcalo: le avisamos a Contabilidad (Kattya) para que lo agregue. Vos recibís y registrás la factura igual.
+          </p>
+          {avisarCargo && (
             <div className="grid-2 mt-3">
-              <Field label="Tipo de transporte">
-                <Select value={cargoTipo} onChange={(e) => setCargoTipo(e.target.value)}>
-                  <option value="">{itemCharges.length ? "Elegí el tipo…" : "Sin tipos de cargo (revisá BC)"}</option>
-                  {itemCharges.map((c) => <option key={c.no} value={c.no}>{c.no} · {c.descripcion}</option>)}
-                </Select>
+              <Field label="¿Qué cargo trae?">
+                <Input value={cargoAvisoDesc} onChange={(e) => setCargoAvisoDesc(e.target.value)} placeholder="Ej. Flete / transporte" />
               </Field>
-              <Field label="Monto del transporte (sin IVA)">
-                <Input type="number" min={0} value={cargoMonto} onChange={(e) => setCargoMonto(e.target.value)} placeholder="0" />
+              <Field label="Monto aprox. (opcional)">
+                <Input type="number" min={0} value={cargoAvisoMonto} onChange={(e) => setCargoAvisoMonto(e.target.value)} placeholder="0" />
               </Field>
-              <Field label="Cómo se divide">
-                <Select value={cargoMetodo} onChange={(e) => setCargoMetodo(e.target.value)}>
-                  {METODOS_CARGO.map((m) => <option key={m.v} value={m.v}>{m.label}</option>)}
-                </Select>
-              </Field>
-              <div className="ds-body-sm ds-muted" style={{ alignSelf: "flex-end", paddingBottom: 8 }}>
-                Se reparte entre las {articulo.filter((l) => Number(recibir[l.id] || 0) > 0).length} línea(s) que recibís en esta factura.
-              </div>
             </div>
           )}
         </Card>
+        )}
 
         <div className="row row--between wrap gap-4 mt-6" style={{ alignItems: "flex-end" }}>
           <div className="totals" style={{ minWidth: 320 }}>
             <div className="totals__row"><span>Subtotal recibido</span><span>{money(subtotalRecibido, orden.currencyCode)}</span></div>
             {fleteAplicado > 0 && <div className="totals__row"><span>Flete (orden)</span><span>{money(fleteAplicado, orden.currencyCode)}</span></div>}
-            {cargoNuevoMonto > 0 && <div className="totals__row"><span>Transporte (esta factura)</span><span>{money(cargoNuevoMonto, orden.currencyCode)}</span></div>}
             <div className="totals__row"><span>IVA</span><span>{money(ivaFactura, orden.currencyCode)}</span></div>
             <div className="totals__row totals__row--grand" style={{ gridColumn: "1 / -1" }}>
               <span>Total factura (con IVA)</span><span>{money(totalConIva, orden.currencyCode)}</span>
@@ -475,7 +587,7 @@ export default function RegistrarFacturaPage() {
               {completaOrden ? <Badge tone="green">Recepción completa</Badge> : <Badge tone="yellow">Recepción parcial — la orden queda abierta</Badge>}
             </div>
           </div>
-          <div className="row gap-3 wrap">
+          <div className="row gap-3 wrap recv-actions">
             <Button variant="outline" onClick={() => setPreview(true)} disabled={!algoRecibido}>Vista previa</Button>
             <Button variant="ghost" onClick={recibirEnRevision} disabled={!algoRecibido || guardando} title="El material llegó bien pero la factura tiene problemas: recibí el material y mandá la factura a revisión.">Recibir sin factura (a revisión)</Button>
             <Button variant="green" onClick={registrar} disabled={!algoRecibido || !numeroFactura.trim() || guardando}>{guardando ? "Registrando…" : "Registrar factura"}</Button>
@@ -487,6 +599,42 @@ export default function RegistrarFacturaPage() {
             </p>
           )}
         </div>
+
+        {ncModal && (
+          <Modal
+            title="Nota de crédito"
+            onClose={() => setNcModal(null)}
+            footer={<>
+              {marcadas[ncModal.lineId] && <Button variant="ghost" onClick={() => { quitarMarca(ncModal.lineId); setNcModal(null); }}>Quitar</Button>}
+              <Button variant="outline" onClick={() => setNcModal(null)}>Cancelar</Button>
+              <Button variant="green" onClick={guardarNc}>Guardar</Button>
+            </>}
+          >
+            <p className="ds-label ds-muted" style={{ margin: "0 0 4px" }}>Material</p>
+            <p className="ds-strong" style={{ margin: "0 0 16px" }}>{ncModal.descripcion}</p>
+            <Field label="Tipo de nota de crédito">
+              <Select value={ncModal.motivo} onChange={(e) => setNcModal((m) => m && { ...m, motivo: e.target.value as MotivoNC })}>
+                {MOTIVO_NC.map((mo) => <option key={mo.v} value={mo.v}>{mo.label}</option>)}
+              </Select>
+            </Field>
+            {ncModal.motivo === "precio_distinto" && (
+              <Field label="Precio con el que viene la factura (por unidad)">
+                <Input type="number" min={0} value={ncModal.precio} placeholder="0"
+                  onChange={(e) => setNcModal((m) => m && { ...m, precio: e.target.value })} />
+              </Field>
+            )}
+            {ncModal.motivo === "menos_cantidad" && (
+              <Field label="Cantidad que realmente llegó">
+                <Input type="number" min={0} value={ncModal.cantidad} placeholder="0"
+                  onChange={(e) => setNcModal((m) => m && { ...m, cantidad: e.target.value })} />
+              </Field>
+            )}
+            <Field label="Comentario (opcional)">
+              <Textarea rows={3} value={ncModal.nota} placeholder="Qué pasó con esta línea…"
+                onChange={(e) => setNcModal((m) => m && { ...m, nota: e.target.value })} />
+            </Field>
+          </Modal>
+        )}
 
         {preview && (
           <Modal
@@ -504,7 +652,7 @@ export default function RegistrarFacturaPage() {
               <table className="ds-table">
                 <thead><tr><th>Concepto</th><th className="ds-num">Cant.</th><th className="ds-num">Importe</th></tr></thead>
                 <tbody>
-                  {articulo.filter((l) => Number(recibir[l.id] || 0) > 0).map((l) => (
+                  {articulo.filter((l) => Number(recibir[l.id] || 0) > 0).sort((a, b) => a.descripcion.localeCompare(b.descripcion, "es")).map((l) => (
                     <tr key={l.id}>
                       <td>{l.descripcion}{distrib[l.id] ? <div className="ds-body-sm ds-muted">+ flete {money(distrib[l.id], orden.currencyCode)}</div> : null}</td>
                       <td className="ds-num">{num.format(Number(recibir[l.id]))}</td>

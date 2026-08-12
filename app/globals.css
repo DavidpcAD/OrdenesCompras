@@ -410,8 +410,11 @@ h1, h2, h3, h4, p { margin: 0; }
 .combo .ds-form-field__input.combo__input { padding-left: 42px; padding-right: 40px; }
 .combo__chev { position: absolute; right: 14px; top: 50%; transform: translateY(-50%); color: var(--ds-color-gray-400); pointer-events: none; display: inline-flex; transition: transform .15s ease; }
 .combo__chev.is-open { transform: translateY(-50%) rotate(180deg); }
-/* El menú va en un portal (position:fixed): NO lo recorta ningún overflow. */
-.combo__menu { z-index: 60; max-height: 300px; overflow-y: auto; background: var(--ds-surface); border: 1.5px solid var(--ds-color-gray-200); border-radius: var(--ds-radius-lg); box-shadow: 0 10px 30px #0000002a; padding: 4px; }
+/* Menú desplegado bajo el trigger. DEBE ir posicionado (absolute) para que su
+   z-index gane por encima del overlay del Select (.ds-select__overlay, z-index 29);
+   si queda `static`, el z-index se ignora y el overlay tapa las opciones (no se
+   pueden clickear, sobre todo dentro de un Modal). */
+.combo__menu { position: absolute; top: calc(100% + 6px); left: 0; right: 0; z-index: 60; max-height: 300px; overflow-y: auto; background: var(--ds-surface); border: 1.5px solid var(--ds-color-gray-200); border-radius: var(--ds-radius-lg); box-shadow: 0 10px 30px #0000002a; padding: 4px; }
 .combo__item { display: flex; align-items: center; min-height: 42px; width: 100%; text-align: left; background: transparent; border: 0; padding: 8px 12px; border-radius: 10px; cursor: pointer; font-size: var(--ds-font-size-label); color: var(--ds-text); }
 .combo__item:hover { background: color-mix(in srgb, var(--ds-color-green-100) 12%, var(--ds-tint-base)); }
 .combo__item.is-active { background: color-mix(in srgb, var(--ds-color-green-100) 26%, var(--ds-tint-base)); font-weight: var(--ds-font-weight-semibold); }
@@ -1491,3 +1494,126 @@ button.ana-kpi:active { transform: translateY(1px); }
   transition: opacity .12s ease, transform .12s ease; white-space: nowrap;
 }
 .nc-grp-head:hover .nc-grp-head__go, .nc-grp-head:focus-visible .nc-grp-head__go { opacity: 1; transform: none; }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   Recepción en MÓVIL/TABLET (Bodega · Pedro). La pantalla de registrar factura
+   la usa Pedro desde el celular: las líneas de artículo se muestran como
+   TARJETAS con un selector de cantidad grande (− valor +) en vez de una tabla
+   que se sale de la pantalla. En escritorio (Contabilidad) sigue la tabla.
+   ════════════════════════════════════════════════════════════════════════ */
+/* Visibilidad por dispositivo (complementa .hide-mobile: oculta columnas). */
+.only-mobile { display: none; }
+@media (max-width: 760px) {
+  .only-desktop { display: none !important; }
+  .only-mobile { display: block; }
+}
+
+/* Cabecera de la lista de recepción (contador + botones "recibir todo"/"limpiar"). */
+.recv-head { display: flex; align-items: center; justify-content: space-between; gap: var(--ds-space-3); flex-wrap: wrap; margin-bottom: var(--ds-space-2); }
+/* Botones de acción de la lista (no links): pareja a ancho parejo, estilo DS. */
+.recv-head__actions { display: flex; gap: var(--ds-space-2); margin-bottom: var(--ds-space-4); }
+.recv-head__actions > .ds-btn { flex: 1; }
+
+.recv-list { display: flex; flex-direction: column; gap: var(--ds-space-2); }
+
+/* Tarjeta COMPACTA de línea: nombre + precio + selector. Barra de color a la
+   izquierda para el estado (verde = se recibe todo · ámbar = pendiente en 0). */
+.recv-card {
+  position: relative;
+  border: 1.5px solid var(--ds-color-gray-200); border-left-width: 4px; border-radius: var(--ds-radius-lg);
+  background: var(--ds-surface); padding: var(--ds-space-3) var(--ds-space-4);
+  display: flex; flex-direction: column; gap: var(--ds-space-2);
+  transition: border-color .14s ease;
+}
+.recv-card:not(.is-full):not(.is-zero):not(.is-nc) { border-left-color: var(--ds-color-gray-300); }
+.recv-card.is-full { border-left-color: var(--ds-color-green-100); }
+.recv-card.is-zero { border-left-color: var(--ds-color-yellow); }
+
+.recv-card__row { display: flex; align-items: flex-start; gap: var(--ds-space-2); }
+.recv-card__name { flex: 1; min-width: 0; font-weight: var(--ds-font-weight-semibold); font-size: var(--ds-font-size-body-md); line-height: 1.25; }
+.recv-card__row2 { display: flex; align-items: center; justify-content: space-between; gap: var(--ds-space-3); }
+.recv-card__price { min-width: 0; font-size: var(--ds-font-size-body-sm); color: var(--ds-color-gray-400); }
+.recv-card__price b { color: var(--ds-text); font-weight: var(--ds-font-weight-semibold); }
+
+/* Campo de cantidad (pastilla): el usuario escribe cuánto recibe. Por defecto
+   trae lo pendiente y nunca deja poner más que la orden. Sin botones − / +. */
+.qty-field { display: inline-flex; align-items: center; gap: var(--ds-space-2); flex-shrink: 0; }
+.qty-field__unit { font-size: var(--ds-font-size-body-sm); color: var(--ds-color-gray-400); }
+.qty-input {
+  width: 76px; height: 48px; text-align: center; border-radius: 999px;
+  border: 1.5px solid var(--ds-color-gray-200); background: var(--ds-surface); color: var(--ds-text);
+  font-size: var(--ds-font-size-subtitle); font-weight: var(--ds-font-weight-semibold);
+  -moz-appearance: textfield; font-family: inherit;
+  transition: border-color .12s ease, box-shadow .12s ease;
+}
+/* Con cantidad cargada → borde verde (se va a recibir). */
+.qty-input.is-active { border-color: var(--ds-color-green-100); }
+.qty-input:focus { outline: none; border-color: var(--ds-color-green-100); box-shadow: 0 0 0 3px color-mix(in srgb, var(--ds-color-green-100) 22%, transparent); }
+.qty-input:disabled { opacity: .5; }
+.qty-input::-webkit-outer-spin-button, .qty-input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+
+/* Nota de crédito (móvil): la línea marcada NO se expande. El tipo + comentario
+   se editan en un POPUP (Modal). La tarjeta queda con acento rojo + un chip para
+   identificarla de un vistazo. */
+.recv-card.is-nc { border-left-color: var(--ds-color-red-200); }
+.recv-nc-chip {
+  align-self: flex-start; display: inline-flex; align-items: center; gap: 7px;
+  margin: -2px 0 2px; padding: 5px 10px; border: 0; border-radius: 999px;
+  background: color-mix(in srgb, var(--ds-color-red-100) 12%, var(--ds-tint-base));
+  color: var(--ds-color-red-200); font: inherit; font-size: var(--ds-font-size-body-sm); font-weight: var(--ds-font-weight-semibold);
+  cursor: pointer; transition: background .12s ease;
+}
+.recv-nc-chip::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--ds-color-red-200); }
+.recv-nc-chip:hover { background: color-mix(in srgb, var(--ds-color-red-100) 20%, var(--ds-tint-base)); }
+
+/* Progreso de recepción por línea (entregas parciales): barra apilada
+   (verde = ya recibido antes · ámbar = lo que estás recibiendo ahora · gris =
+   lo que quedaría pendiente) + texto "ya recibiste X de Y · faltan Z". */
+.recv-prog { display: flex; flex-direction: column; gap: 6px; margin-top: 2px; padding-top: 10px; border-top: 1px solid var(--ds-color-gray-100); }
+.recv-prog__bar { display: flex; height: 8px; border-radius: 999px; background: var(--ds-color-gray-100); overflow: hidden; }
+.recv-prog__seg { height: 100%; transition: width .18s ease; }
+.recv-prog__seg--done { background: var(--ds-color-green-100); }
+.recv-prog__seg--now { background: var(--ds-color-yellow); }
+.recv-prog__lbl { font-size: var(--ds-font-size-body-sm); color: var(--ds-color-gray-400); }
+.recv-prog__falta { color: var(--ds-color-red-200); font-weight: var(--ds-font-weight-semibold); }
+.recv-prog__done { color: var(--ds-color-green-300); font-weight: var(--ds-font-weight-semibold); }
+
+/* Kebab (⋮): menú de acciones por línea (nota de crédito, recibir todo). */
+.kebab {
+  flex-shrink: 0; width: 34px; height: 30px; margin: -4px -6px -4px 0;
+  border: 0; background: transparent; color: var(--ds-color-gray-400);
+  border-radius: var(--ds-radius-md); cursor: pointer; display: grid; place-items: center;
+  transition: background .12s ease, color .12s ease;
+}
+.kebab:hover { background: var(--ds-color-gray-100); color: var(--ds-text); }
+.kebab.is-marked { color: var(--ds-color-red-200); }
+.kebab__overlay { position: fixed; inset: 0; z-index: 40; }
+.kebab-menu {
+  position: absolute; top: 40px; right: var(--ds-space-3); z-index: 41; min-width: 210px;
+  background: var(--ds-surface); border: 1.5px solid var(--ds-color-gray-100); border-radius: var(--ds-radius-lg);
+  box-shadow: var(--ds-shadow-03-big); padding: 6px; display: flex; flex-direction: column; gap: 2px;
+  animation: fade .12s ease;
+}
+.kebab-menu__item {
+  display: flex; align-items: center; gap: 8px; width: 100%; text-align: left;
+  padding: 11px 12px; border: 0; background: transparent; border-radius: var(--ds-radius-md);
+  font: inherit; font-size: var(--ds-font-size-label); font-weight: var(--ds-font-weight-semibold);
+  color: var(--ds-text); cursor: pointer; transition: background .12s ease;
+}
+.kebab-menu__item:hover { background: var(--ds-color-gray-100); }
+.kebab-menu__item--nc { color: var(--ds-color-red-200); }
+.kebab-menu__item--nc:hover { background: color-mix(in srgb, var(--ds-color-red-100) 12%, transparent); }
+
+/* NC inline: tipo de nota + comentario por línea. */
+.nc-mark--stack { flex-direction: column; align-items: stretch; gap: 8px; }
+.nc-mark__row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.nc-mark__row .ds-form-field__textarea { min-height: 60px; }
+
+/* Flete/cargo de la orden como tarjeta informativa dentro de la lista móvil. */
+.recv-cargo { display: flex; align-items: center; gap: var(--ds-space-3); padding: var(--ds-space-3) var(--ds-space-4); border-radius: var(--ds-radius-lg); border: 1.5px dashed var(--ds-color-gray-200); }
+
+/* Botonera de acciones a ancho completo en móvil (objetivos táctiles grandes). */
+@media (max-width: 760px) {
+  .recv-actions { width: 100%; }
+  .recv-actions > .ds-btn { width: 100%; }
+}

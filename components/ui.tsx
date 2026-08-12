@@ -37,8 +37,8 @@ export function Button({
 
 // ---------------------------------------------------------------- Field
 export function Field({
-  label, help, warning, children,
-}: { label: string; help?: string; warning?: boolean; children: React.ReactNode }) {
+  label, help, warning, className = "", children,
+}: { label: string; help?: string; warning?: boolean; className?: string; children: React.ReactNode }) {
   // Asocia el label con el input (a11y): si el hijo es un elemento simple, le
   // inyecta un id y apunta el htmlFor ahí. Si ya trae id, se respeta. Si el hijo
   // no es un elemento único (fragmento/varios), cae a no asociar (sin romper).
@@ -49,7 +49,7 @@ export function Field({
     ? React.cloneElement(children as React.ReactElement, { id: autoId })
     : children;
   return (
-    <div className={`ds-form-field ${warning ? "ds-form-field--advertencia" : ""}`}>
+    <div className={`ds-form-field ${warning ? "ds-form-field--advertencia" : ""} ${className}`.trim()}>
       <label className="ds-form-field__label" htmlFor={childId}>{label}</label>
       <div className="ds-form-field__input-wrap">{child}</div>
       {help && <span className="ds-form-field__help">{help}</span>}
