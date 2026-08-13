@@ -1087,7 +1087,15 @@ h1, h2, h3, h4, p { margin: 0; }
 .md-item:hover { border-color: var(--ds-color-gray-300); }
 .md-item.is-active { border-color: var(--ds-color-green-100); box-shadow: 0 0 0 3px color-mix(in srgb, var(--ds-color-green-100) 18%, transparent); }
 .md-item__top { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+/* Solicitante (usuario que creó el pedido) en la tarjeta. */
+.md-item__solic { display: inline-flex; align-items: center; gap: 5px; margin-top: 3px; font-size: var(--ds-font-size-body-sm); color: var(--ds-color-gray-400); }
+.md-item__solic svg { flex-shrink: 0; opacity: .85; }
 .md-pill { font-size: var(--ds-font-size-body-sm); font-weight: 700; background: var(--ds-color-green-100); color: var(--ds-color-black); border-radius: 999px; padding: 1px 8px; }
+
+/* Grupo sticky de filtros del panel izquierdo (pedido/obra + solicitante): quedan
+   pegados arriba juntos al hacer scroll de la lista, sin solaparse. */
+.md-filtros { position: sticky; top: 0; z-index: 2; display: flex; flex-direction: column; gap: var(--ds-space-2); margin-bottom: var(--ds-space-2); background: var(--ds-surface); }
+.md-filtros .md-filtro { position: static; margin-bottom: 0; }
 /* Colapsa a 1 columna en tablet y móvil: con sidebar 250px + tabla, por debajo
    de ~900px la tabla queda muy angosta y su toolbar desborda. Apilado le da a la
    tabla el ancho completo. */
@@ -1494,6 +1502,23 @@ button.ana-kpi:active { transform: translateY(1px); }
   transition: opacity .12s ease, transform .12s ease; white-space: nowrap;
 }
 .nc-grp-head:hover .nc-grp-head__go, .nc-grp-head:focus-visible .nc-grp-head__go { opacity: 1; transform: none; }
+
+/* Botones (con ícono) del encabezado de Notas de crédito: "Factura registrada"
+   (principal, verde) y "Orden de compra" (secundario, solo si hubo parciales). */
+.nc-linkbtn {
+  display: inline-flex; align-items: center; gap: 7px;
+  height: 34px; padding: 0 14px; border-radius: 999px;
+  border: 1.5px solid var(--ds-color-gray-200); background: var(--ds-surface);
+  color: var(--ds-text); font-size: var(--ds-font-size-body-sm); font-weight: var(--ds-font-weight-semibold);
+  text-decoration: none; white-space: nowrap; cursor: pointer;
+  transition: border-color .12s ease, background .12s ease, color .12s ease;
+}
+.nc-linkbtn:hover { border-color: var(--ds-color-gray-300); background: var(--ds-color-gray-100); color: var(--ds-text); }
+.nc-linkbtn svg { flex-shrink: 0; }
+.nc-linkbtn__ext { opacity: .55; }
+/* "Factura registrada" = acción principal (acento verde). */
+.nc-linkbtn--primary { border-color: color-mix(in srgb, var(--ds-color-green-100) 60%, var(--ds-color-gray-200)); background: color-mix(in srgb, var(--ds-color-green-100) 12%, var(--ds-surface)); color: var(--ds-color-green-300); }
+.nc-linkbtn--primary:hover { border-color: var(--ds-color-green-100); background: color-mix(in srgb, var(--ds-color-green-100) 20%, var(--ds-surface)); color: var(--ds-color-green-300); }
 
 /* ══════════════════════════════════════════════════════════════════════════
    Recepción en MÓVIL/TABLET (Bodega · Pedro). La pantalla de registrar factura

@@ -13,6 +13,9 @@ import type { OrdenLinea } from "@/lib/types";
 // manuales (pedidoNumero "Manual"); en la lista/detalle se marca como "Directa".
 interface Row { key: string; articuloId: string; descripcion: string; unidad: string; obra: string; cantidad: string; precio: string; iva: string; descuento: string; variantCode: string; variantNombre: string; }
 type Variante = { code: string; descripcion: string };
+// Cargo de producto (Item Charge) a agregar a la orden: tipo (chargeNo del catálogo
+// BC), cantidad y precio. chargeNo "" = flete por defecto. Igual que en "nueva".
+interface Cargo { chargeNo: string; descripcion: string; cantidad: string; precio: string; }
 const uid = () => Math.random().toString(36).slice(2, 9);
 
 export default function OrdenDirectaPage() {
@@ -24,8 +27,11 @@ export default function OrdenDirectaPage() {
   const priceId = useId();
   const [proveedorId, setProveedorId] = useState("");
   const [currency, setCurrency] = useState("");
-  const [flete, setFlete] = useState("");
   const [almacen, setAlmacen] = useState("ALM-GRAL");
+  // Cargos de producto (Item Charge): igual que al armar una orden desde un pedido.
+  const [cargos, setCargos] = useState<Cargo[]>([]);
+  const [metodoAsig, setMetodoAsig] = useState("Amount"); // Amount|Weight|Volume|Equally
+  const [itemCharges, setItemCharges] = useState<{ no: string; descripcion: string }[]>([]);
 
   // Catálogos en vivo desde Business Central (con respaldo al catálogo seed).
   const [bcProv, setBcProv] = useState<typeof proveedores | null>(null);
@@ -37,6 +43,9 @@ export default function OrdenDirectaPage() {
     fetch("/api/bc/almacenes").then((r) => (r.ok ? r.json() : { almacenes: [] })).then((d) => {
       if (Array.isArray(d.almacenes) && d.almacenes.length) { setBcAlm(d.almacenes); if (!d.almacenes.some((a: any) => a.codigo === "ALM-GRAL")) setAlmacen(d.almacenes[0].codigo); }
     }).catch(() => {});
+    // Catálogo de Cargos de producto (Item Charge) de BC para el selector de tipo.
+    fetch("/api/bc/itemcharges").then((r) => (r.ok ? r.json() : { itemCharges: [] }))
+      .then((d) => { if (Array.isArray(d.itemCharges)) setItemCharges(d.itemCharges); }).catch(() => {});
   }, []);
   const catProv = bcProv ?? proveedores;
   const catAlm = almacenesFisicos(bcAlm ?? almacenes);
@@ -53,6 +62,12 @@ export default function OrdenDirectaPage() {
 
   const setRow = (k: string, patch: Partial<Row>) => setRows((rs) => rs.map((r) => (r.key === k ? { ...r, ...patch } : r)));
   const removeRow = (k: string) => setRows((rs) => rs.filter((r) => r.key !== k));
+  // Cargos de producto (mismo comportamiento que en "nueva").
+  const addCargo = () => setCargos((cs) => [...cs, { chargeNo: "", descripcion: "FLETE / TRANSPORTE", cantidad: "1", precio: "" }]);
+  const setCargo = (i: number, patch: Partial<Cargo>) => setCargos((cs) => cs.map((c, idx) => (idx === i ? { ...c, ...patch } : c)));
+  const removeCargo = (i: number) => setCargos((cs) => cs.filter((_, idx) => idx !== i));
+  const onTipoCargo = (i: number, chargeNo: string) => { const ic = itemCharges.find((x) => x.no === chargeNo); setCargo(i, { chargeNo, descripcion: ic ? ic.descripcion : "FLETE / TRANSPORTE" }); };
+  const cargoImporte = (c: Cargo) => (Number(c.cantidad) || 0) * (Number(c.precio) || 0);
   function agregarLinea() {
     const it = itemsBc.find((x) => x.code === qaCode);
     if (!it || !(Number(qaQty) > 0)) { toast("Elegí un artículo y una cantidad.", "error"); return; }
@@ -64,9 +79,11 @@ export default function OrdenDirectaPage() {
 
   const calcImporte = (r: Row) => Number(r.cantidad) * Number(r.precio) * (1 - (Number(r.descuento) || 0) / 100);
   const subtotal = useMemo(() => rows.reduce((s, r) => s + calcImporte(r), 0), [rows]);
-  const ivaTotal = useMemo(() => rows.reduce((s, r) => s + calcImporte(r) * ((Number(r.iva) || 0) / 100), 0), [rows]);
-  const fleteNum = Number(flete) || 0;
-  const total = subtotal + fleteNum + ivaTotal;
+  const cargosTotal = cargos.reduce((s, c) => s + cargoImporte(c), 0);
+  // El IVA (13%) se aplica a los materiales Y a los cargos, igual que en BC.
+  const ivaCargos = cargosTotal * 0.13;
+  const ivaTotal = useMemo(() => rows.reduce((s, r) => s + calcImporte(r) * ((Number(r.iva) || 0) / 100), 0), [rows]) + ivaCargos;
+  const total = subtotal + cargosTotal + ivaTotal;
   const puedeCrear = !!proveedorId && rows.length > 0;
   const [guardando, setGuardando] = useState(false);
 
@@ -78,6 +95,11 @@ export default function OrdenDirectaPage() {
 
   async function crear(aprobar: boolean) {
     if (!puedeCrear) { toast("Seleccioná un proveedor y agregá al menos una línea.", "error"); return; }
+    // Todo cargo con importe debe tener un TIPO válido (Item Charge de BC): sin tipo,
+    // BC rechaza el cargo y la orden queda sin el flete. Se bloquea acá.
+    if (cargos.some((c) => cargoImporte(c) > 0 && !c.chargeNo)) {
+      toast("Elegí el tipo de cargo (transporte) antes de continuar. Sin tipo, BC no acepta el flete.", "error"); return;
+    }
     setGuardando(true);
     try {
       const ls: Omit<OrdenLinea, "id" | "cantidadRecibida" | "cantidadFacturada">[] = rows.map((r) => ({
@@ -86,7 +108,11 @@ export default function OrdenDirectaPage() {
         precioUnitario: Number(r.precio), ivaPct: Number(r.iva) || 0, descuentoPct: Number(r.descuento) || 0,
         proyecto: r.obra || undefined,
       }));
-      if (fleteNum > 0) ls.push({ tipo: "cargo", descripcion: "FLETE / TRANSPORTE", cantidad: 1, unidad: "UND", almacen: rows[0]?.obra ?? "", precioUnitario: fleteNum, ivaPct: 13 });
+      for (const c of cargos) {
+        if (cargoImporte(c) <= 0) continue;
+        ls.push({ tipo: "cargo", chargeNo: c.chargeNo || undefined, chargeMethod: metodoAsig, descripcion: c.descripcion || "CARGO",
+          cantidad: Number(c.cantidad) || 1, unidad: "UND", almacen: rows[0]?.obra ?? "", precioUnitario: Number(c.precio) || 0, ivaPct: 13 });
+      }
       const orden = await createOrden({ proveedorId, proveedorNo: provSel?.code, proveedorNombre: provSel?.nombre, currencyCode: currency, almacenRecepcion: almacen, lineas: ls });
       if (aprobar) await setOrdenEstado(orden.id, "pendiente_aprobacion");
       toast(`Orden directa ${orden.numero} ${aprobar ? "enviada a aprobación" : "guardada como abierta"}`, "success");
@@ -114,9 +140,6 @@ export default function OrdenDirectaPage() {
             </Field>
             <Field label="Moneda">
               <Select value={currency} onChange={(e) => setCurrency(e.target.value)}><option value="">CRC (colones)</option><option value="USD">USD (dólares)</option></Select>
-            </Field>
-            <Field label="Flete / transporte" help="Opcional, se distribuye al facturar">
-              <Input type="number" min={0} value={flete} onChange={(e) => setFlete(e.target.value)} placeholder="0" />
             </Field>
             <Field label="Almacén de recepción" help="Dónde entra el material en BC (por defecto el General)">
               <Select value={almacen} onChange={(e) => setAlmacen(e.target.value)}>
@@ -185,10 +208,60 @@ export default function OrdenDirectaPage() {
           </div>
         </Card>
 
+        {/* Cargos de producto (Item Charge): Transporte, Seguro, etc. Se reparten
+            entre los artículos al registrar en BC. Igual que al armar la orden
+            desde un pedido de compra. */}
+        <Card className="mt-4">
+          <div className="row row--between wrap gap-3" style={{ alignItems: "center", marginBottom: cargos.length ? 12 : 0 }}>
+            <div className="col" style={{ gap: 2 }}>
+              <span className="ds-subtitle">Cargos de producto</span>
+              <span className="ds-muted ds-body-sm">Transporte, seguro, etc. Se reparten entre los artículos según el método elegido.</span>
+            </div>
+            <div className="row gap-3 wrap" style={{ alignItems: "flex-end" }}>
+              {cargos.length > 0 && (
+                <div>
+                  <span className="ds-label ds-muted" style={{ display: "block", marginBottom: 4 }}>Método de asignación</span>
+                  <Select value={metodoAsig} onChange={(e) => setMetodoAsig(e.target.value)}>
+                    <option value="Amount">Por importe</option>
+                    <option value="Equally">Equitativo (por línea)</option>
+                    <option value="Weight">Por peso</option>
+                    <option value="Volume">Por volumen</option>
+                  </Select>
+                </div>
+              )}
+              <Button variant="outline" size="sm" onClick={addCargo}>+ Agregar cargo</Button>
+            </div>
+          </div>
+          {cargos.map((c, i) => (
+            <div key={i} className="row gap-3 wrap" style={{ alignItems: "flex-end", padding: "12px 0", borderTop: "1.5px solid var(--ds-color-gray-100)" }}>
+              <div style={{ flex: "1 1 240px", minWidth: 200 }}>
+                <span className="ds-label ds-muted" style={{ display: "block", marginBottom: 4 }}>Tipo de cargo</span>
+                <Select value={c.chargeNo} onChange={(e) => onTipoCargo(i, e.target.value)}>
+                  <option value="">Flete / transporte</option>
+                  {itemCharges.map((ic) => <option key={ic.no} value={ic.no}>{ic.no} · {ic.descripcion}</option>)}
+                </Select>
+              </div>
+              <div>
+                <span className="ds-label ds-muted" style={{ display: "block", marginBottom: 4 }}>Cantidad</span>
+                <Input type="number" min={0} value={c.cantidad} style={{ width: 96 }} onChange={(e) => setCargo(i, { cantidad: e.target.value })} />
+              </div>
+              <div>
+                <span className="ds-label ds-muted" style={{ display: "block", marginBottom: 4 }}>Precio</span>
+                <Input type="number" min={0} value={c.precio} placeholder="0" style={{ width: 130 }} onChange={(e) => setCargo(i, { precio: e.target.value })} />
+              </div>
+              <div style={{ minWidth: 110, textAlign: "right" }}>
+                <span className="ds-label ds-muted" style={{ display: "block", marginBottom: 4 }}>Importe</span>
+                <span className="ds-strong">{money(cargoImporte(c) || 0, currency)}</span>
+              </div>
+              <button type="button" className="icon-btn icon-btn--quitar" title="Quitar cargo" aria-label="Quitar cargo" style={{ marginBottom: 2 }} onClick={() => removeCargo(i)}>×</button>
+            </div>
+          ))}
+        </Card>
+
         <div className="row mt-6" style={{ justifyContent: "flex-end" }}>
           <div className="totals" style={{ minWidth: 340 }}>
             <div className="totals__row"><span>Subtotal (excl. IVA)</span><span>{money(subtotal, currency)}</span></div>
-            <div className="totals__row"><span>Flete</span><span>{money(fleteNum, currency)}</span></div>
+            <div className="totals__row"><span>Cargos</span><span>{money(cargosTotal, currency)}</span></div>
             <div className="totals__row"><span>IVA</span><span>{money(ivaTotal, currency)}</span></div>
             <div className="totals__row totals__row--grand" style={{ gridColumn: "1 / -1" }}><span>Total</span><span>{money(total, currency)}</span></div>
           </div>

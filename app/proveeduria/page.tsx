@@ -3,7 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 import type { ColumnDef } from "@tanstack/react-table";
-import { Badge, Button, Card, EmptyState, Modal, useToast } from "@/components/ui";
+import { Badge, Button, Card, EmptyState, Modal, Select, useToast } from "@/components/ui";
 import { DataTable } from "@/components/data-table";
 import { VistaToggle } from "@/components/vista-toggle";
 import { IconEye, IconReceipt, IconList } from "@/components/icons";
@@ -14,6 +14,7 @@ interface Row {
   pedidoId: string;
   pedidoNumero: string;
   destino: string;
+  solicitante: string;
   tipo: "material" | "repuesto" | "stock";
   pedidoLineaId: string;
   articuloId: string;
@@ -39,6 +40,11 @@ export default function ProveeduriaMaterialesPage() {
     () => pedidos.filter((p) => (p.estado === "aprobado" || p.estado === "en_orden") && p.lineas.some((l) => pedidoLineaPendiente(l) > 0)),
     [pedidos]
   );
+  // Solicitantes (usuarios que crearon los pedidos pendientes) para el dropdown.
+  const solicitantes = useMemo(
+    () => [...new Set(pedidosConSaldo.map((p) => p.solicitante).filter(Boolean))].sort((a, b) => a.localeCompare(b, "es")),
+    [pedidosConSaldo]
+  );
 
   const baseRows = useMemo<Row[]>(() => {
     const rows: Row[] = [];
@@ -47,7 +53,7 @@ export default function ProveeduriaMaterialesPage() {
         const pend = pedidoLineaPendiente(l);
         if (pend <= 0) return;
         rows.push({
-          pedidoId: p.id, pedidoNumero: p.numero, destino: destinoLabel(p), tipo: p.tipoSolicitud,
+          pedidoId: p.id, pedidoNumero: p.numero, destino: destinoLabel(p), solicitante: p.solicitante, tipo: p.tipoSolicitud,
           pedidoLineaId: l.id, articuloId: l.articuloId, descripcion: l.descripcion,
           unidad: l.unidad, almacen: l.almacen, pendiente: pend,
           incluir: false, cantidad: String(pend), precio: "0", iva: "13",
@@ -64,14 +70,20 @@ export default function ProveeduriaMaterialesPage() {
 
   const [filtro, setFiltro] = useState<string>("all");
   const [pedFiltro, setPedFiltro] = useState("");
+  // Buscador nuevo: filtra por el usuario que creó el pedido (solicitante).
+  const [solicFiltro, setSolicFiltro] = useState("");
   const [previewId, setPreviewId] = useState<string | null>(null);
 
   const setRow = (id: string, patch: Partial<Row>) =>
     setRows((rs) => rs.map((r) => (r.pedidoLineaId === id ? { ...r, ...patch } : r)));
 
-  // Líneas del pedido elegido en el panel izquierdo (o todas). La DataTable maneja
-  // búsqueda, filtros por columna, columnas/vistas y exportar.
-  const dataTabla = rows.filter((r) => filtro === "all" || r.pedidoId === filtro);
+  // Líneas del pedido elegido en el panel izquierdo (o todas) + filtro por
+  // solicitante (usuario que creó el pedido). La DataTable maneja búsqueda,
+  // filtros por columna, columnas/vistas y exportar.
+  const qSolic = solicFiltro.trim().toLowerCase();
+  const coincideSolic = (s: string) => !qSolic || s.toLowerCase().includes(qSolic);
+  const dataTabla = rows.filter((r) => (filtro === "all" || r.pedidoId === filtro) && coincideSolic(r.solicitante));
+  const rowsSolic = rows.filter((r) => coincideSolic(r.solicitante)); // para el contador de "Todos los pedidos"
 
   const incluidas = rows.filter((r) => r.incluir && Number(r.cantidad) > 0);
   const seleccionPorPedido = (pid: string) => rows.filter((r) => r.pedidoId === pid && r.incluir).length;
@@ -167,16 +179,26 @@ export default function ProveeduriaMaterialesPage() {
         <div className="md-layout mt-2">
           {/* pedidos */}
           <div className="md-list" style={{ maxHeight: "calc(100vh - 210px)", overflowY: "auto", paddingRight: 4 }}>
-            <input className="md-filtro" value={pedFiltro} onChange={(e) => setPedFiltro(e.target.value)} aria-label="Filtrar pedido u obra" placeholder="Filtrar pedido u obra…" />
+            <div className="md-filtros">
+              <input className="md-filtro" value={pedFiltro} onChange={(e) => setPedFiltro(e.target.value)} aria-label="Filtrar pedido u obra" placeholder="Filtrar pedido u obra…" />
+              {/* Filtro nuevo por el usuario que creó el pedido (solicitante):
+                  dropdown con solo los que han solicitado. Afecta la lista de
+                  pedidos Y las líneas de la tabla. */}
+              <Select value={solicFiltro} onChange={(e) => setSolicFiltro(e.target.value)} placeholder="Solicitante: todos" className="md-select">
+                <option value="">Todos los solicitantes</option>
+                {solicitantes.map((s) => <option key={s} value={s}>{s}</option>)}
+              </Select>
+            </div>
             <button className={`md-item ${filtro === "all" ? "is-active" : ""}`} onClick={() => setFiltro("all")}>
               <div className="md-item__top">
                 <span className="ds-strong">Todos los pedidos</span>
-                <span className="md-pill">{rows.length}</span>
+                <span className="md-pill">{rowsSolic.length}</span>
               </div>
-              <span className="ds-body-sm ds-muted">Ver todas las líneas pendientes</span>
+              <span className="ds-body-sm ds-muted">{qSolic ? `Líneas de ${solicFiltro.trim()}` : "Ver todas las líneas pendientes"}</span>
             </button>
             {pedidosConSaldo
-              .filter((p) => { const q = pedFiltro.trim().toLowerCase(); if (!q) return true; const r = solicitudResumen(p); return [p.numero, destinoCodigo(p), r.principal, r.secundaria ?? "", p.notas ?? ""].some((t) => t.toLowerCase().includes(q)); })
+              .filter((p) => coincideSolic(p.solicitante))
+              .filter((p) => { const q = pedFiltro.trim().toLowerCase(); if (!q) return true; const r = solicitudResumen(p); return [p.numero, destinoCodigo(p), r.principal, r.secundaria ?? "", p.notas ?? "", p.solicitante].some((t) => t.toLowerCase().includes(q)); })
               .map((p) => {
               const n = p.lineas.filter((l) => pedidoLineaPendiente(l) > 0).length;
               const sel = seleccionPorPedido(p.id);
@@ -197,6 +219,10 @@ export default function ProveeduriaMaterialesPage() {
                       {tipoSolicitudBadge(p.tipoSolicitud).label} · <span className="ds-strong">{r.principal}</span>{r.secundaria ? ` · ${r.secundaria}` : ""}
                     </span>
                   ); })()}
+                  <span className="md-item__solic" title={`Solicitó ${p.solicitante}`}>
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M20 21a8 8 0 0 0-16 0" /><circle cx="12" cy="7" r="4" /></svg>
+                    {p.solicitante}
+                  </span>
                 </div>
               );
             })}
