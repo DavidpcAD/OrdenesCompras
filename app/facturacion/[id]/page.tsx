@@ -446,11 +446,18 @@ export default function RegistrarFacturaPage() {
           <div className="recv-head">
             <span className="ds-label ds-muted">{articuloVisible.length} artículo(s) a recibir</span>
           </div>
-          <div className="recv-head__actions">
-            <Button variant="green" size="sm" onClick={recibirTodoPend}>Recibir todo</Button>
-            <Button variant="outline" size="sm" onClick={limpiarCant}>Limpiar</Button>
-          </div>
+          {articuloVisible.length > 0 && (
+            <div className="recv-head__actions">
+              <Button variant="green" size="sm" onClick={recibirTodoPend}>Recibir todo</Button>
+              <Button variant="outline" size="sm" onClick={limpiarCant}>Limpiar</Button>
+            </div>
+          )}
           <div className="recv-list">
+            {articuloVisible.length === 0 && (
+              <div className="ds-body-sm ds-muted" style={{ padding: "6px 2px" }}>
+                Ya recibiste todos los artículos de esta orden.
+              </div>
+            )}
             {articuloVisible.map((l) => {
               const pend = ordenLineaPendiente(l);
               const val = Number(recibir[l.id] || 0);
