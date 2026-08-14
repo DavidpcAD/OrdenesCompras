@@ -1608,6 +1608,12 @@ button.ana-kpi:active { transform: translateY(1px); }
 .recv-prog__lbl { font-size: var(--ds-font-size-body-sm); color: var(--ds-color-gray-400); }
 .recv-prog__falta { color: var(--ds-color-red-200); font-weight: var(--ds-font-weight-semibold); }
 .recv-prog__done { color: var(--ds-color-green-300); font-weight: var(--ds-font-weight-semibold); }
+/* Movimiento reducido: la barra de progreso no "crece" y el menú kebab no aparece
+   con fade (respeta prefers-reduced-motion, igual que el resto del DS). */
+@media (prefers-reduced-motion: reduce) {
+  .recv-prog__seg { transition: none; }
+  .kebab-menu { animation: none; }
+}
 
 /* Kebab (⋮): menú de acciones por línea (nota de crédito, recibir todo). */
 .kebab {
