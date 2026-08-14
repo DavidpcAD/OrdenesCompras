@@ -511,7 +511,7 @@ export function DataTable<T>({
       <div className="row row--between wrap gap-3 mt-4 dt-pagination" style={{ alignItems: "center" }}>
         <span className="ds-body-sm ds-muted">Página {table.getState().pagination.pageIndex + 1} de {Math.max(1, table.getPageCount())}</span>
         <div className="row gap-2" style={{ alignItems: "center" }}>
-          <Select value={String(pagination.pageSize)} onChange={(e) => setPagination((p) => ({ ...p, pageSize: Number(e.target.value), pageIndex: 0 }))} style={{ width: "auto", minWidth: 120 }}>
+          <Select ariaLabel="Filas por página" value={String(pagination.pageSize)} onChange={(e) => setPagination((p) => ({ ...p, pageSize: Number(e.target.value), pageIndex: 0 }))} style={{ width: "auto", minWidth: 120 }}>
             {[25, 50, 100, 200].map((n) => <option key={n} value={n}>{n} / pág.</option>)}
           </Select>
           <button type="button" className="ds-navctrl" title="Anterior" aria-label="Página anterior"
