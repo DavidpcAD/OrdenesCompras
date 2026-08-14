@@ -12,7 +12,10 @@ type P = { size?: number } & React.SVGProps<SVGSVGElement>;
 function ds(name: string, dflt = 20) {
   const resolved = ALIASES[name] ?? name;
   const Cmp = ({ size = dflt, ...p }: P) => (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg" {...p}>
+    // Los íconos son decorativos (el significado lo da el texto o el aria-label del
+    // control): se ocultan a lectores de pantalla por defecto. Un caller puede
+    // sobreescribir aria-hidden vía props si necesitara un ícono con significado.
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg" {...p}>
       {ICON_PATHS[resolved] && <path d={ICON_PATHS[resolved]} fillRule={resolved === "checkbox-fill" ? "evenodd" : undefined} />}
     </svg>
   );
