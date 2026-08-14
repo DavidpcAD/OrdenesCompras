@@ -25,8 +25,10 @@ interface Row {
 }
 
 // Cargo de producto (Item Charge) a agregar a la orden: tipo (chargeNo del catálogo
-// BC), cantidad y precio. chargeNo "" = flete por defecto.
-interface Cargo { chargeNo: string; descripcion: string; cantidad: string; precio: string; }
+// BC), cantidad y precio. chargeNo "" = flete por defecto. `key` = id estable para
+// React (no usar el índice: al quitar un cargo se corrían los valores).
+interface Cargo { key: string; chargeNo: string; descripcion: string; cantidad: string; precio: string; }
+const cargoUid = () => Math.random().toString(36).slice(2, 9);
 
 export default function ArmarOrdenPage() {
   const { pedidos, proveedores, ordenes, almacenes, borrador, createOrden, setOrdenEstado, setBorrador } = useStore();
@@ -58,7 +60,7 @@ export default function ArmarOrdenPage() {
       .then((d) => { if (Array.isArray(d.itemCharges)) setItemCharges(d.itemCharges); })
       .catch(() => { /* sin BC: el selector cae a "Flete / transporte" */ });
   }, []);
-  const addCargo = () => setCargos((cs) => [...cs, { chargeNo: "", descripcion: "FLETE / TRANSPORTE", cantidad: "1", precio: "" }]);
+  const addCargo = () => setCargos((cs) => [...cs, { key: cargoUid(), chargeNo: "", descripcion: "FLETE / TRANSPORTE", cantidad: "1", precio: "" }]);
   const setCargo = (i: number, patch: Partial<Cargo>) => setCargos((cs) => cs.map((c, idx) => (idx === i ? { ...c, ...patch } : c)));
   const removeCargo = (i: number) => setCargos((cs) => cs.filter((_, idx) => idx !== i));
   const onTipoCargo = (i: number, chargeNo: string) => {
@@ -306,7 +308,7 @@ export default function ArmarOrdenPage() {
           </div>
           {/* Filas (no tabla): así el desplegable de Tipo no lo recorta el overflow. */}
           {cargos.map((c, i) => (
-            <div key={i} className="row gap-3 wrap" style={{ alignItems: "flex-end", padding: "12px 0", borderTop: "1.5px solid var(--ds-color-gray-100)" }}>
+            <div key={c.key} className="row gap-3 wrap" style={{ alignItems: "flex-end", padding: "12px 0", borderTop: "1.5px solid var(--ds-color-gray-100)" }}>
               <div style={{ flex: "1 1 240px", minWidth: 200 }}>
                 <span className="ds-label ds-muted" style={{ display: "block", marginBottom: 4 }}>Tipo de cargo</span>
                 <Select value={c.chargeNo} onChange={(e) => onTipoCargo(i, e.target.value)}>
@@ -386,7 +388,7 @@ export default function ArmarOrdenPage() {
                 {/* Cargos de producto también como líneas (igual que en BC). Se editan
                     arriba en "Cargos de producto"; acá se muestran junto a los artículos. */}
                 {cargos.map((c, i) => cargoImporte(c) > 0 ? (
-                  <tr key={`cargo-${i}`} style={{ background: "color-mix(in srgb, var(--ds-color-yellow) 7%, var(--ds-tint-base))" }}>
+                  <tr key={`cargo-${c.key}`} style={{ background: "color-mix(in srgb, var(--ds-color-yellow) 7%, var(--ds-tint-base))" }}>
                     <td><Badge tone="yellow">Cargo</Badge></td>
                     <td><div className="ds-truncate" title={c.descripcion} style={{ maxWidth: 200 }}>{c.chargeNo ? `${c.chargeNo} · ` : ""}{c.descripcion}</div></td>
                     <td className="ds-muted ds-body-sm">—</td>
