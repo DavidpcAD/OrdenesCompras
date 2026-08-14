@@ -72,7 +72,7 @@ const textOf = (n: React.ReactNode): string => {
   return "";
 };
 export function Select({
-  value, onChange, children, disabled, className = "", style, placeholder = "Seleccioná…", id,
+  value, onChange, children, disabled, className = "", style, placeholder = "Seleccioná…", id, ariaLabel,
 }: {
   value?: string | number;
   onChange?: (e: { target: { value: string } }) => void;
@@ -82,6 +82,9 @@ export function Select({
   style?: React.CSSProperties;
   placeholder?: string;
   id?: string;
+  // Nombre accesible cuando el Select NO va dentro de un <Field> (que ya asocia
+  // un <label>). Para Selects "sueltos" (p. ej. filtros) da contexto al lector.
+  ariaLabel?: string;
 }) {
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState("");
@@ -118,7 +121,7 @@ export function Select({
   return (
     <div className={`combo ds-select ${className}`} style={style}>
       <button ref={triggerRef} type="button" id={id} className="ds-form-field__input ds-select__trigger" disabled={disabled}
-        aria-haspopup="listbox" aria-expanded={open}
+        aria-label={ariaLabel} aria-haspopup="listbox" aria-expanded={open}
         onClick={() => { if (!disabled) setOpen((o) => !o); }}
         onKeyDown={(e) => { if (!disabled && !open && (e.key === "ArrowDown" || e.key === "Enter" || e.key === " ")) { e.preventDefault(); setOpen(true); } }}>
         <span className={sel ? "" : "ds-select__ph"}>{sel ? sel.label : placeholder}</span>

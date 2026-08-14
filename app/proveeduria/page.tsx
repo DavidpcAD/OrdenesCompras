@@ -184,7 +184,7 @@ export default function ProveeduriaMaterialesPage() {
               {/* Filtro nuevo por el usuario que creó el pedido (solicitante):
                   dropdown con solo los que han solicitado. Afecta la lista de
                   pedidos Y las líneas de la tabla. */}
-              <Select value={solicFiltro} onChange={(e) => setSolicFiltro(e.target.value)} placeholder="Solicitante: todos" className="md-select">
+              <Select value={solicFiltro} onChange={(e) => setSolicFiltro(e.target.value)} placeholder="Solicitante: todos" className="md-select" ariaLabel="Filtrar por solicitante">
                 <option value="">Todos los solicitantes</option>
                 {solicitantes.map((s) => <option key={s} value={s}>{s}</option>)}
               </Select>
