@@ -1,7 +1,7 @@
 "use client";
 
 import { useParams, useRouter } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Badge, Button, Card, Checkbox, EmptyState, Field, Input, Modal, Select, Skeleton, Textarea, useToast } from "@/components/ui";
 import { IconWarning } from "@/components/icons";
 import { DateField } from "@/components/date-field";
@@ -62,6 +62,13 @@ export default function RegistrarFacturaPage() {
     setMarcadas((m) => ({ ...m, [id]: { ...m[id], ...patch } }));
   // Menú kebab (⋮) abierto por línea (id de la línea, o null).
   const [menuOpen, setMenuOpen] = useState<string | null>(null);
+  // Cerrar el menú kebab con la tecla Escape (a11y).
+  useEffect(() => {
+    if (!menuOpen) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setMenuOpen(null); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [menuOpen]);
   // Popup de nota de crédito (borrador): se edita acá y se confirma con "Guardar".
   // No expande la línea; es un modal aparte (tipo + comentario).
   const [ncModal, setNcModal] = useState<null | { lineId: string; descripcion: string; motivo: MotivoNC; cantidad: string; precio: string; nota: string }>(null);
