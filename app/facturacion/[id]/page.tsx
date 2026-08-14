@@ -575,7 +575,7 @@ export default function RegistrarFacturaPage() {
                 <Input value={cargoAvisoDesc} onChange={(e) => setCargoAvisoDesc(e.target.value)} placeholder="Ej. Flete / transporte" />
               </Field>
               <Field label="Monto aprox. (opcional)">
-                <Input type="number" min={0} value={cargoAvisoMonto} onChange={(e) => setCargoAvisoMonto(e.target.value)} placeholder="0" />
+                <Input type="number" inputMode="decimal" min={0} value={cargoAvisoMonto} onChange={(e) => setCargoAvisoMonto(e.target.value)} placeholder="0" />
               </Field>
             </div>
           )}
@@ -626,13 +626,13 @@ export default function RegistrarFacturaPage() {
             </Field>
             {ncModal.motivo === "precio_distinto" && (
               <Field label="Precio con el que viene la factura (por unidad)">
-                <Input type="number" min={0} value={ncModal.precio} placeholder="0"
+                <Input type="number" inputMode="decimal" min={0} value={ncModal.precio} placeholder="0"
                   onChange={(e) => setNcModal((m) => m && { ...m, precio: e.target.value })} />
               </Field>
             )}
             {ncModal.motivo === "menos_cantidad" && (
               <Field label="Cantidad que realmente llegó">
-                <Input type="number" min={0} value={ncModal.cantidad} placeholder="0"
+                <Input type="number" inputMode="numeric" min={0} value={ncModal.cantidad} placeholder="0"
                   onChange={(e) => setNcModal((m) => m && { ...m, cantidad: e.target.value })} />
               </Field>
             )}
