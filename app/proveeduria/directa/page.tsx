@@ -15,7 +15,7 @@ interface Row { key: string; articuloId: string; descripcion: string; unidad: st
 type Variante = { code: string; descripcion: string };
 // Cargo de producto (Item Charge) a agregar a la orden: tipo (chargeNo del catálogo
 // BC), cantidad y precio. chargeNo "" = flete por defecto. Igual que en "nueva".
-interface Cargo { chargeNo: string; descripcion: string; cantidad: string; precio: string; }
+interface Cargo { key: string; chargeNo: string; descripcion: string; cantidad: string; precio: string; }
 const uid = () => Math.random().toString(36).slice(2, 9);
 
 export default function OrdenDirectaPage() {
@@ -63,7 +63,7 @@ export default function OrdenDirectaPage() {
   const setRow = (k: string, patch: Partial<Row>) => setRows((rs) => rs.map((r) => (r.key === k ? { ...r, ...patch } : r)));
   const removeRow = (k: string) => setRows((rs) => rs.filter((r) => r.key !== k));
   // Cargos de producto (mismo comportamiento que en "nueva").
-  const addCargo = () => setCargos((cs) => [...cs, { chargeNo: "", descripcion: "FLETE / TRANSPORTE", cantidad: "1", precio: "" }]);
+  const addCargo = () => setCargos((cs) => [...cs, { key: uid(), chargeNo: "", descripcion: "FLETE / TRANSPORTE", cantidad: "1", precio: "" }]);
   const setCargo = (i: number, patch: Partial<Cargo>) => setCargos((cs) => cs.map((c, idx) => (idx === i ? { ...c, ...patch } : c)));
   const removeCargo = (i: number) => setCargos((cs) => cs.filter((_, idx) => idx !== i));
   const onTipoCargo = (i: number, chargeNo: string) => { const ic = itemCharges.find((x) => x.no === chargeNo); setCargo(i, { chargeNo, descripcion: ic ? ic.descripcion : "FLETE / TRANSPORTE" }); };
@@ -233,7 +233,7 @@ export default function OrdenDirectaPage() {
             </div>
           </div>
           {cargos.map((c, i) => (
-            <div key={i} className="row gap-3 wrap" style={{ alignItems: "flex-end", padding: "12px 0", borderTop: "1.5px solid var(--ds-color-gray-100)" }}>
+            <div key={c.key} className="row gap-3 wrap" style={{ alignItems: "flex-end", padding: "12px 0", borderTop: "1.5px solid var(--ds-color-gray-100)" }}>
               <div style={{ flex: "1 1 240px", minWidth: 200 }}>
                 <span className="ds-label ds-muted" style={{ display: "block", marginBottom: 4 }}>Tipo de cargo</span>
                 <Select value={c.chargeNo} onChange={(e) => onTipoCargo(i, e.target.value)}>
