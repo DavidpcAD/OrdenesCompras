@@ -1096,6 +1096,12 @@ h1, h2, h3, h4, p { margin: 0; }
    pegados arriba juntos al hacer scroll de la lista, sin solaparse. */
 .md-filtros { position: sticky; top: 0; z-index: 2; display: flex; flex-direction: column; gap: var(--ds-space-2); margin-bottom: var(--ds-space-2); background: var(--ds-surface); }
 .md-filtros .md-filtro { position: static; margin-bottom: 0; }
+/* El dropdown de solicitante matchea el input compacto de arriba (mismo alto,
+   borde fino y tipografía), en vez del input grande por defecto del DS. */
+.md-select .ds-select__trigger { padding: 7px 10px; border: 1.5px solid var(--ds-color-gray-100); border-radius: var(--ds-radius-md); box-shadow: none; font-size: 13px; }
+.md-select .ds-select__trigger:focus,
+.md-select .ds-select__trigger[aria-expanded="true"] { border-color: var(--ds-text); }
+.md-select .ds-select__ph { color: var(--ds-color-gray-300); }
 /* Colapsa a 1 columna en tablet y móvil: con sidebar 250px + tabla, por debajo
    de ~900px la tabla queda muy angosta y su toolbar desborda. Apilado le da a la
    tabla el ancho completo. */
