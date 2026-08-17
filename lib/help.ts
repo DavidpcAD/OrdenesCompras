@@ -204,16 +204,16 @@ const RECIBIR: HelpEntry = {
     "Abajo ves el Subtotal, IVA y Total de la factura tal cual va a Business Central.",
   ],
   pasos: [
-    "Contá el material y ponelo en la columna “A recibir” por línea (o usá “Recibir todo lo pendiente”).",
-    "Si una línea llegó dañada, con menos cantidad o a otro precio, tocá el ⚠ y elegí el motivo: eso genera una nota de crédito para Contabilidad.",
-    "(Opcional) si la entrega trajo su propio flete, activá “Agregar cargo”, poné el monto y el método de reparto.",
+    "Contá el material y anotá la cantidad que entró en cada línea (en el celular, el campo de cada tarjeta; en la computadora, la columna “A recibir”). Si llegó todo, usá “Recibir todo”.",
+    "Si una línea llegó dañada, con menos cantidad o a otro precio, marcala para nota de crédito (en el celular por el menú ⋮ de la tarjeta; en la computadora por el ⚠ de la fila) y elegí el motivo: eso le queda a Contabilidad.",
+    "Si la factura trae un flete o cargo extra, marcá “Esta factura trae un cargo de producto adicional” y describilo: le avisamos a Contabilidad para que lo agregue. Vos recibís y registrás igual.",
     "Revisá el Subtotal / IVA / Total de abajo.",
     "Si la factura está bien → “Registrar factura” y escribí el N.º de factura del proveedor.",
     "Si el material está bien pero la factura tiene un problema → “Recibir sin factura (a revisión)”: Contabilidad la registra después.",
   ],
   tips: [
     "Podés recibir parcial: registrás lo que llegó y la orden queda abierta para el resto.",
-    "Usá “Vista previa” para revisar antes de registrar en BC.",
+    "Usá “Vista previa” para revisar antes de registrar en BC (en la computadora).",
   ],
 };
 const RECIBIDAS: HelpEntry = {

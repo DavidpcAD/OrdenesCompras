@@ -1666,3 +1666,10 @@ button.ana-kpi:active { transform: translateY(1px); }
   border-left-color: var(--ds-color-yellow);
   background: color-mix(in srgb, var(--ds-color-yellow) 8%, var(--ds-tint-base));
 }
+
+/* Aviso de "no se pudieron cargar los datos" (arriba del contenido de la página). */
+.carga-error { margin-bottom: var(--ds-space-4); align-items: center; }
+@media (max-width: 560px) {
+  .carga-error { flex-wrap: wrap; }
+  .carga-error > .ds-btn { width: 100%; }
+}

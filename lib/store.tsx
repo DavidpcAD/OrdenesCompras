@@ -59,6 +59,10 @@ interface StoreShape {
   setUsuario: (u: string | null) => void;
   cargando: boolean;
   hydrated: boolean; // ya se leyó el rol/usuario de localStorage (evita rebotar al login al recargar)
+  // Falló traer los datos del servidor (SQL caído, sesión vencida, red). Si no se
+  // avisa, la app se ve VACÍA y parece que no hay pedidos/órdenes.
+  errorCarga: string | null;
+  recargar: () => Promise<void>;
 
   proveedores: Proveedor[];
   articulos: Articulo[];
@@ -123,6 +127,13 @@ function freshData(): Persisted {
   };
 }
 
+// Mensaje corto y legible para el usuario a partir de un error de red/API.
+function mensajeError(e: unknown): string {
+  const raw = String((e as any)?.message ?? e ?? "").trim();
+  if (!raw || /failed to fetch|networkerror|load failed/i.test(raw)) return "No hay conexión con el servidor.";
+  return raw.length > 160 ? `${raw.slice(0, 157)}…` : raw;
+}
+
 export function StoreProvider({ children, useApi }: { children: React.ReactNode; useApi?: boolean }) {
   // Modo SQL vs mock. Preferimos el valor RUNTIME (env `USE_API`, pasado por el
   // layout del server); si no viene, caemos al flag de build (NEXT_PUBLIC_USE_API).
@@ -133,6 +144,7 @@ export function StoreProvider({ children, useApi }: { children: React.ReactNode;
   const [borrador, setBorrador] = useState<StoreShape["borrador"]>([]);
   const [hydrated, setHydrated] = useState(false);
   const [cargando, setCargando] = useState(USE_API);
+  const [errorCarga, setErrorCarga] = useState<string | null>(null);
   // Notas de crédito (aparte del bootstrap para no romper la carga si la tabla no existe).
   const [notasCredito, setNotasCredito] = useState<NotaCreditoLinea[]>([]);
 
@@ -150,8 +162,8 @@ export function StoreProvider({ children, useApi }: { children: React.ReactNode;
     if (u) setUsuario(u);
     if (USE_API) {
       api.bootstrap()
-        .then((b) => setData((d) => ({ ...d, pedidos: b.pedidos, ordenes: b.ordenes, recepciones: b.recepciones, movimientos: b.movimientos })))
-        .catch((e) => console.error("bootstrap", e))
+        .then((b) => { setData((d) => ({ ...d, pedidos: b.pedidos, ordenes: b.ordenes, recepciones: b.recepciones, movimientos: b.movimientos })); setErrorCarga(null); })
+        .catch((e) => { console.error("bootstrap", e); setErrorCarga(mensajeError(e)); })
         .finally(() => { setCargando(false); setHydrated(true); });
     } else {
       try {
@@ -193,6 +205,16 @@ export function StoreProvider({ children, useApi }: { children: React.ReactNode;
   async function refreshFromApi() {
     const b = await api.bootstrap();
     setData((d) => ({ ...d, pedidos: b.pedidos, ordenes: b.ordenes, recepciones: b.recepciones, movimientos: b.movimientos }));
+    setErrorCarga(null);   // volvió a responder: se limpia el aviso
+  }
+
+  // Reintento manual desde el aviso de error (no recarga la página).
+  async function recargar() {
+    if (!USE_API) return;
+    setCargando(true);
+    try { await refreshFromApi(); }
+    catch (e) { setErrorCarga(mensajeError(e)); }
+    finally { setCargando(false); }
   }
 
   const api2 = useMemo<StoreShape>(() => {
@@ -554,7 +576,7 @@ export function StoreProvider({ children, useApi }: { children: React.ReactNode;
     const reset: StoreShape["reset"] = () => setData(freshData());
 
     return {
-      role, setRole, usuario, setUsuario, cargando, hydrated,
+      role, setRole, usuario, setUsuario, cargando, hydrated, errorCarga, recargar,
       proveedores: seed.proveedores, articulos: seed.articulos, obras: seed.obras,
       maquinas: seed.maquinas, almacenes: seed.almacenes,
       pedidos: data.pedidos, ordenes: data.ordenes, recepciones: data.recepciones, movimientos: data.movimientos,
@@ -567,7 +589,7 @@ export function StoreProvider({ children, useApi }: { children: React.ReactNode;
     // OJO: TODO estado que el store exponga debe estar en estas deps o el value
     // queda "congelado" con su valor viejo — así las notas de crédito cargadas
     // por cargarNotasCredito() nunca llegaban a Contabilidad (lista vacía).
-  }, [role, usuario, data, borrador, cargando, notasCredito, hydrated]);
+  }, [role, usuario, data, borrador, cargando, notasCredito, hydrated, errorCarga]);
 
   return <StoreCtx.Provider value={api2}>{children}</StoreCtx.Provider>;
 }

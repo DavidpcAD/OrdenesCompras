@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { useStore } from "@/lib/store";
-import { ConfirmDialog, Modal } from "@/components/ui";
+import { Button, ConfirmDialog, Modal } from "@/components/ui";
 import type { Role, Notificacion } from "@/lib/types";
 import { formatDate } from "@/lib/helpers";
 import { helpForPath } from "@/lib/help";
@@ -76,7 +76,7 @@ const ROLE_META: Record<Role, { label: string; persona: string; home: string; na
 };
 
 export function AppShell({ role, children }: { role: Role; children: React.ReactNode }) {
-  const { role: current, setRole, usuario, setUsuario, notificaciones, marcarNotifsLeidas, marcarNotifLeida, hydrated } = useStore();
+  const { role: current, setRole, usuario, setUsuario, notificaciones, marcarNotifsLeidas, marcarNotifLeida, hydrated, errorCarga, cargando, recargar } = useStore();
   const router = useRouter();
   const pathname = usePathname();
   const [notifOpen, setNotifOpen] = useState(false);
@@ -286,7 +286,24 @@ export function AppShell({ role, children }: { role: Role; children: React.React
       )}
 
       <div className="app-body">
-        <div id="contenido-principal" tabIndex={-1} className={`app-content${showActionFab ? " has-fab" : ""}`}>{children}</div>
+        <div id="contenido-principal" tabIndex={-1} className={`app-content${showActionFab ? " has-fab" : ""}`}>
+          {/* Si no se pudieron traer los datos, avisarlo: si no, la app se ve vacía
+              y parece que no hay pedidos/órdenes (era solo un console.error). */}
+          {errorCarga && (
+            <div className="ds-callout ds-callout--red carga-error" role="alert">
+              <span className="ds-callout__icon"><IconWarning size={18} /></span>
+              <div style={{ flex: 1 }}>
+                <div className="ds-callout__title">No se pudieron cargar los datos</div>
+                <div className="ds-callout__body">Lo que ves puede estar incompleto o desactualizado.</div>
+                <div className="ds-label ds-muted" style={{ marginTop: 2 }}>{errorCarga}</div>
+              </div>
+              <Button variant="outline" size="sm" disabled={cargando} onClick={() => { void recargar(); }}>
+                {cargando ? "Reintentando…" : "Reintentar"}
+              </Button>
+            </div>
+          )}
+          {children}
+        </div>
       </div>
 
       {/* FAB menú (arriba-izquierda) — solo cuando el drawer está cerrado. */}
