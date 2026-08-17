@@ -181,13 +181,30 @@ rojo `#c96c6c`, inputs tipo píldora, sombras suaves. Los tokens viven en `app/g
 como variables `--ds-*`, con tokens semánticos (`--ds-bg`, `--ds-surface`, `--ds-text`,
 `--ds-tint-base`) para tema claro/oscuro vía `data-theme`. **No hardcodear colores.**
 
+## Decisiones pendientes (no las tomé yo)
+
+- **Autorización por rol en la API.** `middleware.ts` autentica pero no autoriza: cualquiera
+  con sesión válida puede llamar cualquier `/api/*` (p. ej. Bodega podría crear una orden por
+  `curl`). Mapear rol→endpoint es fácil de equivocar porque hay rutas compartidas (Bodega y
+  Contabilidad usan las mismas para registrar facturas), así que conviene definir la matriz
+  antes de bloquear. Lo que YA está cubierto: la bitácora firma con la sesión, así que nadie
+  puede escribir a nombre de otro.
+- **`/api/vistas` y `/api/plantillas`** reciben el usuario por query/body. En vistas el
+  borrado exige que coincida el dueño (`WHERE id=@id AND usuario=@usuario`), pero conociendo
+  el nombre de alguien se pueden listar/borrar sus vistas; `deletePlantilla` no valida dueño.
+  Son preferencias, no datos del negocio — pendiente decidir si vale atarlo a la sesión (ojo:
+  si el nombre guardado no coincide exactamente, alguien podría "perder" sus vistas).
+- **`bcHealth()`** (`/api/bc/health`, con sesión) devuelve un bloque de diagnóstico con el
+  client id, el tenant, el largo del secreto y 5 probes contra BC. Sirve para depurar permisos,
+  pero cuando eso esté resuelto conviene ponerlo detrás de un flag.
+- **Notificaciones**: la campana solo se llena en modo prueba. Falta decidir si se generan
+  server-side o si se saca de la topbar en producción.
+
 ## Pendientes conocidos
 
 - **BC → Producción**: el tipo de cargo ya se guarda en SQL, pero para que llegue a BC en el
   flujo normal la app de Producción tiene que **leer** `chargeNo`/`chargeMethod` al crear el
   pedido.
-- **Notificaciones**: la campana solo se llena en modo prueba; en producción no hay generación
-  server-side (decisión de producto pendiente).
 - **Inventarios / Dashboard**: dependen de endpoints de BC (existencias por ubicación y Job
   Tasks) y del mapeo obra→almacén.
 - **`/api/plantillas`** quedó sin consumidor en esta app (la pantalla que lo usaba era de
