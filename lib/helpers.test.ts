@@ -10,9 +10,10 @@ import {
   ordenRecibidoPct, ordenEstaCompleta, ordenEsParcial, ordenAvance, ordenLineaImporte,
   ordenSubtotal, recibidoPorLineaPedido, recibidoDeLineaPedido, pedidoLineaPendiente,
   distribuirCargo, monedaApp, formatDate, todayISO, nextNumero, almacenesFisicos,
-  ordenPedidos, ordenEsDirecta,
+  ordenPedidos, ordenEsDirecta, money, pedidoOrdenadoPct, pedidoCompraBadge, pedidoTieneSaldo,
+  destinoLabel, destinoCodigo, ordenLineaPendiente, ordenLineaCompleta, ultimoPrecioProveedor,
 } from "./helpers.ts";
-import type { Orden, OrdenLinea } from "./types.ts";
+import type { Orden, OrdenLinea, Pedido, PedidoLinea } from "./types.ts";
 
 const linea = (p: Partial<OrdenLinea> & { id: string }): OrdenLinea => ({
   id: p.id, tipo: p.tipo ?? "articulo", descripcion: p.descripcion ?? "X",
@@ -20,7 +21,7 @@ const linea = (p: Partial<OrdenLinea> & { id: string }): OrdenLinea => ({
   precioUnitario: p.precioUnitario ?? 0, ivaPct: p.ivaPct ?? 13,
   cantidadRecibida: p.cantidadRecibida ?? 0, cantidadFacturada: p.cantidadFacturada ?? 0,
   descuentoPct: p.descuentoPct, pedidoLineaId: p.pedidoLineaId, chargeNo: p.chargeNo,
-  pedidoNumero: p.pedidoNumero,
+  pedidoNumero: p.pedidoNumero, articuloId: p.articuloId,
 });
 
 const orden = (lineas: OrdenLinea[]): Orden => ({
@@ -155,4 +156,65 @@ test("una orden con solo líneas manuales es directa", () => {
   const o = orden([linea({ id: "a", pedidoNumero: "Manual" }), linea({ id: "b" })]);
   assert.deepEqual(ordenPedidos(o), []);
   assert.equal(ordenEsDirecta(o), true);
+});
+
+// --- helpers de pedido / formato -------------------------------------------
+const pLinea = (p: Partial<PedidoLinea> & { id: string }): PedidoLinea => ({
+  id: p.id, articuloId: p.articuloId ?? "a1", descripcion: p.descripcion ?? "X",
+  cantidad: p.cantidad ?? 0, unidad: p.unidad ?? "UND", almacen: p.almacen ?? "",
+  cantidadOrdenada: p.cantidadOrdenada ?? 0,
+});
+const pedido = (lineas: PedidoLinea[], extra: Partial<Pedido> = {}): Pedido => ({
+  id: "p1", numero: "PED-000001", tipoSolicitud: "material", solicitante: "Laura",
+  fecha: "2026-08-17", estado: "aprobado", prioridad: "normal", lineas, ...extra,
+});
+
+test("el % comprado de una solicitud no pasa de 100 aunque se ordene de más", () => {
+  const p = pedido([pLinea({ id: "l1", cantidad: 10, cantidadOrdenada: 15 })]);
+  assert.equal(pedidoOrdenadoPct(p), 100);
+  assert.equal(pedidoCompraBadge(p).label, "100% comprado");
+  assert.equal(pedidoTieneSaldo(p), false);
+});
+
+test("solicitud a medio comprar: badge parcial y saldo pendiente", () => {
+  const p = pedido([
+    pLinea({ id: "l1", cantidad: 10, cantidadOrdenada: 4 }),
+    pLinea({ id: "l2", cantidad: 10, cantidadOrdenada: 0 }),
+  ]);
+  assert.equal(pedidoOrdenadoPct(p), 20);
+  assert.equal(pedidoCompraBadge(p).label, "Parcialmente comprado");
+  assert.equal(pedidoTieneSaldo(p), true);
+});
+
+test("el destino es la obra, o la máquina si es un repuesto", () => {
+  const obra = pedido([], { obraCodigo: "OBRA-001", obraNombre: "Torre Escazú" });
+  assert.equal(destinoCodigo(obra), "OBRA-001");
+  assert.equal(destinoLabel(obra), "Torre Escazú");
+  const rep = pedido([], { tipoSolicitud: "repuesto", maquinaNo: "MAQ-0012", maquinaNombre: "Excavadora" });
+  assert.equal(destinoCodigo(rep), "MAQ-0012");
+  assert.equal(destinoLabel(rep), "Excavadora");
+});
+
+test("pendiente de una línea de orden y línea completa", () => {
+  assert.equal(ordenLineaPendiente(linea({ id: "a", cantidad: 10, cantidadRecibida: 4 })), 6);
+  assert.equal(ordenLineaPendiente(linea({ id: "a", cantidad: 10, cantidadRecibida: 12 })), 0);
+  assert.equal(ordenLineaCompleta(linea({ id: "a", cantidad: 10, cantidadRecibida: 10 })), true);
+  assert.equal(ordenLineaCompleta(linea({ id: "a", cantidad: 10, cantidadRecibida: 9.999999999 })), true); // tolerancia
+});
+
+test("el último precio al proveedor toma la orden MÁS RECIENTE", () => {
+  const vieja: Orden = { ...orden([linea({ id: "a", articuloId: "M1", precioUnitario: 100 })]), id: "o1", fecha: "2026-01-01" };
+  const nueva: Orden = { ...orden([linea({ id: "b", articuloId: "M1", precioUnitario: 130 })]), id: "o2", fecha: "2026-08-01" };
+  assert.equal(ultimoPrecioProveedor([vieja, nueva], "M1", "p1"), 130);
+  assert.equal(ultimoPrecioProveedor([vieja, nueva], "M1", "otro"), null);   // otro proveedor
+  assert.equal(ultimoPrecioProveedor([vieja, nueva], "M9", "p1"), null);     // artículo sin historial
+});
+
+test("money usa colones por defecto y respeta la moneda de la orden", () => {
+  const crc = money(1000);
+  assert.ok(crc.includes("\u20a1"), `esperaba el símbolo de colón en ${crc}`);
+  assert.ok(/1.?000/.test(crc), `esperaba el monto en ${crc}`);
+  assert.ok(money(1000, "USD").includes("USD"));       // es-CR escribe "USD 1 000,00"
+  assert.equal(money(NaN), money(0));                  // no imprime "NaN"
+  assert.equal(money(undefined as unknown as number), money(0));
 });
