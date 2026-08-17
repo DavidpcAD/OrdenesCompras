@@ -3,7 +3,7 @@
 import React, { createContext, useContext, useEffect, useMemo, useState } from "react";
 import type {
   Almacen, Articulo, Maquina, Movimiento, Notificacion, Obra, Orden, OrdenLinea, Pedido, PedidoLinea,
-  PlanCategoria, PlanFila, Proveedor, Recepcion, RecepcionLinea, Role, TipoSolicitud,
+  Proveedor, Recepcion, RecepcionLinea, Role, TipoSolicitud,
   NotaCreditoLinea, MotivoNC,
 } from "./types";
 import * as seed from "./seed";
@@ -72,7 +72,6 @@ interface StoreShape {
 
   addPedido: (input: NewPedidoInput) => Promise<Pedido>;
   editPedido: (id: string, input: NewPedidoInput) => Promise<void>;
-  updatePedido: (p: Pedido) => void;
   setPedidoEstado: (id: string, estado: Pedido["estado"]) => Promise<void>;
   deletePedido: (id: string) => Promise<void>;
 
@@ -97,20 +96,6 @@ interface StoreShape {
   marcarNotifsLeidas: () => void;
   marcarNotifLeida: (id: string) => void;
 
-  // Planificación (Ingeniería)
-  planCategorias: PlanCategoria[];
-  planFilas: PlanFila[];
-  addPlanCategoria: (nombre: string) => void;
-  removePlanCategoria: (id: string) => void;
-  addPlanFila: (fila: Omit<PlanFila, "id" | "valores">) => void;
-  removePlanFila: (id: string) => void;
-  setPlanCelda: (filaId: string, categoriaId: string, valor: string) => void;
-  cargarPlanificacion: (categorias: PlanCategoria[], filas: PlanFila[]) => void;
-
-  // Contexto transitorio: armar un pedido desde una unidad de Planificación
-  planContexto: { modelo: string; lote: string } | null;
-  setPlanContexto: (c: { modelo: string; lote: string } | null) => void;
-
   borrador: { pedidoLineaId: string; cantidad: number; precio: number; iva: number }[];
   setBorrador: (items: StoreShape["borrador"]) => void;
 
@@ -126,22 +111,11 @@ interface Persisted {
   recepciones: Recepcion[];
   movimientos: Movimiento[];
   notificaciones: Notificacion[];
-  planCategorias: PlanCategoria[];
-  planFilas: PlanFila[];
 }
-
-// Partidas de presupuesto iniciales (de la hoja "Programación" del Excel).
-const PLAN_CATEGORIAS_SEED: PlanCategoria[] = [
-  "MONOCOMANDO DUCHAS / BARANI", "LIVIANO", "CEMENTICIO", "REPELLOS", "granito",
-  "muebles", "color muebles", "color puertas", "azulejo cocina", "ceramica",
-  "pilas", "losa sanitaria", "zacate", "TAC",
-].map((n, i) => ({ id: `c${i + 1}`, nombre: n }));
 
 function freshData(): Persisted {
   return {
     notificaciones: [],
-    planCategorias: structuredClone(PLAN_CATEGORIAS_SEED),
-    planFilas: [],
     pedidos: structuredClone(seed.pedidos),
     ordenes: structuredClone(seed.ordenes),
     recepciones: structuredClone(seed.recepciones),
@@ -157,7 +131,6 @@ export function StoreProvider({ children, useApi }: { children: React.ReactNode;
   const [usuario, setUsuario] = useState<string | null>(null);
   const [data, setData] = useState<Persisted>(() => freshData());
   const [borrador, setBorrador] = useState<StoreShape["borrador"]>([]);
-  const [planContexto, setPlanContexto] = useState<StoreShape["planContexto"]>(null);
   const [hydrated, setHydrated] = useState(false);
   const [cargando, setCargando] = useState(USE_API);
   // Notas de crédito (aparte del bootstrap para no romper la carga si la tabla no existe).
@@ -290,9 +263,6 @@ export function StoreProvider({ children, useApi }: { children: React.ReactNode;
         };
       });
     };
-
-    const updatePedido: StoreShape["updatePedido"] = (p) =>
-      setData((d) => ({ ...d, pedidos: d.pedidos.map((x) => (x.id === p.id ? p : x)) }));
 
     // ---------------- SET PEDIDO ESTADO ----------------
     const setPedidoEstado: StoreShape["setPedidoEstado"] = async (id, estado) => {
@@ -581,20 +551,6 @@ export function StoreProvider({ children, useApi }: { children: React.ReactNode;
     const marcarNotifLeida: StoreShape["marcarNotifLeida"] = (id) =>
       setData((d) => ({ ...d, notificaciones: d.notificaciones.map((n) => (n.id === id ? { ...n, leida: true } : n)) }));
 
-    // ---------------- PLANIFICACIÓN ----------------
-    const addPlanCategoria: StoreShape["addPlanCategoria"] = (nombre) =>
-      setData((d) => (nombre.trim() ? { ...d, planCategorias: [...d.planCategorias, { id: uid(), nombre: nombre.trim() }] } : d));
-    const removePlanCategoria: StoreShape["removePlanCategoria"] = (cid) =>
-      setData((d) => ({ ...d, planCategorias: d.planCategorias.filter((c) => c.id !== cid), planFilas: d.planFilas.map((f) => { const v = { ...f.valores }; delete v[cid]; return { ...f, valores: v }; }) }));
-    const addPlanFila: StoreShape["addPlanFila"] = (fila) =>
-      setData((d) => ({ ...d, planFilas: [...d.planFilas, { id: uid(), modelo: fila.modelo, lote: fila.lote, responsable: fila.responsable, valores: {} }] }));
-    const removePlanFila: StoreShape["removePlanFila"] = (fid) =>
-      setData((d) => ({ ...d, planFilas: d.planFilas.filter((f) => f.id !== fid) }));
-    const setPlanCelda: StoreShape["setPlanCelda"] = (fid, cid, valor) =>
-      setData((d) => ({ ...d, planFilas: d.planFilas.map((f) => (f.id === fid ? { ...f, valores: { ...f.valores, [cid]: valor } } : f)) }));
-    const cargarPlanificacion: StoreShape["cargarPlanificacion"] = (categorias, filas) =>
-      setData((d) => ({ ...d, planCategorias: categorias, planFilas: filas }));
-
     const reset: StoreShape["reset"] = () => setData(freshData());
 
     return {
@@ -602,19 +558,16 @@ export function StoreProvider({ children, useApi }: { children: React.ReactNode;
       proveedores: seed.proveedores, articulos: seed.articulos, obras: seed.obras,
       maquinas: seed.maquinas, almacenes: seed.almacenes,
       pedidos: data.pedidos, ordenes: data.ordenes, recepciones: data.recepciones, movimientos: data.movimientos,
-      addPedido, editPedido, updatePedido, setPedidoEstado, deletePedido,
+      addPedido, editPedido, setPedidoEstado, deletePedido,
       createOrden, updateOrden, setOrdenEstado, registrarRecepcion, facturarRecepcion, devolverPedido, devolverOrden, reset,
       notasCredito, marcarNotasCredito, cargarNotasCredito,
       notificaciones: data.notificaciones, marcarNotifsLeidas, marcarNotifLeida,
-      planCategorias: data.planCategorias, planFilas: data.planFilas,
-      addPlanCategoria, removePlanCategoria, addPlanFila, removePlanFila, setPlanCelda, cargarPlanificacion,
-      planContexto, setPlanContexto,
       borrador, setBorrador,
     };
-    // OJO: notasCredito y hydrated deben ir en las deps o el value del store queda
-    // "congelado" con su valor viejo — así las notas de crédito cargadas por
-    // cargarNotasCredito() nunca llegaban a Contabilidad (se veía la lista vacía).
-  }, [role, usuario, data, borrador, planContexto, cargando, notasCredito, hydrated]);
+    // OJO: TODO estado que el store exponga debe estar en estas deps o el value
+    // queda "congelado" con su valor viejo — así las notas de crédito cargadas
+    // por cargarNotasCredito() nunca llegaban a Contabilidad (lista vacía).
+  }, [role, usuario, data, borrador, cargando, notasCredito, hydrated]);
 
   return <StoreCtx.Provider value={api2}>{children}</StoreCtx.Provider>;
 }

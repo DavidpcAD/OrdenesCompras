@@ -78,18 +78,6 @@ export interface Notificacion {
   href?: string;       // a dónde llevar al hacer click
 }
 
-// ============================ PLANIFICACIÓN (Ingeniería) =====================
-// Grilla tipo "Programación": filas = unidades, columnas = partidas (categorías
-// que el ingeniero crea), celdas = valor libre (fecha / estado / color / texto).
-export interface PlanCategoria { id: string; nombre: string; }
-export interface PlanFila {
-  id: string;
-  modelo: string;
-  lote: string;
-  responsable: string;
-  valores: Record<string, string>; // valores[categoriaId] = valor de la celda
-}
-
 export interface PedidoLinea {
   id: string;
   articuloId: string;
