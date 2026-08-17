@@ -16,7 +16,7 @@ type Dev = { id: string; tipo: "Solicitud" | "Orden"; numero: string; contra: st
 //  • Órdenes que Aprobación rechazó a Proveeduría (orden.estado = "rechazado")
 // Cada rol ve las que le competen y entra a corregirlas.
 export function DevolucionesView({ role }: { role: Role }) {
-  const { pedidos, ordenes } = useStore();
+  const { pedidos, ordenes, proveedores } = useStore();
   const router = useRouter();
 
   const items = useMemo<Dev[]>(() => {
@@ -34,15 +34,18 @@ export function DevolucionesView({ role }: { role: Role }) {
     }
     if (verOrdenes) {
       for (const o of ordenes.filter((o) => o.estado === "rechazado")) {
+        // El proveedor puede venir en la orden (SQL) o solo como id: se resuelve
+        // contra el catálogo igual que en el detalle, para no mostrar "—".
+        const prov = proveedores.find((p) => p.id === o.proveedorId);
         out.push({
-          id: o.id, tipo: "Orden", numero: o.numero, contra: o.proveedorNombre ?? o.proveedorNo ?? "—",
+          id: o.id, tipo: "Orden", numero: o.numero, contra: o.proveedorNombre ?? prov?.nombre ?? o.proveedorNo ?? prov?.code ?? "—",
           motivo: o.motivoRechazo ?? "—", fecha: o.fecha,
           href: role === "proveeduria" ? `/proveeduria/ordenes/${o.id}` : "",
         });
       }
     }
     return out;
-  }, [pedidos, ordenes, role]);
+  }, [pedidos, ordenes, proveedores, role]);
 
   const columns = useMemo<ColumnDef<Dev, any>[]>(() => [
     { id: "tipo", header: "Tipo", accessorFn: (d) => d.tipo, meta: { label: "Tipo" }, cell: (c) => <Badge tone={c.getValue() === "Orden" ? "red" : "yellow"}>{c.getValue()}</Badge> },

@@ -3,7 +3,7 @@
 import { Fragment, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Badge, Button, Card, useToast } from "@/components/ui";
-import { IconChevronDown } from "@/components/icons";
+import { IconChevronDown, IconWarning } from "@/components/icons";
 import { OrderLinesTable } from "@/components/order-lines";
 import { Timeline } from "@/components/timeline";
 import { useStore } from "@/lib/store";
@@ -128,6 +128,22 @@ export function OrdenDetalle({
           {acciones}
         </div>
       </div>
+
+      {/* Orden rechazada por Aprobación: el motivo se muestra arriba de las líneas
+          para que Proveeduría sepa qué corregir antes de reenviarla. */}
+      {orden.estado === "rechazado" && (
+        <div className="ds-callout ds-callout--red mb-4" role="status">
+          <span className="ds-callout__icon"><IconWarning size={18} /></span>
+          <div>
+            <div className="ds-callout__title">Aprobación rechazó esta orden</div>
+            <div className="ds-callout__body">
+              {orden.motivoRechazo
+                ? <>Motivo: <span className="ds-strong">{orden.motivoRechazo}</span></>
+                : "No se registró un motivo. Revisá el historial al pie o consultá con Aprobación."}
+            </div>
+          </div>
+        </div>
+      )}
 
       <Card style={{ padding: 0, overflow: "hidden" }}>
         <OrderLinesTable orden={orden} solicitudHref={solicitudHref} />

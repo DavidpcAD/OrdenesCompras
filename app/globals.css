@@ -698,6 +698,7 @@ h1, h2, h3, h4, p { margin: 0; }
 .mt-2 { margin-top: var(--ds-space-2); }
 .mt-4 { margin-top: var(--ds-space-4); }
 .mt-6 { margin-top: var(--ds-space-6); }
+.mb-4 { margin-bottom: var(--ds-space-4); }
 .full { width: 100%; }
 
 /* summary tiles */
@@ -1653,4 +1654,27 @@ button.ana-kpi:active { transform: translateY(1px); }
 @media (max-width: 760px) {
   .recv-actions { width: 100%; }
   .recv-actions > .ds-btn { width: 100%; }
+}
+
+/* Callout: aviso contextual dentro de una página (p. ej. el motivo por el que
+   Aprobación rechazó una orden). Paleta DS: rojo = atención, amarillo = ojo. */
+.ds-callout {
+  display: flex; align-items: flex-start; gap: var(--ds-space-3);
+  padding: var(--ds-space-4); border-radius: var(--ds-radius-lg);
+  border: 1.5px solid var(--ds-color-gray-200); border-left-width: 4px;
+  background: var(--ds-surface);
+}
+.ds-callout__icon { flex-shrink: 0; display: inline-grid; place-items: center; color: var(--ds-color-gray-400); }
+.ds-callout__title { font-size: var(--ds-font-size-label); font-weight: var(--ds-font-weight-semibold); color: var(--ds-text); }
+.ds-callout__body { font-size: var(--ds-font-size-body-sm); color: var(--ds-text); margin-top: 2px; }
+.ds-callout--red {
+  border-color: color-mix(in srgb, var(--ds-color-red-100) 22%, var(--ds-tint-base));
+  border-left-color: var(--ds-color-red-200);
+  background: color-mix(in srgb, var(--ds-color-red-100) 6%, var(--ds-tint-base));
+}
+.ds-callout--red .ds-callout__icon, .ds-callout--red .ds-callout__title { color: var(--ds-color-red-200); }
+.ds-callout--yellow {
+  border-color: color-mix(in srgb, var(--ds-color-yellow) 30%, var(--ds-tint-base));
+  border-left-color: var(--ds-color-yellow);
+  background: color-mix(in srgb, var(--ds-color-yellow) 8%, var(--ds-tint-base));
 }
