@@ -139,6 +139,20 @@ export function recibidoDeLineaPedido(ordenes: Orden[], pedidoLineaId: string): 
   return total;
 }
 
+// Índice pedidoLineaId → cantidad recibida, armado en UN pase sobre las órdenes.
+// Para listas (una fila por solicitud, con varias líneas cada una) usar esto en un
+// useMemo: llamar recibidoDeLineaPedido por línea recorre TODAS las órdenes cada vez.
+export function recibidoPorLineaPedido(ordenes: Orden[]): Map<string, number> {
+  const m = new Map<string, number>();
+  for (const o of ordenes) {
+    for (const l of o.lineas) {
+      if (!l.pedidoLineaId) continue;
+      m.set(l.pedidoLineaId, (m.get(l.pedidoLineaId) ?? 0) + l.cantidadRecibida);
+    }
+  }
+  return m;
+}
+
 // ---- líneas de orden ----
 export function ordenLineaPendiente(l: OrdenLinea): number {
   return Math.max(0, l.cantidad - l.cantidadRecibida);

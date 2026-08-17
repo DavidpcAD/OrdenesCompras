@@ -8,7 +8,7 @@ import { DataTable } from "@/components/data-table";
 import { VistaToggle } from "@/components/vista-toggle";
 import { IconReceipt, IconList } from "@/components/icons";
 import { useStore } from "@/lib/store";
-import { formatDate, pedidoCompraBadge, pedidoOrdenadoPct, recibidoDeLineaPedido, destinoCodigo, destinoLabel, tipoSolicitudBadge } from "@/lib/helpers";
+import { formatDate, pedidoCompraBadge, pedidoOrdenadoPct, recibidoPorLineaPedido, destinoCodigo, destinoLabel, tipoSolicitudBadge } from "@/lib/helpers";
 import type { Pedido } from "@/lib/types";
 
 type Filtro = "todas" | "pendiente" | "parcial" | "comprado";
@@ -24,10 +24,13 @@ export default function ProveeduriaSolicitudesPage() {
     const pct = pedidoOrdenadoPct(p);
     return pct >= 100 ? "comprado" : pct > 0 ? "parcial" : "pendiente";
   };
+  // Índice recibido-por-línea: un pase sobre las órdenes en vez de recorrerlas
+  // enteras por cada línea de cada fila (la tabla lo recalculaba en cada render).
+  const recibidoPorLinea = useMemo(() => recibidoPorLineaPedido(ordenes), [ordenes]);
+  const recibidoDe = (p: Pedido) => p.lineas.reduce((s, l) => s + (recibidoPorLinea.get(l.id) ?? 0), 0);
   const entregadoPct = (p: Pedido) => {
     const total = p.lineas.reduce((s, l) => s + l.cantidad, 0);
-    const rec = p.lineas.reduce((s, l) => s + recibidoDeLineaPedido(ordenes, l.id), 0);
-    return total > 0 ? Math.round(Math.min(100, (rec / total) * 100)) : 0;
+    return total > 0 ? Math.round(Math.min(100, (recibidoDe(p) / total) * 100)) : 0;
   };
   const cuenta = (f: Filtro) => f === "todas" ? enviadas.length : enviadas.filter((p) => bucket(p) === f).length;
   const base = useMemo(() => enviadas.filter((p) => filtro === "todas" ? true : bucket(p) === filtro), [enviadas, filtro]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -45,8 +48,8 @@ export default function ProveeduriaSolicitudesPage() {
     { id: "lineas", header: "Líneas", accessorFn: (p) => p.lineas.length, meta: { label: "Líneas", num: true }, enableColumnFilter: false, cell: (c) => c.getValue() },
     { id: "prioridad", header: "Prioridad", accessorFn: (p) => p.prioridad, meta: { label: "Prioridad" }, cell: (c) => { const p = c.row.original; return p.prioridad === "urgente" ? <Badge tone="red">Urgente</Badge> : p.prioridad === "alta" ? <Badge tone="yellow">Alta</Badge> : <Badge tone="gray">Normal</Badge>; } },
     { id: "estado", header: "Compra", accessorFn: (p) => pedidoCompraBadge(p).label, meta: { label: "Compra" }, cell: (c) => { const b = pedidoCompraBadge(c.row.original); return <Badge tone={b.tone}>{b.label}</Badge>; } },
-    { id: "entregado", header: "Entregado", accessorFn: (p) => entregadoPct(p), meta: { label: "Entregado" }, enableColumnFilter: false, cell: (c) => { const p = c.row.original; const total = p.lineas.reduce((s, l) => s + l.cantidad, 0); const rec = p.lineas.reduce((s, l) => s + recibidoDeLineaPedido(ordenes, l.id), 0); return <div className="row gap-3" style={{ alignItems: "center" }}><QtyRing recibida={rec} total={total} /><span className="ds-body-sm ds-muted">{entregadoPct(p)}%</span></div>; } },
-  ], [ordenes]); // eslint-disable-line react-hooks/exhaustive-deps
+    { id: "entregado", header: "Entregado", accessorFn: (p) => entregadoPct(p), meta: { label: "Entregado" }, enableColumnFilter: false, cell: (c) => { const p = c.row.original; const total = p.lineas.reduce((s, l) => s + l.cantidad, 0); return <div className="row gap-3" style={{ alignItems: "center" }}><QtyRing recibida={recibidoDe(p)} total={total} /><span className="ds-body-sm ds-muted">{entregadoPct(p)}%</span></div>; } },
+  ], [recibidoPorLinea]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <>

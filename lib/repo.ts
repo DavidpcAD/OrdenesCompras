@@ -62,6 +62,19 @@ async function idDeEstado(codigo?: string): Promise<number | null> {
   const nombre = NOMBRE_POR_CODIGO[codigo] ?? codigo;
   return estadoNombreToId!.get(nombre) ?? null;
 }
+// Agrupa las filas de detalle por su FK de cabecera en un solo pase. Antes cada
+// cabecera hacía un .filter() sobre TODAS las líneas (cabeceras × líneas): con
+// cientos de órdenes eso escala mal, y esto se ejecuta en cada bootstrap.
+function porCabecera<T extends Record<string, any>>(filas: T[], fk: string): Map<number, T[]> {
+  const m = new Map<number, T[]>();
+  for (const f of filas) {
+    const k = f[fk] as number;
+    const arr = m.get(k);
+    if (arr) arr.push(f); else m.set(k, [f]);
+  }
+  return m;
+}
+
 function codigoDeId(id: number | null): string | undefined {
   if (id == null || !estadoIdToNombre) return undefined;
   const nombre = estadoIdToNombre.get(id);
@@ -88,7 +101,8 @@ export async function listPedidos(): Promise<Pedido[]> {
   const pool = await getPool();
   const h = await pool.request().query("SELECT * FROM dbo.PedidoCompra WHERE esEliminada = 0 ORDER BY idPedidoCompra DESC");
   const d = await pool.request().query("SELECT * FROM dbo.PedidoCompraDet ORDER BY idPedidoCompraDet");
-  return h.recordset.map((p) => mapPedido(p, d.recordset.filter((x) => x.idPedidoCompra === p.idPedidoCompra)));
+  const porPedido = porCabecera(d.recordset, "idPedidoCompra");
+  return h.recordset.map((p) => mapPedido(p, porPedido.get(p.idPedidoCompra) ?? []));
 }
 
 export async function getPedido(id: number): Promise<Pedido | null> {
@@ -306,9 +320,10 @@ export async function listOrdenes(): Promise<Orden[]> {
       LEFT JOIN dbo.PedidoCompra pc ON pc.idPedidoCompra = pcd.idPedidoCompra
       ORDER BY det.idOrdenCompraDet`);
   const motivos = await motivosRechazo();
+  const porOrden = porCabecera(d.recordset, "idOrdenCompra");
   return h.recordset.map((o) => mapOrden(
     o,
-    d.recordset.filter((x) => x.idOrdenCompra === o.idOrdenCompra),
+    porOrden.get(o.idOrdenCompra) ?? [],
     motivos.get(String(o.idOrdenCompra)),
   ));
 }
@@ -620,13 +635,14 @@ export async function listRecepciones(): Promise<Recepcion[]> {
   const pool = await getPool();
   const h = await pool.request().query("SELECT * FROM dbo.RecepcionCompra WHERE esEliminada = 0 ORDER BY idRecepcionCompra DESC");
   const d = await pool.request().query("SELECT * FROM dbo.RecepcionCompraDet ORDER BY idRecepcionCompraDet");
+  const porRecepcion = porCabecera(d.recordset, "idRecepcionCompra");
   return h.recordset.map((r): Recepcion => ({
     id: String(r.idRecepcionCompra), ordenId: String(r.idOrdenCompra), numeroFactura: r.numeroFactura ?? "",
     fechaFactura: (r.fechaFactura?.toISOString?.() ?? "").slice(0, 10),
     fechaRecepcion: (r.fechaRecepcion?.toISOString?.() ?? "").slice(0, 10),
     fechaRegistro: (r.fechaRegistro?.toISOString?.() ?? "").slice(0, 10),
     total: Number(r.total ?? 0), parcial: !!r.esParcial, recibidoPor: r.creadoPor ?? undefined,
-    lineas: d.recordset.filter((x) => x.idRecepcionCompra === r.idRecepcionCompra)
+    lineas: (porRecepcion.get(r.idRecepcionCompra) ?? [])
       .map((l): RecepcionLinea => ({
         ordenLineaId: String(l.idOrdenCompraDet),
         cantidadRecibida: Number(l.quantityRecibida ?? 0),
