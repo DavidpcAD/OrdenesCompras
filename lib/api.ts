@@ -1,5 +1,5 @@
 // Cliente del front-end para las API routes (modo API).
-import type { Movimiento, Orden, Pedido, Recepcion, NotaCreditoLinea } from "./types";
+import type { Orden, Pedido, Recepcion, NotaCreditoLinea } from "./types";
 
 export const USE_API = process.env.NEXT_PUBLIC_USE_API === "1";
 
@@ -23,7 +23,6 @@ export interface Bootstrap {
   pedidos: Pedido[];
   ordenes: Orden[];
   recepciones: Recepcion[];
-  movimientos: Movimiento[];
 }
 
 export const api = {

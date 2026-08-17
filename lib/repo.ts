@@ -635,17 +635,6 @@ export async function listRecepciones(): Promise<Recepcion[]> {
   }));
 }
 
-export async function listMovimientosAll() {
-  await ensureEstados();
-  const pool = await getPool();
-  const r = await pool.request().query("SELECT * FROM dbo.Movimiento ORDER BY fecha DESC, idMovimiento DESC");
-  return r.recordset.map((m) => ({
-    id: String(m.idMovimiento), entidad: m.entidad, idEntidad: String(m.idEntidad), documentoNo: m.documentoNo ?? "",
-    tipoMovimiento: m.tipoMovimiento, estadoAnterior: codigoDeId(m.idEstadoAnterior), estadoNuevo: codigoDeId(m.idEstadoNuevo),
-    detalle: m.detalle ?? undefined, usuario: m.usuario, rol: m.rol as Role, fecha: m.fecha?.toISOString?.() ?? "",
-  }));
-}
-
 // ----------------------------------------------------------------- MOVIMIENTOS
 interface MovIn {
   entidad: "pedido" | "orden" | "recepcion"; idEntidad: number; documentoNo: string;

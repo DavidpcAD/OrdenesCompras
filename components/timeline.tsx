@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useMemo, useState } from "react";
 import { useStore } from "@/lib/store";
 import { formatDateTime, ROL_LABEL } from "@/lib/helpers";
 import type { Movimiento } from "@/lib/types";
@@ -88,24 +89,55 @@ export function Timeline({
   // para mostrar el historial completo hasta que se factura.
   traza?: boolean;
 }) {
-  const { movimientos, pedidos, ordenes } = useStore();
-
-  // Movimientos propios de la entidad.
-  let items = movimientos.filter((m) => m.entidad === entidad && m.idEntidad === idEntidad);
+  const { movimientos, pedidos, ordenes, modoApi } = useStore();
 
   // Mapa idOrden -> número de orden, para mostrar de qué orden viene cada evento.
   const numeroDeOrden = new Map(ordenes.map((o) => [o.id, o.numero]));
 
-  if (traza && entidad === "pedido") {
+  // Órdenes que incluyen al menos una línea de este pedido (enlace N:M): sus
+  // movimientos completan la traza pedido → orden → recepción.
+  const idsOrdenLigadas = useMemo(() => {
+    if (!(traza && entidad === "pedido")) return [] as string[];
     const pedido = pedidos.find((p) => p.id === idEntidad);
     const lineasPedido = new Set(pedido?.lineas.map((l) => l.id) ?? []);
-    // Órdenes que incluyen al menos una línea de este pedido (enlace N:M).
-    const ordenesLigadas = ordenes.filter((o) =>
-      o.lineas.some((l) => l.pedidoLineaId && lineasPedido.has(l.pedidoLineaId))
-    );
-    const idsOrden = new Set(ordenesLigadas.map((o) => o.id));
-    const movsOrden = movimientos.filter((m) => m.entidad === "orden" && idsOrden.has(m.idEntidad));
-    items = [...items, ...movsOrden];
+    return ordenes.filter((o) => o.lineas.some((l) => l.pedidoLineaId && lineasPedido.has(l.pedidoLineaId))).map((o) => o.id);
+  }, [traza, entidad, idEntidad, pedidos, ordenes]);
+
+  // En modo API el historial se pide POR ENTIDAD (`/api/movimientos`). Antes venía
+  // entero dentro del bootstrap: la tabla Movimiento completa viajaba en cada carga
+  // y en cada auto-refresh (45s) solo para pintar estas dos pantallas de detalle.
+  const [remotos, setRemotos] = useState<Movimiento[] | null>(null);
+  const [fallo, setFallo] = useState(false);
+  const clave = `${entidad}:${idEntidad}:${idsOrdenLigadas.join(",")}`;
+  useEffect(() => {
+    if (!modoApi) return;
+    let vivo = true;
+    setRemotos(null); setFallo(false);
+    const pedir = async (ent: string, id: string) => {
+      const r = await fetch(`/api/movimientos?entidad=${encodeURIComponent(ent)}&id=${encodeURIComponent(id)}`);
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const d = await r.json();
+      return Array.isArray(d) ? (d as Movimiento[]) : [];
+    };
+    Promise.all([pedir(entidad, idEntidad), ...idsOrdenLigadas.map((oid) => pedir("orden", oid))])
+      .then((partes) => { if (vivo) setRemotos(partes.flat()); })
+      .catch(() => { if (vivo) { setRemotos([]); setFallo(true); } });
+    return () => { vivo = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [modoApi, clave]);
+
+  let items: Movimiento[];
+  if (modoApi) {
+    if (remotos === null) return <div className="ds-muted ds-label">Cargando historial…</div>;
+    // No decir "sin movimientos" cuando en realidad no se pudo consultar.
+    if (fallo) return <div className="ds-muted ds-label">No se pudo cargar el historial.</div>;
+    items = remotos;
+  } else {
+    items = movimientos.filter((m) => m.entidad === entidad && m.idEntidad === idEntidad);
+    if (idsOrdenLigadas.length) {
+      const ids = new Set(idsOrdenLigadas);
+      items = [...items, ...movimientos.filter((m) => m.entidad === "orden" && ids.has(m.idEntidad))];
+    }
   }
 
   const ordenados = items.slice().sort((a, b) => (a.fecha < b.fecha ? 1 : -1));

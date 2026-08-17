@@ -59,6 +59,7 @@ interface StoreShape {
   setUsuario: (u: string | null) => void;
   cargando: boolean;
   hydrated: boolean; // ya se leyó el rol/usuario de localStorage (evita rebotar al login al recargar)
+  modoApi: boolean;  // true = datos de SQL (no mock). Es el valor RUNTIME, no el de build.
   // Falló traer los datos del servidor (SQL caído, sesión vencida, red). Si no se
   // avisa, la app se ve VACÍA y parece que no hay pedidos/órdenes.
   errorCarga: string | null;
@@ -162,7 +163,7 @@ export function StoreProvider({ children, useApi }: { children: React.ReactNode;
     if (u) setUsuario(u);
     if (USE_API) {
       api.bootstrap()
-        .then((b) => { setData((d) => ({ ...d, pedidos: b.pedidos, ordenes: b.ordenes, recepciones: b.recepciones, movimientos: b.movimientos })); setErrorCarga(null); })
+        .then((b) => { setData((d) => ({ ...d, pedidos: b.pedidos, ordenes: b.ordenes, recepciones: b.recepciones })); setErrorCarga(null); })
         .catch((e) => { console.error("bootstrap", e); setErrorCarga(mensajeError(e)); })
         .finally(() => { setCargando(false); setHydrated(true); });
     } else {
@@ -204,7 +205,9 @@ export function StoreProvider({ children, useApi }: { children: React.ReactNode;
 
   async function refreshFromApi() {
     const b = await api.bootstrap();
-    setData((d) => ({ ...d, pedidos: b.pedidos, ordenes: b.ordenes, recepciones: b.recepciones, movimientos: b.movimientos }));
+    // OJO: `movimientos` NO viene en el bootstrap (el historial se pide por entidad
+    // en components/timeline.tsx). Bajar la tabla entera cada 45s era carísimo.
+    setData((d) => ({ ...d, pedidos: b.pedidos, ordenes: b.ordenes, recepciones: b.recepciones }));
     setErrorCarga(null);   // volvió a responder: se limpia el aviso
   }
 
@@ -576,7 +579,7 @@ export function StoreProvider({ children, useApi }: { children: React.ReactNode;
     const reset: StoreShape["reset"] = () => setData(freshData());
 
     return {
-      role, setRole, usuario, setUsuario, cargando, hydrated, errorCarga, recargar,
+      role, setRole, usuario, setUsuario, cargando, hydrated, modoApi: USE_API, errorCarga, recargar,
       proveedores: seed.proveedores, articulos: seed.articulos, obras: seed.obras,
       maquinas: seed.maquinas, almacenes: seed.almacenes,
       pedidos: data.pedidos, ordenes: data.ordenes, recepciones: data.recepciones, movimientos: data.movimientos,
