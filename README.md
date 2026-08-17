@@ -30,6 +30,8 @@ auditoría.
 2. **Angie** arma la orden con líneas de esas solicitudes (o una compra directa) y la manda
    a aprobación. La orden queda `pendiente_aprobacion`; esta app **no** toca BC ahí.
 3. **Aprobación** (app de Producción) aprueba y crea + lanza el pedido en BC → `lanzado`.
+   **Lanzar a BC es solo de esa app**: esta no lo hace ni lo reintenta. Lo que Angie puede
+   es *volver a abrir* una orden lanzada y reenviarla a aprobación.
 4. **Bodega** recibe. Dos modos:
    - **Modo 1** — todo bien: recibir + facturar (va a BC con sus movimientos contables).
    - **Modo 2** — material bien pero factura con problemas: *recibir sin factura*; queda
@@ -161,7 +163,7 @@ lib/
 | GET | `/api/bc/vendors\|items\|almacenes\|obras\|itemcharges\|variants\|existencias\|jobtasks\|lastprice` | Catálogos de BC |
 | GET | `/api/bc/orden-totales`, `/api/bc/recepciones-registradas` | Totales del pedido / líneas de recepción registradas |
 | POST | `/api/bc/registrar`, `/api/bc/recibir`, `/api/bc/facturar-recibido` | Registrar en BC (recibir + facturar / solo recibir / facturar lo recibido) |
-| POST | `/api/bc/relanzar`, `/api/bc/cargo-recibido` | Re-sincronizar + lanzar / cargo sobre recepción registrada |
+| POST | `/api/bc/cargo-recibido` | Cargo de un tercero sobre una recepción ya registrada |
 
 Cada escritura deja un `Movimiento` (bitácora). Los estados de la app se mapean al catálogo
 `dbo.Estado` (se crean los nombres que falten y se leen los de **todos** los módulos, para

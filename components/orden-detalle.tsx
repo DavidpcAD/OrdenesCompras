@@ -2,7 +2,7 @@
 
 import { Fragment, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Badge, Button, Card, useToast } from "@/components/ui";
+import { Badge, Button, Card } from "@/components/ui";
 import { IconChevronDown, IconWarning } from "@/components/icons";
 import { OrderLinesTable } from "@/components/order-lines";
 import { Timeline } from "@/components/timeline";
@@ -27,9 +27,7 @@ export function OrdenDetalle({
 }) {
   const { proveedores, recepciones } = useStore();
   const router = useRouter();
-  const toast = useToast();
   const [verFactura, setVerFactura] = useState<string | null>(null);
-  const [relanzando, setRelanzando] = useState(false);
   // Totales calculados por BC (fuente de verdad). Se leen si la orden ya está en BC.
   const [bcTot, setBcTot] = useState<{ subtotal: number; iva: number; total: number; currencyCode: string } | null>(null);
   useEffect(() => {
@@ -41,42 +39,6 @@ export function OrdenDetalle({
       .catch(() => { /* sin BC: se muestran los totales locales */ });
     return () => { vivo = false; };
   }, [orden.bcNumber]);
-
-  // Reintenta el lanzamiento en BC de un pedido YA creado (no duplica). Ahora
-  // RE-SINCRONIZA las líneas (precio + variante) antes del Release, para que las
-  // correcciones hechas en la app después de crearlo (p.ej. el precio de un
-  // material sin historial) sí viajen a BC.
-  async function reintentarLanzar() {
-    if (!orden.bcNumber) return;
-    setRelanzando(true);
-    try {
-      const lineas = orden.lineas
-        .filter((l) => l.tipo === "articulo" && l.articuloId && l.cantidad > 0)
-        .map((l) => ({ itemNo: l.articuloId!, cantidad: l.cantidad, precio: l.precioUnitario || 0, descripcion: l.descripcion, variantCode: l.variantCode }));
-      // Cargos de producto de la orden: se re-agregan (idempotente por tipo en BC) y
-      // se reasigna el método, para que "Reintentar" también COMPLETE un cargo que no
-      // entró en el primer lanzamiento o corrija el método (Equitativo/Peso/Volumen).
-      const cargoLineas = orden.lineas.filter((l) => l.tipo === "cargo" && l.precioUnitario > 0);
-      const cargos = cargoLineas.map((l) => ({ chargeNo: l.chargeNo, descripcion: l.descripcion, cantidad: l.cantidad || 1, precio: l.precioUnitario }));
-      const metodo = cargoLineas.find((l) => l.chargeMethod)?.chargeMethod || "Amount";
-      const r = await fetch("/api/bc/relanzar", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ orderNo: orden.bcNumber, lineas, cargos, metodo }),
-      });
-      const d = await r.json().catch(() => ({}));
-      if (r.ok) {
-        // Se lanzó, pero puede haber quedado incompleto: cargo que no entró o líneas
-        // que no existen en BC. Eso hay que decirlo, no dar un "listo" verde.
-        const avisos = [d.lineasError, d.cargoError].filter(Boolean) as string[];
-        if (avisos.length) toast(`BC ${orden.bcNumber}: lanzado con pendientes — ${avisos.join(" · ")}`, "error");
-        else toast(`BC ${orden.bcNumber}: ${d.status ?? "lanzado"}${cargos.length ? " (líneas y cargos sincronizados)" : " (líneas sincronizadas)"}`, "success");
-      } else toast(`No se pudo lanzar en BC: ${d.error ?? r.status}`, "error");
-    } catch (e: any) {
-      toast(`No se pudo lanzar en BC: ${String(e?.message ?? e)}`, "error");
-    } finally {
-      setRelanzando(false);
-    }
-  }
 
   const prov = proveedores.find((p) => p.id === orden.proveedorId);
   const b = ordenBadge(orden.estado);
@@ -123,10 +85,6 @@ export function OrdenDetalle({
           {orden.bcDeepLink && (
             <button className="link-btn" title="Abrir el Pedido en Business Central (editar · vista previa de registro · registrar)"
               onClick={() => window.open(orden.bcDeepLink!, "_blank")}>↗ Abrir en BC</button>
-          )}
-          {orden.bcNumber && (
-            <button className="link-btn" disabled={relanzando} title="Reintentar el lanzamiento (Release) en BC del pedido ya creado"
-              onClick={reintentarLanzar}>{relanzando ? "Lanzando…" : "↻ Reintentar lanzar en BC"}</button>
           )}
           {acciones}
         </div>
