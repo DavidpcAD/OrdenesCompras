@@ -21,14 +21,29 @@ const EMPRESA_NOMBRE = "Adelante Desarrollos S.A.";
 export default function ProveeduriaLineasPedidasPage() {
   const { ordenes, proveedores, pedidos, articulos } = useStore();
 
+  // Índices armados una sola vez: si no, cada línea de cada orden recorría el
+  // catálogo de artículos y TODOS los pedidos con TODAS sus líneas.
+  const artPorClave = useMemo(() => {
+    const m = new Map<string, typeof articulos[number]>();
+    for (const a of articulos) { m.set(a.id, a); m.set(a.code, a); }
+    return m;
+  }, [articulos]);
+  const pedidoPorLinea = useMemo(() => {
+    const m = new Map<string, typeof pedidos[number]>();
+    for (const p of pedidos) for (const pl of p.lineas) m.set(pl.id, p);
+    return m;
+  }, [pedidos]);
+  const pedidoPorNumero = useMemo(() => new Map(pedidos.map((p) => [p.numero, p])), [pedidos]);
+
   const baseRows = useMemo<Row[]>(() => {
     const rows: Row[] = [];
     ordenes.forEach((o) => {
       const prov = proveedores.find((p) => p.id === o.proveedorId);
       o.lineas.forEach((l) => {
         if (l.tipo !== "articulo") return;
-        const art = articulos.find((a) => a.id === l.articuloId || a.code === l.articuloId);
-        const ped = pedidos.find((p) => p.lineas.some((pl) => pl.id === l.pedidoLineaId)) ?? pedidos.find((p) => p.numero === l.pedidoNumero);
+        const art = l.articuloId ? artPorClave.get(l.articuloId) : undefined;
+        const ped = (l.pedidoLineaId ? pedidoPorLinea.get(l.pedidoLineaId) : undefined)
+          ?? (l.pedidoNumero ? pedidoPorNumero.get(l.pedidoNumero) : undefined);
         const recibido = l.cantidadRecibida ?? 0;
         const estado: Estado = recibido >= l.cantidad - 1e-9 ? "llego" : recibido > 0 ? "parcial" : "pendiente";
         rows.push({
@@ -39,7 +54,7 @@ export default function ProveeduriaLineasPedidasPage() {
       });
     });
     return rows;
-  }, [ordenes, proveedores, pedidos, articulos]);
+  }, [ordenes, proveedores, artPorClave, pedidoPorLinea, pedidoPorNumero]);
 
   const [estadoF, setEstadoF] = useState<"all" | "pendiente" | "llego">("all");
   const matchEstado = (r: Row) => estadoF === "all" ? true : estadoF === "llego" ? r.estado === "llego" : r.estado !== "llego";

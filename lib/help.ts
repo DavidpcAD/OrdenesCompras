@@ -249,10 +249,14 @@ const NOTAS_CREDITO: HelpEntry = {
     "Cada una indica el motivo, la cantidad y el monto.",
   ],
   pasos: [
-    "Revisá las líneas pendientes y su motivo.",
-    "Tocá el encabezado de un grupo para abrir la orden relacionada y ver el contexto.",
-    "Gestioná la nota de crédito con el proveedor (por fuera del sistema).",
-    "Cuando se resuelva, marcala como resuelta para sacarla de pendientes.",
+    "En “Por acreditar” revisá las líneas y su motivo.",
+    "Usá “Factura registrada” para abrir en Business Central la factura sobre la que hay que hacer la nota de crédito (si hubo entregas parciales, también aparece “Orden de compra”).",
+    "Emitíla en BC y gestionala con el proveedor.",
+    "Cuando ya esté emitida, tocá “Marcar acreditada”: la línea sale de pendientes y queda archivada en la pestaña “Acreditadas”.",
+  ],
+  tips: [
+    "Si marcaste una por error, entrá a “Acreditadas” y tocá “Reabrir”.",
+    "Quién acreditó cada línea y cuándo queda en el historial de la orden.",
   ],
 };
 const CARGO: HelpEntry = {
