@@ -452,18 +452,33 @@ export async function updateOrden(id: number, input: UpdateOrdenDB) {
     .query("SELECT COUNT(*) AS n FROM dbo.RecepcionCompra WHERE idOrdenCompra=@id AND esEliminada=0");
   if ((rec.recordset[0]?.n ?? 0) > 0) throw new Error("La orden ya tiene recepciones registradas; no se puede editar.");
   const head = await pool.request().input("id", sql.Int, id)
-    .query("SELECT ordenNo FROM dbo.OrdenCompra WHERE idOrdenCompra=@id AND esEliminada=0");
+    .query("SELECT ordenNo, idEstado FROM dbo.OrdenCompra WHERE idOrdenCompra=@id AND esEliminada=0");
   if (!head.recordset.length) throw new Error("Orden no encontrada.");
+  // Misma regla que la pantalla de edición, pero del lado del server: solo se
+  // reescribe una orden ABIERTA o RECHAZADA. Protege el caso de la pestaña vieja —
+  // Angie abre el editor con la orden abierta, Aprobación la lanza a BC mientras
+  // tanto, ella guarda: el SQL quedaría reescrito y BC con las líneas viejas.
+  await ensureEstados();
+  const estadoActual = codigoDeId(head.recordset[0].idEstado);
+  if (estadoActual && estadoActual !== "abierto" && estadoActual !== "rechazado") {
+    throw new Error(`La orden ya no está abierta (${NOMBRE_POR_CODIGO[estadoActual] ?? estadoActual}); recargá la pantalla antes de editarla.`);
+  }
   const ordenNo = head.recordset[0].ordenNo ?? "";
   const lineas = (input.lineas ?? []).filter((l) => l.tipoLinea !== "articulo" || (l.itemNo && l.cantidad > 0) || l.cantidad > 0);
   const tx = new sql.Transaction(pool); await tx.begin();
   try {
-    // 1) revertir el saldo consumido por las líneas ACTUALES
+    // 1) revertir el saldo consumido por las líneas ACTUALES.
+    // Se agrupa por línea de pedido ANTES de restar: en un UPDATE ... FROM JOIN,
+    // si dos líneas de la orden apuntan a la misma línea de pedido, SQL Server
+    // toca la fila destino UNA sola vez (con una de las dos cantidades) y el saldo
+    // quedaría inflado para siempre. Con el SUM el resultado no depende de eso.
     await new sql.Request(tx).input("id", sql.Int, id).query(`
-      UPDATE pcd SET pcd.quantityOrdenado = ISNULL(pcd.quantityOrdenado,0) - ocd.quantity
+      UPDATE pcd SET pcd.quantityOrdenado = ISNULL(pcd.quantityOrdenado,0) - x.q
       FROM dbo.PedidoCompraDet pcd
-      JOIN dbo.OrdenCompraDet ocd ON ocd.idPedidoCompraDet = pcd.idPedidoCompraDet
-      WHERE ocd.idOrdenCompra = @id AND ocd.idPedidoCompraDet IS NOT NULL`);
+      JOIN (SELECT idPedidoCompraDet, SUM(quantity) AS q
+              FROM dbo.OrdenCompraDet
+             WHERE idOrdenCompra = @id AND idPedidoCompraDet IS NOT NULL
+             GROUP BY idPedidoCompraDet) x ON x.idPedidoCompraDet = pcd.idPedidoCompraDet`);
     // 2) borrar líneas actuales
     await new sql.Request(tx).input("id", sql.Int, id).query("DELETE FROM dbo.OrdenCompraDet WHERE idOrdenCompra=@id");
     // 3) encabezado
