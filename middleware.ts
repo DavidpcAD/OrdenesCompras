@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { SESSION_COOKIE, verifySession, authEnabled } from "@/lib/session";
+import { autorizacionActiva, mensajeNoAutorizado, rolPuede } from "@/lib/autorizacion";
 
 // Guardia central de acceso. Solo actúa en modo API (producción); en mock local
 // deja pasar todo para no estorbar el desarrollo.
@@ -25,6 +26,12 @@ export async function middleware(req: NextRequest) {
     }
     if (!session) {
       return NextResponse.json({ error: "No autenticado." }, { status: 401 });
+    }
+    // Autenticado ≠ autorizado: además del login, el ROL tiene que corresponder a
+    // la acción. Solo aplica a escrituras y a las rutas listadas en
+    // lib/autorizacion.ts; se apaga con AUTORIZACION_ROLES=0 (sin redeploy).
+    if (autorizacionActiva() && !rolPuede(pathname, req.method, session.r)) {
+      return NextResponse.json({ error: mensajeNoAutorizado(pathname, req.method) }, { status: 403 });
     }
     return NextResponse.next();
   }

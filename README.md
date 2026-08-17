@@ -116,6 +116,20 @@ Copiá `.env.local.example` a `.env.local`. Lo importante:
   tope 2 s, se olvida a los 15 min). No se bloquean cuentas.
 - Lo que queda en la bitácora (`usuario`, `rol`) se toma de la **cookie firmada**, no del
   body del request (`lib/actor.ts`).
+- **Autorización por rol** (`lib/autorizacion.ts`): además del login, el rol tiene que
+  corresponder a la acción. Solo aplica a ESCRITURAS y a las rutas listadas ahí (las lecturas
+  y las rutas no listadas pasan, a propósito). Devuelve 403 con un mensaje que dice de quién
+  es la acción. Se apaga sin redeploy con el App Setting `AUTORIZACION_ROLES=0`.
+
+| Acción | proveeduria | Bodega | Contabilidad |
+|---|:--:|:--:|:--:|
+| Crear/editar órdenes y solicitudes, cambiar estado | ✅ | — | — |
+| Registrar recepción (+ recibir/facturar en BC), marcar líneas para NC | — | ✅ | ✅ * |
+| Registrar factura que quedó en revisión (Modo 2), acreditar NC, cargo sobre factura | — | — | ✅ |
+
+\* Contabilidad también registra recepciones porque la pantalla de recibir tiene una variante
+hecha para ella (edita las tres fechas, tabla de escritorio). Si eso cambia, hay que sacar
+`contabilidad` de esas reglas y esconderle la pantalla.
 
 ## Estructura
 
@@ -185,12 +199,6 @@ como variables `--ds-*`, con tokens semánticos (`--ds-bg`, `--ds-surface`, `--d
 
 ## Decisiones pendientes (no las tomé yo)
 
-- **Autorización por rol en la API.** `middleware.ts` autentica pero no autoriza: cualquiera
-  con sesión válida puede llamar cualquier `/api/*` (p. ej. Bodega podría crear una orden por
-  `curl`). Mapear rol→endpoint es fácil de equivocar porque hay rutas compartidas (Bodega y
-  Contabilidad usan las mismas para registrar facturas), así que conviene definir la matriz
-  antes de bloquear. Lo que YA está cubierto: la bitácora firma con la sesión, así que nadie
-  puede escribir a nombre de otro.
 - **`/api/vistas` y `/api/plantillas`** reciben el usuario por query/body. En vistas el
   borrado exige que coincida el dueño (`WHERE id=@id AND usuario=@usuario`), pero conociendo
   el nombre de alguien se pueden listar/borrar sus vistas; `deletePlantilla` no valida dueño.
