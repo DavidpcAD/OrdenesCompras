@@ -445,6 +445,7 @@ export function StoreProvider({ children, useApi }: { children: React.ReactNode;
           fechaFactura: input.fechaFactura, fechaRecepcion: input.fechaRecepcion,
           fechaRegistro: input.fechaRegistro, total: input.total, lineas: input.lineas,
           parcial: recibidoAhora < recibidoTotal, facturaEnRevision: enRevision,
+          recibidoPor: persona,   // en modo API lo pone el SQL (creadoPor)
         };
         let completada = false;
         const ordenes = d.ordenes.map((o) => {
