@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { Button, EmptyState, Skeleton, useToast } from "@/components/ui";
 import { IconWarning } from "@/components/icons";
@@ -11,6 +12,7 @@ export default function ProvOrdenDetallePage() {
   const router = useRouter();
   const toast = useToast();
   const { ordenes, pedidos, setOrdenEstado, cargando } = useStore();
+  const [procesando, setProcesando] = useState(false);
 
   const orden = ordenes.find((o) => o.id === id);
   if (!orden) {
@@ -32,9 +34,19 @@ export default function ProvOrdenDetallePage() {
     return p ? `/proveeduria/solicitudes/${p.id}` : null;
   };
 
+  // Cambiar el estado de la orden. Si el servidor falla hay que DECIRLO: antes la
+  // promesa se rechazaba sin manejar y el botón parecía no hacer nada.
   async function act(estado: NonNullable<typeof orden>["estado"], msg: string) {
-    await setOrdenEstado(orden!.id, estado);
-    toast(msg, "success");
+    if (procesando) return;            // evita el doble clic
+    setProcesando(true);
+    try {
+      await setOrdenEstado(orden!.id, estado);
+      toast(msg, "success");
+    } catch (e: any) {
+      toast(`No se pudo actualizar la orden: ${String(e?.message ?? e)}`, "error");
+    } finally {
+      setProcesando(false);
+    }
   }
 
   const acciones = (
@@ -42,23 +54,29 @@ export default function ProvOrdenDetallePage() {
       {orden.estado === "abierto" && (
         <>
           <Button variant="outline" onClick={() => router.push(`/proveeduria/ordenes/${orden.id}/editar`)}>Editar</Button>
-          <Button onClick={() => act("pendiente_aprobacion", `${orden.numero} enviada a aprobación`)}>Enviar a aprobación</Button>
+          <Button disabled={procesando} onClick={() => act("pendiente_aprobacion", `${orden.numero} enviada a aprobación`)}>
+            {procesando ? "Enviando…" : "Enviar a aprobación"}
+          </Button>
         </>
       )}
       {orden.estado === "pendiente_aprobacion" && (
         <>
           <span className="ds-muted ds-label" style={{ alignSelf: "center" }}>En espera de aprobación de Luis Roberto</span>
-          <Button variant="outline" onClick={() => act("abierto", "Solicitud de aprobación cancelada")}>Cancelar envío</Button>
+          <Button variant="outline" disabled={procesando} onClick={() => act("abierto", "Solicitud de aprobación cancelada")}>Cancelar envío</Button>
         </>
       )}
       {orden.estado === "rechazado" && (
         <>
           <Button variant="outline" onClick={() => router.push(`/proveeduria/ordenes/${orden.id}/editar`)}>Editar</Button>
-          <Button onClick={() => act("pendiente_aprobacion", `${orden.numero} corregida y reenviada a aprobación`)}>Reenviar a aprobación</Button>
+          <Button disabled={procesando} onClick={() => act("pendiente_aprobacion", `${orden.numero} corregida y reenviada a aprobación`)}>
+            {procesando ? "Reenviando…" : "Reenviar a aprobación"}
+          </Button>
         </>
       )}
+      {/* El window.open queda dentro del gesto del clic (si se hace después del
+          await, el navegador lo bloquea como popup). */}
       {orden.estado === "lanzado" && (
-        <Button variant="outline" onClick={() => { act("abierto", "Orden reabierta para edición"); if (orden.bcDeepLink) window.open(orden.bcDeepLink, "_blank"); }}>Volver a abrir</Button>
+        <Button variant="outline" disabled={procesando} onClick={() => { void act("abierto", "Orden reabierta para edición"); if (orden.bcDeepLink) window.open(orden.bcDeepLink, "_blank"); }}>Volver a abrir</Button>
       )}
     </>
   );

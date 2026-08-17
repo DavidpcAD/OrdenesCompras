@@ -15,6 +15,7 @@ export default function ProveeduriaPedidoDetallePage() {
   const { pedidos, ordenes, setBorrador, devolverPedido, cargando } = useStore();
   const [devolverOpen, setDevolverOpen] = useState(false);
   const [motivo, setMotivo] = useState("");
+  const [devolviendo, setDevolviendo] = useState(false);
 
   const pedido = pedidos.find((p) => p.id === id);
   if (!pedido) {
@@ -43,12 +44,22 @@ export default function ProveeduriaPedidoDetallePage() {
     setBorrador(lineas);
     router.push("/proveeduria/nueva");
   }
+  // Si el servidor falla, avisarlo y dejar el modal abierto con el motivo escrito
+  // (antes la promesa se rechazaba sin manejar: no pasaba nada visible).
   async function confirmarDevolver() {
     if (!motivo.trim()) { toast("Escribí el motivo de la devolución.", "error"); return; }
-    await devolverPedido(pedido!.id, motivo.trim());
-    toast(`${pedido!.numero} devuelto a Ingeniería.`, "info");
-    setDevolverOpen(false);
-    router.push("/proveeduria/solicitudes");
+    if (devolviendo) return;
+    setDevolviendo(true);
+    try {
+      await devolverPedido(pedido!.id, motivo.trim());
+      toast(`${pedido!.numero} devuelto a Ingeniería.`, "info");
+      setDevolverOpen(false);
+      router.push("/proveeduria/solicitudes");
+    } catch (e: any) {
+      toast(`No se pudo devolver la solicitud: ${String(e?.message ?? e)}`, "error");
+    } finally {
+      setDevolviendo(false);
+    }
   }
 
   return (
@@ -103,7 +114,7 @@ export default function ProveeduriaPedidoDetallePage() {
 
       {devolverOpen && (
         <Modal title={`Devolver ${pedido.numero} a Ingeniería`} onClose={() => setDevolverOpen(false)}
-          footer={<><Button variant="outline" onClick={() => setDevolverOpen(false)}>Cancelar</Button><Button variant="red" onClick={confirmarDevolver}>Devolver</Button></>}>
+          footer={<><Button variant="outline" disabled={devolviendo} onClick={() => setDevolverOpen(false)}>Cancelar</Button><Button variant="red" disabled={devolviendo} onClick={confirmarDevolver}>{devolviendo ? "Devolviendo…" : "Devolver"}</Button></>}>
           <p className="ds-muted ds-body-sm" style={{ marginTop: 0 }}>Indicá qué debe corregir el ingeniero. Le llega una notificación y el pedido queda en estado “Devuelto”.</p>
           <Textarea value={motivo} onChange={(e) => setMotivo(e.target.value)} placeholder="Motivo de la devolución…" rows={4} style={{ width: "100%" }} />
         </Modal>
