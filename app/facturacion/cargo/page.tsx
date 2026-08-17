@@ -6,6 +6,7 @@ import { Button, Card, EmptyState, Field, Input, Select, useToast } from "@/comp
 import { Combobox } from "@/components/combobox";
 import { DateField } from "@/components/date-field";
 import { IconChevronLeft } from "@/components/icons";
+import { IconWarning } from "@/components/icons";
 import { useStore } from "@/lib/store";
 import { money } from "@/lib/helpers";
 
@@ -36,12 +37,16 @@ export default function CargoSobreFacturaPage() {
 
   // --- Catálogos BC (proveedores + tipos de cargo) ---
   const [bcProv, setBcProv] = useState<Vendor[] | null>(null);
+  const [bcCaido, setBcCaido] = useState(false);
   const [itemCharges, setItemCharges] = useState<{ no: string; descripcion: string }[]>([]);
   useEffect(() => {
     fetch("/api/bc/vendors")
       .then((r) => (r.ok ? r.json() : { proveedores: [] }))
-      .then((d) => { if (Array.isArray(d.proveedores) && d.proveedores.length) setBcProv(d.proveedores); })
-      .catch(() => { /* sin BC: cae al catálogo de respaldo */ });
+      .then((d) => {
+        if (Array.isArray(d.proveedores) && d.proveedores.length) setBcProv(d.proveedores);
+        else setBcCaido(true);   // catálogo de respaldo: hay que avisarlo
+      })
+      .catch(() => setBcCaido(true));
     fetch("/api/bc/itemcharges")
       .then((r) => (r.ok ? r.json() : { itemCharges: [] }))
       .then((d) => { if (Array.isArray(d.itemCharges)) setItemCharges(d.itemCharges); })
@@ -192,6 +197,18 @@ export default function CargoSobreFacturaPage() {
             <p className="ds-muted">Para cuando un tercero factura aparte (p. ej. el transporte de un material ya recibido). Se crea el pedido con solo la línea de cargo y se asigna a las líneas de la recepción ya registrada.</p>
           </div>
         </div>
+
+        {bcCaido && (
+          <div className="ds-callout ds-callout--yellow mb-4" role="status">
+            <span className="ds-callout__icon"><IconWarning size={18} /></span>
+            <div>
+              <div className="ds-callout__title">Business Central no respondió</div>
+              <div className="ds-callout__body">
+                El listado de proveedores es de respaldo y los tipos de cargo pueden salir vacíos. Como este registro se hace CONTRA BC, mejor esperá a que responda: si no, el paso 4 va a fallar.
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Indicador de pasos (segmentado DS) */}
         <div className="segmented" role="tablist" aria-label="Pasos" style={{ display: "flex", flexWrap: "wrap", width: "100%", marginBottom: 16 }}>
