@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { ColumnDef } from "@tanstack/react-table";
 import { DataTable } from "@/components/data-table";
 import { Skeleton } from "@/components/ui";
+import { IconWarning } from "@/components/icons";
 import { useStore } from "@/lib/store";
 import { money, num } from "@/lib/helpers";
 
@@ -165,6 +166,18 @@ export function InventariosView({ tablaKey = "inventarios" }: { tablaKey?: strin
           <p className="ds-muted">Todos los artículos de Business Central con su <strong>stock total</strong>. Expandí un material (⌄) para ver en <strong>qué almacenes y variantes</strong> tiene existencias (almacén general o el almacén virtual de cada obra).</p>
         </div>
       </div>
+
+      {/* Decirlo una vez arriba: la columna llena de "s/d" no se explica sola (el
+          motivo estaba solo en el title de cada celda). */}
+      {stockEstado === "error" && (
+        <div className="ds-callout ds-callout--yellow mt-4" role="status">
+          <span className="ds-callout__icon"><IconWarning size={18} /></span>
+          <div>
+            <div className="ds-callout__title">No se pudo consultar el stock en Business Central</div>
+            <div className="ds-callout__body">La columna <span className="ds-strong">Stock (BC)</span> queda en “s/d”. El resto del catálogo (código, descripción, precio de referencia) sí es válido.</div>
+          </div>
+        </div>
+      )}
 
       <div className="mt-4 ds-reveal">
         <DataTable data={rows} columns={columns} tablaKey={tablaKey} buscarPlaceholder="Buscar por código o descripción…" getRowId={(a) => a.code} renderExpanded={renderExpanded} vacio="Sin artículos en el catálogo." />
