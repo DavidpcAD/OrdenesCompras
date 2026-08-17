@@ -66,7 +66,24 @@ export default function ProveeduriaMaterialesPage() {
   const [rows, setRows] = useState<Row[]>(baseRows);
   const baseKey = baseRows.map((r) => r.pedidoLineaId).join(",");
   const [lastKey, setLastKey] = useState(baseKey);
-  if (baseKey !== lastKey) { setRows(baseRows); setLastKey(baseKey); }
+  // Cuando cambia el set de líneas (el auto-refresh de 45s trae un pedido nuevo de
+  // Producción, o una línea se queda sin saldo) NO hay que pisar lo que la usuaria
+  // ya llevaba armado: se CONSERVA su selección, cantidad, precio e IVA por línea y
+  // solo se refrescan los datos del pedido. Antes se reemplazaba la tabla entera y
+  // perdía el trabajo a medio hacer.
+  if (baseKey !== lastKey) {
+    setRows((prev) => {
+      const previas = new Map(prev.map((r) => [r.pedidoLineaId, r]));
+      return baseRows.map((b) => {
+        const p = previas.get(b.pedidoLineaId);
+        if (!p) return b;
+        // Si otro usuario ordenó parte de la línea, el pendiente bajó: acotar.
+        const cant = Number(p.cantidad) > b.pendiente ? String(b.pendiente) : p.cantidad;
+        return { ...b, incluir: p.incluir, cantidad: cant, precio: p.precio, iva: p.iva };
+      });
+    });
+    setLastKey(baseKey);
+  }
 
   const [filtro, setFiltro] = useState<string>("all");
   const [pedFiltro, setPedFiltro] = useState("");
