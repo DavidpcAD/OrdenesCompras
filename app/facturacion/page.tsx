@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import { Badge, Button, Card, EmptyState, QtyRing, Tile } from "@/components/ui";
 import { IconDelivery } from "@/components/icons";
 import { useStore } from "@/lib/store";
-import { money, formatDate, ordenAvance, ordenEsParcial, ordenRecibidoPct } from "@/lib/helpers";
+import { money, formatDate, ordenAvance, ordenEsParcial, ordenRecibidoPct, ordenSubtotal } from "@/lib/helpers";
 
 export default function FacturacionPage() {
   const { ordenes, proveedores } = useStore();
@@ -35,7 +35,10 @@ export default function FacturacionPage() {
         <div className="col gap-4 mt-6">
           {porRecibir.length === 0 && <Card><EmptyState icon={<IconDelivery size={24} />} title="No hay órdenes pendientes de recibir." hint={<>Cuando llegue material a bodega vas a verlo acá. Para el histórico completo, abrí <strong>“Todas las órdenes”</strong>.</>} /></Card>}
           {porRecibir.map((o) => {
-            const total = o.lineas.reduce((s, l) => s + l.cantidad * l.precioUnitario, 0);
+            // Mismo cálculo que la lista de órdenes (`ordenSubtotal`): antes esta
+            // tarjeta ignoraba el descuento de línea, así que la misma orden se veía
+            // con dos montos distintos según la pantalla. Sigue siendo SIN IVA.
+            const total = ordenSubtotal(o);
             return (
               <Card key={o.id} interactive onClick={() => router.push(`/facturacion/${o.id}`)}>
                 <div className="row row--between wrap gap-4">
@@ -55,7 +58,7 @@ export default function FacturacionPage() {
                   <div className="row gap-6">
                     <div className="col" style={{ alignItems: "flex-end" }}>
                       <span className="ds-strong">{money(total, o.currencyCode)}</span>
-                      <span className="ds-muted ds-body-sm">total orden</span>
+                      <span className="ds-muted ds-body-sm">total sin IVA</span>
                     </div>
                     <Button variant="green">Registrar factura</Button>
                   </div>

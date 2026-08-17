@@ -43,7 +43,9 @@ export function OrdenesLista({
       },
     },
     { id: "fecha", header: "Fecha", accessorFn: (o) => o.fecha, meta: { label: "Fecha", date: true }, cell: (c) => formatDate(c.getValue()) },
-    { id: "total", header: "Total", accessorFn: (o) => ordenSubtotal(o), meta: { label: "Total", num: true }, cell: (c) => money(c.getValue(), c.row.original.currencyCode) },
+    // "Total" a secas se confundía con el "Total orden" del detalle, que SÍ lleva
+    // IVA. Acá es la suma de líneas (artículos + cargos) con descuento y sin IVA.
+    { id: "total", header: "Total sin IVA", accessorFn: (o) => ordenSubtotal(o), meta: { label: "Total sin IVA", num: true }, cell: (c) => money(c.getValue(), c.row.original.currencyCode) },
     {
       id: "recibido", header: "Recibido", accessorFn: (o) => ordenRecibidoPct(o), meta: { label: "Recibido" }, enableColumnFilter: false,
       cell: (c) => {
@@ -138,7 +140,7 @@ export function OrdenesLista({
                   <div className="ds-table-wrap" style={{ boxShadow: "none", borderRadius: 0 }}>
                     <table className="ds-table">
                       <thead>
-                        <tr><th>N.º</th><th>Solicitudes</th><th>Fecha</th><th className="ds-num">Total</th><th>Recibido</th><th>Estado</th></tr>
+                        <tr><th>N.º</th><th>Solicitudes</th><th>Fecha</th><th className="ds-num">Total sin IVA</th><th>Recibido</th><th>Estado</th></tr>
                       </thead>
                       <tbody>
                         {g.ords.map((o) => {
