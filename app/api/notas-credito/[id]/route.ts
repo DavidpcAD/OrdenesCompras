@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { setNotaCreditoEstado } from "@/lib/repo";
+import { actor } from "@/lib/actor";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -10,12 +11,8 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   try {
     const body = await req.json();
     const estado = body.estado === "pendiente" ? "pendiente" : "resuelta";
-    await setNotaCreditoEstado(
-      Number(params.id),
-      estado,
-      String(body.usuario ?? ""),
-      body.rol ?? "contabilidad",
-    );
+    const a = await actor({ ...body, rol: body.rol ?? "contabilidad" });
+    await setNotaCreditoEstado(Number(params.id), estado, a.usuario, a.rol);
     return NextResponse.json({ ok: true });
   } catch (e: any) {
     return NextResponse.json({ error: String(e?.message ?? e) }, { status: 500 });

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createNotasCredito, listNotasCredito } from "@/lib/repo";
+import { actor } from "@/lib/actor";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -19,7 +20,7 @@ export async function GET() {
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-    const n = await createNotasCredito(body);
+    const n = await createNotasCredito({ ...body, usuario: (await actor(body)).usuario });
     return NextResponse.json({ ok: true, creadas: n });
   } catch (e: any) {
     return NextResponse.json({ ok: false, error: String(e?.message ?? e) }, { status: 500 });

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { setRecepcionFactura } from "@/lib/repo";
+import { actor } from "@/lib/actor";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -8,12 +9,8 @@ export const dynamic = "force-dynamic";
 export async function PATCH(req: Request, { params }: { params: { id: string } }) {
   try {
     const body = await req.json();
-    await setRecepcionFactura(
-      Number(params.id),
-      String(body.numeroFactura ?? ""),
-      String(body.usuario ?? ""),
-      body.rol ?? "facturacion",
-    );
+    const a = await actor({ ...body, rol: body.rol ?? "facturacion" });
+    await setRecepcionFactura(Number(params.id), String(body.numeroFactura ?? ""), a.usuario, a.rol);
     return NextResponse.json({ ok: true });
   } catch (e: any) {
     return NextResponse.json({ error: String(e?.message ?? e) }, { status: 500 });
