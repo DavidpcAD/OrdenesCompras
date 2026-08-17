@@ -37,6 +37,13 @@ export async function POST(req: Request) {
     }
     return out;
   } catch (e: any) {
-    return NextResponse.json({ error: `No se pudo validar: ${String(e?.message ?? e)}` }, { status: 500 });
+    // El detalle va al log del server (Azure), NO a la pantalla de login: antes se
+    // devolvía tal cual y la página mostraba "Failed to connect to :1433 …", o sea
+    // le contaba a cualquiera qué motor y qué puerto hay detrás.
+    console.error("login", e);
+    return NextResponse.json(
+      { error: "No se pudo validar el usuario ahora mismo. Intentá de nuevo; si sigue, avisale a TI." },
+      { status: 500 }
+    );
   }
 }

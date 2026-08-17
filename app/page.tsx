@@ -30,7 +30,10 @@ export default function LoginPage() {
       setUsuario(data.nombre || username.trim());
       router.push(ROLE_META[data.role as keyof typeof ROLE_META]?.home ?? `/${data.role}`);
     } catch (e: any) {
-      setError(String(e?.message ?? e)); setCargando(false);
+      const raw = String(e?.message ?? e);
+      // "Failed to fetch" no le dice nada a nadie.
+      setError(/failed to fetch|networkerror|load failed/i.test(raw) ? "No hay conexión con el servidor. Revisá tu internet e intentá de nuevo." : raw);
+      setCargando(false);
     }
   }
 
@@ -94,19 +97,21 @@ export default function LoginPage() {
           <p className="ds-muted ds-body-sm">Ingresá tu usuario y contraseña para continuar</p>
         </div>
 
+        {/* Form de verdad (no divs): así los gestores de contraseñas ofrecen guardar
+            y Enter envía sin depender de handlers por campo. */}
+        <form onSubmit={(e) => { e.preventDefault(); if (!cargando) entrar(); }}>
         <div className="col gap-3">
           <div className="ds-form-field">
             <label className="ds-form-field__label" htmlFor="username">Usuario</label>
             <input id="username" name="username" autoComplete="username" className="ds-form-field__input" value={username} autoFocus autoCapitalize="off" autoCorrect="off"
               placeholder="username" onChange={(e) => setUsername(e.target.value)}
-              onKeyDown={(e) => { if (e.key === "Enter") document.getElementById("pw")?.focus(); }} />
+              onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); document.getElementById("pw")?.focus(); } }} />
           </div>
           <div className="ds-form-field">
             <label className="ds-form-field__label" htmlFor="pw">Contraseña</label>
             <div style={{ position: "relative" }}>
               <input id="pw" name="password" autoComplete="current-password" className="ds-form-field__input" type={showPw ? "text" : "password"} value={password}
-                placeholder="••••••••" onChange={(e) => setPassword(e.target.value)} style={{ paddingRight: 46 }}
-                onKeyDown={(e) => { if (e.key === "Enter") entrar(); }} />
+                placeholder="••••••••" onChange={(e) => setPassword(e.target.value)} style={{ paddingRight: 46 }} />
               <button type="button" onClick={() => setShowPw((v) => !v)} aria-label={showPw ? "Ocultar contraseña" : "Ver contraseña"} title={showPw ? "Ocultar contraseña" : "Ver contraseña"}
                 style={{ position: "absolute", right: 14, top: "50%", transform: "translateY(-50%)", background: "none", border: 0, cursor: "pointer", color: showPw ? "var(--ds-color-green-200)" : "var(--ds-color-gray-500)", display: "inline-flex", padding: 4 }}>
                 {showPw ? (
@@ -133,9 +138,10 @@ export default function LoginPage() {
           <p role="alert" className="ds-body-sm" style={{ color: "var(--ds-color-red-100)", marginTop: 12 }}>{error}</p>
         )}
 
-        <Button block className="mt-6" onClick={entrar} disabled={cargando}>
+        <Button type="submit" block className="mt-6" disabled={cargando}>
           {cargando ? "Entrando…" : "Entrar"}
         </Button>
+        </form>
 
         <p className="ds-body-sm ds-muted mt-4" style={{ textAlign: "center" }}>
           Tu rol define a qué módulo entrás · Conectado a Business Central + SQL
