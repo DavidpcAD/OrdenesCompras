@@ -1,12 +1,17 @@
 "use client";
 
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 
 // Selector con buscador (un solo valor). El menú se renderiza en un PORTAL con
 // posición fija, así NUNCA lo recorta un contenedor con overflow (paneles, cards,
 // tablas). Se reposiciona al hacer scroll/resize y se voltea hacia arriba si no
 // hay espacio abajo. Lupa a la izquierda + chevron a la derecha.
+//
+// TECLADO (antes no había): ↓/↑ recorren las opciones, Enter elige la resaltada,
+// Escape cierra, Tab cierra y sigue. Sin esto no se podía elegir un proveedor sin
+// mouse — las opciones solo respondían a `onMouseDown`. Semántica ARIA de combobox
+// + listbox para que un lector de pantalla anuncie la opción activa.
 export function Combobox<T>({
   items,
   value,
@@ -42,7 +47,11 @@ export function Combobox<T>({
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const wrapRef = useRef<HTMLDivElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState<{ left: number; top: number; bottom: number; width: number; up: boolean } | null>(null);
+  const uid = useId();
+  const listboxId = `${uid}-listbox`;
+  const optId = (i: number) => `${uid}-opt-${i}`;
 
   const sel = items.find((i) => getKey(i) === value) ?? null;
   const q = query.trim().toLowerCase();
@@ -52,6 +61,53 @@ export function Combobox<T>({
     [items, q, below] // eslint-disable-line react-hooks/exhaustive-deps
   );
   const filtered = matched.slice(0, max);
+
+  // Opción resaltada (índice dentro de `filtered`). -1 = ninguna.
+  const [activo, setActivo] = useState(-1);
+  // Al cambiar la búsqueda o al abrir, resaltar la primera (o la ya elegida).
+  useEffect(() => {
+    if (!open) { setActivo(-1); return; }
+    const iSel = filtered.findIndex((i) => getKey(i) === value);
+    setActivo(filtered.length ? (iSel >= 0 ? iSel : 0) : -1);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, q, filtered.length]);
+
+  // Mantener visible la opción resaltada al moverse con el teclado.
+  useEffect(() => {
+    if (!open || activo < 0) return;
+    const el = menuRef.current?.querySelector<HTMLElement>(`#${CSS.escape(optId(activo))}`);
+    el?.scrollIntoView({ block: "nearest" });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activo, open]);
+
+  function elegir(i: T | undefined) {
+    if (!i) return;
+    onChange(getKey(i), i);
+    setOpen(false);
+  }
+
+  function onKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+      e.preventDefault();
+      if (!open) { setOpen(true); return; }
+      if (!filtered.length) return;
+      setActivo((a) => {
+        const paso = e.key === "ArrowDown" ? 1 : -1;
+        const next = a < 0 ? (paso > 0 ? 0 : filtered.length - 1) : a + paso;
+        return (next + filtered.length) % filtered.length;   // circular
+      });
+      return;
+    }
+    if (e.key === "Enter") {
+      if (open && activo >= 0 && filtered[activo]) { e.preventDefault(); elegir(filtered[activo]); }
+      return;
+    }
+    if (e.key === "Escape") {
+      if (open) { e.preventDefault(); setOpen(false); }
+      return;
+    }
+    if (e.key === "Tab" && open) setOpen(false);
+  }
 
   function reposition() {
     const el = wrapRef.current;
@@ -75,6 +131,9 @@ export function Combobox<T>({
   const menu = open && pos && createPortal(
     <div
       className="combo__menu"
+      id={listboxId}
+      role="listbox"
+      ref={menuRef}
       style={{
         position: "fixed", left: pos.left, width: pos.width,
         ...(pos.up ? { bottom: pos.bottom + 6 } : { top: pos.top + 6 }),
@@ -83,23 +142,31 @@ export function Combobox<T>({
     >
       {filtered.length === 0 && <div className="combo__empty">{below ? "Escribí para buscar…" : q ? "Sin coincidencias." : "No hay opciones."}</div>}
       {(() => {
-        const renderOpt = (i: T) => (
-          <button
-            key={getKey(i)}
-            type="button"
-            className={`combo__item ${getKey(i) === value ? "is-active" : ""}`}
-            onMouseDown={(e) => { e.preventDefault(); onChange(getKey(i), i); setOpen(false); }}
-          >
-            {renderItem ? renderItem(i) : getLabel(i)}
-          </button>
-        );
+        const renderOpt = (i: T) => {
+          const idx = filtered.indexOf(i);
+          return (
+            <button
+              key={getKey(i)}
+              id={optId(idx)}
+              role="option"
+              aria-selected={getKey(i) === value}
+              tabIndex={-1}
+              type="button"
+              className={`combo__item ${getKey(i) === value ? "is-active" : ""}${idx === activo ? " is-focus" : ""}`}
+              onMouseEnter={() => setActivo(idx)}
+              onMouseDown={(e) => { e.preventDefault(); elegir(i); }}
+            >
+              {renderItem ? renderItem(i) : getLabel(i)}
+            </button>
+          );
+        };
         if (!groupBy) return filtered.map(renderOpt);
         // Agrupa preservando el orden de aparición de cada grupo.
         const orden: string[] = [];
         const map = new Map<string, T[]>();
         for (const i of filtered) { const g = groupBy(i); if (!map.has(g)) { map.set(g, []); orden.push(g); } map.get(g)!.push(i); }
         return orden.map((g) => (
-          <div key={g} className="combo__group-wrap">
+          <div key={g} className="combo__group-wrap" role="group" aria-label={g}>
             <div className="combo__group">{g} · {map.get(g)!.length}</div>
             {map.get(g)!.map(renderOpt)}
           </div>
@@ -119,9 +186,16 @@ export function Combobox<T>({
         id={id}
         className="ds-form-field__input combo__input"
         placeholder={placeholder}
+        role="combobox"
+        aria-expanded={open}
+        aria-controls={listboxId}
+        aria-autocomplete="list"
+        aria-activedescendant={open && activo >= 0 ? optId(activo) : undefined}
+        autoComplete="off"
         value={open ? query : sel ? getLabel(sel) : ""}
         onChange={(e) => { setQuery(e.target.value); setOpen(true); }}
         onFocus={() => { setQuery(""); setOpen(true); }}
+        onKeyDown={onKeyDown}
         onBlur={() => setTimeout(() => setOpen(false), 150)}
       />
       <span className={`combo__chev${open ? " is-open" : ""}`} aria-hidden>
