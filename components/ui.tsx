@@ -135,7 +135,12 @@ export function Select({
               <div style={{ padding: 8, borderBottom: "1.5px solid var(--ds-color-gray-100)", position: "sticky", top: 0, background: "var(--ds-surface)", zIndex: 1 }}>
                 <input autoFocus value={q} onChange={(e) => setQ(e.target.value)} className="ds-cell-input" style={{ width: "100%" }}
                   aria-label="Buscar opción" placeholder="Buscar…"
-                  onKeyDown={(e) => { if (e.key === "ArrowDown") { e.preventDefault(); menuRef.current?.querySelector<HTMLButtonElement>('[role="option"]')?.focus(); } }} />
+                  onKeyDown={(e) => {
+                    if (e.key === "ArrowDown") { e.preventDefault(); menuRef.current?.querySelector<HTMLButtonElement>('[role="option"]')?.focus(); }
+                    // Enter en el buscador elige la primera coincidencia (antes no
+                    // hacía nada: había que bajar con la flecha aunque quedara una).
+                    else if (e.key === "Enter" && visibles.length) { e.preventDefault(); pick(visibles[0].value); }
+                  }} />
               </div>
             )}
             {visibles.length === 0 && <div className="combo__empty">{options.length === 0 ? "Sin opciones." : "Sin coincidencias."}</div>}
