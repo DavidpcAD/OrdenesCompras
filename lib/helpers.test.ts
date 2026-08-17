@@ -10,6 +10,7 @@ import {
   ordenRecibidoPct, ordenEstaCompleta, ordenEsParcial, ordenAvance, ordenLineaImporte,
   ordenSubtotal, recibidoPorLineaPedido, recibidoDeLineaPedido, pedidoLineaPendiente,
   distribuirCargo, monedaApp, formatDate, todayISO, nextNumero, almacenesFisicos,
+  ordenPedidos, ordenEsDirecta,
 } from "./helpers.ts";
 import type { Orden, OrdenLinea } from "./types.ts";
 
@@ -19,6 +20,7 @@ const linea = (p: Partial<OrdenLinea> & { id: string }): OrdenLinea => ({
   precioUnitario: p.precioUnitario ?? 0, ivaPct: p.ivaPct ?? 13,
   cantidadRecibida: p.cantidadRecibida ?? 0, cantidadFacturada: p.cantidadFacturada ?? 0,
   descuentoPct: p.descuentoPct, pedidoLineaId: p.pedidoLineaId, chargeNo: p.chargeNo,
+  pedidoNumero: p.pedidoNumero,
 });
 
 const orden = (lineas: OrdenLinea[]): Orden => ({
@@ -136,4 +138,21 @@ test("el próximo número sigue al máximo existente", () => {
 test("solo se ofrecen almacenes físicos ALM-*", () => {
   const list = [{ codigo: "ALM-GRAL" }, { codigo: "VN-M.28" }, { codigo: "alm-sso" }];
   assert.deepEqual(almacenesFisicos(list).map((a) => a.codigo), ["ALM-GRAL", "alm-sso"]);
+});
+
+test("las solicitudes de origen no repiten y las líneas manuales no cuentan", () => {
+  const o = orden([
+    linea({ id: "a", pedidoNumero: "PED-000118" }),
+    linea({ id: "b", pedidoNumero: "PED-000118" }),   // misma solicitud: una sola vez
+    linea({ id: "c", pedidoNumero: "Manual" }),        // agregada a mano: no es solicitud
+    linea({ id: "d", pedidoNumero: "PED-000119" }),
+  ]);
+  assert.deepEqual(ordenPedidos(o), ["PED-000118", "PED-000119"]);
+  assert.equal(ordenEsDirecta(o), false);
+});
+
+test("una orden con solo líneas manuales es directa", () => {
+  const o = orden([linea({ id: "a", pedidoNumero: "Manual" }), linea({ id: "b" })]);
+  assert.deepEqual(ordenPedidos(o), []);
+  assert.equal(ordenEsDirecta(o), true);
 });

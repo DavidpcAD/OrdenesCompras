@@ -65,7 +65,10 @@ export function OrdenDetalle({
       });
       const d = await r.json().catch(() => ({}));
       if (r.ok) {
-        if (d.cargoError) toast(`BC ${orden.bcNumber}: lanzado, pero el cargo no se aplicó — ${d.cargoError}`, "error");
+        // Se lanzó, pero puede haber quedado incompleto: cargo que no entró o líneas
+        // que no existen en BC. Eso hay que decirlo, no dar un "listo" verde.
+        const avisos = [d.lineasError, d.cargoError].filter(Boolean) as string[];
+        if (avisos.length) toast(`BC ${orden.bcNumber}: lanzado con pendientes — ${avisos.join(" · ")}`, "error");
         else toast(`BC ${orden.bcNumber}: ${d.status ?? "lanzado"}${cargos.length ? " (líneas y cargos sincronizados)" : " (líneas sincronizadas)"}`, "success");
       } else toast(`No se pudo lanzar en BC: ${d.error ?? r.status}`, "error");
     } catch (e: any) {

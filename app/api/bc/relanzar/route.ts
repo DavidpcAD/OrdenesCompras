@@ -11,8 +11,18 @@ export async function POST(req: Request) {
   try {
     const { orderNo, lineas, cargos, metodo } = await req.json();
     if (!orderNo) return NextResponse.json({ error: "Falta orderNo" }, { status: 400 });
+    // OJO: resync solo PATCHea líneas que ya existen en BC (precio + variante). Una
+    // línea agregada en la app después de crear el pedido NO se crea en BC. Antes el
+    // resultado se descartaba y la orden quedaba "lanzada" sin avisar que a BC le
+    // faltaba material. Ahora se reporta.
+    let lineasError: string | undefined;
+    let lineasPatched = 0;
     if (Array.isArray(lineas) && lineas.length) {
-      await bcResyncPedidoLines(orderNo, lineas);
+      const r = await bcResyncPedidoLines(orderNo, lineas);
+      lineasPatched = r.patched;
+      if (r.sinMatch.length) {
+        lineasError = `Estas líneas no están en el pedido de BC y NO se agregaron: ${r.sinMatch.join(", ")}. Agregalas en BC o pedí que se cree el pedido de nuevo.`;
+      }
     }
     // Cargos de producto: agregar la línea vía codeunit (idempotente por itemChargeNo),
     // así re-aprobar una orden que se creó sin el cargo lo completa. No debe tumbar,
@@ -30,10 +40,16 @@ export async function POST(req: Request) {
     // Reasignar cargos si el método no es "por importe" (Amount ya es automático).
     const met = (metodo ?? "").trim();
     if (met && met.toLowerCase() !== "amount") {
-      try { await bcAssignItemCharges(orderNo, met); } catch { /* no debe tumbar el relanzamiento */ }
+      // No debe tumbar el relanzamiento, pero tampoco callarse: si el reparto falla,
+      // el cargo queda distribuido por importe y nadie se enteraba.
+      try { await bcAssignItemCharges(orderNo, met); }
+      catch (e: any) {
+        const msg = `no se pudo repartir el cargo por ${met}: ${String(e?.message ?? e)} (quedó por importe)`;
+        cargoError = cargoError ? `${cargoError} · ${msg}` : msg;
+      }
     }
     const status = await bcReleasePedido(orderNo);
-    return NextResponse.json({ ok: true, status, cargoError });
+    return NextResponse.json({ ok: true, status, cargoError, lineasError, lineasPatched });
   } catch (e: any) {
     return NextResponse.json({ ok: false, error: String(e?.message ?? e) }, { status: 502 });
   }
