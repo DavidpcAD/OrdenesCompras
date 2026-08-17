@@ -19,7 +19,7 @@ export default function RegistrarFacturaPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
   const toast = useToast();
-  const { ordenes, proveedores, registrarRecepcion, marcarNotasCredito, role, cargando } = useStore();
+  const { ordenes, proveedores, recepciones, registrarRecepcion, marcarNotasCredito, role, cargando } = useStore();
   // La vista se elige por ROL, no por ancho de pantalla: Contabilidad usa la TABLA
   // (escritorio); Bodega (Pedro) usa siempre las TARJETAS, porque todo lo de Bodega
   // es en tablet/celular.
@@ -226,6 +226,15 @@ export default function RegistrarFacturaPage() {
     if (avisarCargo && !cargoAvisoDesc.trim()) { toast("Escribí qué cargo de producto trae la factura para avisarle a Contabilidad (o desmarcá la casilla).", "error"); return; }
     const excede = articulo.find((l) => Number(recibir[l.id] || 0) > ordenLineaPendiente(l) + 1e-9);
     if (excede) { toast(`No podés recibir más de lo pendiente en "${excede.descripcion}".`, "error"); return; }
+    // Factura repetida en la misma orden: casi siempre es un doble registro o un
+    // error de dedo, y en contabilidad se termina pagando dos veces.
+    const yaRegistrada = recepciones.some(
+      (r) => r.ordenId === orden!.id && (r.numeroFactura ?? "").trim().toLowerCase() === numeroFactura.trim().toLowerCase()
+    );
+    if (yaRegistrada) {
+      toast(`La factura ${numeroFactura.trim()} ya está registrada en esta orden. Revisá "Recibidas".`, "error");
+      return;
+    }
     const lineas = articulo
       .filter((l) => Number(recibir[l.id] || 0) > 0)
       .map((l) => ({ ordenLineaId: l.id, cantidadRecibida: Number(recibir[l.id]) }));

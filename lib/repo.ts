@@ -557,6 +557,17 @@ export async function createRecepcion(input: NewRecepcionDB): Promise<number> {
   try {
     const ord = await new sql.Request(tx).input("id", sql.Int, input.idOrdenCompra).query("SELECT ordenNo FROM dbo.OrdenCompra WHERE idOrdenCompra=@id");
     const ordenNo = ord.recordset[0]?.ordenNo ?? "";
+    // Misma factura dos veces en la misma orden = registro duplicado (doble envío o
+    // error de dedo). Se corta acá: en contabilidad una factura repetida se paga dos
+    // veces. En revisión (sin número) no aplica.
+    if (!enRevision) {
+      const dup = await new sql.Request(tx)
+        .input("id", sql.Int, input.idOrdenCompra).input("f", sql.NVarChar(40), String(input.numeroFactura).trim())
+        .query("SELECT COUNT(*) AS n FROM dbo.RecepcionCompra WHERE idOrdenCompra=@id AND esEliminada=0 AND LTRIM(RTRIM(numeroFactura))=@f");
+      if ((dup.recordset[0]?.n ?? 0) > 0) {
+        throw new Error(`La factura ${input.numeroFactura} ya está registrada en ${ordenNo}. Revisá "Recibidas" antes de volver a registrarla.`);
+      }
+    }
     const max = await new sql.Request(tx).query("SELECT MAX(CAST(SUBSTRING(recepcionNo,5,20) AS INT)) AS m FROM dbo.RecepcionCompra WHERE recepcionNo LIKE 'REC-%'");
     const numero = "REC-" + String((max.recordset[0].m ?? 0) + 1).padStart(6, "0");
     const ins = await new sql.Request(tx)
