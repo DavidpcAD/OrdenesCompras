@@ -95,15 +95,16 @@ const ORDEN_DET: HelpEntry = {
   pasos: [
     "Revisá las líneas y el estado actual (arriba).",
     "Si está Abierta, usá “Editar” para ajustarla, o enviala a aprobación.",
+    "Si Aprobación la rechazó, el aviso rojo de arriba dice el motivo: corregí eso, guardá y reenviala.",
     "Si ya está lanzada/recibida, consultá sus recepciones y facturas asociadas.",
-    "Con “Imprimir” generás el PDF de la orden.",
+    "Con “Imprimir” generás el PDF de la orden (se habilita cuando ya está aprobada).",
   ],
 };
 const ORDEN_EDITAR: HelpEntry = {
   titulo: "Editar orden",
   resumen: "Ajustar proveedor, almacén, líneas y precios.",
   detalle: [
-    "Solo se puede editar mientras la orden esté Abierta (antes de enviarla a aprobación).",
+    "Solo se puede editar mientras la orden esté Abierta o Rechazada (una vez enviada a aprobación, no).",
     "El precio que dejes acá es el que viaja a Business Central como costo unitario de la línea.",
   ],
   pasos: [
@@ -298,14 +299,19 @@ const ARCHIVO: HelpEntry = {
 // Compartidas / genéricas
 const DEVOLUCIONES: HelpEntry = {
   titulo: "Devoluciones",
-  resumen: "Material o líneas devueltas al proveedor.",
+  resumen: "Lo que volvió para atrás: solicitudes devueltas a Ingeniería y órdenes rechazadas por Aprobación.",
   detalle: [
-    "Registro de lo que se devolvió al proveedor (material rechazado o sobrante).",
-    "Queda para trazabilidad y para cruzar con notas de crédito.",
+    "Nada que ver con devolverle material al proveedor (para eso están las notas de crédito).",
+    "Acá caen dos cosas: las solicitudes que Proveeduría devolvió al ingeniero para que las corrija, y las órdenes de compra que Aprobación rechazó.",
+    "La columna Motivo dice por qué volvió; el tipo (Solicitud u Orden) lo indica la primera columna.",
   ],
   pasos: [
-    "Revisá la lista de devoluciones y su motivo.",
-    "Abrí una para ver las líneas devueltas y su estado.",
+    "Mirá el tipo, el número y el motivo de cada fila.",
+    "Tocá una fila para abrirla: si es una orden rechazada, entrás a corregirla y reenviarla a aprobación.",
+    "Las solicitudes devueltas las corrige el ingeniero desde su app; acá quedan para seguimiento.",
+  ],
+  tips: [
+    "Si el motivo sale “—”, la otra app no lo registró al rechazar: está en el historial de la orden.",
   ],
 };
 const GENERIC: HelpEntry = {
