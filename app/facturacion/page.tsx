@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import { Badge, Button, Card, EmptyState, QtyRing, Tile } from "@/components/ui";
 import { IconDelivery } from "@/components/icons";
 import { useStore } from "@/lib/store";
-import { money, formatDate, ordenEsParcial, ordenRecibidoPct } from "@/lib/helpers";
+import { money, formatDate, ordenAvance, ordenEsParcial, ordenRecibidoPct } from "@/lib/helpers";
 
 export default function FacturacionPage() {
   const { ordenes, proveedores } = useStore();
@@ -40,7 +40,7 @@ export default function FacturacionPage() {
               <Card key={o.id} interactive onClick={() => router.push(`/facturacion/${o.id}`)}>
                 <div className="row row--between wrap gap-4">
                   <div className="row gap-4">
-                    <QtyRing recibida={o.lineas.reduce((s, l) => s + l.cantidadRecibida, 0)} total={o.lineas.reduce((s, l) => s + l.cantidad, 0)} />
+                    <QtyRing {...ordenAvance(o)} />
                     <div className="col" style={{ gap: 4 }}>
                       <div className="row gap-3">
                         <span className="ds-strong">{o.numero}</span>

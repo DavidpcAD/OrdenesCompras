@@ -179,19 +179,35 @@ export function ordenSubtotal(o: Orden): number {
   return o.lineas.reduce((s, l) => s + ordenLineaImporte(l), 0);
 }
 
+// El avance de recepción se mide SOLO sobre los artículos: las líneas de cargo
+// (flete) no se reciben en bodega, se facturan. Si se cuentan, una orden con flete
+// nunca llega a 100% ni se completa — y en SQL la regla ya es `tipoLinea='articulo'`.
+const soloArticulos = (o: Orden) => o.lineas.filter((l) => l.tipo !== "cargo");
+
 export function ordenRecibidoPct(o: Orden): number {
-  const total = o.lineas.reduce((s, l) => s + l.cantidad, 0);
+  const arts = soloArticulos(o);
+  const total = arts.reduce((s, l) => s + l.cantidad, 0);
   if (total === 0) return 0;
-  const rec = o.lineas.reduce((s, l) => s + l.cantidadRecibida, 0);
+  const rec = arts.reduce((s, l) => s + l.cantidadRecibida, 0);
   return Math.round((rec / total) * 100);
 }
 
+// Cantidades para los anillos/barras de progreso (mismo criterio: sin cargos).
+export function ordenAvance(o: Orden): { recibida: number; total: number } {
+  const arts = soloArticulos(o);
+  return {
+    recibida: arts.reduce((s, l) => s + l.cantidadRecibida, 0),
+    total: arts.reduce((s, l) => s + l.cantidad, 0),
+  };
+}
+
 export function ordenEstaCompleta(o: Orden): boolean {
-  return o.lineas.length > 0 && o.lineas.every(ordenLineaCompleta);
+  const arts = soloArticulos(o);
+  return arts.length > 0 && arts.every(ordenLineaCompleta);
 }
 
 export function ordenEsParcial(o: Orden): boolean {
-  const algo = o.lineas.some((l) => l.cantidadRecibida > 0);
+  const algo = soloArticulos(o).some((l) => l.cantidadRecibida > 0);
   return algo && !ordenEstaCompleta(o);
 }
 

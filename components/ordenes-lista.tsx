@@ -7,7 +7,7 @@ import { Badge, ProgressBar, EmptyState } from "@/components/ui";
 import { DataTable } from "@/components/data-table";
 import { IconChevronDown } from "@/components/icons";
 import { useStore } from "@/lib/store";
-import { money, formatDate, ordenBadge, ordenRecibidoPct, ordenSubtotal, ordenPedidos, ordenEsDirecta, ordenLineaImporte, num } from "@/lib/helpers";
+import { money, formatDate, ordenAvance, ordenBadge, ordenRecibidoPct, ordenSubtotal, ordenPedidos, ordenEsDirecta, ordenLineaImporte, num } from "@/lib/helpers";
 import type { Orden } from "@/lib/types";
 
 // Lista de órdenes reutilizable (Proveeduría / Aprobación / Bodega), sobre DataTable
@@ -48,7 +48,7 @@ export function OrdenesLista({
       id: "recibido", header: "Recibido", accessorFn: (o) => ordenRecibidoPct(o), meta: { label: "Recibido" }, enableColumnFilter: false,
       cell: (c) => {
         const o = c.row.original;
-        return <ProgressBar compact value={o.lineas.reduce((s, l) => s + l.cantidadRecibida, 0)} total={o.lineas.reduce((s, l) => s + l.cantidad, 0)} />;
+        return <ProgressBar compact value={ordenAvance(o).recibida} total={ordenAvance(o).total} />;
       },
     },
     { id: "estado", header: "Estado", accessorFn: (o) => ordenBadge(o.estado).label, meta: { label: "Estado" }, cell: (c) => { const b = ordenBadge(c.row.original.estado); return <Badge tone={b.tone}>{b.label}</Badge>; } },
@@ -150,7 +150,7 @@ export function OrdenesLista({
                               <td><div className="row gap-2 wrap">{dir && <Badge tone="yellow">Directa</Badge>}{peds.slice(0, 2).map((n) => <Badge key={n} tone="gray">{n}</Badge>)}{peds.length > 2 && <span className="ds-muted ds-body-sm">+{peds.length - 2}</span>}</div></td>
                               <td className="ds-body-sm">{formatDate(o.fecha)}</td>
                               <td className="ds-num ds-strong">{money(ordenSubtotal(o), o.currencyCode)}</td>
-                              <td><ProgressBar compact value={o.lineas.reduce((s, l) => s + l.cantidadRecibida, 0)} total={o.lineas.reduce((s, l) => s + l.cantidad, 0)} /></td>
+                              <td><ProgressBar compact value={ordenAvance(o).recibida} total={ordenAvance(o).total} /></td>
                               <td><Badge tone={b.tone}>{b.label}</Badge></td>
                             </tr>
                           );
