@@ -161,9 +161,11 @@ Cada escritura deja un `Movimiento` (bitácora). Los estados de la app se mapean
 `dbo.Estado` (se crean los nombres que falten y se leen los de **todos** los módulos, para
 que un estado escrito por la app de Producción no se lea como "borrador").
 
-`dbo.OrdenCompraDet` gana solas las columnas `chargeNo` y `chargeMethod` la primera vez que
-corre (`ensureCargoCols`); si el usuario de la base no tiene permiso de `ALTER`, la app sigue
-funcionando sin ellas.
+`dbo.OrdenCompraDet` necesita dos columnas nullable (`chargeNo`, `chargeMethod`) para no
+perder el tipo de Cargo de producto de BC. Como esa tabla la comparte la app de Producción,
+la app **no** las crea sola: hay que correr `db/migracion_cargo_cols.sql` (o poner el App
+Setting `MIGRAR_ESQUEMA=1` una vez). Mientras no existan, todo funciona como antes, sin
+guardar el tipo de cargo.
 
 ## Design system
 

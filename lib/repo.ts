@@ -291,11 +291,18 @@ async function ensureCargoCols(): Promise<boolean> {
   if (cargoColsListas !== null) return cargoColsListas;
   try {
     const pool = await getPool();
-    await pool.request().query(`
-      IF COL_LENGTH('dbo.OrdenCompraDet','chargeNo') IS NULL
-        ALTER TABLE dbo.OrdenCompraDet ADD chargeNo NVARCHAR(40) NULL;
-      IF COL_LENGTH('dbo.OrdenCompraDet','chargeMethod') IS NULL
-        ALTER TABLE dbo.OrdenCompraDet ADD chargeMethod NVARCHAR(20) NULL;`);
+    // dbo.OrdenCompraDet la COMPARTE la app de Producción, así que esta app NO le
+    // hace ALTER por su cuenta: solo detecta si las columnas ya están. La migración
+    // se corre a mano (db/migracion_cargo_cols.sql) o, si se quiere automática,
+    // poniendo MIGRAR_ESQUEMA=1 en el App Setting. Mientras no existan, todo sigue
+    // funcionando como antes (sin guardar el tipo de cargo).
+    if (process.env.MIGRAR_ESQUEMA === "1") {
+      await pool.request().query(`
+        IF COL_LENGTH('dbo.OrdenCompraDet','chargeNo') IS NULL
+          ALTER TABLE dbo.OrdenCompraDet ADD chargeNo NVARCHAR(40) NULL;
+        IF COL_LENGTH('dbo.OrdenCompraDet','chargeMethod') IS NULL
+          ALTER TABLE dbo.OrdenCompraDet ADD chargeMethod NVARCHAR(20) NULL;`);
+    }
     const r = await pool.request().query(
       "SELECT COL_LENGTH('dbo.OrdenCompraDet','chargeNo') AS a, COL_LENGTH('dbo.OrdenCompraDet','chargeMethod') AS b"
     );
