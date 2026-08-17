@@ -32,6 +32,12 @@ export default function RecepcionDetallePage() {
   });
   const esCargo = (f: typeof filas[number]) => f.ol?.tipo === "cargo";
 
+  // `rec.total` es el importe SIN IVA (en Archivo se llama "Importe (excl. IVA)").
+  // Se desglosa igual que en Recibidas y en la pantalla de recibir para que el
+  // total de esta pantalla cuadre con la factura del proveedor.
+  const subtotal = filas.reduce((s, f) => s + f.importe, 0) || rec.total;
+  const iva = filas.reduce((s, f) => s + f.importe * ((f.ol?.ivaPct ?? 0) / 100), 0);
+
   return (
     <>
       <main className="page page--wide">
@@ -91,8 +97,10 @@ export default function RecepcionDetallePage() {
 
         <div className="row mt-6" style={{ justifyContent: "flex-end" }}>
           <div className="totals" style={{ minWidth: 320 }}>
+            <div className="totals__row"><span>Subtotal (excl. IVA)</span><span>{money(subtotal, cur)}</span></div>
+            <div className="totals__row"><span>IVA</span><span>{money(iva, cur)}</span></div>
             <div className="totals__row totals__row--grand" style={{ gridColumn: "1 / -1" }}>
-              <span>Total factura</span><span>{money(rec.total, cur)}</span>
+              <span>Total factura (con IVA)</span><span>{money(subtotal + iva, cur)}</span>
             </div>
           </div>
         </div>

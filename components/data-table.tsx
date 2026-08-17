@@ -227,8 +227,13 @@ export function DataTable<T>({
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
-    a.href = url; a.download = `${tablaKey || "reporte"}.csv`; a.click();
-    URL.revokeObjectURL(url);
+    a.href = url; a.download = `${tablaKey || "reporte"}.csv`;
+    // El link va al DOM y el URL se libera DESPUÉS del clic: revocarlo en la misma
+    // vuelta cancelaba la descarga en algunos navegadores (Safari/Firefox).
+    a.style.display = "none";
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 0);
   };
 
   const exportPDF = () => {
