@@ -411,7 +411,24 @@ export interface NewOrdenDB {
   }[];
 }
 
+// Valida las líneas antes de tocar la base: un campo vacío en la UI llega como NaN
+// (JSON lo serializa como null) y el INSERT reventaba con un error de SQL ilegible,
+// o peor, guardaba una cantidad que no es.
+function validarLineasOrden(lineas: NewOrdenDB["lineas"]) {
+  if (!Array.isArray(lineas) || !lineas.length) throw new Error("La orden no tiene líneas.");
+  for (const l of lineas) {
+    const q = Number(l.cantidad), p = Number(l.precioUnitario), iva = Number(l.ivaPct ?? 0);
+    const desc = l.descripcion || l.itemNo || "(sin descripción)";
+    if (!Number.isFinite(q) || q <= 0) throw new Error(`Cantidad inválida en "${desc}".`);
+    if (!Number.isFinite(p) || p < 0) throw new Error(`Precio inválido en "${desc}".`);
+    if (!Number.isFinite(iva) || iva < 0 || iva > 100) throw new Error(`IVA inválido en "${desc}".`);
+    const d = Number(l.descuentoPct ?? 0);
+    if (!Number.isFinite(d) || d < 0 || d > 100) throw new Error(`Descuento inválido en "${desc}".`);
+  }
+}
+
 export async function createOrden(input: NewOrdenDB): Promise<number> {
+  validarLineasOrden(input.lineas);
   const pool = await getPool();
   const idAbierto = await idDeEstado("abierto");
   const conCargo = await ensureCargoCols();
@@ -502,6 +519,7 @@ export async function updateOrden(id: number, input: UpdateOrdenDB) {
   }
   const ordenNo = head.recordset[0].ordenNo ?? "";
   const lineas = (input.lineas ?? []).filter((l) => l.tipoLinea !== "articulo" || (l.itemNo && l.cantidad > 0) || l.cantidad > 0);
+  validarLineasOrden(lineas);   // mismas reglas que al crear (cantidad/precio/IVA/descuento)
   const tx = new sql.Transaction(pool); await tx.begin();
   try {
     // 1) revertir el saldo consumido por las líneas ACTUALES.

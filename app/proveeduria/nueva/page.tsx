@@ -223,6 +223,17 @@ export default function ArmarOrdenPage() {
     if (cargos.some((c) => cargoImporte(c) > 0 && !c.chargeNo)) {
       toast("Elegí el tipo de cargo (transporte) antes de continuar. Sin tipo, BC no acepta el flete.", "error"); return;
     }
+    // Cantidad válida SIEMPRE: si el campo quedó vacío o con texto, `Number()` da 0 o
+    // NaN y la orden se creaba con una cantidad imposible (o el INSERT reventaba con
+    // un error de SQL ilegible).
+    const malaCant = rows.find((r) => !(Number(r.cantidad) > 0));
+    if (malaCant) {
+      toast(`Poné una cantidad mayor que 0 en "${malaCant.descripcion}".`, "error"); return;
+    }
+    const malPrecio = rows.find((r) => !Number.isFinite(Number(r.precio)) || Number(r.precio) < 0);
+    if (malPrecio) {
+      toast(`El precio de "${malPrecio.descripcion}" no es un número válido.`, "error"); return;
+    }
     // Precio obligatorio para enviar a aprobación: ninguna línea puede ir a BC en 0.
     if (aprobar) {
       const sinPrecio = rows.filter((r) => !(Number(r.precio) > 0)).length;

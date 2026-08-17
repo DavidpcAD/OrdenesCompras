@@ -99,6 +99,12 @@ export default function EditarOrdenPage() {
   async function guardar() {
     if (!proveedorId) { toast("Seleccioná un proveedor.", "error"); return; }
     if (rows.length === 0) { toast("La orden debe tener al menos una línea.", "error"); return; }
+    // Cantidad/precio válidos (un campo vacío daba NaN y reescribía la orden con una
+    // cantidad imposible, o hacía fallar el INSERT con un error de SQL ilegible).
+    const malaCant = rows.find((r) => !(Number(r.cantidad) > 0));
+    if (malaCant) { toast(`Poné una cantidad mayor que 0 en "${malaCant.descripcion}".`, "error"); return; }
+    const malPrecio = rows.find((r) => !Number.isFinite(Number(r.precio)) || Number(r.precio) < 0);
+    if (malPrecio) { toast(`El precio de "${malPrecio.descripcion}" no es un número válido.`, "error"); return; }
     setGuardando(true);
     try {
       const ls: Omit<OrdenLinea, "id" | "cantidadRecibida" | "cantidadFacturada">[] = rows.map((r) => ({

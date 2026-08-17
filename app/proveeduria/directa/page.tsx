@@ -106,6 +106,12 @@ export default function OrdenDirectaPage() {
     if (cargos.some((c) => cargoImporte(c) > 0 && !c.chargeNo)) {
       toast("Elegí el tipo de cargo (transporte) antes de continuar. Sin tipo, BC no acepta el flete.", "error"); return;
     }
+    // Cantidad/precio válidos: con el campo vacío `Number()` da 0 o NaN y la orden
+    // se creaba con una cantidad imposible (o el INSERT fallaba con error de SQL).
+    const malaCant = rows.find((r) => !(Number(r.cantidad) > 0));
+    if (malaCant) { toast(`Poné una cantidad mayor que 0 en "${malaCant.descripcion}".`, "error"); return; }
+    const malPrecio = rows.find((r) => !Number.isFinite(Number(r.precio)) || Number(r.precio) < 0);
+    if (malPrecio) { toast(`El precio de "${malPrecio.descripcion}" no es un número válido.`, "error"); return; }
     setGuardando(true);
     try {
       const ls: Omit<OrdenLinea, "id" | "cantidadRecibida" | "cantidadFacturada">[] = rows.map((r) => ({
