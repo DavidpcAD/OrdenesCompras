@@ -207,5 +207,8 @@ como variables `--ds-*`, con tokens semánticos (`--ds-bg`, `--ds-surface`, `--d
   pedido.
 - **Inventarios / Dashboard**: dependen de endpoints de BC (existencias por ubicación y Job
   Tasks) y del mapeo obra→almacén.
-- **`/api/plantillas`** quedó sin consumidor en esta app (la pantalla que lo usaba era de
-  Ingeniería, que se movió a Producción).
+- **Rutas sin consumidor en esta app** (las pantallas que las usaban eran de Ingeniería, que
+  se movió a Producción): `/api/plantillas`, `/api/matriz`, `/api/clasificaciones` y
+  `/api/mi-etapa`, con sus funciones en `repo.ts`. No las borré por si Ingeniería vuelve acá;
+  si se decide que no, se pueden eliminar junto con su CSS (`.tpl-card__*`, popup de
+  plantillas).
