@@ -285,17 +285,25 @@ export async function softDeletePedido(id: number, usuario: string, rol: Role) {
 // app de Aprobación/Producción). Sin esto, Devoluciones mostraba el motivo "—".
 // Se toma el movimiento de rechazo MÁS RECIENTE por orden y se tolera cómo lo
 // escriba la otra app (rechazado/rechazo/rechazada/devuelto…).
-async function motivosRechazo(idOrden?: number): Promise<Map<string, string>> {
+// Se consulta SOLO para las órdenes que están rechazadas (lo normal es que no haya
+// ninguna, y entonces no se toca dbo.Movimiento): esto corre en cada bootstrap.
+async function motivosRechazo(idsOrden: number[]): Promise<Map<string, string>> {
   const out = new Map<string, string>();
+  if (!idsOrden.length) return out;
   try {
     const pool = await getPool();
     const req = pool.request();
-    let filtro = "";
-    if (idOrden != null) { req.input("id", sql.Int, idOrden); filtro = " AND idEntidad=@id"; }
+    // Con muchísimas rechazadas no vale la pena (y SQL Server topa en ~2100
+    // parámetros): se cae a filtrar solo por tipo de movimiento.
+    let filtroIds = "";
+    if (idsOrden.length <= 500) {
+      const params = idsOrden.map((id, i) => { req.input(`id${i}`, sql.Int, id); return `@id${i}`; });
+      filtroIds = ` AND idEntidad IN (${params.join(",")})`;
+    }
     const r = await req.query(
       `SELECT idEntidad, detalle FROM dbo.Movimiento
-        WHERE entidad='orden' AND detalle IS NOT NULL AND LTRIM(detalle) <> ''
-          AND (tipoMovimiento LIKE '%rechaz%' OR tipoMovimiento LIKE '%devol%')${filtro}
+        WHERE entidad='orden' AND detalle IS NOT NULL AND LTRIM(detalle) <> ''${filtroIds}
+          AND (tipoMovimiento LIKE '%rechaz%' OR tipoMovimiento LIKE '%devol%')
         ORDER BY fecha DESC, idMovimiento DESC`
     );
     for (const m of r.recordset) {
@@ -319,7 +327,8 @@ export async function listOrdenes(): Promise<Orden[]> {
       LEFT JOIN dbo.PedidoCompraDet pcd ON pcd.idPedidoCompraDet = det.idPedidoCompraDet
       LEFT JOIN dbo.PedidoCompra pc ON pc.idPedidoCompra = pcd.idPedidoCompra
       ORDER BY det.idOrdenCompraDet`);
-  const motivos = await motivosRechazo();
+  const rechazadas = h.recordset.filter((o) => codigoDeId(o.idEstado) === "rechazado").map((o) => o.idOrdenCompra as number);
+  const motivos = await motivosRechazo(rechazadas);
   const porOrden = porCabecera(d.recordset, "idOrdenCompra");
   return h.recordset.map((o) => mapOrden(
     o,
@@ -338,7 +347,8 @@ export async function getOrden(id: number): Promise<Orden | null> {
       LEFT JOIN dbo.PedidoCompraDet pcd ON pcd.idPedidoCompraDet = det.idPedidoCompraDet
       LEFT JOIN dbo.PedidoCompra pc ON pc.idPedidoCompra = pcd.idPedidoCompra
       WHERE det.idOrdenCompra=@id ORDER BY det.idOrdenCompraDet`);
-  const motivos = await motivosRechazo(id);
+  const esRechazada = codigoDeId(h.recordset[0].idEstado) === "rechazado";
+  const motivos = await motivosRechazo(esRechazada ? [id] : []);
   return mapOrden(h.recordset[0], d.recordset, motivos.get(String(id)));
 }
 
