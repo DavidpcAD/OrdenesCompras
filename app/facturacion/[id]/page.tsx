@@ -19,7 +19,7 @@ export default function RegistrarFacturaPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
   const toast = useToast();
-  const { ordenes, proveedores, registrarRecepcion, marcarNotasCredito, role } = useStore();
+  const { ordenes, proveedores, registrarRecepcion, marcarNotasCredito, role, cargando } = useStore();
   // La vista se elige por ROL, no por ancho de pantalla: Contabilidad usa la TABLA
   // (escritorio); Bodega (Pedro) usa siempre las TARJETAS, porque todo lo de Bodega
   // es en tablet/celular.
@@ -42,6 +42,24 @@ export default function RegistrarFacturaPage() {
     });
     return init;
   });
+  // El estado de arriba se calcula UNA vez; si la orden llegó después del primer
+  // render (modo API: el bootstrap tarda), el mapa quedaba vacío y todas las
+  // cantidades salían en blanco. Esto completa SOLO las líneas que falten — nunca
+  // pisa lo que Bodega ya escribió — y también cubre una línea agregada después.
+  useEffect(() => {
+    if (!orden) return;
+    setRecibir((r) => {
+      let falta = false;
+      const next = { ...r };
+      for (const l of orden.lineas) {
+        if (l.tipo !== "articulo" || next[l.id] !== undefined) continue;
+        next[l.id] = String(ordenLineaPendiente(l));
+        falta = true;
+      }
+      return falta ? next : r;
+    });
+  }, [orden]);
+
   const [numeroFactura, setNumeroFactura] = useState("");
   const [fechaFactura, setFechaFactura] = useState(todayISO());
   const [fechaRegistro, setFechaRegistro] = useState(todayISO());
@@ -119,6 +137,17 @@ export default function RegistrarFacturaPage() {
   const fechasCoinciden = fechaFactura === fechaRegistro;
 
   if (!orden) {
+    // Durante la carga inicial (SQL) el store todavía está vacío: skeleton en vez
+    // de decirle a Bodega "Orden no encontrada" (se veía al abrir el link directo
+    // o al recargar con red lenta).
+    if (cargando) {
+      return <main className="page"><div className="col gap-4" aria-busy="true">
+        <Skeleton style={{ display: "block", width: 260, height: 30, borderRadius: 8 }} />
+        <Skeleton style={{ display: "block", width: 340, height: 16, borderRadius: 6 }} />
+        <Skeleton style={{ display: "block", width: "100%", height: 180, borderRadius: 16, marginTop: 8 }} />
+        <Skeleton style={{ display: "block", width: "100%", height: 260, borderRadius: 16 }} />
+      </div></main>;
+    }
     return <><main className="page"><EmptyState icon={<IconWarning size={24} />} title="Orden no encontrada." /></main></>;
   }
   const prov = proveedores.find((p) => p.id === orden.proveedorId);
