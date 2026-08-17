@@ -280,6 +280,32 @@ export async function softDeletePedido(id: number, usuario: string, rol: Role) {
 
 // ----------------------------------------------------------------- ORDENES
 
+// El tipo de Cargo de producto (Item Charge de BC) y su método de reparto se
+// eligen en la app —y son OBLIGATORIOS para que BC acepte el flete— pero no
+// tenían dónde guardarse: se perdían al primer viaje por SQL. Estas dos columnas
+// nullable las agregan (idempotente). Si el usuario de la base no tiene permiso
+// de ALTER, se sigue trabajando exactamente como antes: `cargoColsListas` queda
+// en false y los INSERT no las mencionan.
+let cargoColsListas: boolean | null = null;
+async function ensureCargoCols(): Promise<boolean> {
+  if (cargoColsListas !== null) return cargoColsListas;
+  try {
+    const pool = await getPool();
+    await pool.request().query(`
+      IF COL_LENGTH('dbo.OrdenCompraDet','chargeNo') IS NULL
+        ALTER TABLE dbo.OrdenCompraDet ADD chargeNo NVARCHAR(40) NULL;
+      IF COL_LENGTH('dbo.OrdenCompraDet','chargeMethod') IS NULL
+        ALTER TABLE dbo.OrdenCompraDet ADD chargeMethod NVARCHAR(20) NULL;`);
+    const r = await pool.request().query(
+      "SELECT COL_LENGTH('dbo.OrdenCompraDet','chargeNo') AS a, COL_LENGTH('dbo.OrdenCompraDet','chargeMethod') AS b"
+    );
+    cargoColsListas = r.recordset[0]?.a != null && r.recordset[0]?.b != null;
+  } catch {
+    cargoColsListas = false;
+  }
+  return cargoColsListas;
+}
+
 // El motivo del rechazo NO tiene columna en dbo.OrdenCompra: vive en el log de
 // movimientos (`detalle` = "Motivo: …" del movimiento de rechazo, que escribe la
 // app de Aprobación/Producción). Sin esto, Devoluciones mostraba el motivo "—".
@@ -369,6 +395,7 @@ function mapOrden(o: any, lineas: any[], motivoRechazo?: string): Orden {
       unidad: l.unitOfMeasureCode ?? "", almacen: l.locationCode ?? "", precioUnitario: Number(l.directUnitCost ?? 0),
       ivaPct: Number(l.vatPct ?? 0), descuentoPct: Number(l.lineDiscountPct ?? 0) || undefined,
       proyecto: l.jobNo ?? undefined, taskNo: l.taskNo ?? undefined,
+      chargeNo: l.chargeNo ?? undefined, chargeMethod: l.chargeMethod ?? undefined,
       cantidadRecibida: Number(l.quantityRecibida ?? 0), cantidadFacturada: Number(l.quantityFacturada ?? 0),
     })),
   };
@@ -379,12 +406,17 @@ export interface NewOrdenDB {
   lineas: {
     tipoLinea: string; itemNo?: string; variantCode?: string; idPedidoCompraDet?: number; descripcion: string; cantidad: number;
     unidad: string; almacen: string; precioUnitario: number; ivaPct: number; descuentoPct?: number; jobNo?: string; taskNo?: string;
+    // Solo líneas tipo "cargo": tipo de Item Charge de BC y método de reparto.
+    chargeNo?: string; chargeMethod?: string;
   }[];
 }
 
 export async function createOrden(input: NewOrdenDB): Promise<number> {
   const pool = await getPool();
   const idAbierto = await idDeEstado("abierto");
+  const conCargo = await ensureCargoCols();
+  const colsCargo = conCargo ? ",chargeNo,chargeMethod" : "";
+  const valsCargo = conCargo ? ",@chargeNo,@chargeMethod" : "";
   const tx = new sql.Transaction(pool); await tx.begin();
   try {
     const max = await new sql.Request(tx).query("SELECT MAX(CAST(SUBSTRING(ordenNo,4,20) AS INT)) AS m FROM dbo.OrdenCompra WHERE ordenNo LIKE 'CP-%'");
@@ -420,8 +452,10 @@ export async function createOrden(input: NewOrdenDB): Promise<number> {
         .input("jobNo", sql.NVarChar(20), l.jobNo ?? null)
         .input("taskNo", sql.NVarChar(15), l.taskNo ?? null)
         .input("creadoPor", sql.NVarChar(100), input.usuario)
-        .query(`INSERT dbo.OrdenCompraDet (idOrdenCompra,idPedidoCompraDet,lineNum,tipoLinea,descripcion,itemNo,variantCode,unitOfMeasureCode,locationCode,quantity,quantityRecibida,quantityFacturada,directUnitCost,vatPct,lineDiscountPct,jobNo,taskNo,fechaCreacion,creadoPor)
-                VALUES (@idOrdenCompra,@idPedidoCompraDet,@lineNum,@tipoLinea,@descripcion,@itemNo,@variantCode,@unitOfMeasureCode,@locationCode,@quantity,0,0,@directUnitCost,@vatPct,@lineDiscountPct,@jobNo,@taskNo,getdate(),@creadoPor)`);
+        .input("chargeNo", sql.NVarChar(40), l.chargeNo ?? null)
+        .input("chargeMethod", sql.NVarChar(20), l.chargeMethod ?? null)
+        .query(`INSERT dbo.OrdenCompraDet (idOrdenCompra,idPedidoCompraDet,lineNum,tipoLinea,descripcion,itemNo,variantCode,unitOfMeasureCode,locationCode,quantity,quantityRecibida,quantityFacturada,directUnitCost,vatPct,lineDiscountPct,jobNo,taskNo,fechaCreacion,creadoPor${colsCargo})
+                VALUES (@idOrdenCompra,@idPedidoCompraDet,@lineNum,@tipoLinea,@descripcion,@itemNo,@variantCode,@unitOfMeasureCode,@locationCode,@quantity,0,0,@directUnitCost,@vatPct,@lineDiscountPct,@jobNo,@taskNo,getdate(),@creadoPor${valsCargo})`);
       // descontar saldo del pedido origen
       if (l.idPedidoCompraDet) {
         await new sql.Request(tx).input("id", sql.Int, l.idPedidoCompraDet).input("q", sql.Decimal(18, 4), l.cantidad)
@@ -448,6 +482,9 @@ export interface UpdateOrdenDB {
 // viejas y aplica el de las nuevas. Se bloquea si la orden ya tiene recepciones.
 export async function updateOrden(id: number, input: UpdateOrdenDB) {
   const pool = await getPool();
+  const conCargo = await ensureCargoCols();
+  const colsCargo = conCargo ? ",chargeNo,chargeMethod" : "";
+  const valsCargo = conCargo ? ",@chargeNo,@chargeMethod" : "";
   const rec = await pool.request().input("id", sql.Int, id)
     .query("SELECT COUNT(*) AS n FROM dbo.RecepcionCompra WHERE idOrdenCompra=@id AND esEliminada=0");
   if ((rec.recordset[0]?.n ?? 0) > 0) throw new Error("La orden ya tiene recepciones registradas; no se puede editar.");
@@ -508,8 +545,10 @@ export async function updateOrden(id: number, input: UpdateOrdenDB) {
         .input("jobNo", sql.NVarChar(20), l.jobNo ?? null)
         .input("taskNo", sql.NVarChar(15), l.taskNo ?? null)
         .input("creadoPor", sql.NVarChar(100), input.usuario)
-        .query(`INSERT dbo.OrdenCompraDet (idOrdenCompra,idPedidoCompraDet,lineNum,tipoLinea,descripcion,itemNo,variantCode,unitOfMeasureCode,locationCode,quantity,quantityRecibida,quantityFacturada,directUnitCost,vatPct,lineDiscountPct,jobNo,taskNo,fechaCreacion,creadoPor)
-                VALUES (@idOrdenCompra,@idPedidoCompraDet,@lineNum,@tipoLinea,@descripcion,@itemNo,@variantCode,@unitOfMeasureCode,@locationCode,@quantity,0,0,@directUnitCost,@vatPct,@lineDiscountPct,@jobNo,@taskNo,getdate(),@creadoPor)`);
+        .input("chargeNo", sql.NVarChar(40), l.chargeNo ?? null)
+        .input("chargeMethod", sql.NVarChar(20), l.chargeMethod ?? null)
+        .query(`INSERT dbo.OrdenCompraDet (idOrdenCompra,idPedidoCompraDet,lineNum,tipoLinea,descripcion,itemNo,variantCode,unitOfMeasureCode,locationCode,quantity,quantityRecibida,quantityFacturada,directUnitCost,vatPct,lineDiscountPct,jobNo,taskNo,fechaCreacion,creadoPor${colsCargo})
+                VALUES (@idOrdenCompra,@idPedidoCompraDet,@lineNum,@tipoLinea,@descripcion,@itemNo,@variantCode,@unitOfMeasureCode,@locationCode,@quantity,0,0,@directUnitCost,@vatPct,@lineDiscountPct,@jobNo,@taskNo,getdate(),@creadoPor${valsCargo})`);
       if (l.idPedidoCompraDet) {
         await new sql.Request(tx).input("id", sql.Int, l.idPedidoCompraDet).input("q", sql.Decimal(18, 4), l.cantidad)
           .query("UPDATE dbo.PedidoCompraDet SET quantityOrdenado = ISNULL(quantityOrdenado,0) + @q WHERE idPedidoCompraDet=@id");

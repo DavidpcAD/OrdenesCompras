@@ -330,6 +330,9 @@ export function StoreProvider({ children, useApi }: { children: React.ReactNode;
             tipoLinea: l.tipo, itemNo: l.articuloId, variantCode: l.variantCode, idPedidoCompraDet: l.pedidoLineaId ? Number(l.pedidoLineaId) : undefined,
             descripcion: l.descripcion, cantidad: l.cantidad, unidad: l.unidad, almacen: l.almacen,
             precioUnitario: l.precioUnitario, ivaPct: l.ivaPct, descuentoPct: l.descuentoPct, jobNo: l.proyecto, taskNo: l.taskNo,
+            // El tipo de cargo (Item Charge de BC) y su reparto viajan al SQL: sin
+            // esto se perdían y BC terminaba rechazando el flete.
+            chargeNo: l.chargeNo, chargeMethod: l.chargeMethod,
           })),
         });
         const o = await api.getOrden(String(idOrdenCompra));
@@ -382,6 +385,9 @@ export function StoreProvider({ children, useApi }: { children: React.ReactNode;
             tipoLinea: l.tipo, itemNo: l.articuloId, variantCode: l.variantCode, idPedidoCompraDet: l.pedidoLineaId ? Number(l.pedidoLineaId) : undefined,
             descripcion: l.descripcion, cantidad: l.cantidad, unidad: l.unidad, almacen: l.almacen,
             precioUnitario: l.precioUnitario, ivaPct: l.ivaPct, descuentoPct: l.descuentoPct, jobNo: l.proyecto, taskNo: l.taskNo,
+            // El tipo de cargo (Item Charge de BC) y su reparto viajan al SQL: sin
+            // esto se perdían y BC terminaba rechazando el flete.
+            chargeNo: l.chargeNo, chargeMethod: l.chargeMethod,
           })),
         });
         await refreshFromApi();

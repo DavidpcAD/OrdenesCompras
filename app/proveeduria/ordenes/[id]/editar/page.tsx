@@ -107,7 +107,23 @@ export default function EditarOrdenPage() {
         precioUnitario: Number(r.precio), ivaPct: Number(r.iva) || 0, descuentoPct: Number(r.descuento) || 0,
         proyecto: r.proyecto || r.obra || undefined, taskNo: r.taskNo,
       }));
-      if (fleteNum > 0) ls.push({ tipo: "cargo", descripcion: "FLETE / TRANSPORTE", cantidad: 1, unidad: "UND", almacen: rows[0]?.obra ?? "", precioUnitario: fleteNum, ivaPct: 13 });
+      // El cargo se rearma conservando lo que ya tenía la orden (tipo de Item Charge
+      // de BC, método de reparto, descripción y cantidad). Antes se reescribía como
+      // "FLETE / TRANSPORTE" sin `chargeNo`, y sin tipo BC rechaza el cargo: editar
+      // una orden le borraba el tipo que la propia pantalla obliga a elegir.
+      if (fleteNum > 0) {
+        ls.push({
+          tipo: "cargo",
+          chargeNo: cargo?.chargeNo,
+          chargeMethod: cargo?.chargeMethod,
+          descripcion: cargo?.descripcion || "FLETE / TRANSPORTE",
+          cantidad: cargo?.cantidad && cargo.cantidad > 0 ? cargo.cantidad : 1,
+          unidad: cargo?.unidad || "UND",
+          almacen: cargo?.almacen || rows[0]?.obra || "",
+          precioUnitario: fleteNum,
+          ivaPct: cargo?.ivaPct ?? 13,
+        });
+      }
       await updateOrden(orden!.id, { proveedorId, proveedorNo: provSel?.code, proveedorNombre: provSel?.nombre, currencyCode: currency, almacenRecepcion: almacen, lineas: ls });
       toast(`Orden ${orden!.numero} actualizada`, "success");
       router.push(`/proveeduria/ordenes/${orden!.id}`);
