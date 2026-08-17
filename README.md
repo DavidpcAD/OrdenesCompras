@@ -1,113 +1,186 @@
-# Compras Adelante — Solicitud de material a proveedores
+# Compras Adelante — órdenes de compra, recepción y facturación
 
-App web (Next.js) para solicitar material a proveedores, pensada para conectarse con
-**Microsoft Dynamics 365 Business Central** y mantener un espejo de los datos en **SQL**.
+App web (Next.js 14, App Router) que Adelante Desarrollos usa **en producción** para armar
+órdenes de compra, recibir material en bodega y manejar notas de crédito, integrada con
+**Microsoft Dynamics 365 Business Central** y con SQL Server como base propia.
 
-> Estado actual: **prototipo de frontend / UX-UI** con datos de ejemplo en memoria
-> (se guardan en `localStorage` del navegador). Las integraciones con Business Central
-> y SQL están encapsuladas para conectarse después sin reescribir las pantallas.
+- Producción: `proveeduria.adelante.cr` (Azure App Service `app-ordenescompra-eus2`).
+- Deploy: push a `main` → GitHub Actions (`.github/workflows/main_app-ordenescompra-eus2.yml`).
+- Base: `AdelanteSBX` (SQL Server en Azure), compartida con la app de Producción.
+- BC: entorno **Sandbox** (las pruebas de integración se hacen ahí, no en Production).
 
-## El flujo en 3 módulos
+## Los 3 roles
 
-La app reproduce el proceso real de Adelante con un login que permite elegir el módulo:
+Los roles salen de `dbo.UsuarioRol` al iniciar sesión (ver `lib/auth.ts`); cada uno entra a
+su propio módulo:
 
-1. **Ingeniería** — el ingeniero crea un **pedido de compra** (solicitud de material por
-   proyecto). Se guarda y se aprueba para pasar a proveeduría.
-2. **Proveeduría** — toma los pedidos aprobados y genera la **orden de compra** que se
-   envía al proveedor: asigna proveedor, precios y flete. La orden pasa por los estados
-   *abierto → pendiente de aprobación → lanzado*.
-3. **Facturación** — cuando el material llega a bodega se registra la **factura/recepción**.
-   Soporta **entregas parciales**: se indica la *cantidad a recibir* por línea; las líneas
-   faltantes quedan **pendientes (en rojo)** y la orden permanece **abierta** hasta recibir
-   el 100%. Al completarse, la orden pasa a *completado* y se archiva.
+| Rol (app) | Quién | Qué hace |
+|---|---|---|
+| `proveeduria` | Angie | Arma las órdenes de compra a partir de las solicitudes que manda Producción, y las **compras directas** (material sin solicitud). |
+| `facturacion` | Bodega (Pedro) | Recibe el material y registra la factura. Soporta entregas **parciales** y marcar líneas para nota de crédito. |
+| `contabilidad` | Kattya | Emite las notas de crédito, registra facturas que quedaron **en revisión** y aplica **cargos sobre factura** (flete de un tercero). |
 
-### Reglas de negocio incluidas (de la reunión con proveeduría)
+**Ingeniería y Aprobación NO viven acá** — están en la app de Producción, que escribe en la
+misma base. Los estados y las etiquetas de historial de esos roles se conservan para
+auditoría.
 
-- **Entregas parciales**: `cantidad a recibir` editable; `cantidad a facturar` se calcula
-  en automático; el saldo pendiente se conserva.
-- **Flete / cargo de producto**: corresponde a toda la orden. En una entrega parcial el
-  flete **no** se factura todavía; se distribuye proporcionalmente solo cuando se recibe la
-  orden completa (se muestra una advertencia, igual que en Business Central).
-- **Fechas**: `fecha de factura` y `fecha de registro` deben coincidir (la fecha de
-  registro es la que "vale" al buscar y cuadrar contra el estado de cuenta del proveedor).
-  La UI las sincroniza y avisa si no coinciden.
-- **Vista previa** del asiento antes de registrar, para verificar el total físico.
+### El flujo completo
+
+1. Ingeniería (app de Producción) crea la solicitud y la **envía** a Proveeduría.
+2. **Angie** arma la orden con líneas de esas solicitudes (o una compra directa) y la manda
+   a aprobación. La orden queda `pendiente_aprobacion`; esta app **no** toca BC ahí.
+3. **Aprobación** (app de Producción) aprueba y crea + lanza el pedido en BC → `lanzado`.
+4. **Bodega** recibe. Dos modos:
+   - **Modo 1** — todo bien: recibir + facturar (va a BC con sus movimientos contables).
+   - **Modo 2** — material bien pero factura con problemas: *recibir sin factura*; queda
+     "en revisión" y **Contabilidad** registra el N.º después (Archivo y recepciones).
+5. Líneas con problema (dañado / menos cantidad / precio distinto) se marcan al recibir y
+   caen en **Notas de crédito**, donde Contabilidad las marca como *acreditadas* al emitirlas.
+
+### Reglas de negocio que el código respeta
+
+- **Entregas parciales**: `cantidad a recibir` por línea, acotada al pendiente; el saldo se
+  conserva y la orden sigue abierta hasta recibir el 100 % de los **artículos**.
+- **El flete/cargo no es material**: las líneas `tipo: "cargo"` no cuentan para el % recibido
+  ni para "orden completa" (en SQL la regla es `tipoLinea='articulo'`). El flete se factura
+  con la primera entrega.
+- **Cargo de producto (Item Charge)**: todo cargo con importe necesita un **tipo** de BC;
+  sin tipo BC lo rechaza y la orden queda lanzada sin flete.
+- **Fechas**: `fecha de factura` = `fecha de registro` (es la que se cuadra contra el estado
+  de cuenta del proveedor). La UI las sincroniza y avisa si difieren.
+- **Una factura no se registra dos veces** en la misma orden (se valida en pantalla y en SQL).
+- **Montos**: en listas y tiles los totales son **sin IVA** y se rotulan así; el detalle de la
+  orden y de la recepción muestran Subtotal + IVA + Total con IVA.
 
 ## Correr en local
 
 ```bash
 npm install
-npm run dev
+npm run dev        # http://localhost:3000
+npm test           # pruebas de las funciones puras (runner de Node, sin deps)
+npx tsc --noEmit   # chequeo de tipos
+npm run build      # build de producción
 ```
 
-Abrí <http://localhost:3000>. Para una build de producción: `npm run build && npm start`.
+Node 18.18+ (probado en 22 y 26). `npm test` necesita Node ≥ 23 (usa el *type stripping*
+nativo para correr los `.ts` sin compilar).
 
-Requisitos: Node.js 18.18+ (probado con Node 22).
+**Sin base ni BC, la app corre en modo prueba** (datos de `lib/seed.ts` en memoria +
+`localStorage`). Para moverse entre roles en ese modo, en la consola del navegador:
+
+```js
+localStorage.setItem("adelante_oc_role", "proveeduria"); // proveeduria | facturacion | contabilidad
+localStorage.setItem("adelante_oc_usuario", "Angie");
+location.reload();
+```
+
+Otras llaves útiles: `adelante_oc_state_v3` (los datos de prueba — borrala para empezar de
+cero), `adelante_oc_theme` (`light`/`dark`), `adelante_oc_navpin`.
+
+Lo que **no** se puede probar en local: todo lo que dependa de SQL o de BC (bootstrap,
+guardar, catálogos, existencias). Degrada con avisos en pantalla, que es justo el camino de
+error que conviene revisar.
+
+⚠️ **Correr `npm run build` con el dev server levantado rompe el preview**
+(`Cannot find module './vendor-chunks/next.js'`): el build sobreescribe `.next/`. Arreglo:
+parar el dev, `rm -rf .next`, volver a levantarlo.
+
+## Configuración
+
+Copiá `.env.local.example` a `.env.local`. Lo importante:
+
+| Variable | Para qué |
+|---|---|
+| `SESSION_SECRET` | **Obligatoria en producción.** Firma la cookie de sesión. Si falta, nadie puede entrar (falla cerrado a propósito) y `authEnabled()` queda en false. |
+| `USE_API` | Runtime: prende el modo SQL. En Azure va como App Setting. |
+| `NEXT_PUBLIC_USE_API` | El mismo flag pero de *build*. `app/layout.tsx` necesita `export const dynamic = "force-dynamic"` para que gane el valor runtime; si no, el front queda horneado en modo prueba. |
+| `SQL_*` / `SQL_CONNECTION_STRING` | Conexión a SQL Server. |
+| `BC_*` | Credenciales de Business Central (client credentials) + entorno y compañía. |
+
+### Sesión y seguridad
+
+- Login contra `dbo.Usuario` con hash **bcrypt** (o SHA-256 legado). Nunca texto plano.
+- La sesión es una cookie `httpOnly` + `secure` **firmada con HMAC-SHA256** (12 h). No se
+  puede fabricar un rol desde la consola.
+- `middleware.ts` protege las páginas y todo `/api/*`; solo `/api/login`, `/api/logout` y
+  `/api/health` son públicas (y health, sin sesión, responde apenas `{ ok }`).
+- Los intentos fallidos de login del mismo usuario se **van demorando** (250 ms por fallo,
+  tope 2 s, se olvida a los 15 min). No se bloquean cuentas.
+- Lo que queda en la bitácora (`usuario`, `rol`) se toma de la **cookie firmada**, no del
+  body del request (`lib/actor.ts`).
 
 ## Estructura
 
 ```
 app/
-  page.tsx                      Login + selección de rol
-  ingenieria/                   Módulo Ingeniería (pedidos)
-  proveeduria/                  Módulo Proveeduría (órdenes)
-  facturacion/                  Módulo Facturación (recepciones)
-components/                     UI del design system (Button, Field, Card, Badge…)
+  page.tsx                  Login
+  proveeduria/              Órdenes, solicitudes, compra directa, inventarios, dashboard
+  facturacion/              Bodega (recibir, recibidas) + Contabilidad (NC, cargo, archivo)
+  api/                      API routes (ver tabla abajo)
+components/
+  ui.tsx                    Design system (Button, Field, Select, Modal, Toast, Checkbox…)
+  data-table.tsx            Tabla (TanStack): búsqueda, filtros, columnas, vistas, export
+  combobox.tsx              Selector con buscador (teclado + ARIA de combobox)
+  shell.tsx                 Topbar + nav por rol + ayuda contextual (ⓘ)
+  orden-detalle.tsx         Detalle de orden reutilizado por Proveeduría y Bodega
+  timeline.tsx              Historial por entidad (pide /api/movimientos)
 lib/
-  types.ts                      Modelo de datos (mapea a SQL / Purchase Header & Line de BC)
-  store.tsx                     Estado en memoria + acciones (capa a reemplazar por API)
-  seed.ts                       Datos de ejemplo
-  helpers.ts                    Cálculos: saldos, % recibido, distribución de flete…
+  store.tsx                 Estado global + acciones. Alterna SQL (api.ts) vs mock (seed.ts)
+  repo.ts                   Acceso a SQL Server (todas las tablas y la bitácora)
+  bc.ts                     TODAS las llamadas a Business Central
+  auth.ts / session.ts      Login y cookie firmada
+  actor.ts                  Identidad real (de la cookie) para lo que se audita
+  helpers.ts                Cálculos: saldos, % recibido, reparto de flete, formatos
+  help.ts                   Textos de la ayuda ⓘ por pantalla
+  *.test.ts                 Pruebas (`npm test`)
 ```
 
-## Conexión a SQL (API)
-
-La app ya trae la capa de acceso a la base que creaste (`db/schema_compras_boletas_style.sql`):
-
-1. Copiá `.env.local.example` a `.env.local` y completá `SQL_SERVER`, `SQL_DATABASE`, `SQL_USER`, `SQL_PASSWORD` (o `SQL_CONNECTION_STRING`).
-2. `npm install` (ya incluye `mssql`) y `npm run dev`.
-3. Probá la conexión: abrí `http://localhost:3000/api/health` → debe devolver el conteo de filas de cada tabla.
-
-Endpoints disponibles (`lib/repo.ts` + `app/api/*`):
+## API
 
 | Método | Ruta | Acción |
 |---|---|---|
-| GET | `/api/health` | Verifica conexión + conteos |
+| GET | `/api/health` | Ping (con sesión: conteos por tabla) |
+| GET | `/api/bootstrap` | Carga inicial: pedidos, órdenes y recepciones |
 | GET / POST | `/api/pedidos` | Listar / crear solicitud |
-| GET / PATCH | `/api/pedidos/[id]` | Detalle / cambiar estado |
+| GET / PATCH / PUT / DELETE | `/api/pedidos/[id]` | Detalle / estado (incluye devolver) / editar / borrar |
 | GET / POST | `/api/ordenes` | Listar / crear orden |
-| GET / PATCH | `/api/ordenes/[id]` | Detalle / cambiar estado |
-| POST | `/api/recepciones` | Registrar factura/recepción |
+| GET / PATCH / PUT | `/api/ordenes/[id]` | Detalle / estado / reescribir líneas |
+| POST | `/api/recepciones` | Registrar recepción (con o sin factura) |
+| PATCH | `/api/recepciones/[id]` | Modo 2: registrar el N.º de factura después |
+| GET / POST | `/api/notas-credito` | Listar / marcar líneas para NC |
+| PATCH | `/api/notas-credito/[id]` | Marcar acreditada / reabrir |
 | GET | `/api/movimientos?entidad=&id=` | Bitácora de un documento |
+| GET / POST | `/api/vistas`, `/api/vistas/[id]` | Vistas de tabla guardadas por usuario |
+| GET | `/api/matriz`, `/api/clasificaciones`, `/api/mi-etapa` | Matriz obra×clasificación y WBS |
+| GET | `/api/bc/vendors\|items\|almacenes\|obras\|itemcharges\|variants\|existencias\|jobtasks\|lastprice` | Catálogos de BC |
+| GET | `/api/bc/orden-totales`, `/api/bc/recepciones-registradas` | Totales del pedido / líneas de recepción registradas |
+| POST | `/api/bc/registrar`, `/api/bc/recibir`, `/api/bc/facturar-recibido` | Registrar en BC (recibir + facturar / solo recibir / facturar lo recibido) |
+| POST | `/api/bc/relanzar`, `/api/bc/cargo-recibido` | Re-sincronizar + lanzar / cargo sobre recepción registrada |
 
-Cada escritura registra automáticamente un `Movimiento` (bitácora). El `estado` de la app
-se mapea al catálogo `dbo.Estado` (se crean los nombres que falten).
+Cada escritura deja un `Movimiento` (bitácora). Los estados de la app se mapean al catálogo
+`dbo.Estado` (se crean los nombres que falten y se leen los de **todos** los módulos, para
+que un estado escrito por la app de Producción no se lea como "borrador").
 
-### Modo API vs. modo prueba
-
-La app funciona en dos modos según `NEXT_PUBLIC_USE_API` en `.env.local`:
-
-- **`NEXT_PUBLIC_USE_API=1`** → la UI lee y escribe en tu SQL real (vía las API routes).
-  Al abrir cada pantalla se cargan los datos desde `/api/bootstrap` y cada acción
-  (crear solicitud, armar orden, aprobar, recibir factura) hace POST/PATCH y refresca.
-- **sin la variable (o `0`)** → la UI usa datos de prueba en memoria + `localStorage`
-  (útil para diseño/demos sin base).
-
-Así podés desarrollar la parte visual sin base, y prender el modo real cuando quieras.
+`dbo.OrdenCompraDet` gana solas las columnas `chargeNo` y `chargeMethod` la primera vez que
+corre (`ensureCargoCols`); si el usuario de la base no tiene permiso de `ALTER`, la app sigue
+funcionando sin ellas.
 
 ## Design system
 
-La interfaz replica el **Adelante Design System**
-(<https://davidpcad.github.io/adelante-design-system>): tipografía Roboto, color primario
-verde `#add010`, rojo `#c96c6c`, inputs tipo píldora (radio 32px), botones redondeados y
-sombras suaves. Los tokens viven como variables CSS en `app/globals.css`.
+Todo el UI sigue el **Adelante Design System**
+(<https://davidpcad.github.io/adelante-design-system>): tipografía Roboto, verde `#add010`,
+rojo `#c96c6c`, inputs tipo píldora, sombras suaves. Los tokens viven en `app/globals.css`
+como variables `--ds-*`, con tokens semánticos (`--ds-bg`, `--ds-surface`, `--ds-text`,
+`--ds-tint-base`) para tema claro/oscuro vía `data-theme`. **No hardcodear colores.**
 
-## Próximos pasos (integración real)
+## Pendientes conocidos
 
-- **SQL**: el modelo en `lib/types.ts` se traslada 1:1 a tablas
-  (`pedidos`, `pedido_lineas`, `ordenes`, `orden_lineas`, `recepciones`). Recomendado
-  **SQL Server** por afinidad con el ecosistema Microsoft/Business Central.
-- **Business Central**: exponer las APIs de `Purchase Header` / `Purchase Line` y mapear
-  `Orden ↔ Pedido (BC)` y `Recepción ↔ Purch. Rcpt.`. Reemplazar las acciones de
-  `lib/store.tsx` por llamadas a una API route de Next.js que sincronice BC + SQL.
-```
+- **BC → Producción**: el tipo de cargo ya se guarda en SQL, pero para que llegue a BC en el
+  flujo normal la app de Producción tiene que **leer** `chargeNo`/`chargeMethod` al crear el
+  pedido.
+- **Notificaciones**: la campana solo se llena en modo prueba; en producción no hay generación
+  server-side (decisión de producto pendiente).
+- **Inventarios / Dashboard**: dependen de endpoints de BC (existencias por ubicación y Job
+  Tasks) y del mapeo obra→almacén.
+- **`/api/plantillas`** quedó sin consumidor en esta app (la pantalla que lo usaba era de
+  Ingeniería, que se movió a Producción).
