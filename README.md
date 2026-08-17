@@ -62,8 +62,14 @@ npx tsc --noEmit   # chequeo de tipos
 npm run build      # build de producción
 ```
 
-Node 18.18+ (probado en 22 y 26). `npm test` necesita Node ≥ 23 (usa el *type stripping*
-nativo para correr los `.ts` sin compilar).
+Node 18.18+ (probado en 22 y 26). `npm test` corre con el runner de Node y
+`--experimental-strip-types` (hace falta en Node 22; en 23+ ya es el default), así que no
+hay paso de compilación ni dependencias de testing. **Los archivos de prueba están listados
+explícitamente en el script** —no por glob— para que el comando se comporte igual en CI:
+si agregás un `*.test.ts`, sumalo ahí.
+
+El workflow de deploy corre `npm test` **antes** del build: si una prueba falla, no se
+despliega.
 
 **Sin base ni BC, la app corre en modo prueba** (datos de `lib/seed.ts` en memoria +
 `localStorage`). Para moverse entre roles en ese modo, en la consola del navegador:

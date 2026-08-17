@@ -23,10 +23,18 @@ jobs:
         with:
           node-version: '22.x'
 
-      - name: npm install and build
-        run: |
-          npm ci
-          npm run build
+      - name: npm install
+        run: npm ci
+
+      # Las pruebas corren ANTES del build: si una regla de negocio se rompió
+      # (cantidades, montos, la sesión firmada), el deploy se detiene acá en vez de
+      # llegar a producción. `npm test` usa el runner de Node con --experimental-
+      # strip-types, que en Node 22 hace falta para los .ts.
+      - name: npm test
+        run: npm test
+
+      - name: npm build
+        run: npm run build
 
       - name: Assemble standalone deploy package
         run: |

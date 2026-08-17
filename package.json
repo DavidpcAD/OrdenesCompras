@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "test": "node --test \"lib/**/*.test.ts\""
+    "test": "node --experimental-strip-types --test lib/helpers.test.ts lib/bc-amount.test.ts lib/session.test.ts lib/login-throttle.test.ts"
   },
   "dependencies": {
     "@tanstack/react-table": "^8.21.3",
