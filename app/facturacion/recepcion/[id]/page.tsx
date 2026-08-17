@@ -1,7 +1,7 @@
 "use client";
 
 import { useParams, useRouter } from "next/navigation";
-import { Badge, Card, EmptyState } from "@/components/ui";
+import { Badge, Card, EmptyState, Skeleton } from "@/components/ui";
 import { IconWarning } from "@/components/icons";
 import { useStore } from "@/lib/store";
 import { money, formatDate, num } from "@/lib/helpers";
@@ -12,10 +12,18 @@ import { money, formatDate, num } from "@/lib/helpers";
 export default function RecepcionDetallePage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
-  const { recepciones, ordenes, proveedores } = useStore();
+  const { recepciones, ordenes, proveedores, cargando } = useStore();
 
   const rec = recepciones.find((r) => r.id === id);
   if (!rec) {
+    // Mientras el store carga (modo API) no decir "no encontrada": skeleton.
+    if (cargando) {
+      return <main className="page"><div className="col gap-4" aria-busy="true">
+        <Skeleton style={{ display: "block", width: 260, height: 30, borderRadius: 8 }} />
+        <Skeleton style={{ display: "block", width: 340, height: 16, borderRadius: 6 }} />
+        <Skeleton style={{ display: "block", width: "100%", height: 300, borderRadius: 16, marginTop: 8 }} />
+      </div></main>;
+    }
     return <><main className="page"><EmptyState icon={<IconWarning size={24} />} title="Recepción no encontrada." /></main></>;
   }
   const orden = ordenes.find((o) => o.id === rec.ordenId);
