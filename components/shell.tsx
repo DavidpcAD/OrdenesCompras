@@ -148,7 +148,10 @@ export function AppShell({ role, children }: { role: Role; children: React.React
   const meta = ROLE_META[role];
   const hasNav = meta.nav.length > 1;
   // FAB de acción visible → el contenido necesita espacio inferior para no quedar tapado.
-  const showActionFab = !!meta.action && pathname !== meta.action.href && !pathname.includes("/nueva");
+  // No en su propia pantalla, ni en flujos de creación/edición, ni en la vista de
+  // impresión (ahí el FAB verde se monta encima del documento del proveedor).
+  const showActionFab = !!meta.action && pathname !== meta.action.href
+    && !pathname.includes("/nueva") && !pathname.endsWith("/imprimir") && !pathname.endsWith("/editar");
   // Cuál item del nav está activo (match más largo por href/alt).
   const activeHref = meta.nav
     .map((n) => {
