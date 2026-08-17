@@ -573,6 +573,29 @@ export async function createRecepcion(input: NewRecepcionDB): Promise<number> {
               VALUES (@idOrdenCompra,@recepcionNo,@numeroFactura,@fechaFactura,@fechaRecepcion,@fechaRegistro,@total,0,getdate(),@creadoPor)`);
     const idRec = ins.recordset[0].idRecepcionCompra as number;
 
+    // Guard de SOBRE-RECEPCIÓN: la cantidad se acotaba solo en el cliente, así que
+    // un POST repetido (retry, doble envío con red lenta) podía dejar
+    // quantityRecibida > quantity y descuadrar la orden contra BC para siempre.
+    // Se valida DENTRO de la transacción y se aborta con un mensaje claro.
+    const idsLinea = [...new Set(input.lineas.map((l) => l.idOrdenCompraDet))];
+    if (idsLinea.length) {
+      const rq = new sql.Request(tx);
+      const params = idsLinea.map((idl, i) => { rq.input(`l${i}`, sql.Int, idl); return `@l${i}`; });
+      const act = await rq.query(
+        `SELECT idOrdenCompraDet, descripcion, quantity, ISNULL(quantityRecibida,0) AS recibida
+           FROM dbo.OrdenCompraDet WHERE idOrdenCompraDet IN (${params.join(",")})`
+      );
+      const porId = new Map(act.recordset.map((r: any) => [Number(r.idOrdenCompraDet), r]));
+      for (const l of input.lineas) {
+        const r = porId.get(Number(l.idOrdenCompraDet));
+        if (!r) throw new Error(`La línea ${l.idOrdenCompraDet} ya no existe en la orden; recargá la pantalla.`);
+        const pend = Number(r.quantity) - Number(r.recibida);
+        if (Number(l.cantidadRecibida) > pend + 1e-6) {
+          throw new Error(`"${r.descripcion}": querés recibir ${l.cantidadRecibida} y solo quedan ${pend} pendientes (puede que ya se haya registrado). Recargá la pantalla.`);
+        }
+      }
+    }
+
     let line = 10000;
     for (const l of input.lineas) {
       await new sql.Request(tx)
@@ -620,9 +643,17 @@ export async function setRecepcionFactura(idRec: number, numeroFactura: string, 
   const tx = new sql.Transaction(pool); await tx.begin();
   try {
     const rec = await new sql.Request(tx).input("id", sql.Int, idRec)
-      .query("SELECT idOrdenCompra FROM dbo.RecepcionCompra WHERE idRecepcionCompra=@id AND esEliminada=0");
+      .query("SELECT idOrdenCompra, numeroFactura FROM dbo.RecepcionCompra WHERE idRecepcionCompra=@id AND esEliminada=0");
     const row = rec.recordset[0];
     if (!row) throw new Error(`La recepción ${idRec} no existe.`);
+    // Idempotencia: esto SUMA quantityFacturada por cada línea recibida. Si la
+    // recepción ya tenía factura (doble envío, reintento, dos pestañas), volver a
+    // correrlo duplicaba lo facturado en la orden. Solo se permite sobre una
+    // recepción que está EN REVISIÓN (sin número de factura).
+    const facturaActual = String(row.numeroFactura ?? "").trim();
+    if (facturaActual) {
+      throw new Error(`Esa recepción ya tiene la factura ${facturaActual} registrada.`);
+    }
     const idOrden = row.idOrdenCompra as number;
 
     await new sql.Request(tx).input("id", sql.Int, idRec).input("f", sql.NVarChar(40), num)
