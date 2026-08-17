@@ -47,6 +47,8 @@ function etiqueta(m: Movimiento): string {
     if (m.tipoMovimiento === "rechazado") return "Orden rechazada por Aprobación";
     if (m.tipoMovimiento === "recepcion_parcial") return "Recibido en bodega (parcial)";
     if (m.tipoMovimiento === "recepcion_total") return "Recibido en bodega (total)";
+    if (m.tipoMovimiento === "nc_resuelta") return "Nota de crédito acreditada";
+    if (m.tipoMovimiento === "nc_reabierta") return "Nota de crédito reabierta";
   }
   if (m.entidad === "recepcion" && m.tipoMovimiento === "creado") return "Factura registrada";
   return LABEL[m.tipoMovimiento] ?? m.tipoMovimiento;

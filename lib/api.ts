@@ -56,6 +56,8 @@ export const api = {
   // Notas de crédito (líneas de factura con problema, para emitir NC).
   createNotasCredito: (body: unknown): Promise<{ ok: true }> =>
     fetch("/api/notas-credito", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }).then(jsonOrThrow),
+  setNotaCreditoEstado: (id: string, body: unknown): Promise<{ ok: true }> =>
+    fetch(`/api/notas-credito/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }).then(jsonOrThrow),
   listNotasCredito: (): Promise<NotaCreditoLinea[]> =>
     fetch("/api/notas-credito").then(jsonOrThrow).then((d) => (d.notas ?? []) as NotaCreditoLinea[]),
 };

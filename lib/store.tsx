@@ -95,6 +95,8 @@ interface StoreShape {
   notasCredito: NotaCreditoLinea[];
   marcarNotasCredito: (ordenId: string, ordenNumero: string, proveedor: string | undefined, items: { ordenLineaId?: string; articuloNo?: string; descripcion: string; motivo: MotivoNC; cantidad: number; precioUnitario?: number; nota?: string }[]) => Promise<void>;
   cargarNotasCredito: () => Promise<void>;
+  // Contabilidad cierra la línea cuando ya emitió la NC (o la reabre si se equivocó).
+  resolverNotaCredito: (id: string, resuelta: boolean) => Promise<void>;
 
   // Notificaciones in-app
   notificaciones: Notificacion[];
@@ -569,6 +571,15 @@ export function StoreProvider({ children, useApi }: { children: React.ReactNode;
       }));
       setNotasCredito((s) => [...nuevas, ...s]);
     };
+    const resolverNotaCredito: StoreShape["resolverNotaCredito"] = async (id, resuelta) => {
+      const estado = resuelta ? "resuelta" : "pendiente";
+      if (USE_API) {
+        await api.setNotaCreditoEstado(id, { estado, usuario: persona, rol: rolActual });
+        await cargarNotasCredito();
+        return;
+      }
+      setNotasCredito((s) => s.map((n) => (n.id === id ? { ...n, estado } : n)));
+    };
 
     // ---------------- NOTIFICACIONES ----------------
     const marcarNotifsLeidas: StoreShape["marcarNotifsLeidas"] = () =>
@@ -585,7 +596,7 @@ export function StoreProvider({ children, useApi }: { children: React.ReactNode;
       pedidos: data.pedidos, ordenes: data.ordenes, recepciones: data.recepciones, movimientos: data.movimientos,
       addPedido, editPedido, setPedidoEstado, deletePedido,
       createOrden, updateOrden, setOrdenEstado, registrarRecepcion, facturarRecepcion, devolverPedido, devolverOrden, reset,
-      notasCredito, marcarNotasCredito, cargarNotasCredito,
+      notasCredito, marcarNotasCredito, cargarNotasCredito, resolverNotaCredito,
       notificaciones: data.notificaciones, marcarNotifsLeidas, marcarNotifLeida,
       borrador, setBorrador,
     };

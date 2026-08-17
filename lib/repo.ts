@@ -1018,6 +1018,33 @@ export async function createNotasCredito(input: NewNotaCreditoDB): Promise<numbe
   return n;
 }
 
+// Cerrar (o reabrir) una línea de nota de crédito. La columna `estado` y el estado
+// "resuelta" ya existían en el modelo, pero nada los escribía: la lista de
+// Contabilidad solo crecía. Queda además en la bitácora de la orden, para saber
+// quién la acreditó y cuándo (la tabla no tiene columna de modificación).
+export async function setNotaCreditoEstado(id: number, estado: "pendiente" | "resuelta", usuario: string, rol: Role): Promise<void> {
+  await ensureNotasCreditoTable();
+  const pool = await getPool();
+  const prev = await pool.request().input("id", sql.Int, id).query(
+    `SELECT nc.idOrdenCompra, nc.descripcion, o.ordenNo
+       FROM dbo.NotaCreditoDet nc
+       LEFT JOIN dbo.OrdenCompra o ON o.idOrdenCompra = nc.idOrdenCompra
+      WHERE nc.idNotaCreditoDet=@id`);
+  if (!prev.recordset.length) throw new Error(`Nota de crédito ${id} no encontrada`);
+  await pool.request().input("id", sql.Int, id).input("e", sql.NVarChar(20), estado)
+    .query("UPDATE dbo.NotaCreditoDet SET estado=@e WHERE idNotaCreditoDet=@id");
+  const row = prev.recordset[0];
+  const tx = new sql.Transaction(pool); await tx.begin();
+  try {
+    await logMov(tx, {
+      entidad: "orden", idEntidad: Number(row.idOrdenCompra), documentoNo: row.ordenNo ?? "",
+      tipoMovimiento: estado === "resuelta" ? "nc_resuelta" : "nc_reabierta",
+      detalle: row.descripcion ?? undefined, usuario, rol,
+    });
+    await tx.commit();
+  } catch (e) { await tx.rollback(); throw e; }
+}
+
 export async function listNotasCredito(): Promise<NotaCreditoLinea[]> {
   await ensureNotasCreditoTable();
   const pool = await getPool();
