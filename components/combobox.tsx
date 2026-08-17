@@ -61,16 +61,27 @@ export function Combobox<T>({
     [items, q, below] // eslint-disable-line react-hooks/exhaustive-deps
   );
   const filtered = matched.slice(0, max);
+  // Orden en que se VEN las opciones. Con `groupBy` el render agrupa, así que el
+  // teclado tiene que seguir ese mismo orden y no el del array filtrado, o el
+  // resaltado saltaría de un grupo a otro.
+  const grupos = useMemo(() => {
+    if (!groupBy) return null;
+    const orden: string[] = [];
+    const map = new Map<string, T[]>();
+    for (const i of filtered) { const g = groupBy(i); if (!map.has(g)) { map.set(g, []); orden.push(g); } map.get(g)!.push(i); }
+    return { orden, map };
+  }, [filtered, groupBy]);   // eslint-disable-line react-hooks/exhaustive-deps
+  const visibles = grupos ? grupos.orden.flatMap((g) => grupos.map.get(g)!) : filtered;
 
   // Opción resaltada (índice dentro de `filtered`). -1 = ninguna.
   const [activo, setActivo] = useState(-1);
   // Al cambiar la búsqueda o al abrir, resaltar la primera (o la ya elegida).
   useEffect(() => {
     if (!open) { setActivo(-1); return; }
-    const iSel = filtered.findIndex((i) => getKey(i) === value);
-    setActivo(filtered.length ? (iSel >= 0 ? iSel : 0) : -1);
+    const iSel = visibles.findIndex((i) => getKey(i) === value);
+    setActivo(visibles.length ? (iSel >= 0 ? iSel : 0) : -1);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, q, filtered.length]);
+  }, [open, q, visibles.length]);
 
   // Mantener visible la opción resaltada al moverse con el teclado.
   useEffect(() => {
@@ -90,16 +101,16 @@ export function Combobox<T>({
     if (e.key === "ArrowDown" || e.key === "ArrowUp") {
       e.preventDefault();
       if (!open) { setOpen(true); return; }
-      if (!filtered.length) return;
+      if (!visibles.length) return;
       setActivo((a) => {
         const paso = e.key === "ArrowDown" ? 1 : -1;
-        const next = a < 0 ? (paso > 0 ? 0 : filtered.length - 1) : a + paso;
-        return (next + filtered.length) % filtered.length;   // circular
+        const next = a < 0 ? (paso > 0 ? 0 : visibles.length - 1) : a + paso;
+        return (next + visibles.length) % visibles.length;   // circular
       });
       return;
     }
     if (e.key === "Enter") {
-      if (open && activo >= 0 && filtered[activo]) { e.preventDefault(); elegir(filtered[activo]); }
+      if (open && activo >= 0 && visibles[activo]) { e.preventDefault(); elegir(visibles[activo]); }
       return;
     }
     if (e.key === "Escape") {
@@ -143,7 +154,7 @@ export function Combobox<T>({
       {filtered.length === 0 && <div className="combo__empty">{below ? "Escribí para buscar…" : q ? "Sin coincidencias." : "No hay opciones."}</div>}
       {(() => {
         const renderOpt = (i: T) => {
-          const idx = filtered.indexOf(i);
+          const idx = visibles.indexOf(i);
           return (
             <button
               key={getKey(i)}
@@ -160,15 +171,11 @@ export function Combobox<T>({
             </button>
           );
         };
-        if (!groupBy) return filtered.map(renderOpt);
-        // Agrupa preservando el orden de aparición de cada grupo.
-        const orden: string[] = [];
-        const map = new Map<string, T[]>();
-        for (const i of filtered) { const g = groupBy(i); if (!map.has(g)) { map.set(g, []); orden.push(g); } map.get(g)!.push(i); }
-        return orden.map((g) => (
+        if (!grupos) return filtered.map(renderOpt);
+        return grupos.orden.map((g) => (
           <div key={g} className="combo__group-wrap" role="group" aria-label={g}>
-            <div className="combo__group">{g} · {map.get(g)!.length}</div>
-            {map.get(g)!.map(renderOpt)}
+            <div className="combo__group">{g} · {grupos.map.get(g)!.length}</div>
+            {grupos.map.get(g)!.map(renderOpt)}
           </div>
         ));
       })()}
