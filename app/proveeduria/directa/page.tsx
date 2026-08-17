@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useId, useMemo, useState } from "react";
 import { Badge, Button, Card, Field, Input, Select, useToast } from "@/components/ui";
 import { Combobox } from "@/components/combobox";
+import { IconWarning } from "@/components/icons";
 import { useStore } from "@/lib/store";
 import { money, almacenesFisicos, monedaApp } from "@/lib/helpers";
 import type { OrdenLinea } from "@/lib/types";
@@ -37,8 +38,13 @@ export default function OrdenDirectaPage() {
   const [bcProv, setBcProv] = useState<typeof proveedores | null>(null);
   const [itemsBc, setItemsBc] = useState<{ code: string; descripcion: string; unidad: string; precioUltimo?: number }[]>([]);
   const [bcAlm, setBcAlm] = useState<typeof almacenes | null>(null);
+  const [bcCaido, setBcCaido] = useState(false);
   useEffect(() => {
-    fetch("/api/bc/vendors").then((r) => (r.ok ? r.json() : { proveedores: [] })).then((d) => { if (Array.isArray(d.proveedores) && d.proveedores.length) setBcProv(d.proveedores); }).catch(() => {});
+    fetch("/api/bc/vendors").then((r) => (r.ok ? r.json() : { proveedores: [] }))
+      .then((d) => {
+        if (Array.isArray(d.proveedores) && d.proveedores.length) setBcProv(d.proveedores);
+        else setBcCaido(true);   // se ve el catálogo de respaldo: hay que avisarlo
+      }).catch(() => setBcCaido(true));
     fetch("/api/bc/items").then((r) => (r.ok ? r.json() : { items: [] })).then((d) => { if (Array.isArray(d.items)) setItemsBc(d.items.map((i: any) => ({ code: i.code, descripcion: i.descripcion, unidad: i.unidad || "UND", precioUltimo: typeof i.lastDirectCost === "number" ? i.lastDirectCost : undefined }))); }).catch(() => {});
     fetch("/api/bc/almacenes").then((r) => (r.ok ? r.json() : { almacenes: [] })).then((d) => {
       if (Array.isArray(d.almacenes) && d.almacenes.length) { setBcAlm(d.almacenes); if (!d.almacenes.some((a: any) => a.codigo === "ALM-GRAL")) setAlmacen(d.almacenes[0].codigo); }
@@ -130,6 +136,18 @@ export default function OrdenDirectaPage() {
             <p className="ds-muted">Compra que no viene de una solicitud de Ingeniería. Agregá los artículos del catálogo directamente.</p>
           </div>
         </div>
+
+        {bcCaido && (
+          <div className="ds-callout ds-callout--yellow mb-4" role="status">
+            <span className="ds-callout__icon"><IconWarning size={18} /></span>
+            <div>
+              <div className="ds-callout__title">Business Central no respondió</div>
+              <div className="ds-callout__body">
+                Los catálogos de <span className="ds-strong">proveedores y almacenes</span> son de respaldo y pueden no coincidir con BC; el de artículos queda vacío, así que no vas a poder agregar líneas del catálogo de BC. Verificá el proveedor antes de enviar la orden a aprobación.
+              </div>
+            </div>
+          </div>
+        )}
 
         <Card>
           <h3 className="ds-subtitle" style={{ marginBottom: 16 }}>Datos de la orden</h3>

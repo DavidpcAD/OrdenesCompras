@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { Badge, Button, Card, EmptyState, Field, Input, Modal, Select, useToast } from "@/components/ui";
 import { Combobox } from "@/components/combobox";
+import { IconWarning } from "@/components/icons";
 import { useStore } from "@/lib/store";
 import { money, ultimoPrecioProveedor, almacenesFisicos, pedidoLineaPendiente, monedaApp } from "@/lib/helpers";
 import type { OrdenLinea } from "@/lib/types";
@@ -43,12 +44,19 @@ export default function ArmarOrdenPage() {
   const [almacen, setAlmacen] = useState("ALM-GRAL");
 
   // Proveedores en vivo desde Business Central (fallback al catálogo si BC falla).
+  // Si el fallback se activa hay que DECIRLO: armar la orden contra el catálogo de
+  // respaldo puede dejar un código de proveedor que BC no conoce, y eso recién
+  // explota al lanzarla.
   const [bcProv, setBcProv] = useState<typeof proveedores | null>(null);
+  const [bcCaido, setBcCaido] = useState(false);
   useEffect(() => {
     fetch("/api/bc/vendors")
       .then((r) => (r.ok ? r.json() : { proveedores: [] }))
-      .then((d) => { if (Array.isArray(d.proveedores) && d.proveedores.length) setBcProv(d.proveedores); })
-      .catch(() => { /* sin BC, usa catálogo de respaldo */ });
+      .then((d) => {
+        if (Array.isArray(d.proveedores) && d.proveedores.length) setBcProv(d.proveedores);
+        else setBcCaido(true);
+      })
+      .catch(() => setBcCaido(true));
   }, []);
   const catProv = bcProv ?? proveedores;
   const provSel = catProv.find((x) => x.id === proveedorId);
@@ -256,6 +264,18 @@ export default function ArmarOrdenPage() {
             <p className="ds-muted">Revisá y ajustá lo que se va a enviar al proveedor.</p>
           </div>
         </div>
+
+        {bcCaido && (
+          <div className="ds-callout ds-callout--yellow mb-4" role="status">
+            <span className="ds-callout__icon"><IconWarning size={18} /></span>
+            <div>
+              <div className="ds-callout__title">Business Central no respondió</div>
+              <div className="ds-callout__body">
+                Los catálogos de <span className="ds-strong">proveedores y almacenes</span> que ves son de respaldo y pueden no coincidir con BC (el de artículos queda vacío). Podés guardar la orden como abierta, pero verificá el proveedor antes de enviarla a aprobación.
+              </div>
+            </div>
+          </div>
+        )}
 
         <Card>
           <h3 className="ds-subtitle" style={{ marginBottom: 16 }}>Datos de la orden</h3>
