@@ -588,10 +588,24 @@ export type CargoBc = { chargeNo?: string; descripcion?: string; cantidad?: numb
 export function toBcAmount(v: unknown): number {
   if (typeof v === "number") return Number.isFinite(v) ? Math.round(v * 1e5) / 1e5 : 0;
   if (typeof v === "string") {
-    let s = v.replace(/[^\d.,-]/g, "").trim();
-    if (s.includes(",") && s.includes(".")) s = s.replace(/\./g, "").replace(",", "."); // "1.234,56" -> "1234.56"
-    else if (s.includes(",")) s = s.replace(",", "."); // "1234,56" -> "1234.56"
-    const n = parseFloat(s);
+    const s = v.replace(/[^\d.,-]/g, "").trim();
+    // Con los dos separadores presentes, el DECIMAL es el que aparece último:
+    // "1.234,56" (es-CR) → 1234.56 y "1,234.56" (en-US) → 1234.56. Antes se asumía
+    // siempre formato es-CR, así que un valor en formato US se leía 1000× más chico
+    // (y esto se usa para el precio que viaja a BC).
+    const ultimaComa = s.lastIndexOf(",");
+    const ultimoPunto = s.lastIndexOf(".");
+    let limpio: string;
+    if (ultimaComa >= 0 && ultimoPunto >= 0) {
+      const decimal = ultimaComa > ultimoPunto ? "," : ".";
+      const miles = decimal === "," ? "." : ",";
+      limpio = s.split(miles).join("").replace(decimal, ".");
+    } else if (ultimaComa >= 0) {
+      limpio = s.replace(",", ".");   // "1234,56" → "1234.56"
+    } else {
+      limpio = s;
+    }
+    const n = parseFloat(limpio);
     return Number.isFinite(n) ? Math.round(n * 1e5) / 1e5 : 0;
   }
   return 0;
