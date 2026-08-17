@@ -106,10 +106,12 @@ export default function ProveeduriaDashboardPage() {
         </div>
 
         <div className="tiles mt-2">
-          <Tile value={money(tot.pedido, "CRC")} label="Pedido (total)" />
-          <Tile value={money(tot.recibido, "CRC")} label="Entregado (total)" accent="var(--ds-color-green-200)" />
+          {/* Los tres montos son SIN IVA (suma de líneas de artículo con descuento),
+              igual que la columna "Total sin IVA" de la lista de órdenes. */}
+          <Tile value={money(tot.pedido, "CRC")} label="Pedido · sin IVA" />
+          <Tile value={money(tot.recibido, "CRC")} label="Entregado · sin IVA" accent="var(--ds-color-green-200)" />
           <Tile value={`${pctGlobal}%`} label="Entregado (global)" accent="var(--ds-color-green-100)" />
-          <Tile value={money(pendienteGlobal, "CRC")} label="Pendiente por entregar" accent="var(--ds-color-red-100)" />
+          <Tile value={money(pendienteGlobal, "CRC")} label="Pendiente por entregar · sin IVA" accent="var(--ds-color-red-100)" />
         </div>
 
         <h2 className="ds-subtitle" style={{ marginTop: 28 }}>Por proveedor</h2>

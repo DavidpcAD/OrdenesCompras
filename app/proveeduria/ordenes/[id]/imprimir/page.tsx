@@ -61,6 +61,16 @@ export default function ImprimirOrdenPage() {
   const ivaPct = articulos.find((l) => (l.ivaPct ?? 0) > 0)?.ivaPct ?? 13;
   const iva = orden.lineas.reduce((s, l) => s + ordenLineaImporte(l) * ((l.ivaPct ?? 0) / 100), 0);
   const total = subtotal + iva;
+  // Base e IVA agrupados por tasa (una orden puede mezclar 13% con exento).
+  const porTasaIva = [...orden.lineas.reduce((m, l) => {
+    const pct = Number(l.ivaPct ?? 0);
+    const base = ordenLineaImporte(l);
+    const g = m.get(pct) ?? { pct, base: 0, iva: 0 };
+    g.base += base; g.iva += base * (pct / 100);
+    m.set(pct, g);
+    return m;
+  }, new Map<number, { pct: number; base: number; iva: number }>()).values()]
+    .sort((a, b) => b.pct - a.pct);
 
   const Campo = ({ k, v, b }: { k: string; v: React.ReactNode; b?: boolean }) => (
     <div style={{ display: "flex", gap: 12, marginBottom: 3 }}>
@@ -199,11 +209,14 @@ export default function ImprimirOrdenPage() {
         {/* totales */}
         <div className="po-tot">
           <div className="r sub"><span>Total {cur} sin IVA</span><span>{fmt(subtotal)}</span></div>
-          <div className="r"><span>{ivaPct}% IVA</span><span>{fmt(iva)}</span></div>
+          {/* Con más de una tasa en la orden, poner "13% IVA" sería falso. */}
+          <div className="r"><span>{porTasaIva.length > 1 ? "IVA" : `${ivaPct}% IVA`}</span><span>{fmt(iva)}</span></div>
           <div className="r grand"><span>Total {cur} con IVA</span><span>{fmt(total)}</span></div>
         </div>
 
-        {/* desglose de IVA (como en BC) */}
+        {/* desglose de IVA (como en BC): UNA fila por tasa. Antes metía todo en una
+            sola fila con la tasa de la primera línea, así que una orden que mezcla
+            13% con exento mostraba una base que no cuadraba con el importe de IVA. */}
         <div className="po-ivaspec">
           <h4>Especificación importe IVA</h4>
           <table>
@@ -213,9 +226,11 @@ export default function ImprimirOrdenPage() {
               </tr>
             </thead>
             <tbody>
-              <tr>
-                <td>IVA{ivaPct}</td><td>{ivaPct}</td><td>{fmt(subtotal)}</td><td>{fmt(subtotal)}</td><td>{fmt(iva)}</td>
-              </tr>
+              {porTasaIva.map((g) => (
+                <tr key={g.pct}>
+                  <td>IVA{g.pct}</td><td>{g.pct}</td><td>{fmt(g.base)}</td><td>{fmt(g.base)}</td><td>{fmt(g.iva)}</td>
+                </tr>
+              ))}
               <tr className="tot">
                 <td>Total</td><td></td><td>{fmt(subtotal)}</td><td>{fmt(subtotal)}</td><td>{fmt(iva)}</td>
               </tr>
