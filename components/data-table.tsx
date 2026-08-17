@@ -176,8 +176,16 @@ export function DataTable<T>({
     } catch { toast("No se pudo guardar la vista.", "error"); }
   }
   async function borrarVista(v: Vista) {
-    try { await fetch(`/api/vistas/${v.id}?usuario=${encodeURIComponent(usuario ?? "")}`, { method: "DELETE" }); await cargarVistas(); } catch { /* noop */ }
-    finally { setVistaABorrar(null); }
+    // Antes fallaba en silencio: la vista seguía ahí y parecía que el botón no hizo
+    // nada (guardar sí avisaba, borrar no).
+    try {
+      const r = await fetch(`/api/vistas/${v.id}?usuario=${encodeURIComponent(usuario ?? "")}`, { method: "DELETE" });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      await cargarVistas();
+      toast("Vista borrada.", "success");
+    } catch (e: any) {
+      toast(`No se pudo borrar la vista: ${String(e?.message ?? e)}`, "error");
+    } finally { setVistaABorrar(null); }
   }
   function resetVista() {
     setColumnOrder(columns.map((c) => c.id!).filter(Boolean)); setColumnVisibility({}); setSorting([]);

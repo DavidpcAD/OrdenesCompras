@@ -280,9 +280,16 @@ export default function RegistrarFacturaPage() {
       });
       // Líneas marcadas → notas de crédito (no bloquea el registro).
       const nc = articulo.filter((l) => marcadas[l.id]).map((l) => ({ ordenLineaId: l.id, articuloNo: l.articuloId, descripcion: l.descripcion, motivo: marcadas[l.id].motivo, cantidad: Number(marcadas[l.id].cantidad) || 0, precioUnitario: Number(marcadas[l.id].precio) || 0, nota: marcadas[l.id].nota || undefined }));
-      if (nc.length) { try { await marcarNotasCredito(orden!.id, orden!.numero, orden!.proveedorNombre ?? prov?.nombre, nc); } catch { /* no bloquear */ } }
+      // No debe tumbar el registro (la factura ya viajó a BC), pero SÍ hay que
+      // avisar: si esto falla en silencio, Bodega marcó líneas para nota de crédito
+      // y Contabilidad nunca las ve.
+      let avisoNc = "";
+      if (nc.length) {
+        try { await marcarNotasCredito(orden!.id, orden!.numero, orden!.proveedorNombre ?? prov?.nombre, nc); }
+        catch (e: any) { avisoNc = ` · OJO: no se pudieron guardar las ${nc.length} línea(s) marcadas para nota de crédito (${String(e?.message ?? e)}). Avisale a Contabilidad.`; }
+      }
       const falloBc = aviso.includes("NO se pudo") || aviso.includes("no disponible");
-      toast(`Factura ${numeroFactura} registrada${completaOrden ? " — orden completada" : " (parcial)"}${aviso}${cargoAvisoPayload() ? " · se avisó a Contabilidad del cargo adicional" : ""}`, falloBc ? "info" : "success");
+      toast(`Factura ${numeroFactura} registrada${completaOrden ? " — orden completada" : " (parcial)"}${aviso}${cargoAvisoPayload() ? " · se avisó a Contabilidad del cargo adicional" : ""}${avisoNc}`, falloBc || avisoNc ? "info" : "success");
       if (bcOk) {
         // Mostramos el modal de inmediato (antes + facturado) y desbloqueamos; la
         // verificación del stock "después" en BC se consulta en segundo plano (no
@@ -346,9 +353,16 @@ export default function RegistrarFacturaPage() {
         cargoAviso: cargoAvisoPayload(),
       });
       const nc = articulo.filter((l) => marcadas[l.id]).map((l) => ({ ordenLineaId: l.id, articuloNo: l.articuloId, descripcion: l.descripcion, motivo: marcadas[l.id].motivo, cantidad: Number(marcadas[l.id].cantidad) || 0, precioUnitario: Number(marcadas[l.id].precio) || 0, nota: marcadas[l.id].nota || undefined }));
-      if (nc.length) { try { await marcarNotasCredito(orden!.id, orden!.numero, orden!.proveedorNombre ?? prov?.nombre, nc); } catch { /* no bloquear */ } }
+      // No debe tumbar el registro (la factura ya viajó a BC), pero SÍ hay que
+      // avisar: si esto falla en silencio, Bodega marcó líneas para nota de crédito
+      // y Contabilidad nunca las ve.
+      let avisoNc = "";
+      if (nc.length) {
+        try { await marcarNotasCredito(orden!.id, orden!.numero, orden!.proveedorNombre ?? prov?.nombre, nc); }
+        catch (e: any) { avisoNc = ` · OJO: no se pudieron guardar las ${nc.length} línea(s) marcadas para nota de crédito (${String(e?.message ?? e)}). Avisale a Contabilidad.`; }
+      }
       const falloBc = aviso.includes("NO se pudo") || aviso.includes("no disponible");
-      toast(`Material recibido — factura EN REVISIÓN${aviso}${cargoAvisoPayload() ? " · se avisó a Contabilidad del cargo adicional" : ""}`, falloBc ? "info" : "success");
+      toast(`Material recibido — factura EN REVISIÓN${aviso}${cargoAvisoPayload() ? " · se avisó a Contabilidad del cargo adicional" : ""}${avisoNc}`, falloBc || avisoNc ? "info" : "success");
       router.push(`/facturacion`);
     } catch (e: any) {
       toast(String(e?.message ?? e), "error");
