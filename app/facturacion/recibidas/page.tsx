@@ -1,10 +1,10 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Badge, Card, EmptyState, Tile } from "@/components/ui";
+import { Badge, Card, EmptyState, Input, Tile } from "@/components/ui";
 import { IconCheck, IconChevronDown } from "@/components/icons";
 import { useStore } from "@/lib/store";
-import { money, formatDate } from "@/lib/helpers";
+import { money, formatDate, todayISO } from "@/lib/helpers";
 
 // Bodega (recibe): historial de lo que se recibió, con quién lo recibió.
 // Pensada para celular/tablet: tarjetas grandes, sin tablas anchas.
@@ -27,13 +27,29 @@ export default function RecibidasPage() {
     return (o ? (o.proveedorNombre ?? proveedores.find((p) => p.id === o.proveedorId)?.nombre) : "") ?? "—";
   };
 
+  // Buscador: la lista solo crece, y para conciliar una factura hay que poder
+  // encontrarla por su número (o por orden / proveedor) sin scrollear todo.
+  const [q, setQ] = useState("");
   // Recepciones con material recibido (registradas o en revisión), más nuevas primero.
-  const lista = useMemo(
+  const todas = useMemo(
     () => [...recepciones].sort((a, b) => (b.fechaRecepcion || "").localeCompare(a.fechaRecepcion || "")),
     [recepciones]
   );
-  const hoy = new Date().toISOString().slice(0, 10);
-  const delMes = lista.filter((r) => (r.fechaRecepcion || "").slice(0, 7) === hoy.slice(0, 7)).length;
+  const lista = useMemo(() => {
+    const t = q.trim().toLowerCase();
+    if (!t) return todas;
+    return todas.filter((r) => {
+      const o = ordenes.find((x) => x.id === r.ordenId);
+      const prov = o ? (o.proveedorNombre ?? proveedores.find((p) => p.id === o.proveedorId)?.nombre ?? "") : "";
+      return [r.numeroFactura, o?.numero, o?.bcNumber, prov, formatDate(r.fechaRecepcion)]
+        .some((v) => (v ?? "").toLowerCase().includes(t));
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [todas, q, ordenes, proveedores]);
+  // `new Date().toISOString()` da la fecha UTC: en CR (UTC−6), después de las 6pm
+  // ya es el día siguiente y el contador "Este mes" cambiaba de mes antes de tiempo.
+  const hoy = todayISO();
+  const delMes = todas.filter((r) => (r.fechaRecepcion || "").slice(0, 7) === hoy.slice(0, 7)).length;
 
   return (
     <>
@@ -46,13 +62,27 @@ export default function RecibidasPage() {
         </div>
 
         <div className="tiles mt-2">
-          <Tile value={lista.length} label="Recepciones" accent="var(--ds-color-green-100)" />
+          <Tile value={todas.length} label="Recepciones" accent="var(--ds-color-green-100)" />
           <Tile value={delMes} label="Este mes" accent="var(--ds-color-yellow)" />
-          <Tile value={new Set(lista.map((r) => r.ordenId)).size} label="Órdenes" accent="var(--ds-color-gray-300)" />
+          <Tile value={new Set(todas.map((r) => r.ordenId)).size} label="Órdenes" accent="var(--ds-color-gray-300)" />
+        </div>
+
+        <div className="mt-4">
+          <Input value={q} onChange={(e) => setQ(e.target.value)} aria-label="Buscar recepción"
+            placeholder="Buscar por N.º de factura, orden o proveedor…" />
+          {q.trim() !== "" && (
+            <p className="ds-body-sm ds-muted" style={{ margin: "6px 0 0" }} role="status">
+              {lista.length} de {todas.length} recepción(es)
+            </p>
+          )}
         </div>
 
         {lista.length === 0 ? (
-          <Card className="mt-6"><EmptyState icon={<IconCheck size={24} />} title="Todavía no recibiste material." hint={<>Cuando registres una recepción en <strong>Órdenes por recibir</strong>, aparece acá.</>} /></Card>
+          <Card className="mt-6">
+            {q.trim() !== ""
+              ? <EmptyState icon={<IconCheck size={24} />} title="Ninguna recepción coincide con la búsqueda." hint={<>Probá con el N.º de factura, el de orden o el proveedor.</>} />
+              : <EmptyState icon={<IconCheck size={24} />} title="Todavía no recibiste material." hint={<>Cuando registres una recepción en <strong>Órdenes por recibir</strong>, aparece acá.</>} />}
+          </Card>
         ) : (
           <div className="col gap-3 mt-6">
             {lista.map((r) => {
