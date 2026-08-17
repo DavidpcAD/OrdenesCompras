@@ -265,6 +265,35 @@ export async function softDeletePedido(id: number, usuario: string, rol: Role) {
 }
 
 // ----------------------------------------------------------------- ORDENES
+
+// El motivo del rechazo NO tiene columna en dbo.OrdenCompra: vive en el log de
+// movimientos (`detalle` = "Motivo: …" del movimiento de rechazo, que escribe la
+// app de Aprobación/Producción). Sin esto, Devoluciones mostraba el motivo "—".
+// Se toma el movimiento de rechazo MÁS RECIENTE por orden y se tolera cómo lo
+// escriba la otra app (rechazado/rechazo/rechazada/devuelto…).
+async function motivosRechazo(idOrden?: number): Promise<Map<string, string>> {
+  const out = new Map<string, string>();
+  try {
+    const pool = await getPool();
+    const req = pool.request();
+    let filtro = "";
+    if (idOrden != null) { req.input("id", sql.Int, idOrden); filtro = " AND idEntidad=@id"; }
+    const r = await req.query(
+      `SELECT idEntidad, detalle FROM dbo.Movimiento
+        WHERE entidad='orden' AND detalle IS NOT NULL AND LTRIM(detalle) <> ''
+          AND (tipoMovimiento LIKE '%rechaz%' OR tipoMovimiento LIKE '%devol%')${filtro}
+        ORDER BY fecha DESC, idMovimiento DESC`
+    );
+    for (const m of r.recordset) {
+      const key = String(m.idEntidad);
+      if (out.has(key)) continue;            // el primero es el más reciente
+      const motivo = String(m.detalle).replace(/^\s*Motivo:\s*/i, "").trim();
+      if (motivo) out.set(key, motivo);
+    }
+  } catch { /* si el log no está disponible, la orden queda sin motivo (no rompe) */ }
+  return out;
+}
+
 export async function listOrdenes(): Promise<Orden[]> {
   await ensureEstados();
   const pool = await getPool();
@@ -276,7 +305,12 @@ export async function listOrdenes(): Promise<Orden[]> {
       LEFT JOIN dbo.PedidoCompraDet pcd ON pcd.idPedidoCompraDet = det.idPedidoCompraDet
       LEFT JOIN dbo.PedidoCompra pc ON pc.idPedidoCompra = pcd.idPedidoCompra
       ORDER BY det.idOrdenCompraDet`);
-  return h.recordset.map((o) => mapOrden(o, d.recordset.filter((x) => x.idOrdenCompra === o.idOrdenCompra)));
+  const motivos = await motivosRechazo();
+  return h.recordset.map((o) => mapOrden(
+    o,
+    d.recordset.filter((x) => x.idOrdenCompra === o.idOrdenCompra),
+    motivos.get(String(o.idOrdenCompra)),
+  ));
 }
 
 export async function getOrden(id: number): Promise<Orden | null> {
@@ -289,10 +323,11 @@ export async function getOrden(id: number): Promise<Orden | null> {
       LEFT JOIN dbo.PedidoCompraDet pcd ON pcd.idPedidoCompraDet = det.idPedidoCompraDet
       LEFT JOIN dbo.PedidoCompra pc ON pc.idPedidoCompra = pcd.idPedidoCompra
       WHERE det.idOrdenCompra=@id ORDER BY det.idOrdenCompraDet`);
-  return mapOrden(h.recordset[0], d.recordset);
+  const motivos = await motivosRechazo(id);
+  return mapOrden(h.recordset[0], d.recordset, motivos.get(String(id)));
 }
 
-function mapOrden(o: any, lineas: any[]): Orden {
+function mapOrden(o: any, lineas: any[], motivoRechazo?: string): Orden {
   return {
     id: String(o.idOrdenCompra), numero: o.ordenNo ?? "", proveedorId: o.proveedorNo ?? "",
     proveedorNo: o.proveedorNo ?? undefined, proveedorNombre: o.proveedorNombre ?? undefined,
@@ -300,6 +335,7 @@ function mapOrden(o: any, lineas: any[]): Orden {
     currencyCode: o.currencyCode ?? "",
     estado: (codigoDeId(o.idEstado) ?? "abierto") as Orden["estado"],
     versionesArchivadas: Number(o.versionesArchivadas ?? 0),
+    motivoRechazo: motivoRechazo || undefined,
     bcNumber: o.bcNo || undefined,           // Nº del Pedido en BC (para relanzar/recibir/facturar)
     lineas: lineas.map((l): OrdenLinea => ({
       id: String(l.idOrdenCompraDet), tipo: (l.tipoLinea === "cargo" ? "cargo" : "articulo"),
