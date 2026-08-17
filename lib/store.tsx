@@ -1,6 +1,6 @@
 "use client";
 
-import React, { createContext, useContext, useEffect, useMemo, useState } from "react";
+import React, { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
 import type {
   Almacen, Articulo, Maquina, Movimiento, Notificacion, Obra, Orden, OrdenLinea, Pedido, PedidoLinea,
   Proveedor, Recepcion, RecepcionLinea, Role, TipoSolicitud,
@@ -150,6 +150,8 @@ export function StoreProvider({ children, useApi }: { children: React.ReactNode;
   const [errorCarga, setErrorCarga] = useState<string | null>(null);
   // Notas de crédito (aparte del bootstrap para no romper la carga si la tabla no existe).
   const [notasCredito, setNotasCredito] = useState<NotaCreditoLinea[]>([]);
+  // Firma del último bootstrap, para no re-renderizar cuando el poll trae lo mismo.
+  const ultimoBootstrap = useRef<string>("");
 
   // hidratación
   useEffect(() => {
@@ -165,7 +167,11 @@ export function StoreProvider({ children, useApi }: { children: React.ReactNode;
     if (u) setUsuario(u);
     if (USE_API) {
       api.bootstrap()
-        .then((b) => { setData((d) => ({ ...d, pedidos: b.pedidos, ordenes: b.ordenes, recepciones: b.recepciones })); setErrorCarga(null); })
+        .then((b) => {
+          ultimoBootstrap.current = JSON.stringify(b);   // así el primer poll no re-renderiza de gratis
+          setData((d) => ({ ...d, pedidos: b.pedidos, ordenes: b.ordenes, recepciones: b.recepciones }));
+          setErrorCarga(null);
+        })
         .catch((e) => { console.error("bootstrap", e); setErrorCarga(mensajeError(e)); })
         .finally(() => { setCargando(false); setHydrated(true); });
     } else {
@@ -207,10 +213,17 @@ export function StoreProvider({ children, useApi }: { children: React.ReactNode;
 
   async function refreshFromApi() {
     const b = await api.bootstrap();
+    setErrorCarga(null);   // volvió a responder: se limpia el aviso
+    // El auto-refresh corre cada 45s con la pantalla abierta todo el día, y casi
+    // siempre trae LO MISMO. Si el payload no cambió, no se toca el estado: así no
+    // se re-renderiza la app entera (ni se pierden cosas derivadas de esos datos)
+    // por gusto. Comparar el JSON es mucho más barato que el re-render.
+    const firma = JSON.stringify(b);
+    if (firma === ultimoBootstrap.current) return;
+    ultimoBootstrap.current = firma;
     // OJO: `movimientos` NO viene en el bootstrap (el historial se pide por entidad
     // en components/timeline.tsx). Bajar la tabla entera cada 45s era carísimo.
     setData((d) => ({ ...d, pedidos: b.pedidos, ordenes: b.ordenes, recepciones: b.recepciones }));
-    setErrorCarga(null);   // volvió a responder: se limpia el aviso
   }
 
   // Reintento manual desde el aviso de error (no recarga la página).
