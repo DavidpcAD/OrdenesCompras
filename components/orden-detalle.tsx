@@ -7,7 +7,7 @@ import { IconChevronDown, IconWarning } from "@/components/icons";
 import { OrderLinesTable } from "@/components/order-lines";
 import { Timeline } from "@/components/timeline";
 import { useStore } from "@/lib/store";
-import { money, num, formatDate, ordenBadge, ordenLineaImporte, ordenRecibidoPct, ordenPedidos, ordenEsDirecta } from "@/lib/helpers";
+import { money, num, formatDate, ordenBadge, bcEstadoLabel, ordenLineaImporte, ordenRecibidoPct, ordenPedidos, ordenEsDirecta } from "@/lib/helpers";
 import type { Orden } from "@/lib/types";
 
 // Vista de detalle de una orden, reutilizada por Proveeduría, Aprobación y Bodega.
@@ -29,7 +29,7 @@ export function OrdenDetalle({
   const router = useRouter();
   const [verFactura, setVerFactura] = useState<string | null>(null);
   // Totales calculados por BC (fuente de verdad). Se leen si la orden ya está en BC.
-  const [bcTot, setBcTot] = useState<{ subtotal: number; iva: number; total: number; currencyCode: string } | null>(null);
+  const [bcTot, setBcTot] = useState<{ subtotal: number; iva: number; total: number; currencyCode: string; estado?: string } | null>(null);
   useEffect(() => {
     if (!orden.bcNumber) { setBcTot(null); return; }
     let vivo = true;
@@ -51,6 +51,10 @@ export function OrdenDetalle({
   // El PDF para el proveedor solo se habilita cuando la orden fue APROBADA (Lanzada
   // en BC) — o ya completada. Antes de eso no debe enviarse nada al proveedor.
   const puedeImprimir = orden.estado === "lanzado" || orden.estado === "completado";
+  // Estado del pedido en BC (lo trae el endpoint de totales). Si BC lo tiene LANZADO
+  // pero la app no, hay que avisarlo: "Volver a abrir" reabre SOLO en esta app.
+  const bcEstadoBc = bcEstadoLabel(bcTot?.estado);
+  const desalineadoConBc = bcEstadoBc === "Lanzado" && orden.estado !== "lanzado" && orden.estado !== "completado";
 
   return (
     <main className="page">
@@ -62,7 +66,13 @@ export function OrdenDetalle({
             <Badge tone={b.tone}>{b.label}</Badge>
             {esDirecta && <Badge tone="yellow">Directa</Badge>}
           </div>
-          <p className="ds-muted">{orden.proveedorNo ?? prov?.code} · {orden.proveedorNombre ?? prov?.nombre} · emitida {formatDate(orden.fecha)} · recibido {ordenRecibidoPct(orden)}%{orden.bcNumber ? ` · BC ${orden.bcNumber}` : ""}</p>
+          <p className="ds-muted">
+            {orden.proveedorNo ?? prov?.code} · {orden.proveedorNombre ?? prov?.nombre} · emitida {formatDate(orden.fecha)} · recibido {ordenRecibidoPct(orden)}%
+            {orden.bcNumber ? ` · BC ${orden.bcNumber}` : ""}
+            {/* Estado REAL del pedido en BC. Se muestra porque no siempre coincide con
+                el de la app (reabrir acá no des-lanza en BC). */}
+            {bcEstadoBc ? <span title="Estado del Pedido en Business Central"> · en BC: <span className="ds-strong">{bcEstadoBc}</span></span> : null}
+          </p>
           {orden.almacenRecepcion && <p className="ds-body-sm ds-muted">Recepción en almacén <span className="ds-strong">{orden.almacenRecepcion}</span></p>}
           <div className="row gap-2 wrap mt-2">
             {esDirecta ? (
@@ -101,6 +111,23 @@ export function OrdenDetalle({
               {orden.motivoRechazo
                 ? <>Motivo: <span className="ds-strong">{orden.motivoRechazo}</span></>
                 : "No se registró un motivo. Revisá el historial al pie o consultá con Aprobación."}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* La app y BC llevan estados separados. Si acá está reabierta/pendiente pero en
+          BC el pedido sigue LANZADO, decirlo: si no, parece que "Volver a abrir" no
+          hizo nada, cuando lo que pasa es que en BC hay que reabrirlo desde BC. */}
+      {desalineadoConBc && (
+        <div className="ds-callout ds-callout--yellow mb-4" role="status">
+          <span className="ds-callout__icon"><IconWarning size={18} /></span>
+          <div>
+            <div className="ds-callout__title">En Business Central el pedido sigue Lanzado</div>
+            <div className="ds-callout__body">
+              Acá la orden está <span className="ds-strong">{b.label.toLowerCase()}</span>, pero el pedido <span className="ds-strong">{orden.bcNumber}</span> en BC quedó Lanzado.
+              Esta app no des-lanza pedidos: si necesitás cambiarlo en BC, reabrilo desde BC.
+              {orden.bcDeepLink && <> <button className="link-btn" onClick={() => window.open(orden.bcDeepLink!, "_blank")}>Abrir {orden.bcNumber} en BC ↗</button></>}
             </div>
           </div>
         </div>

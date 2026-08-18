@@ -73,10 +73,19 @@ export default function ProvOrdenDetallePage() {
           </Button>
         </>
       )}
-      {/* El window.open queda dentro del gesto del clic (si se hace después del
-          await, el navegador lo bloquea como popup). */}
+      {/* Reabrir es SOLO en la app: BC no se des-lanza desde acá (lanzar/reabrir el
+          pedido en BC es de Aprobación). Por eso el mensaje lo dice y se abre el
+          pedido en BC en otra pestaña para reabrirlo allá. El window.open va dentro
+          del gesto del clic o el navegador lo bloquea como popup. */}
       {orden.estado === "lanzado" && (
-        <Button variant="outline" disabled={procesando} onClick={() => { void act("abierto", "Orden reabierta para edición"); if (orden.bcDeepLink) window.open(orden.bcDeepLink, "_blank"); }}>Volver a abrir</Button>
+        <Button variant="outline" disabled={procesando}
+          title="Reabre la orden en esta app para poder editarla. En Business Central el pedido sigue lanzado."
+          onClick={() => {
+            void act("abierto", orden.bcNumber
+              ? `${orden.numero} reabierta acá. OJO: en BC el pedido ${orden.bcNumber} sigue LANZADO — reabrilo en BC (te abrí la pestaña).`
+              : `${orden.numero} reabierta para edición`);
+            if (orden.bcDeepLink) window.open(orden.bcDeepLink, "_blank");
+          }}>Volver a abrir</Button>
       )}
     </>
   );
