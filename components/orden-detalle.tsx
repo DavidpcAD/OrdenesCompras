@@ -7,7 +7,7 @@ import { IconChevronDown, IconWarning } from "@/components/icons";
 import { OrderLinesTable } from "@/components/order-lines";
 import { Timeline } from "@/components/timeline";
 import { useStore } from "@/lib/store";
-import { money, num, formatDate, ordenBadge, ordenLineaImporte, ordenRecibidoPct, ordenPedidos, ordenEsDirecta } from "@/lib/helpers";
+import { money, num, formatDate, ordenBadge, proveedorLabel, ordenLineaImporte, ordenRecibidoPct, ordenPedidos, ordenEsDirecta } from "@/lib/helpers";
 import type { Orden } from "@/lib/types";
 
 // Vista de detalle de una orden, reutilizada por Proveeduría, Aprobación y Bodega.
@@ -62,7 +62,7 @@ export function OrdenDetalle({
             <Badge tone={b.tone}>{b.label}</Badge>
             {esDirecta && <Badge tone="yellow">Directa</Badge>}
           </div>
-          <p className="ds-muted">{orden.proveedorNo ?? prov?.code} · {orden.proveedorNombre ?? prov?.nombre} · emitida {formatDate(orden.fecha)} · recibido {ordenRecibidoPct(orden)}%{orden.bcNumber ? ` · BC ${orden.bcNumber}` : ""}</p>
+          <p className="ds-muted">{orden.proveedorNo ?? prov?.code} · {proveedorLabel(orden, proveedores)} · emitida {formatDate(orden.fecha)} · recibido {ordenRecibidoPct(orden)}%{orden.bcNumber ? ` · BC ${orden.bcNumber}` : ""}</p>
           {orden.almacenRecepcion && <p className="ds-body-sm ds-muted">Recepción en almacén <span className="ds-strong">{orden.almacenRecepcion}</span></p>}
           <div className="row gap-2 wrap mt-2">
             {esDirecta ? (

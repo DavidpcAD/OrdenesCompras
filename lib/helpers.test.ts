@@ -12,7 +12,7 @@ import {
   distribuirCargo, monedaApp, formatDate, todayISO, nextNumero, almacenesFisicos,
   ordenPedidos, ordenEsDirecta, money, pedidoOrdenadoPct, pedidoCompraBadge, pedidoTieneSaldo,
   destinoLabel, destinoCodigo, ordenLineaPendiente, ordenLineaCompleta, ultimoPrecioProveedor,
-  ordenPendienteResumen, devolverPendienteAPedidos,
+  ordenPendienteResumen, devolverPendienteAPedidos, proveedorLabel,
 } from "./helpers.ts";
 import type { Orden, OrdenLinea, Pedido, PedidoLinea } from "./types.ts";
 
@@ -302,4 +302,33 @@ test("nunca deja cantidadOrdenada negativa", () => {
   const o = orden([linea({ id: "a", pedidoLineaId: "pl1", cantidad: 10, cantidadRecibida: 0 })]);
   const [r] = devolverPendienteAPedidos([ped], o);
   assert.equal(r.lineas[0].cantidadOrdenada, 0);
+});
+
+// --- nombre del proveedor: nunca un "—" mudo --------------------------------
+// Hay órdenes con proveedorNombre en NULL (las editadas antes del fix 8b8a5d3) y
+// el catálogo de BC usa GUID como id mientras la orden trae el CÓDIGO: si solo se
+// busca por id, la lista muestra "—" y no se sabe de quién es la orden.
+const catalogo = [{ id: "guid-1", code: "PROV-000002", nombre: "3-101-054264 S.A." }];
+
+test("usa el nombre guardado cuando está", () => {
+  assert.equal(proveedorLabel({ proveedorNombre: "EPA", proveedorNo: "PROV-000522", proveedorId: "PROV-000522" }, catalogo), "EPA");
+});
+
+test("sin nombre lo resuelve por código contra el catálogo (no por id)", () => {
+  assert.equal(
+    proveedorLabel({ proveedorNombre: undefined, proveedorNo: "PROV-000002", proveedorId: "PROV-000002" }, catalogo),
+    "3-101-054264 S.A.",
+  );
+});
+
+test("sin catálogo cae al código, no a un guión", () => {
+  assert.equal(proveedorLabel({ proveedorNombre: "", proveedorNo: "PROV-001023", proveedorId: "PROV-001023" }), "PROV-001023");
+});
+
+test("un nombre en blanco cuenta como ausente", () => {
+  assert.equal(proveedorLabel({ proveedorNombre: "   ", proveedorNo: "PROV-000002", proveedorId: "PROV-000002" }, catalogo), "3-101-054264 S.A.");
+});
+
+test("sin nada devuelve el guión", () => {
+  assert.equal(proveedorLabel({ proveedorNombre: undefined, proveedorNo: undefined, proveedorId: "" }), "—");
 });

@@ -7,7 +7,7 @@ import { Badge, ProgressBar, EmptyState } from "@/components/ui";
 import { DataTable } from "@/components/data-table";
 import { IconChevronDown } from "@/components/icons";
 import { useStore } from "@/lib/store";
-import { money, formatDate, ordenAvance, ordenBadge, ordenRecibidoPct, ordenSubtotal, ordenPedidos, ordenEsDirecta, ordenLineaImporte, num } from "@/lib/helpers";
+import { money, formatDate, ordenAvance, ordenBadge, ordenRecibidoPct, ordenSubtotal, ordenPedidos, ordenEsDirecta, ordenLineaImporte, proveedorLabel, num } from "@/lib/helpers";
 import type { Orden } from "@/lib/types";
 
 // Lista de órdenes reutilizable (Proveeduría / Aprobación / Bodega), sobre DataTable
@@ -25,7 +25,7 @@ export function OrdenesLista({
   const { proveedores } = useStore();
   const router = useRouter();
   const prov = (id: string) => proveedores.find((p) => p.id === id);
-  const nombreProv = (o: Orden) => o.proveedorNombre ?? prov(o.proveedorId)?.nombre ?? "—";
+  const nombreProv = (o: Orden) => proveedorLabel(o, proveedores);
 
   const [agrupar, setAgrupar] = useState(false);
   // Proveedores colapsados por defecto: se abre uno para ver sus OC.
@@ -34,7 +34,7 @@ export function OrdenesLista({
 
   const columns = useMemo<ColumnDef<Orden, any>[]>(() => [
     { id: "num", header: "N.º", accessorFn: (o) => o.numero, meta: { label: "N.º" }, cell: (c) => <span className="ds-strong">{c.getValue()}</span> },
-    { id: "prov", header: "Proveedor", accessorFn: (o) => o.proveedorNombre ?? prov(o.proveedorId)?.nombre ?? "—", meta: { label: "Proveedor" }, cell: (c) => c.getValue() },
+    { id: "prov", header: "Proveedor", accessorFn: (o) => proveedorLabel(o, proveedores), meta: { label: "Proveedor" }, cell: (c) => c.getValue() },
     {
       id: "solic", header: "Solicitudes", accessorFn: (o) => (ordenEsDirecta(o) ? "Directa" : ordenPedidos(o).join(" ")), meta: { label: "Solicitudes" },
       cell: (c) => {

@@ -197,6 +197,25 @@ export function devolverPendienteAPedidos(pedidos: Pedido[], orden: Orden): Pedi
   });
 }
 
+// Nombre del proveedor para mostrar, sin quedarse nunca en un "—" mudo.
+// En producción `proveedorId` de la orden es el CÓDIGO ("PROV-000002") mientras el
+// catálogo de BC usa el GUID como `id`, así que buscar solo por id no encuentra
+// nada. Se prueba por id, por código, y si no hay catálogo se muestra el código —
+// que al menos identifica al proveedor.
+// Hace falta porque hay órdenes con `proveedorNombre` en NULL: las editadas antes
+// del fix 8b8a5d3. Para arreglar los datos, ver sql/repair_proveedor_nombre.sql.
+export function proveedorLabel(
+  o: Pick<Orden, "proveedorNombre" | "proveedorNo" | "proveedorId">,
+  catalogo: { id: string; code: string; nombre: string }[] = [],
+): string {
+  const nombre = (o.proveedorNombre ?? "").trim();
+  if (nombre) return nombre;
+  const codigo = (o.proveedorNo ?? o.proveedorId ?? "").trim();
+  const hit = catalogo.find((p) => p.id === o.proveedorId)
+    ?? (codigo ? catalogo.find((p) => p.code === codigo) : undefined);
+  return (hit?.nombre ?? "").trim() || codigo || "—";
+}
+
 export function ordenLineaCompleta(l: OrdenLinea): boolean {
   return l.cantidadRecibida >= l.cantidad - 1e-9;
 }
