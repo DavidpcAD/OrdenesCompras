@@ -254,23 +254,6 @@ export function ordenBadge(estado: Orden["estado"]): { label: string; tone: stri
   }
 }
 
-// Estado del Pedido EN BUSINESS CENTRAL (campo `status` de la API v2.0), traducido.
-// Es un estado DISTINTO del de la app: la app lo muestra al lado del Nº de BC para
-// que se vea cuándo los dos no coinciden (p.ej. reabierta acá y Lanzada en BC).
-export function bcEstadoLabel(status?: string): string | null {
-  const s = (status ?? "").trim().toLowerCase();
-  if (!s) return null;
-  switch (s) {
-    case "draft": return "Borrador";
-    case "in review": return "En revisión";
-    case "open": return "Abierto";
-    case "released": return "Lanzado";
-    case "pending approval": return "Pendiente de aprobación";
-    case "pending prepayment": return "Pendiente de anticipo";
-    default: return status!;   // estado nuevo de BC: mostrarlo tal cual, no ocultarlo
-  }
-}
-
 // Distribución proporcional de un cargo (flete) por importe de las líneas de artículo
 export function distribuirCargo(monto: number, lineas: OrdenLinea[]): Record<string, number> {
   const articulos = lineas.filter((l) => l.tipo === "articulo");

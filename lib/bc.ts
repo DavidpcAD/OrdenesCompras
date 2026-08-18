@@ -459,7 +459,7 @@ export async function bcUltimoPrecioFacturado(itemNo: string, vendorNo: string):
   }
 }
 
-export type BcOrdenTotales = { subtotal: number; iva: number; total: number; currencyCode: string; estado: string };
+export type BcOrdenTotales = { subtotal: number; iva: number; total: number; currencyCode: string };
 
 // Totales del Pedido de compra CALCULADOS POR BC (fuente de verdad): subtotal
 // (excl. IVA, incluye cargos), IVA total y total con IVA. La app los MUESTRA tal
@@ -469,10 +469,7 @@ export async function bcOrdenTotales(orderNo: string): Promise<BcOrdenTotales | 
   if (!orderNo) return null;
   try {
     const cid = await getStdCompanyId();
-    // Sin $select: además de los totales necesitamos `status` (Open/Released/…), y
-    // pedirlo por $select rompe la consulta entera si el campo no existe en la
-    // versión de la API. Es UN registro: traerlo completo no cuesta nada.
-    const filtro = `$filter=${encodeURIComponent(`number eq '${odataStr(orderNo)}'`)}&$top=1`;
+    const filtro = `$filter=${encodeURIComponent(`number eq '${odataStr(orderNo)}'`)}&$select=totalAmountExcludingTax,totalTaxAmount,totalAmountIncludingTax,currencyCode&$top=1`;
     const res = await bcFetch(`${stdRoot()}/companies(${cid})/purchaseOrders?${filtro}`, { cache: "no-store" });
     if (!res.ok) return null;
     const po = ((await res.json())?.value ?? [])[0];
@@ -482,10 +479,12 @@ export async function bcOrdenTotales(orderNo: string): Promise<BcOrdenTotales | 
       iva: Number(po.totalTaxAmount) || 0,
       total: Number(po.totalAmountIncludingTax) || 0,
       currencyCode: po.currencyCode || "",
-      // Estado del pedido EN BC (Open/Released/...). La app lleva su propio estado:
-      // reabrir acá no des-lanza en BC, así que hay que poder mostrar los dos.
-      estado: String(po.status ?? ""),
     };
+    // OJO: NO agregar acá el estado de lanzamiento leyendo `po.status`. Se probó
+    // (17 ago 2026) contra el Sandbox y ese campo devuelve "Open" también para
+    // pedidos LANZADOS — no es el Status del Purchase Header. Mostrarlo hacía que
+    // la orden dijera "en BC: Abierto" con el pedido lanzado en BC. Si se quiere el
+    // estado real, va por un procedure del codeunit AdelantePO, no por esta API.
   } catch { return null; }
 }
 
