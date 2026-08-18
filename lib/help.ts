@@ -98,6 +98,12 @@ const ORDEN_DET: HelpEntry = {
     "Si Aprobación la rechazó, el aviso rojo de arriba dice el motivo: corregí eso, guardá y reenviala.",
     "Si ya está lanzada/recibida, consultá sus recepciones y facturas asociadas.",
     "Con “Imprimir” generás el PDF de la orden (se habilita cuando ya está aprobada).",
+    "Si está Lanzada: “Volver a abrir” la corrige (también la des-lanza en Business Central) y “Cerrar orden” la da por terminada aunque falte material.",
+  ],
+  tips: [
+    "“Cerrar orden” es para cuando el proveedor no va a traer el resto. Pide el motivo y, por defecto, devuelve lo no recibido a las solicitudes para poder volver a comprarlo.",
+    "Si el resto se lo vas a comprar a otro, marcá “Crear una orden nueva con lo pendiente”: cierra esta y te deja la nueva armada y abierta.",
+    "Una orden con facturas registradas ya no se puede volver a abrir: lo que llegó mal va por devolución.",
   ],
 };
 const ORDEN_EDITAR: HelpEntry = {

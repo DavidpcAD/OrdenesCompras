@@ -43,6 +43,10 @@ export const api = {
   getOrden: (id: string): Promise<Orden> => fetch(`/api/ordenes/${id}`).then(jsonOrThrow),
   patchOrdenEstado: (id: string, body: unknown) =>
     fetch(`/api/ordenes/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }).then(jsonOrThrow),
+  cerrarOrden: (id: string, body: unknown) =>
+    fetch(`/api/ordenes/${id}/cerrar`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }).then(jsonOrThrow),
+  nuevaOrdenConPendiente: (id: string, body: unknown) =>
+    fetch(`/api/ordenes/${id}/nueva-con-pendiente`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }).then(jsonOrThrow),
   updateOrden: (id: string, body: unknown) =>
     fetch(`/api/ordenes/${id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }).then(jsonOrThrow),
 

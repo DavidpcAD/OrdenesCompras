@@ -49,6 +49,9 @@ function etiqueta(m: Movimiento): string {
     if (m.tipoMovimiento === "recepcion_total") return "Recibido en bodega (total)";
     if (m.tipoMovimiento === "nc_resuelta") return "Nota de crédito acreditada";
     if (m.tipoMovimiento === "nc_reabierta") return "Nota de crédito reabierta";
+    // Cerrada a mano por Proveeduría (el proveedor no trajo el resto, se compró en
+    // otro lado). El motivo va en el detalle del movimiento.
+    if (m.tipoMovimiento === "cerrado") return "Orden cerrada por Proveeduría";
   }
   if (m.entidad === "recepcion" && m.tipoMovimiento === "creado") return "Factura registrada";
   return LABEL[m.tipoMovimiento] ?? m.tipoMovimiento;
@@ -65,6 +68,7 @@ function colorPunto(m: Movimiento): string {
       case "recepcion_total":
       case "completado": return "var(--ds-color-green-200)"; // recibido total / completado · verde fuerte
       case "rechazado": return "var(--ds-color-red-200)";    // rechazada · rojo
+      case "cerrado": return "var(--ds-color-gray-400)";     // cerrada a mano · neutral
       case "eliminado": return "var(--ds-color-red-100)";
     }
   }

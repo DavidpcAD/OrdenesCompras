@@ -158,6 +158,45 @@ export function ordenLineaPendiente(l: OrdenLinea): number {
   return Math.max(0, l.cantidad - l.cantidadRecibida);
 }
 
+// Resumen de lo que una orden dejó SIN recibir. Es lo que se devuelve a las
+// solicitudes al cerrarla y lo que se pasaría a una orden nueva. Solo artículos:
+// un cargo (flete) no tiene saldo por recibir.
+export function ordenPendienteResumen(o: Orden): { lineas: number; unidades: number } {
+  const pend = soloArticulos(o).map(ordenLineaPendiente).filter((q) => q > 0);
+  return { lineas: pend.length, unidades: pend.reduce((s, q) => s + q, 0) };
+}
+
+// Devuelve a las solicitudes lo que una orden dejó SIN recibir, al cerrarla.
+// Sin esto, esas unidades quedan "ya ordenadas" para siempre y nadie las puede
+// volver a comprar sin abrir una solicitud nueva.
+// OJO: se SUMA el pendiente de todas las líneas de la orden que apuntan a la misma
+// línea de pedido antes de restar. Si se restara línea por línea (o con un JOIN que
+// toca la fila una sola vez, como en SQL), una orden con el mismo material repetido
+// devolvería de menos y el saldo quedaría mal para siempre.
+export function devolverPendienteAPedidos(pedidos: Pedido[], orden: Orden): Pedido[] {
+  const porLinea = new Map<string, number>();
+  for (const l of soloArticulos(orden)) {
+    if (!l.pedidoLineaId) continue;
+    const pend = ordenLineaPendiente(l);
+    if (pend > 0) porLinea.set(l.pedidoLineaId, (porLinea.get(l.pedidoLineaId) ?? 0) + pend);
+  }
+  if (!porLinea.size) return pedidos;
+  return pedidos.map((p) => {
+    let tocado = false;
+    const ls = p.lineas.map((pl) => {
+      const dev = porLinea.get(pl.id) ?? 0;
+      if (dev <= 0) return pl;
+      tocado = true;
+      return { ...pl, cantidadOrdenada: Math.max(0, pl.cantidadOrdenada - dev) };
+    });
+    if (!tocado) return p;
+    // Si volvió a quedar saldo, la solicitud deja de estar "en orden": tiene que
+    // reaparecer en "Por línea" para que Proveeduría la pueda comprar de nuevo.
+    const sinSaldo = ls.every((pl) => pl.cantidadOrdenada >= pl.cantidad - 1e-9);
+    return { ...p, lineas: ls, estado: (sinSaldo ? "en_orden" : "aprobado") as Pedido["estado"] };
+  });
+}
+
 export function ordenLineaCompleta(l: OrdenLinea): boolean {
   return l.cantidadRecibida >= l.cantidad - 1e-9;
 }

@@ -593,6 +593,133 @@ export async function updateOrden(id: number, input: UpdateOrdenDB) {
   }
 }
 
+export interface CierreOrden { pendienteDevuelto: number; lineasConPendiente: number }
+
+// Cierra una orden LANZADA que ya no va a recibir el resto del material (el
+// proveedor no lo trajo, se descontinuó, se compró en otro lado). Queda en
+// "completado" con el motivo en la bitácora.
+//
+// Lo importante es `devolverSaldo`: el saldo NO RECIBIDO vuelve a las solicitudes
+// de origen. Si no se devuelve, esas unidades quedan "ya ordenadas" para siempre
+// (quantityOrdenado) y nadie puede volver a comprarlas sin abrir una solicitud
+// nueva — el material simplemente se pierde del sistema.
+export async function cerrarOrden(
+  id: number, motivo: string, usuario: string, rol: Role, devolverSaldo = true,
+): Promise<CierreOrden> {
+  if (!String(motivo ?? "").trim()) throw new Error("Poné el motivo del cierre: queda en el historial de la orden.");
+  await ensureEstados();
+  const pool = await getPool();
+  const head = await pool.request().input("id", sql.Int, id)
+    .query("SELECT ordenNo, idEstado FROM dbo.OrdenCompra WHERE idOrdenCompra=@id AND esEliminada=0");
+  if (!head.recordset.length) throw new Error("Orden no encontrada.");
+  const estadoActual = codigoDeId(head.recordset[0].idEstado);
+  // Solo tiene sentido cerrar lo que está en la calle. Una abierta se edita o se
+  // deja; una completada ya está cerrada.
+  if (estadoActual !== "lanzado") {
+    throw new Error(`Solo se puede cerrar una orden lanzada (esta está ${NOMBRE_POR_CODIGO[estadoActual ?? ""] ?? estadoActual}).`);
+  }
+  const ordenNo = head.recordset[0].ordenNo ?? "";
+  const idCompletado = await idDeEstado("completado");
+
+  const tx = new sql.Transaction(pool); await tx.begin();
+  try {
+    // Lo que quedó sin recibir. Solo artículos: un cargo (flete) no tiene saldo.
+    const pend = await new sql.Request(tx).input("id", sql.Int, id).query(`
+      SELECT ISNULL(SUM(quantity - ISNULL(quantityRecibida,0)),0) AS unidades, COUNT(*) AS lineas
+        FROM dbo.OrdenCompraDet
+       WHERE idOrdenCompra=@id AND tipoLinea='articulo' AND quantity - ISNULL(quantityRecibida,0) > 0`);
+    const pendienteDevuelto = Number(pend.recordset[0]?.unidades ?? 0);
+    const lineasConPendiente = Number(pend.recordset[0]?.lineas ?? 0);
+
+    if (devolverSaldo && lineasConPendiente > 0) {
+      // Se agrupa por línea de pedido ANTES de restar: en un UPDATE ... FROM JOIN,
+      // dos líneas de la orden apuntando a la misma línea de pedido tocarían la
+      // fila una sola vez y el saldo quedaría mal (mismo cuidado que updateOrden).
+      // El CASE evita dejar quantityOrdenado negativo si los datos vienen sucios.
+      await new sql.Request(tx).input("id", sql.Int, id).query(`
+        UPDATE pcd SET pcd.quantityOrdenado =
+          CASE WHEN ISNULL(pcd.quantityOrdenado,0) - x.q < 0 THEN 0 ELSE ISNULL(pcd.quantityOrdenado,0) - x.q END
+        FROM dbo.PedidoCompraDet pcd
+        JOIN (SELECT idPedidoCompraDet, SUM(quantity - ISNULL(quantityRecibida,0)) AS q
+                FROM dbo.OrdenCompraDet
+               WHERE idOrdenCompra=@id AND idPedidoCompraDet IS NOT NULL
+                 AND tipoLinea='articulo' AND quantity - ISNULL(quantityRecibida,0) > 0
+               GROUP BY idPedidoCompraDet) x ON x.idPedidoCompraDet = pcd.idPedidoCompraDet`);
+    }
+
+    await new sql.Request(tx).input("id", sql.Int, id).input("e", sql.Int, idCompletado).input("u", sql.NVarChar(100), usuario)
+      .query("UPDATE dbo.OrdenCompra SET idEstado=@e, fechaModificacion=getdate(), modificadoPor=@u WHERE idOrdenCompra=@id");
+
+    const detalle = pendienteDevuelto > 0
+      ? `${motivo} · ${pendienteDevuelto} u. sin recibir ${devolverSaldo ? "devueltas a las solicitudes" : "NO devueltas (quedan consumidas)"}`
+      : motivo;
+    await logMov(tx, {
+      entidad: "orden", idEntidad: id, documentoNo: ordenNo, tipoMovimiento: "cerrado",
+      estadoAnterior: "lanzado", estadoNuevo: "completado", detalle, usuario, rol,
+    });
+    await tx.commit();
+    return { pendienteDevuelto, lineasConPendiente };
+  } catch (e) {
+    await tx.rollback();
+    throw e;
+  }
+}
+
+// Cierra la orden y arma una NUEVA (abierta) con lo que quedó pendiente: el caso
+// de "el proveedor entregó la mitad y el resto se lo compro a otro".
+// El orden importa: primero cerrar (devuelve el saldo) y después crear (lo vuelve
+// a consumir). Al revés, si el cierre fallara, las dos órdenes estarían
+// consumiendo el mismo saldo del pedido. Si falla la creación, el cierre ya quedó
+// hecho y las líneas volvieron a Solicitudes: se rearma a mano, no se pierde nada.
+export async function nuevaOrdenDesdePendiente(
+  id: number, motivo: string, usuario: string, rol: Role,
+): Promise<{ idOrden: number; numero: string; origen: string }> {
+  const pool = await getPool();
+  const head = await pool.request().input("id", sql.Int, id)
+    .query("SELECT ordenNo, proveedorNo, proveedorNombre, currencyCode FROM dbo.OrdenCompra WHERE idOrdenCompra=@id AND esEliminada=0");
+  if (!head.recordset.length) throw new Error("Orden no encontrada.");
+  const h = head.recordset[0];
+  const det = await pool.request().input("id", sql.Int, id).query(`
+    SELECT * FROM dbo.OrdenCompraDet
+     WHERE idOrdenCompra=@id AND tipoLinea='articulo' AND quantity - ISNULL(quantityRecibida,0) > 0
+     ORDER BY lineNum`);
+  if (!det.recordset.length) throw new Error("Esta orden no tiene material pendiente: no hay nada que pasar a una orden nueva.");
+
+  await cerrarOrden(id, motivo, usuario, rol, true);
+
+  const idOrden = await createOrden({
+    proveedorNo: h.proveedorNo, proveedorNombre: h.proveedorNombre ?? undefined,
+    currencyCode: h.currencyCode ?? "", usuario, rol,
+    lineas: det.recordset.map((l: any) => ({
+      tipoLinea: "articulo",
+      itemNo: l.itemNo ?? undefined, variantCode: l.variantCode ?? undefined,
+      idPedidoCompraDet: l.idPedidoCompraDet ?? undefined,
+      descripcion: l.descripcion ?? "",
+      cantidad: Number(l.quantity ?? 0) - Number(l.quantityRecibida ?? 0),
+      unidad: l.unitOfMeasureCode ?? "", almacen: l.locationCode ?? "",
+      precioUnitario: Number(l.directUnitCost ?? 0), ivaPct: Number(l.vatPct ?? 0),
+      descuentoPct: Number(l.lineDiscountPct ?? 0) || undefined,
+      jobNo: l.jobNo ?? undefined, taskNo: l.taskNo ?? undefined,
+    })),
+  });
+
+  const nueva = await pool.request().input("id", sql.Int, idOrden)
+    .query("SELECT ordenNo FROM dbo.OrdenCompra WHERE idOrdenCompra=@id");
+  const numero = nueva.recordset[0]?.ordenNo ?? "";
+  // Deja la traza en las dos puntas: sin esto, en la orden nueva no se ve de dónde
+  // salió y en la vieja no se ve a dónde se fue el pendiente.
+  const tx = new sql.Transaction(pool); await tx.begin();
+  try {
+    await logMov(tx, { entidad: "orden", idEntidad: idOrden, documentoNo: numero, tipoMovimiento: "creado",
+      detalle: `Con el pendiente de ${h.ordenNo}`, usuario, rol });
+    await logMov(tx, { entidad: "orden", idEntidad: id, documentoNo: h.ordenNo, tipoMovimiento: "cerrado",
+      detalle: `El pendiente pasó a ${numero}`, usuario, rol });
+    await tx.commit();
+  } catch { await tx.rollback(); /* la traza es informativa: no tumbar la operación */ }
+
+  return { idOrden, numero, origen: h.ordenNo };
+}
+
 // ¿La orden ya tiene facturas/recepciones registradas? Es la línea que separa
 // "todavía se puede corregir" de "ya entró material y hay que ir por devolución".
 export async function ordenTieneRecepciones(id: number): Promise<boolean> {

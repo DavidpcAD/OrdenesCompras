@@ -7,7 +7,7 @@ import type {
   NotaCreditoLinea, MotivoNC,
 } from "./types";
 import * as seed from "./seed";
-import { nextNumero, nowISO, ordenEstaCompleta, PERSONA_POR_ROL, todayISO } from "./helpers";
+import { devolverPendienteAPedidos, nextNumero, nowISO, ordenEstaCompleta, PERSONA_POR_ROL, todayISO } from "./helpers";
 import { api, USE_API as USE_API_BUILD } from "./api";
 
 export interface NewPedidoInput {
@@ -85,6 +85,13 @@ interface StoreShape {
   // Devuelve `bcAviso` cuando el cambio se hizo acá pero BC no pudo acompañarlo
   // (p.ej. reabrir con el pedido lanzado en BC): la pantalla tiene que decirlo.
   setOrdenEstado: (id: string, estado: Orden["estado"], extra?: { bcNumber?: string; bcDeepLink?: string }) => Promise<{ bcAviso?: string }>;
+
+  // Cerrar una orden LANZADA que ya no va a recibir el resto del material. Con
+  // `devolverSaldo` (default true) lo no recibido vuelve a las solicitudes para
+  // poder comprarlo de nuevo; si no, esas unidades quedan consumidas para siempre.
+  cerrarOrden: (id: string, motivo: string, devolverSaldo?: boolean) => Promise<{ pendienteDevuelto: number }>;
+  // Cierra la orden y arma una nueva (abierta) con lo que quedó pendiente.
+  nuevaOrdenConPendiente: (id: string, motivo: string) => Promise<{ id: string; numero: string }>;
 
   registrarRecepcion: (input: RegistrarRecepcionInput) => Promise<Recepcion>;
   // MODO 2: registrar la factura de una recepción que quedó EN REVISIÓN (Kattya).
@@ -442,6 +449,77 @@ export function StoreProvider({ children, useApi }: { children: React.ReactNode;
       return {};
     };
 
+    // ---------------- CERRAR ORDEN / PASAR EL PENDIENTE ----------------
+    const cerrarOrden: StoreShape["cerrarOrden"] = async (id, motivo, devolverSaldo = true) => {
+      if (USE_API) {
+        const r = await api.cerrarOrden(id, { motivo, devolverSaldo, usuario: persona, rol: rolActual }) as { pendienteDevuelto?: number };
+        await refreshFromApi();
+        return { pendienteDevuelto: Number(r?.pendienteDevuelto ?? 0) };
+      }
+      let pendienteDevuelto = 0;
+      setData((d) => {
+        const o = d.ordenes.find((x) => x.id === id);
+        if (!o) return d;
+        pendienteDevuelto = o.lineas.filter((l) => l.tipo === "articulo")
+          .reduce((s, l) => s + Math.max(0, l.cantidad - l.cantidadRecibida), 0);
+        const mov = mkMov({ entidad: "orden", idEntidad: id, documentoNo: o.numero, tipoMovimiento: "cerrado",
+          estadoAnterior: o.estado, estadoNuevo: "completado", detalle: motivo });
+        return {
+          ...d,
+          ordenes: d.ordenes.map((x) => (x.id === id ? { ...x, estado: "completado" as Orden["estado"] } : x)),
+          pedidos: devolverSaldo ? devolverPendienteAPedidos(d.pedidos, o) : d.pedidos,
+          movimientos: [mov, ...d.movimientos],
+        };
+      });
+      return { pendienteDevuelto };
+    };
+
+    const nuevaOrdenConPendiente: StoreShape["nuevaOrdenConPendiente"] = async (id, motivo) => {
+      if (USE_API) {
+        const r = await api.nuevaOrdenConPendiente(id, { motivo, usuario: persona, rol: rolActual }) as { idOrden?: number; numero?: string };
+        await refreshFromApi();
+        return { id: String(r?.idOrden ?? ""), numero: String(r?.numero ?? "") };
+      }
+      let creada = { id: "", numero: "" };
+      setData((d) => {
+        const o = d.ordenes.find((x) => x.id === id);
+        if (!o) return d;
+        const pendientes = o.lineas
+          .filter((l) => l.tipo === "articulo" && l.cantidad - l.cantidadRecibida > 0)
+          .map((l) => ({ ...l, id: uid(), cantidad: l.cantidad - l.cantidadRecibida, cantidadRecibida: 0, cantidadFacturada: 0 }));
+        if (!pendientes.length) return d;
+        const numero = nextNumero("CP", d.ordenes.map((x) => x.numero));
+        const nueva: Orden = {
+          ...o, id: uid(), numero, fecha: todayISO(), estado: "abierto", versionesArchivadas: 0,
+          lineas: pendientes, bcNumber: undefined, bcDeepLink: undefined, motivoRechazo: undefined,
+        };
+        creada = { id: nueva.id, numero };
+        // Se devuelve el saldo por el cierre y la orden nueva lo vuelve a consumir:
+        // neto cero en el pedido, pero ahora colgado de la orden que sí lo va a traer.
+        const pedidos = devolverPendienteAPedidos(d.pedidos, o).map((p) => {
+          let tocado = false;
+          const ls = p.lineas.map((pl) => {
+            const consumo = pendientes.filter((ol) => ol.pedidoLineaId === pl.id).reduce((s, ol) => s + ol.cantidad, 0);
+            if (consumo <= 0) return pl;
+            tocado = true;
+            return { ...pl, cantidadOrdenada: pl.cantidadOrdenada + consumo };
+          });
+          return tocado ? { ...p, lineas: ls } : p;
+        });
+        const movCierre = mkMov({ entidad: "orden", idEntidad: id, documentoNo: o.numero, tipoMovimiento: "cerrado",
+          estadoAnterior: o.estado, estadoNuevo: "completado", detalle: `${motivo} · el pendiente pasó a ${numero}` });
+        const movNueva = mkMov({ entidad: "orden", idEntidad: nueva.id, documentoNo: numero, tipoMovimiento: "creado",
+          estadoNuevo: "abierto", detalle: `Con el pendiente de ${o.numero}` });
+        return {
+          ...d,
+          ordenes: [nueva, ...d.ordenes.map((x) => (x.id === id ? { ...x, estado: "completado" as Orden["estado"] } : x))],
+          pedidos,
+          movimientos: [movNueva, movCierre, ...d.movimientos],
+        };
+      });
+      return creada;
+    };
+
     // ---------------- REGISTRAR RECEPCION ----------------
     const registrarRecepcion: StoreShape["registrarRecepcion"] = async (input) => {
       if (USE_API) {
@@ -618,7 +696,7 @@ export function StoreProvider({ children, useApi }: { children: React.ReactNode;
       maquinas: seed.maquinas, almacenes: seed.almacenes,
       pedidos: data.pedidos, ordenes: data.ordenes, recepciones: data.recepciones, movimientos: data.movimientos,
       addPedido, editPedido, setPedidoEstado, deletePedido,
-      createOrden, updateOrden, setOrdenEstado, registrarRecepcion, facturarRecepcion, devolverPedido, devolverOrden, reset,
+      createOrden, updateOrden, setOrdenEstado, cerrarOrden, nuevaOrdenConPendiente, registrarRecepcion, facturarRecepcion, devolverPedido, devolverOrden, reset,
       notasCredito, marcarNotasCredito, cargarNotasCredito, resolverNotaCredito,
       notificaciones: data.notificaciones, marcarNotifsLeidas, marcarNotifLeida,
       borrador, setBorrador,

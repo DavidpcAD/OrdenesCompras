@@ -12,6 +12,7 @@ import {
   distribuirCargo, monedaApp, formatDate, todayISO, nextNumero, almacenesFisicos,
   ordenPedidos, ordenEsDirecta, money, pedidoOrdenadoPct, pedidoCompraBadge, pedidoTieneSaldo,
   destinoLabel, destinoCodigo, ordenLineaPendiente, ordenLineaCompleta, ultimoPrecioProveedor,
+  ordenPendienteResumen, devolverPendienteAPedidos,
 } from "./helpers.ts";
 import type { Orden, OrdenLinea, Pedido, PedidoLinea } from "./types.ts";
 
@@ -217,4 +218,88 @@ test("money usa colones por defecto y respeta la moneda de la orden", () => {
   assert.ok(money(1000, "USD").includes("USD"));       // es-CR escribe "USD 1 000,00"
   assert.equal(money(NaN), money(0));                  // no imprime "NaN"
   assert.equal(money(undefined as unknown as number), money(0));
+});
+
+// --- lo que queda sin recibir al cerrar una orden ----------------------------
+// Es la cantidad que se le devuelve a las solicitudes: si se cuenta de más, el
+// pedido queda con saldo que no existe; de menos, el material se pierde y hay que
+// abrir una solicitud nueva para volver a comprarlo.
+test("el resumen de pendiente ignora el flete y las líneas ya completas", () => {
+  const o = orden([
+    linea({ id: "a", cantidad: 10, cantidadRecibida: 10 }),      // completa: no cuenta
+    linea({ id: "b", cantidad: 10, cantidadRecibida: 4 }),       // faltan 6
+    linea({ id: "c", cantidad: 5, cantidadRecibida: 0 }),        // faltan 5
+    linea({ id: "f", tipo: "cargo", cantidad: 1, cantidadRecibida: 0 }), // flete: no cuenta
+  ]);
+  assert.deepEqual(ordenPendienteResumen(o), { lineas: 2, unidades: 11 });
+});
+
+test("una orden recibida al 100% no tiene nada pendiente que devolver", () => {
+  const o = orden([linea({ id: "a", cantidad: 3, cantidadRecibida: 3 })]);
+  assert.deepEqual(ordenPendienteResumen(o), { lineas: 0, unidades: 0 });
+});
+
+// Recibir de más (pasa cuando el proveedor manda extra) no debe generar un
+// pendiente NEGATIVO que le sume saldo fantasma a la solicitud.
+test("recibir de más no genera pendiente negativo", () => {
+  const o = orden([linea({ id: "a", cantidad: 10, cantidadRecibida: 12 })]);
+  assert.deepEqual(ordenPendienteResumen(o), { lineas: 0, unidades: 0 });
+});
+
+// --- devolver el saldo a las solicitudes al cerrar ---------------------------
+// Es plata y material: si se devuelve de menos, esas unidades no se pueden volver
+// a comprar nunca; si se devuelve de más, la solicitud queda con saldo inventado y
+// se compra dos veces.
+const pedidoCon = (lineas: { id: string; cantidad: number; cantidadOrdenada: number }[]): Pedido => ({
+  id: "p1", numero: "PED-000001", tipoSolicitud: "material", obraCodigo: "OB-1", solicitante: "Laura",
+  fecha: "2026-07-01", estado: "en_orden", prioridad: "normal",
+  lineas: lineas.map((l) => ({ id: l.id, descripcion: "X", cantidad: l.cantidad, unidad: "UND",
+    almacen: "ALM-GRAL", cantidadOrdenada: l.cantidadOrdenada })),
+} as unknown as Pedido);
+
+test("cerrar devuelve solo lo NO recibido y reabre el saldo de la solicitud", () => {
+  const ped = pedidoCon([{ id: "pl1", cantidad: 10, cantidadOrdenada: 10 }]);
+  const o = orden([linea({ id: "a", pedidoLineaId: "pl1", cantidad: 10, cantidadRecibida: 4 })]);
+  const [r] = devolverPendienteAPedidos([ped], o);
+  assert.equal(r.lineas[0].cantidadOrdenada, 4);   // se devolvieron las 6 que no llegaron
+  assert.equal(r.estado, "aprobado");              // vuelve a tener saldo por comprar
+});
+
+// El caso que rompe un UPDATE...JOIN ingenuo: dos líneas de la MISMA orden contra
+// la misma línea de pedido. Hay que sumar los dos pendientes antes de restar.
+test("dos líneas de la orden sobre la misma línea de pedido suman al devolver", () => {
+  const ped = pedidoCon([{ id: "pl1", cantidad: 20, cantidadOrdenada: 20 }]);
+  const o = orden([
+    linea({ id: "a", pedidoLineaId: "pl1", cantidad: 10, cantidadRecibida: 2 }),   // faltan 8
+    linea({ id: "b", pedidoLineaId: "pl1", cantidad: 10, cantidadRecibida: 3 }),   // faltan 7
+  ]);
+  const [r] = devolverPendienteAPedidos([ped], o);
+  assert.equal(r.lineas[0].cantidadOrdenada, 5);   // 20 − (8 + 7)
+});
+
+test("una orden recibida completa no devuelve nada y deja la solicitud en orden", () => {
+  const ped = pedidoCon([{ id: "pl1", cantidad: 10, cantidadOrdenada: 10 }]);
+  const o = orden([linea({ id: "a", pedidoLineaId: "pl1", cantidad: 10, cantidadRecibida: 10 })]);
+  const [r] = devolverPendienteAPedidos([ped], o);
+  assert.equal(r.lineas[0].cantidadOrdenada, 10);
+  assert.equal(r.estado, "en_orden");
+});
+
+test("el flete no devuelve saldo y las líneas sin solicitud no tocan nada", () => {
+  const ped = pedidoCon([{ id: "pl1", cantidad: 10, cantidadOrdenada: 10 }]);
+  const o = orden([
+    linea({ id: "f", tipo: "cargo", pedidoLineaId: "pl1", cantidad: 1, cantidadRecibida: 0 }),
+    linea({ id: "libre", cantidad: 5, cantidadRecibida: 0 }),   // compra directa, sin solicitud
+  ]);
+  const [r] = devolverPendienteAPedidos([ped], o);
+  assert.equal(r.lineas[0].cantidadOrdenada, 10);
+});
+
+// Datos sucios (se recibió de más, o el saldo ya venía bajo): nunca dejar el
+// consumo en negativo, que dispararía saldos fantasma en la solicitud.
+test("nunca deja cantidadOrdenada negativa", () => {
+  const ped = pedidoCon([{ id: "pl1", cantidad: 10, cantidadOrdenada: 2 }]);
+  const o = orden([linea({ id: "a", pedidoLineaId: "pl1", cantidad: 10, cantidadRecibida: 0 })]);
+  const [r] = devolverPendienteAPedidos([ped], o);
+  assert.equal(r.lineas[0].cantidadOrdenada, 0);
 });
