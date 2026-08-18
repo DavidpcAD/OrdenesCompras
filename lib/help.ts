@@ -124,6 +124,26 @@ const ORDEN_IMPRIMIR: HelpEntry = {
   ],
   tips: ["Siempre sale en claro (papel blanco, tinta negra), aunque tengas la app en modo oscuro."],
 };
+const REPORTES: HelpEntry = {
+  titulo: "Reportes de compras",
+  resumen: "Historial de qué se compró, a quién, a qué precio y para qué obra.",
+  detalle: [
+    "Se arma con las órdenes de esta app. Por defecto solo cuenta las lanzadas y completadas: una orden en borrador o rechazada no es una compra.",
+    "Los montos son sin IVA y ya con el descuento de línea. El flete y demás cargos no entran: no son material comprado.",
+    "El precio promedio es ponderado por cantidad, no el promedio simple de los precios.",
+  ],
+  pasos: [
+    "Elegí el rango de fechas (por defecto, los últimos 12 meses).",
+    "En “Material” escribí el código o parte de la descripción para ver solo ese artículo.",
+    "Cambiá de pestaña: por Material (historial de precios), por Obra (centro de costo) o por Personas (quién pidió / quién generó la OC).",
+    "Tocá una fila para ver el detalle de cada compra; el número de orden abre la orden.",
+    "“Descargar CSV” baja el detalle filtrado para abrirlo en Excel.",
+  ],
+  tips: [
+    "Para negociar con un proveedor: buscá el material y mirá precio mínimo, promedio y último — con la fecha y el proveedor de esa última compra.",
+    "Si un material se compró en colones y en dólares, los totales se muestran por separado y los precios son solo de la moneda de la última compra.",
+  ],
+};
 const NUEVA: HelpEntry = {
   titulo: "Armar orden de compra",
   resumen: "Revisá y ajustá lo que se va a enviar al proveedor.",
@@ -350,6 +370,7 @@ export function helpForPath(p: string): HelpEntry {
   if (p.startsWith("/proveeduria/pedido/")) return PEDIDO_DET;
   if (p.startsWith("/proveeduria/devoluciones")) return DEVOLUCIONES;
   if (p.startsWith("/proveeduria/inventarios")) return INVENTARIOS;
+  if (p.startsWith("/proveeduria/reportes")) return REPORTES;
   if (p === "/proveeduria") return SOLICITUDES_LINEA;
   return GENERIC;
 }

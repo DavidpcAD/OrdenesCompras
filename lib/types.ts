@@ -151,6 +151,7 @@ export interface Orden {
   estado: OrdenEstado;
   versionesArchivadas: number;
   lineas: OrdenLinea[];
+  creadoPor?: string;       // quién generó la orden (para los reportes y la trazabilidad)
   bcNumber?: string;        // Nº del Pedido de compra en Business Central (CP-…)
   bcDeepLink?: string;      // link directo al Pedido en BC (editar / registrar / vista previa)
   notas?: string;           // motivo de la última devolución/denegación (Aprobación → Proveeduría)

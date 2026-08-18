@@ -10,7 +10,7 @@ import { formatDate } from "@/lib/helpers";
 import { helpForPath } from "@/lib/help";
 import {
   IconBell, IconList, IconReceipt, IconCheck, IconDelivery, IconFolder,
-  IconPlus, IconLogout, IconBox, IconWarning, IconDashboard, IconEdit,
+  IconPlus, IconLogout, IconBox, IconWarning, IconDashboard, IconEdit, IconMatrix,
 } from "@/components/icons";
 
 const cap = (s: string) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : s);
@@ -53,6 +53,7 @@ const ROLE_META: Record<Role, { label: string; persona: string; home: string; na
       { href: "/proveeduria/ordenes", label: "Órdenes", icon: IconReceipt, alt: ["/proveeduria/pedidas", "/proveeduria/nueva", "/proveeduria/directa"] },
       { href: "/proveeduria/devoluciones", label: "Devoluciones", icon: IconWarning },
       { href: "/proveeduria/inventarios", label: "Inventarios", icon: IconBox },
+      { href: "/proveeduria/reportes", label: "Reportes", icon: IconMatrix },
     ],
   },
   facturacion: {

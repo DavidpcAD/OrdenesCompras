@@ -394,6 +394,7 @@ function mapOrden(o: any, lineas: any[], motivoRechazo?: string): Orden {
     estado: (codigoDeId(o.idEstado) ?? "abierto") as Orden["estado"],
     versionesArchivadas: Number(o.versionesArchivadas ?? 0),
     motivoRechazo: motivoRechazo || undefined,
+    creadoPor: o.creadoPor || undefined,     // quién generó la OC (reportes)
     bcNumber: o.bcNo || undefined,           // Nº del Pedido en BC (para recibir/facturar)
     // Deep link al Pedido en BC. FALTABA en modo API: `bcDeepLink` solo se llenaba
     // en mock, así que en producción el botón "Abrir en BC" nunca aparecía y el
