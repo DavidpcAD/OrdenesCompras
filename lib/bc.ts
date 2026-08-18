@@ -748,51 +748,81 @@ export async function bcReopenPedido(orderNo: string): Promise<string> {
   return d?.value ?? "Open";
 }
 
-// Re-sincroniza PRECIO + VARIANTE de las líneas de un pedido YA creado en BC, para
-// reflejar correcciones hechas en la app después de crearlo (antes, "reintentar
-// lanzar" solo relanzaba la versión vieja). Empareja por número de artículo en
-// orden y solo hace PATCH de lo que cambió.
-// OJO: no verificado aún contra un pedido real con release fallido — probar en
-// el Sandbox (CP-003833) antes de confiar en producción.
-export async function bcResyncPedidoLines(orderNo: string, lineas: NuevaLineaBc[]): Promise<{ patched: number; sinMatch: string[] }> {
-  if (!orderNo) throw new Error("Falta el número de pedido de BC.");
-  const items = (lineas ?? []).filter((l) => l.itemNo && l.cantidad > 0);
-  if (!items.length) return { patched: 0, sinMatch: [] };
-  const cid = await getStdCompanyId();
-  const jsonHeaders = { "Content-Type": "application/json" };
-  // 1) Pedido por número -> id.
-  const filtro = `$filter=${encodeURIComponent(`number eq '${orderNo}'`)}&$select=id,number`;
-  const resPo = await bcFetch(`${stdRoot()}/companies(${cid})/purchaseOrders?${filtro}`, { cache: "no-store" });
-  if (!resPo.ok) throw new Error(`BC ${resPo.status} al buscar el pedido ${orderNo}.`);
-  const poId = ((await resPo.json()).value ?? [])[0]?.id;
-  if (!poId) throw new Error(`No se encontró el pedido ${orderNo} en BC.`);
-  // 2) Líneas existentes en BC.
-  const resLines = await bcFetch(`${stdRoot()}/companies(${cid})/purchaseOrders(${poId})/purchaseOrderLines?$select=id,lineType,lineObjectNumber,quantity,directUnitCost,itemVariantId`, { cache: "no-store" });
-  if (!resLines.ok) throw new Error(`BC ${resLines.status} al leer las líneas de ${orderNo}.`);
-  const bcLines: any[] = (await resLines.json()).value ?? [];
-  const usados = new Set<string>();
-  let patched = 0; const sinMatch: string[] = [];
-  for (const l of items) {
-    const bc = bcLines.find((b) => !usados.has(b.id) && String(b.lineObjectNumber) === String(l.itemNo) && /item/i.test(String(b.lineType)));
-    if (!bc) { sinMatch.push(l.itemNo); continue; }
-    usados.add(bc.id);
-    const patch: Record<string, unknown> = {};
-    const precioLinea = toBcAmount(l.precio);
-    if (precioLinea > 0 && toBcAmount(bc.directUnitCost) !== precioLinea) patch.directUnitCost = precioLinea;
-    if (l.variantCode) {
-      const vId = await getStdVariantId(l.itemNo, l.variantCode);
-      if (vId && bc.itemVariantId !== vId) patch.itemVariantId = vId;
+// Tipos de línea que se le manda a BC al reescribir un pedido. Es el shape de la
+// app, no el de BC: la traducción la hace payloadReplaceLines.
+export type LineaReplaceBc = {
+  tipo: "articulo" | "cargo";
+  itemNo?: string; variantCode?: string; locationCode?: string;
+  cantidad: number; precio: number | string; descuentoPct?: number;
+  jobNo?: string; taskNo?: string;
+  chargeNo?: string; chargeMethod?: string; descripcion?: string;
+};
+
+// Traduce las líneas de la app al JSON que espera AdelantePO_ReplaceOrderLines.
+// Está separado y exportado porque acá se decide QUÉ CANTIDAD y QUÉ PRECIO quedan
+// en BC — o sea, contra qué van a recibir Bodega y facturar Contabilidad. Cubierto
+// por lib/bc-replace.test.ts.
+export function payloadReplaceLines(lineas: LineaReplaceBc[]): { lines: Record<string, unknown>[]; omitidas: string[] } {
+  const lines: Record<string, unknown>[] = [];
+  const omitidas: string[] = [];
+  for (const l of lineas ?? []) {
+    const nombre = l.descripcion || l.itemNo || l.chargeNo || "línea sin nombre";
+    const cantidad = Number(l.cantidad) || 0;
+    // El codeunit también omite las cantidades <= 0, pero se filtran acá para que el
+    // aviso al usuario diga QUÉ línea se cayó y no un conteo pelado.
+    if (cantidad <= 0) { omitidas.push(`${nombre} (cantidad ${cantidad})`); continue; }
+    const precio = toBcAmount(l.precio);
+    if (l.tipo === "cargo") {
+      // El tipo de cargo tiene que ser un Item Charge REAL de BC. Sin él la línea se
+      // omite y se avisa, en vez de inventar un código que BC va a rechazar.
+      const chargeNo = (l.chargeNo ?? "").trim();
+      if (!chargeNo) { omitidas.push(`${nombre} (cargo sin tipo)`); continue; }
+      lines.push({
+        type: "Charge", itemChargeNo: chargeNo, description: l.descripcion || chargeNo,
+        quantity: cantidad, directUnitCost: precio, chargeMethod: l.chargeMethod || "Amount",
+      });
+      continue;
     }
-    if (!Object.keys(patch).length) continue;
-    const resP = await bcFetch(`${stdRoot()}/companies(${cid})/purchaseOrders(${poId})/purchaseOrderLines(${bc.id})`, {
-      method: "PATCH", cache: "no-store",
-      headers: { ...jsonHeaders, "If-Match": bc["@odata.etag"] ?? "*" },
-      body: JSON.stringify(patch),
+    const itemNo = (l.itemNo ?? "").trim();
+    if (!itemNo) { omitidas.push(`${nombre} (sin Nº de artículo)`); continue; }
+    lines.push({
+      type: "Item", itemNo, variantCode: l.variantCode ?? "", locationCode: l.locationCode ?? "",
+      quantity: cantidad, directUnitCost: precio, lineDiscountPct: Number(l.descuentoPct) || 0,
+      jobNo: l.jobNo ?? "", taskNo: l.taskNo ?? "",
     });
-    if (!resP.ok) throw new Error(`BC ${resP.status} al actualizar la línea ${l.itemNo}: ${(await resP.text()).slice(0, 200)}`);
-    patched++;
   }
-  return { patched, sinMatch };
+  return { lines, omitidas };
+}
+
+// Reescribe TODAS las líneas de un pedido de compra ABIERTO en BC, para reflejar una
+// orden que se reabrió y se corrigió en la app. Sin esto el edit queda solo en el SQL
+// y Bodega/Contabilidad reciben y facturan contra las líneas viejas.
+//
+// Va por el codeunit (AdelantePO_ReplaceOrderLines, desde 1.2.3.8) y no por la API
+// estándar a propósito: reescribir por la estándar serían N llamadas con fallo
+// parcial garantizado, y encima se traga las líneas de Item Charge sin avisar. El
+// codeunit lo hace todo-o-nada y él mismo se niega si el pedido está lanzado o si ya
+// tiene recepciones registradas.
+export async function bcReplaceOrderLines(orderNo: string, lineas: LineaReplaceBc[]): Promise<{ resultado: string; omitidas: string[] }> {
+  if (!orderNo) throw new Error("Falta el número de pedido de BC.");
+  const { lines, omitidas } = payloadReplaceLines(lineas);
+  if (!lines.length) throw new Error("Ninguna línea de la orden es válida para BC.");
+  const cid = await getStdCompanyId();
+  const url = `${odataRoot()}/AdelantePO_ReplaceOrderLines?company=${encodeURIComponent(cid)}`;
+  const res = await bcFetch(url, {
+    method: "POST", cache: "no-store",
+    headers: { "Content-Type": "application/json" },
+    // OJO: `linesJson` viaja como STRING con el JSON escapado (mismo estilo que el
+    // resto del codeunit), NO como objeto anidado.
+    body: JSON.stringify({ orderNo, linesJson: JSON.stringify({ lines }) }),
+  });
+  if (!res.ok) {
+    const txt = (await res.text()).slice(0, 400);
+    if (res.status === 404) throw new Error("el web service AdelantePO_ReplaceOrderLines no está publicado en Business Central");
+    throw new Error(`BC ${res.status}: ${txt}`);
+  }
+  const d: any = await res.json().catch(() => ({}));
+  return { resultado: String(d?.value ?? "Líneas reescritas en BC."), omitidas };
 }
 
 // Registra (Recibir + Facturar) una factura parcial del pedido en BC con todos sus

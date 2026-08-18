@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getOrden, setOrdenEstado, updateOrden, ordenTieneRecepciones, MSG_NO_REABRIR } from "@/lib/repo";
-import { bcReopenPedido } from "@/lib/bc";
+import { bcReopenPedido, bcReplaceOrderLines } from "@/lib/bc";
 import { actor } from "@/lib/actor";
 
 export const runtime = "nodejs";
@@ -52,8 +52,32 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
 export async function PUT(req: Request, { params }: { params: { id: string } }) {
   try {
     const body = await req.json();
-    await updateOrden(Number(params.id), { ...body, ...(await actor(body)) });
-    return NextResponse.json({ ok: true });
+    const id = Number(params.id);
+    await updateOrden(id, { ...body, ...(await actor(body)) });
+
+    // El edit ya quedó en SQL. Si la orden VIVE EN BC hay que empujarle las líneas
+    // nuevas: si no, Bodega recibe y Contabilidad factura contra las viejas (el
+    // pedido en BC no se re-sincroniza solo — al re-aprobar, Producción solo lo
+    // relanza). Se lee la orden ya guardada para mandar exactamente lo que quedó.
+    // Si BC falla NO se revienta el guardado (el SQL ya está): se devuelve el aviso
+    // para que la pantalla lo diga y se pueda reintentar volviendo a guardar.
+    let bcAviso: string | undefined;
+    const o = await getOrden(id);
+    if (o?.bcNumber) {
+      try {
+        const r = await bcReplaceOrderLines(o.bcNumber, o.lineas.map((l) => ({
+          tipo: l.tipo === "cargo" ? "cargo" as const : "articulo" as const,
+          itemNo: l.articuloId, variantCode: l.variantCode, locationCode: l.almacen,
+          cantidad: l.cantidad, precio: l.precioUnitario, descuentoPct: l.descuentoPct,
+          jobNo: l.proyecto, taskNo: l.taskNo,
+          chargeNo: l.chargeNo, chargeMethod: l.chargeMethod, descripcion: l.descripcion,
+        })));
+        if (r.omitidas.length) bcAviso = `Guardado. OJO: BC no recibió ${r.omitidas.length} línea(s) — ${r.omitidas.join("; ")}.`;
+      } catch (e: any) {
+        bcAviso = `Se guardó acá, pero el pedido ${o.bcNumber} en BC quedó con las líneas VIEJAS: ${String(e?.message ?? e)}. Volvé a guardar para reintentar.`;
+      }
+    }
+    return NextResponse.json({ ok: true, bcAviso });
   } catch (e: any) {
     return NextResponse.json({ error: String(e?.message ?? e) }, { status: 500 });
   }

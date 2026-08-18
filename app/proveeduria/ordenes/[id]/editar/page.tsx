@@ -130,8 +130,11 @@ export default function EditarOrdenPage() {
           ivaPct: cargo?.ivaPct ?? 13,
         });
       }
-      await updateOrden(orden!.id, { proveedorId, proveedorNo: provSel?.code, proveedorNombre: provSel?.nombre, currencyCode: currency, almacenRecepcion: almacen, lineas: ls });
-      toast(`Orden ${orden!.numero} actualizada`, "success");
+      const r = await updateOrden(orden!.id, { proveedorId, proveedorNo: provSel?.code, proveedorNombre: provSel?.nombre, currencyCode: currency, almacenRecepcion: almacen, lineas: ls });
+      // Si BC no quedó sincronizado, ese aviso manda: el pedido allá tendría las
+      // líneas viejas y Bodega recibiría contra ellas.
+      if (r?.bcAviso) toast(r.bcAviso, "info");
+      else toast(`Orden ${orden!.numero} actualizada`, "success");
       router.push(`/proveeduria/ordenes/${orden!.id}`);
     } catch (e: any) { toast(String(e?.message ?? e), "error"); setGuardando(false); }
   }

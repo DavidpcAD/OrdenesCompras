@@ -81,7 +81,9 @@ interface StoreShape {
   deletePedido: (id: string) => Promise<void>;
 
   createOrden: (input: NewOrdenInput) => Promise<Orden>;
-  updateOrden: (id: string, input: NewOrdenInput) => Promise<void>;
+  // Devuelve `bcAviso` si el edit se guardó acá pero BC no pudo quedar sincronizado
+  // (el pedido en BC seguiría con las líneas viejas).
+  updateOrden: (id: string, input: NewOrdenInput) => Promise<{ bcAviso?: string }>;
   // Devuelve `bcAviso` cuando el cambio se hizo acá pero BC no pudo acompañarlo
   // (p.ej. reabrir con el pedido lanzado en BC): la pantalla tiene que decirlo.
   setOrdenEstado: (id: string, estado: Orden["estado"], extra?: { bcNumber?: string; bcDeepLink?: string }) => Promise<{ bcAviso?: string }>;
@@ -400,7 +402,7 @@ export function StoreProvider({ children, useApi }: { children: React.ReactNode;
         // Persistir el edit al SQL (antes solo cambiaba el estado local → se perdía
         // al refrescar). Reescribe líneas y reajusta el saldo del pedido en el server.
         const p = prov(input.proveedorId);
-        await api.updateOrden(id, {
+        const r = await api.updateOrden(id, {
           proveedorNo: input.proveedorNo ?? p?.code ?? input.proveedorId, proveedorNombre: input.proveedorNombre ?? p?.nombre,
           currencyCode: input.currencyCode, usuario: persona, rol: rolActual,
           lineas: input.lineas.map((l) => ({
@@ -411,9 +413,9 @@ export function StoreProvider({ children, useApi }: { children: React.ReactNode;
             // esto se perdían y BC terminaba rechazando el flete.
             chargeNo: l.chargeNo, chargeMethod: l.chargeMethod,
           })),
-        });
+        }) as { bcAviso?: string } | undefined;
         await refreshFromApi();
-        return;
+        return { bcAviso: r?.bcAviso };
       }
       setData((d) => {
         const prevo = d.ordenes.find((o) => o.id === id);
@@ -432,6 +434,7 @@ export function StoreProvider({ children, useApi }: { children: React.ReactNode;
         const mov = mkMov({ entidad: "orden", idEntidad: id, documentoNo: prevo?.numero ?? "", tipoMovimiento: "editado", detalle: `${lineas.filter((l) => l.tipo === "articulo").length} línea(s)` });
         return { ...d, ordenes, movimientos: [mov, ...d.movimientos] };
       });
+      return {};
     };
 
     const setOrdenEstado: StoreShape["setOrdenEstado"] = async (id, estado, extra) => {
