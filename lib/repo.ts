@@ -394,7 +394,11 @@ function mapOrden(o: any, lineas: any[], motivoRechazo?: string): Orden {
     estado: (codigoDeId(o.idEstado) ?? "abierto") as Orden["estado"],
     versionesArchivadas: Number(o.versionesArchivadas ?? 0),
     motivoRechazo: motivoRechazo || undefined,
-    bcNumber: o.bcNo || undefined,           // Nº del Pedido en BC (para relanzar/recibir/facturar)
+    bcNumber: o.bcNo || undefined,           // Nº del Pedido en BC (para recibir/facturar)
+    // Deep link al Pedido en BC. FALTABA en modo API: `bcDeepLink` solo se llenaba
+    // en mock, así que en producción el botón "Abrir en BC" nunca aparecía y el
+    // "Volver a abrir" no abría nada (hacía window.open(undefined)).
+    bcDeepLink: o.bcNo ? bcDeepLinkPedido(String(o.bcNo)) : undefined,
     lineas: lineas.map((l): OrdenLinea => ({
       id: String(l.idOrdenCompraDet), tipo: (l.tipoLinea === "cargo" ? "cargo" : "articulo"),
       articuloId: l.itemNo ?? undefined, variantCode: l.variantCode ?? undefined, pedidoLineaId: l.idPedidoCompraDet ? String(l.idPedidoCompraDet) : undefined,
