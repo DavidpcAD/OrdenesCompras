@@ -49,7 +49,12 @@ export default function EditarOrdenPage() {
   );
   const [qaCode, setQaCode] = useState(""); const [qaQty, setQaQty] = useState(""); const [qaPrecio, setQaPrecio] = useState("");
 
-  const provSel = catProv.find((x) => x.id === proveedorId);
+  // El proveedor de la orden viene como CÓDIGO ("PROV-000002": mapOrden pone
+  // proveedorId = proveedorNo), pero el catálogo de /api/bc/vendors usa el GUID de BC
+  // como `id`. Si solo se busca por id NUNCA hay match: el campo sale vacío y al
+  // guardar viajaba `proveedorNombre: undefined` — así se perdió el nombre del
+  // proveedor de las órdenes que se editaron (p. ej. CP-000029 quedó en "—").
+  const provSel = catProv.find((x) => x.id === proveedorId) ?? catProv.find((x) => x.code === proveedorId);
   const setRow = (k: string, patch: Partial<Row>) => setRows((rs) => rs.map((r) => (r.key === k ? { ...r, ...patch } : r)));
   const removeRow = (k: string) => setRows((rs) => rs.filter((r) => r.key !== k));
   function agregarLinea() {
@@ -98,6 +103,9 @@ export default function EditarOrdenPage() {
 
   async function guardar() {
     if (!proveedorId) { toast("Seleccioná un proveedor.", "error"); return; }
+    // Sin resolver contra el catálogo no se sabe el nombre: guardar borraría el que
+    // la orden ya tenía. Mejor frenar y pedir que lo elija.
+    if (!provSel) { toast("No se pudo resolver el proveedor de la orden contra el catálogo de BC. Elegilo de nuevo en el campo Proveedor.", "error"); return; }
     if (rows.length === 0) { toast("La orden debe tener al menos una línea.", "error"); return; }
     // Cantidad/precio válidos (un campo vacío daba NaN y reescribía la orden con una
     // cantidad imposible, o hacía fallar el INSERT con un error de SQL ilegible).
@@ -154,7 +162,7 @@ export default function EditarOrdenPage() {
           <h3 className="ds-subtitle" style={{ marginBottom: 16 }}>Datos de la orden</h3>
           <div className="grid-3">
             <Field label="Proveedor" help="Hereda términos y moneda">
-              <Combobox items={catProv} value={proveedorId} onChange={(k) => { setProveedorId(k); const p = catProv.find((x) => x.id === k); if (p) setCurrency(monedaApp(p.currencyCode)); }}
+              <Combobox items={catProv} value={provSel?.id ?? proveedorId} onChange={(k) => { setProveedorId(k); const p = catProv.find((x) => x.id === k); if (p) setCurrency(monedaApp(p.currencyCode)); }}
                 getKey={(p) => p.id} getLabel={(p) => `${p.code} — ${p.nombre}`} getSearch={(p) => `${p.code} ${p.nombre}`} placeholder="Buscar proveedor…" />
             </Field>
             <Field label="Moneda">
