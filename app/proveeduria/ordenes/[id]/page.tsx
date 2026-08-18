@@ -11,7 +11,7 @@ export default function ProvOrdenDetallePage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
   const toast = useToast();
-  const { ordenes, pedidos, setOrdenEstado, cargando } = useStore();
+  const { ordenes, pedidos, recepciones, setOrdenEstado, cargando } = useStore();
   const [procesando, setProcesando] = useState(false);
 
   const orden = ordenes.find((o) => o.id === id);
@@ -40,14 +40,22 @@ export default function ProvOrdenDetallePage() {
     if (procesando) return;            // evita el doble clic
     setProcesando(true);
     try {
-      await setOrdenEstado(orden!.id, estado);
-      toast(msg, "success");
+      const r = await setOrdenEstado(orden!.id, estado);
+      // Si BC no pudo acompañar el cambio, ese aviso manda sobre el "listo".
+      if (r?.bcAviso) toast(r.bcAviso, "info");
+      else toast(msg, "success");
     } catch (e: any) {
       toast(`No se pudo actualizar la orden: ${String(e?.message ?? e)}`, "error");
     } finally {
       setProcesando(false);
     }
   }
+
+  // Con material ya recibido/facturado la orden no se reabre: en BC el pedido ya
+  // tiene recepciones registradas y no se puede des-lanzar. Lo que llegó mal va por
+  // devolución, no por corregir la orden.
+  const tieneRecepciones = recepciones.some((r) => r.ordenId === orden.id)
+    || orden.lineas.some((l) => (l.cantidadRecibida ?? 0) > 0 || (l.cantidadFacturada ?? 0) > 0);
 
   const acciones = (
     <>
@@ -73,19 +81,17 @@ export default function ProvOrdenDetallePage() {
           </Button>
         </>
       )}
-      {/* Reabrir es SOLO en la app: BC no se des-lanza desde acá (lanzar/reabrir el
-          pedido en BC es de Aprobación). Por eso el mensaje lo dice y se abre el
-          pedido en BC en otra pestaña para reabrirlo allá. El window.open va dentro
-          del gesto del clic o el navegador lo bloquea como popup. */}
+      {/* Reabrir = des-lanzar también el pedido en BC (lo hace el server): con el
+          pedido lanzado allá no se puede corregir ni re-sincronizar. Si BC no pudo,
+          el toast lo dice y el aviso amarillo del detalle queda visible. */}
       {orden.estado === "lanzado" && (
-        <Button variant="outline" disabled={procesando}
-          title="Reabre la orden en esta app para poder editarla. En Business Central el pedido sigue lanzado."
-          onClick={() => {
-            void act("abierto", orden.bcNumber
-              ? `${orden.numero} reabierta acá. OJO: en BC el pedido ${orden.bcNumber} sigue LANZADO — reabrilo en BC (te abrí la pestaña).`
-              : `${orden.numero} reabierta para edición`);
-            if (orden.bcDeepLink) window.open(orden.bcDeepLink, "_blank");
-          }}>Volver a abrir</Button>
+        <Button variant="outline" disabled={procesando || tieneRecepciones}
+          title={tieneRecepciones
+            ? "Ya tiene facturas/recepciones registradas: no se puede volver a abrir. Lo que llegó mal va por devolución."
+            : "Reabre la orden acá y des-lanza el pedido en Business Central para corregirla y volver a enviarla a aprobación."}
+          onClick={() => void act("abierto", `${orden.numero} reabierta${orden.bcNumber ? ` · ${orden.bcNumber} des-lanzado en BC` : ""} — corregila y volvé a enviarla a aprobación`)}>
+          Volver a abrir
+        </Button>
       )}
     </>
   );

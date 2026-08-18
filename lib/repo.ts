@@ -592,8 +592,23 @@ export async function updateOrden(id: number, input: UpdateOrdenDB) {
   }
 }
 
+// ¿La orden ya tiene facturas/recepciones registradas? Es la línea que separa
+// "todavía se puede corregir" de "ya entró material y hay que ir por devolución".
+export async function ordenTieneRecepciones(id: number): Promise<boolean> {
+  const pool = await getPool();
+  const r = await pool.request().input("id", sql.Int, id)
+    .query("SELECT COUNT(*) AS n FROM dbo.RecepcionCompra WHERE idOrdenCompra=@id AND esEliminada=0");
+  return (r.recordset[0]?.n ?? 0) > 0;
+}
+
+export const MSG_NO_REABRIR = "La orden ya tiene facturas/recepciones registradas: no se puede volver a abrir.";
+
 export async function setOrdenEstado(id: number, estado: string, usuario: string, rol: Role, motivo?: string, bcNumber?: string) {
   const pool = await getPool();
+  // Con material ya recibido/facturado, reabrir es corregir una orden que en BC ya
+  // tiene recepciones registradas: quedaría descuadrada y allá tampoco se puede
+  // des-lanzar. Se corta acá además de en la pantalla (pestaña vieja, llamada directa).
+  if (estado === "abierto" && await ordenTieneRecepciones(id)) throw new Error(MSG_NO_REABRIR);
   const prev = await pool.request().input("id", sql.Int, id).query("SELECT idEstado, ordenNo FROM dbo.OrdenCompra WHERE idOrdenCompra=@id");
   const idEstado = await idDeEstado(estado);
   // Si BC devolvió el Nº del pedido, lo guardamos en bcNo (una vez creado en BC,

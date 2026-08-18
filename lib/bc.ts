@@ -722,6 +722,33 @@ export async function bcReleasePedido(orderNo: string): Promise<string> {
   return d?.value ?? "Released";
 }
 
+// Reabre (Reopen) un Pedido de compra en BC -> vuelve de "Lanzado" a "Abierto".
+// Es el inverso de bcReleasePedido y hace falta para el flujo real: reabrir la orden
+// acá, corregirla y volver a mandarla a aprobación. Con el pedido LANZADO en BC no
+// se puede editar ni re-sincronizar, así que hay que des-lanzarlo primero.
+// La API estándar v2.0 no puede cambiar el `status`: va por el codeunit custom
+// "Adelante PO Actions" (publicado como "AdelantePO").
+// Procedimiento esperado: AdelantePO_ReopenOrder(orderNo) -> Text (status).
+export async function bcReopenPedido(orderNo: string): Promise<string> {
+  if (!orderNo) throw new Error("Falta el número de pedido para reabrir.");
+  const cid = await getStdCompanyId();
+  const url = `${odataRoot()}/AdelantePO_ReopenOrder?company=${encodeURIComponent(cid)}`;
+  const res = await bcFetch(url, {
+    method: "POST", cache: "no-store",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ orderNo }),
+  });
+  if (!res.ok) {
+    const txt = (await res.text()).slice(0, 250);
+    // 404 = el web service no está publicado en BC todavía. Decirlo con nombre y
+    // apellido en vez de un "BC reopen 404" que no le dice nada a nadie.
+    if (res.status === 404) throw new Error(`el web service AdelantePO_ReopenOrder no está publicado en Business Central`);
+    throw new Error(`BC reopen ${res.status}: ${txt}`);
+  }
+  const d: any = await res.json().catch(() => ({}));
+  return d?.value ?? "Open";
+}
+
 // Re-sincroniza PRECIO + VARIANTE de las líneas de un pedido YA creado en BC, para
 // reflejar correcciones hechas en la app después de crearlo (antes, "reintentar
 // lanzar" solo relanzaba la versión vieja). Empareja por número de artículo en
