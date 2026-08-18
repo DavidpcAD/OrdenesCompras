@@ -57,6 +57,11 @@ export default function ImprimirOrdenPage() {
   const articulos = orden.lineas.filter((l) => l.tipo === "articulo");
   const cargos = orden.lineas.filter((l) => l.tipo === "cargo");
   const lineas = [...articulos, ...cargos];
+  // Destino de cada línea: el almacén al que entra, y si no hay, la obra. Es lo que
+  // le sirve al proveedor (a dónde lo lleva); el Nº de material es interno.
+  const destinoLinea = (l: typeof lineas[number]) => l.almacen || l.proyecto || "";
+  const destinos = [...new Set(articulos.map(destinoLinea).filter(Boolean))];
+  const almacenUnico = destinos.length === 1 ? destinos[0] : null;
   const subtotal = orden.lineas.reduce((s, l) => s + ordenLineaImporte(l), 0);
   const ivaPct = articulos.find((l) => (l.ivaPct ?? 0) > 0)?.ivaPct ?? 13;
   const iva = orden.lineas.reduce((s, l) => s + ordenLineaImporte(l) * ((l.ivaPct ?? 0) / 100), 0);
@@ -148,8 +153,10 @@ export default function ImprimirOrdenPage() {
             </div>
           </div>
           <div className="po-doc">
-            <h1>Pedido</h1>
-            <div className="pag">Orden de compra · Pág. 1</div>
+            {/* Para el proveedor esto es una ORDEN DE COMPRA. "Pedido" acá se confunde
+                con la solicitud interna (PED-…), que es otra cosa. */}
+            <h1>Orden de compra</h1>
+            <div className="pag">Pág. 1</div>
           </div>
         </div>
 
@@ -159,12 +166,12 @@ export default function ImprimirOrdenPage() {
             <div className="po-prov">{orden.proveedorNombre ?? prov?.nombre ?? "—"}</div>
             <Campo k="Compra a-Nº proveedor" v={orden.proveedorNo ?? prov?.code ?? "—"} />
             <div style={{ height: 14 }} />
-            <Campo k="Nº pedido" v={orden.numero} b />
+            <Campo k="Nº orden de compra" v={orden.numero} b />
             <Campo k="Fecha emisión documento" v={formatDate(orden.fecha)} />
             {prov?.paymentTermsCode && <Campo k="Términos pago" v={prov.paymentTermsCode} />}
             <Campo k="Moneda" v={cur} />
             <div style={{ height: 14 }} />
-            <Campo k="Almacén entrega" v={articulos[0]?.almacen ?? "—"} />
+            <Campo k="Almacén entrega" v={almacenUnico ?? "Varios (ver detalle)"} />
           </div>
           <div className="po-col-r">
             <div className="po-empresa">
@@ -182,7 +189,7 @@ export default function ImprimirOrdenPage() {
         <table className="po-tbl">
           <thead>
             <tr>
-              <th style={{ width: 78 }}>Nº</th>
+              <th style={{ width: 92 }}>Almacén /<br />Obra</th>
               <th>Descripción</th>
               <th className="n" style={{ width: 44 }}>Cant.</th>
               <th style={{ width: 80 }}>Unidad<br />medida</th>
@@ -194,7 +201,7 @@ export default function ImprimirOrdenPage() {
           <tbody>
             {lineas.map((l) => (
               <tr key={l.id}>
-                <td style={{ whiteSpace: "nowrap", fontWeight: 600 }}>{l.tipo === "cargo" ? "—" : (l.articuloId || "")}</td>
+                <td style={{ whiteSpace: "nowrap", fontWeight: 600 }}>{l.tipo === "cargo" ? "—" : (destinoLinea(l) || "—")}</td>
                 <td>{l.descripcion}</td>
                 <td className="n">{num.format(l.cantidad)}</td>
                 <td>{l.unidad}</td>
