@@ -86,7 +86,10 @@ interface StoreShape {
   updateOrden: (id: string, input: NewOrdenInput) => Promise<{ bcAviso?: string }>;
   // Devuelve `bcAviso` cuando el cambio se hizo acá pero BC no pudo acompañarlo
   // (p.ej. reabrir con el pedido lanzado en BC): la pantalla tiene que decirlo.
-  setOrdenEstado: (id: string, estado: Orden["estado"], extra?: { bcNumber?: string; bcDeepLink?: string }) => Promise<{ bcAviso?: string }>;
+  // `reabrirBc` = este cambio viene del botón "Volver a abrir" (lanzado → abierto) y
+  // debe des-lanzar el pedido en BC. "Cancelar envío" NO lo manda: ahí BC no tiene
+  // nada lanzado que tocar.
+  setOrdenEstado: (id: string, estado: Orden["estado"], extra?: { bcNumber?: string; bcDeepLink?: string; reabrirBc?: boolean }) => Promise<{ bcAviso?: string }>;
 
   // Cerrar una orden LANZADA que ya no va a recibir el resto del material. Con
   // `devolverSaldo` (default true) lo no recibido vuelve a las solicitudes para
@@ -439,7 +442,7 @@ export function StoreProvider({ children, useApi }: { children: React.ReactNode;
 
     const setOrdenEstado: StoreShape["setOrdenEstado"] = async (id, estado, extra) => {
       if (USE_API) {
-        const r = await api.patchOrdenEstado(id, { estado, usuario: persona, rol: rolActual, bcNumber: extra?.bcNumber }) as { bcAviso?: string } | undefined;
+        const r = await api.patchOrdenEstado(id, { estado, usuario: persona, rol: rolActual, bcNumber: extra?.bcNumber, reabrirBc: extra?.reabrirBc }) as { bcAviso?: string } | undefined;
         await refreshFromApi();
         return { bcAviso: r?.bcAviso };
       }

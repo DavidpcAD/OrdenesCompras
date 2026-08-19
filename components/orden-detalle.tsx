@@ -18,12 +18,17 @@ export function OrdenDetalle({
   volverLabel = "Volver",
   acciones,
   solicitudHref,
+  aviso,
 }: {
   orden: Orden;
   volverHref: string;
   volverLabel?: string;
   acciones?: React.ReactNode;
   solicitudHref?: (l: Orden["lineas"][number]) => string | null;
+  // Aviso que tiene que QUEDARSE en pantalla (no un toast que se desvanece): p. ej.
+  // "se reabrió acá pero en BC sigue Lanzado". Si eso se pierde, la orden queda
+  // descuadrada con BC y nadie se enteró.
+  aviso?: React.ReactNode;
 }) {
   const { proveedores, recepciones } = useStore();
   const router = useRouter();
@@ -89,6 +94,8 @@ export function OrdenDetalle({
           {acciones}
         </div>
       </div>
+
+      {aviso}
 
       {/* Orden rechazada por Aprobación: el motivo se muestra arriba de las líneas
           para que Proveeduría sepa qué corregir antes de reenviarla. */}

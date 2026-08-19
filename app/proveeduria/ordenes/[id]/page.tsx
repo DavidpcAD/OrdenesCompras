@@ -14,6 +14,9 @@ export default function ProvOrdenDetallePage() {
   const toast = useToast();
   const { ordenes, pedidos, recepciones, setOrdenEstado, cerrarOrden, nuevaOrdenConPendiente, cargando } = useStore();
   const [procesando, setProcesando] = useState(false);
+  // Aviso de BC que NO se puede perder (el toast se desvanece y el usuario se queda
+  // creyendo que el pedido en BC también se reabrió).
+  const [avisoBc, setAvisoBc] = useState<string | null>(null);
   // Modal de cierre. `crearNueva` convierte el cierre en "pasar el pendiente a una
   // orden nueva": por eso obliga a devolver el saldo (la nueva lo vuelve a tomar).
   const [cerrando, setCerrando] = useState(false);
@@ -44,14 +47,15 @@ export default function ProvOrdenDetallePage() {
 
   // Cambiar el estado de la orden. Si el servidor falla hay que DECIRLO: antes la
   // promesa se rechazaba sin manejar y el botón parecía no hacer nada.
-  async function act(estado: NonNullable<typeof orden>["estado"], msg: string) {
+  async function act(estado: NonNullable<typeof orden>["estado"], msg: string, opts?: { reabrirBc?: boolean }) {
     if (procesando) return;            // evita el doble clic
     setProcesando(true);
     try {
-      const r = await setOrdenEstado(orden!.id, estado);
-      // Si BC no pudo acompañar el cambio, ese aviso manda sobre el "listo".
-      if (r?.bcAviso) toast(r.bcAviso, "info");
-      else toast(msg, "success");
+      const r = await setOrdenEstado(orden!.id, estado, { reabrirBc: opts?.reabrirBc });
+      // Si BC no pudo acompañar el cambio, ese aviso manda sobre el "listo" — y queda
+      // fijo en la pantalla, no solo como toast.
+      if (r?.bcAviso) { setAvisoBc(r.bcAviso); toast(r.bcAviso, "info"); }
+      else { setAvisoBc(null); toast(msg, "success"); }
     } catch (e: any) {
       toast(`No se pudo actualizar la orden: ${String(e?.message ?? e)}`, "error");
     } finally {
@@ -133,7 +137,7 @@ export default function ProvOrdenDetallePage() {
           title={tieneRecepciones
             ? "Ya tiene facturas/recepciones registradas: no se puede volver a abrir. Lo que llegó mal va por devolución."
             : "Reabre la orden acá y des-lanza el pedido en Business Central para corregirla y volver a enviarla a aprobación."}
-          onClick={() => void act("abierto", `${orden.numero} reabierta${orden.bcNumber ? ` · ${orden.bcNumber} des-lanzado en BC` : ""} — corregila y volvé a enviarla a aprobación`)}>
+          onClick={() => void act("abierto", `${orden.numero} reabierta${orden.bcNumber ? ` · ${orden.bcNumber} des-lanzado en BC` : ""} — corregila y volvé a enviarla a aprobación`, { reabrirBc: true })}>
           Volver a abrir
         </Button>
       )}
@@ -151,7 +155,17 @@ export default function ProvOrdenDetallePage() {
 
   return (
     <>
-      <OrdenDetalle orden={orden} volverHref="/proveeduria/ordenes" volverLabel="Volver a órdenes" acciones={acciones} solicitudHref={solicitudHref} />
+      <OrdenDetalle orden={orden} volverHref="/proveeduria/ordenes" volverLabel="Volver a órdenes" acciones={acciones} solicitudHref={solicitudHref}
+        aviso={avisoBc ? (
+          <div className="ds-callout ds-callout--yellow mb-4" role="alert">
+            <span className="ds-callout__icon"><IconWarning size={18} /></span>
+            <div style={{ flex: 1 }}>
+              <div className="ds-callout__title">Business Central quedó desalineado</div>
+              <div className="ds-callout__body">{avisoBc}</div>
+            </div>
+            <Button variant="outline" size="sm" onClick={() => setAvisoBc(null)}>Entendido</Button>
+          </div>
+        ) : null} />
 
       {cerrando && (
         <Modal title={`Cerrar ${orden.numero}`} onClose={() => setCerrando(false)} footer={

@@ -19,7 +19,7 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
 export async function PATCH(req: Request, { params }: { params: { id: string } }) {
   try {
     const body = await req.json();
-    const { estado, motivo, bcNumber } = body;
+    const { estado, motivo, bcNumber, reabrirBc } = body;
     const a = await actor(body);   // identidad de la sesión, no del body
     const id = Number(params.id);
 
@@ -35,10 +35,21 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
       if (await ordenTieneRecepciones(id)) {
         return NextResponse.json({ error: MSG_NO_REABRIR }, { status: 409 });
       }
-      const no = bcNumber || (await getOrden(id))?.bcNumber;
-      if (no) {
-        try { await bcReopenPedido(String(no)); }
-        catch (e: any) { bcAviso = `Se reabrió acá, pero en BC el pedido ${no} sigue Lanzado — ${String(e?.message ?? e)}`; }
+      // Solo el botón "Volver a abrir" (lanzado → abierto) pide des-lanzar en BC.
+      // "Cancelar envío" (pendiente → abierto) NO: ahí BC no tiene nada lanzado, y
+      // si la orden arrastra un bcNo de un lanzamiento viejo, des-lanzarlo sería un
+      // efecto que nadie pidió.
+      if (reabrirBc) {
+        const no = bcNumber || (await getOrden(id))?.bcNumber;
+        if (no) {
+          try { await bcReopenPedido(String(no)); }
+          catch (e: any) { bcAviso = `Se reabrió acá, pero en BC el pedido ${no} sigue Lanzado — ${String(e?.message ?? e)}`; }
+        } else {
+          // SIN N.º de BC no hay a quién avisarle: antes se devolvía un `ok` limpio y
+          // parecía que todo había funcionado (el pedido en BC seguía Lanzado y nadie
+          // se enteraba). Pasa cuando la app no quedó enterada del lanzamiento.
+          bcAviso = "Se reabrió acá, pero esta orden no tiene N.º de Business Central guardado, así que no se pudo des-lanzar allá. Buscá el pedido en BC por proveedor y fecha y reabrilo a mano.";
+        }
       }
     }
 
