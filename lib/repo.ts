@@ -1,4 +1,4 @@
-import { getPool, sql } from "./db";
+import { getAuthPool, getPool, sql } from "./db";
 import { bcDeepLinkPedido, bcDeepLinkFacturaRegistrada } from "./bc";
 import type { Orden, OrdenLinea, Pedido, PedidoLinea, Recepcion, RecepcionLinea, Role, NotaCreditoLinea } from "./types";
 
@@ -1094,21 +1094,31 @@ export async function listWbs(): Promise<{ etapas: WbsEtapa[]; partidas: WbsPart
 }
 
 // Etapas (especialidades) de un ingeniero, por username → dbo.UsuarioEtapa.
+//
+// Va por el pool de AUTH, no por el de datos: esta consulta necesita el PADRÓN de
+// usuarios (dbo.Usuario), que vive en la base de auth junto con UsuarioEtapa — y esa
+// tabla tiene FK a Usuario Y a etapa, así que solo puede existir donde están las dos.
+// Los idEtapa que devuelve se comparan contra dbo.etapa de la base de DATOS; los ids
+// se conservan entre bases porque partida.idEtapa depende de ellos.
+//
 // Defensiva: si la tabla aún no existe o el usuario no tiene mapeo, devuelve []
 // (la Matriz cae a "Todas las etapas" sin romperse).
 export async function etapasDeUsuario(username: string): Promise<number[]> {
   const u = (username ?? "").trim();
   if (!u) return [];
   try {
-    const pool = await getPool();
+    const pool = await getAuthPool();
     const r = await pool.request().input("u", sql.NVarChar(256), u).query(
       "SELECT ue.idEtapa FROM dbo.UsuarioEtapa ue " +
       "JOIN dbo.Usuario us ON us.idUsuario = ue.idUsuario " +
       "WHERE us.username = @u"
     );
     return r.recordset.map((x) => x.idEtapa as number).filter((n) => n != null);
-  } catch {
-    return []; // tabla no creada aún / sin mapeo
+  } catch (e) {
+    // Se traga el error (la Matriz no se cae por esto) pero lo DEJA en el log: en
+    // silencio, "sin mapeo" y "la tabla no existe en ninguna base" se ven igual.
+    console.warn("etapasDeUsuario:", e);
+    return [];
   }
 }
 
