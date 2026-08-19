@@ -3,24 +3,20 @@ import bcrypt from "bcryptjs";
 import { getAuthPool, sql } from "./db";
 import type { Role } from "./types";
 
-// idRol (dbo.Rol) -> módulo de la app. Los roles no listados NO tienen acceso.
+// Rol (dbo.Rol) -> módulo de la app. Los roles que no calzan NO tienen acceso.
 // Ingeniería y Aprobación se manejan en la app de producción, no acá.
-//   5 Proveeduría        -> proveeduría (ej. Angie)
-//   6 Facturador Bodega  -> bodega (recibe, ej. Pedro)
-const ROL_A_MODULO: Record<number, Role> = {
-  5: "proveeduria",
-  6: "facturacion",
-};
-
-// Resuelve el módulo por NOMBRE del rol (robusto para separar Bodega vs Contabilidad
-// sin depender del idRol exacto). El nombre manda para "contabilidad"; el resto cae
-// al mapa por idRol y, si no, a palabras clave del nombre.
-//   Bodega (recibe)     -> rol con "bodega" / "facturador" / "recib"  -> facturacion
-//   Contabilidad (NC)   -> rol con "contab"                           -> contabilidad
-function moduloDeRol(idRol: number, nombre: string): Role | undefined {
+//   Proveeduría (crea OC)  -> rol con "proveed" / "compra"            -> proveeduria
+//   Bodega (recibe)        -> rol con "bodega" / "facturador" / "recib" -> facturacion
+//   Contabilidad (NC)      -> rol con "contab"                        -> contabilidad
+//
+// Se resuelve SOLO por el NOMBRE del rol, nunca por su idRol. Antes había un mapa
+// `{5:'proveeduria', 6:'facturacion'}` que se consultaba primero, y eso ataba el
+// permiso a un número que no significa lo mismo en cada base: en AdelantePRO el
+// idRol 5 es "Digitacion maderas", así que ese mapa le habría abierto Proveeduría
+// a los usuarios del app de Digitación. El nombre sí viaja con su significado.
+function moduloDeRol(nombre: string): Role | undefined {
   const n = (nombre || "").toLowerCase();
   if (n.includes("contab")) return "contabilidad";
-  if (ROL_A_MODULO[idRol]) return ROL_A_MODULO[idRol];
   if (n.includes("bodeg") || n.includes("factur") || n.includes("recib")) return "facturacion";
   if (n.includes("proveed") || n.includes("compra")) return "proveeduria";
   return undefined;
@@ -77,7 +73,7 @@ export async function autenticar(
   const PRIORIDAD: Role[] = ["contabilidad", "proveeduria", "facturacion"];
   let best: { role: Role; idRol: number; nombre: string } | null = null;
   for (const x of rr.recordset) {
-    const m = moduloDeRol(x.idRol, x.nombre);
+    const m = moduloDeRol(x.nombre);
     if (!m) continue;
     if (!best || PRIORIDAD.indexOf(m) < PRIORIDAD.indexOf(best.role)) best = { role: m, idRol: x.idRol, nombre: x.nombre };
   }
