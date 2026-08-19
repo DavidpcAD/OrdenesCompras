@@ -1,10 +1,29 @@
-import type { Orden, OrdenLinea, Pedido, PedidoLinea, TipoSolicitud } from "./types";
+import type { Orden, OrdenLinea, Pedido, PedidoLinea, Role, TipoSolicitud } from "./types";
 
 // Badge del tipo de solicitud (Material / Repuesto / Stock).
 export function tipoSolicitudBadge(t: TipoSolicitud): { label: string; tone: string } {
   return t === "repuesto" ? { label: "Repuesto", tone: "yellow" }
     : t === "stock" ? { label: "Stock", tone: "gray" }
     : { label: "Material", tone: "green" };
+}
+
+// Devoluciones que le competen a un rol: solicitudes que Proveeduría devolvió a
+// Ingeniería (pedido "devuelto") y órdenes que Aprobación rechazó (orden
+// "rechazado"). Una sola regla para la bandeja de Devoluciones Y para el punto rojo
+// del menú: si se escriben aparte, tarde o temprano dicen cosas distintas.
+export function devolucionesDeRol(role: Role, pedidos: Pedido[], ordenes: Orden[]): { solicitudes: Pedido[]; ordenes: Orden[] } {
+  return {
+    solicitudes: role === "proveeduria" ? pedidos.filter((p) => p.estado === "devuelto") : [],
+    ordenes: role === "proveeduria" || role === "facturacion" ? ordenes.filter((o) => o.estado === "rechazado") : [],
+  };
+}
+
+// Cuántas devoluciones quedan sin corregir (0 = nada que hacer). El punto rojo del
+// menú se apaga solo: al reenviar la solicitud o relanzar la orden, el estado cambia
+// y esto vuelve a 0. No hay nada que "marcar como leído".
+export function devolucionesPendientes(role: Role, pedidos: Pedido[], ordenes: Orden[]): number {
+  const d = devolucionesDeRol(role, pedidos, ordenes);
+  return d.solicitudes.length + d.ordenes.length;
 }
 
 export function destinoLabel(p: Pedido): string {

@@ -6,7 +6,7 @@ import type { ColumnDef } from "@tanstack/react-table";
 import { Badge } from "@/components/ui";
 import { DataTable } from "@/components/data-table";
 import { useStore } from "@/lib/store";
-import { destinoLabel, formatDate } from "@/lib/helpers";
+import { destinoLabel, devolucionesDeRol, formatDate } from "@/lib/helpers";
 import type { Role } from "@/lib/types";
 
 type Dev = { id: string; tipo: "Solicitud" | "Orden"; numero: string; contra: string; motivo: string; fecha: string; href: string };
@@ -21,28 +21,24 @@ export function DevolucionesView({ role }: { role: Role }) {
 
   const items = useMemo<Dev[]>(() => {
     const out: Dev[] = [];
-    const verSolicitudes = role === "proveeduria";
-    const verOrdenes = role === "proveeduria" || role === "facturacion";
-    if (verSolicitudes) {
-      for (const p of pedidos.filter((p) => p.estado === "devuelto")) {
-        out.push({
-          id: p.id, tipo: "Solicitud", numero: p.numero, contra: destinoLabel(p),
-          motivo: (p.notas ?? "").replace(/^↩\s*Devuelto:\s*/i, "").split(" · ")[0] || "—",
-          fecha: p.fecha, href: `/proveeduria/solicitudes/${p.id}`,
-        });
-      }
+    // Qué le toca a cada rol: misma regla que el punto rojo del menú.
+    const { solicitudes: devSolicitudes, ordenes: devOrdenes } = devolucionesDeRol(role, pedidos, ordenes);
+    for (const p of devSolicitudes) {
+      out.push({
+        id: p.id, tipo: "Solicitud", numero: p.numero, contra: destinoLabel(p),
+        motivo: (p.notas ?? "").replace(/^↩\s*Devuelto:\s*/i, "").split(" · ")[0] || "—",
+        fecha: p.fecha, href: `/proveeduria/solicitudes/${p.id}`,
+      });
     }
-    if (verOrdenes) {
-      for (const o of ordenes.filter((o) => o.estado === "rechazado")) {
-        // El proveedor puede venir en la orden (SQL) o solo como id: se resuelve
-        // contra el catálogo igual que en el detalle, para no mostrar "—".
-        const prov = proveedores.find((p) => p.id === o.proveedorId);
-        out.push({
-          id: o.id, tipo: "Orden", numero: o.numero, contra: o.proveedorNombre ?? prov?.nombre ?? o.proveedorNo ?? prov?.code ?? "—",
-          motivo: o.motivoRechazo ?? "—", fecha: o.fecha,
-          href: role === "proveeduria" ? `/proveeduria/ordenes/${o.id}` : "",
-        });
-      }
+    for (const o of devOrdenes) {
+      // El proveedor puede venir en la orden (SQL) o solo como id: se resuelve
+      // contra el catálogo igual que en el detalle, para no mostrar "—".
+      const prov = proveedores.find((p) => p.id === o.proveedorId);
+      out.push({
+        id: o.id, tipo: "Orden", numero: o.numero, contra: o.proveedorNombre ?? prov?.nombre ?? o.proveedorNo ?? prov?.code ?? "—",
+        motivo: o.motivoRechazo ?? "—", fecha: o.fecha,
+        href: role === "proveeduria" ? `/proveeduria/ordenes/${o.id}` : "",
+      });
     }
     return out;
   }, [pedidos, ordenes, proveedores, role]);

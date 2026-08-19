@@ -2,11 +2,11 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useStore } from "@/lib/store";
 import { Button, ConfirmDialog, Modal } from "@/components/ui";
 import type { Role, Notificacion } from "@/lib/types";
-import { formatDate } from "@/lib/helpers";
+import { devolucionesPendientes, formatDate } from "@/lib/helpers";
 import { helpForPath } from "@/lib/help";
 import {
   IconBell, IconList, IconReceipt, IconCheck, IconDelivery, IconFolder,
@@ -77,7 +77,7 @@ const ROLE_META: Record<Role, { label: string; persona: string; home: string; na
 };
 
 export function AppShell({ role, children }: { role: Role; children: React.ReactNode }) {
-  const { role: current, setRole, usuario, setUsuario, notificaciones, marcarNotifsLeidas, marcarNotifLeida, hydrated, errorCarga, cargando, recargar } = useStore();
+  const { role: current, setRole, usuario, setUsuario, pedidos, ordenes, notificaciones, marcarNotifsLeidas, marcarNotifLeida, hydrated, errorCarga, cargando, recargar } = useStore();
   const router = useRouter();
   const pathname = usePathname();
   const [notifOpen, setNotifOpen] = useState(false);
@@ -128,6 +128,12 @@ export function AppShell({ role, children }: { role: Role; children: React.React
   // Notificaciones relevantes para este rol (o sin rol específico).
   const notifsRol = notificaciones.filter((n) => !n.rol || n.rol === role);
   const noLeidas = notifsRol.filter((n) => !n.leida).length;
+  // Punto rojo del menú: avisos que salen del DATO, no de que el usuario los "lea"
+  // (al revés de la campanita). Hoy solo Devoluciones: se prende mientras haya algo
+  // por corregir y se apaga solo cuando la última se arregla.
+  const avisos = useMemo<Record<string, number>>(() => ({
+    "/proveeduria/devoluciones": devolucionesPendientes(role, pedidos, ordenes),
+  }), [role, pedidos, ordenes]);
   function toggleNotif() {
     // Abrir el panel NO marca leídas: cada notificación queda resaltada (no leída)
     // hasta que el usuario la abre (clic) o usa "Marcar todas como leídas".
@@ -148,6 +154,9 @@ export function AppShell({ role, children }: { role: Role; children: React.React
 
   const meta = ROLE_META[role];
   const hasNav = meta.nav.length > 1;
+  // Total para el FAB de móvil: SOLO de las secciones que este rol tiene en el menú
+  // (si no, Bodega vería un punto rojo que no lleva a ninguna parte).
+  const avisosTotal = meta.nav.reduce((n, item) => n + (avisos[item.href] ?? 0), 0);
   // FAB de acción visible → el contenido necesita espacio inferior para no quedar tapado.
   // No en su propia pantalla, ni en flujos de creación/edición, ni en la vista de
   // impresión (ahí el FAB verde se monta encima del documento del proveedor).
@@ -253,11 +262,15 @@ export function AppShell({ role, children }: { role: Role; children: React.React
             {meta.nav.map((n) => {
               const Icon = n.icon;
               const active = activeHref === n.href;
+              const aviso = avisos[n.href] ?? 0;
+              // Con aviso, el nombre accesible/tooltip dice cuántas hay: el punto
+              // solo no le sirve a quien usa lector de pantalla.
+              const rotulo = aviso > 0 ? `${n.label} · ${aviso} sin corregir` : n.label;
               return (
                 <button key={n.href} className={`app-nav__item${active ? " is-active" : ""}`}
-                  title={n.label}
+                  title={rotulo} aria-label={aviso > 0 ? rotulo : undefined}
                   onClick={() => { router.push(n.href); closeNavOnMobile(); }} aria-current={active ? "page" : undefined}>
-                  <span className="app-nav__ic"><Icon size={20} /></span>
+                  <span className="app-nav__ic"><Icon size={20} />{aviso > 0 && <span className="app-nav__dot" aria-hidden />}</span>
                   <span className="app-nav__label">{n.label}</span>
                 </button>
               );
@@ -310,9 +323,12 @@ export function AppShell({ role, children }: { role: Role; children: React.React
         </div>
       </div>
 
-      {/* FAB menú (arriba-izquierda) — solo cuando el drawer está cerrado. */}
+      {/* FAB menú (arriba-izquierda) — solo cuando el drawer está cerrado. Lleva el
+          mismo punto rojo que el ítem del menú: con el drawer cerrado el ítem no se ve. */}
       {hasNav && !navOpen && (
-        <button type="button" className="ds-btn ds-btn--black ds-btn--layout-icon fab fab--menu" onClick={() => setNavOpen(true)} aria-label="Abrir menú">
+        <button type="button" className="ds-btn ds-btn--black ds-btn--layout-icon fab fab--menu" onClick={() => setNavOpen(true)}
+          aria-label={avisosTotal > 0 ? `Abrir menú · ${avisosTotal} sin corregir` : "Abrir menú"}>
+          {avisosTotal > 0 && <span className="app-nav__dot" aria-hidden />}
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M3 6h18M3 12h18M3 18h18" /></svg>
         </button>
       )}
