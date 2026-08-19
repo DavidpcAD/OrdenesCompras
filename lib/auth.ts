@@ -1,6 +1,6 @@
 import crypto from "crypto";
 import bcrypt from "bcryptjs";
-import { getPool, sql } from "./db";
+import { getAuthPool, sql } from "./db";
 import type { Role } from "./types";
 
 // idRol (dbo.Rol) -> módulo de la app. Los roles no listados NO tienen acceso.
@@ -52,7 +52,8 @@ export async function autenticar(
   const u = (username ?? "").trim();
   if (!u || !password) return { ok: false, error: "Ingresá usuario y contraseña." };
 
-  const pool = await getPool();
+  // Padrón de usuarios: base de AUTH (DB_*), no la de datos de compras (SQL_*).
+  const pool = await getAuthPool();
   const r = await pool.request().input("u", sql.NVarChar(100), u).query(
     "SELECT TOP 1 idUsuario, username, passwordHash FROM dbo.Usuario WHERE username = @u"
   );
