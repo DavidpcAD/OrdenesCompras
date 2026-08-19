@@ -6,8 +6,15 @@ import { Badge, Button, Card, Checkbox, EmptyState, Field, Input, Modal, Select,
 import { IconWarning } from "@/components/icons";
 import { DateField } from "@/components/date-field";
 import { useStore } from "@/lib/store";
-import { money, distribuirCargo, num, ordenBadge, ordenLineaPendiente, ordenRecibidoPct, todayISO } from "@/lib/helpers";
-import type { MotivoNC } from "@/lib/types";
+import { esNombreObraVacio, money, distribuirCargo, num, ordenBadge, ordenLineaPendiente, ordenRecibidoPct, todayISO } from "@/lib/helpers";
+import type { MotivoNC, OrdenLinea } from "@/lib/types";
+
+// Resumen que se muestra al terminar de registrar ("cómo quedó en BC").
+// `aInventario` es lo que DEBE subir el stock; lo que va a una obra (Job No. en la
+// línea) BC lo carga como CONSUMO en el mismo movimiento, así que no sube el stock.
+type InvItem = { itemNo: string; desc: string; antes: number | null; recibido: number; aInventario: number; aObra: number; despues?: number | null };
+// Material consumido de una vez en una obra (no queda en inventario).
+type ConsumoObra = { obra: string; obraNombre?: string; taskNo?: string; itemNo?: string; desc: string; unidad: string; cantidad: number; importe: number };
 
 const MOTIVO_NC: { v: MotivoNC; label: string }[] = [
   { v: "precio_distinto", label: "Precio distinto" },
@@ -19,7 +26,7 @@ export default function RegistrarFacturaPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
   const toast = useToast();
-  const { ordenes, proveedores, recepciones, registrarRecepcion, marcarNotasCredito, role, cargando } = useStore();
+  const { ordenes, pedidos, proveedores, recepciones, registrarRecepcion, marcarNotasCredito, role, cargando } = useStore();
   // La vista se elige por ROL, no por ancho de pantalla: Contabilidad usa la TABLA
   // (escritorio); Bodega (Pedro) usa siempre las TARJETAS, porque todo lo de Bodega
   // es en tablet/celular.
@@ -66,9 +73,10 @@ export default function RegistrarFacturaPage() {
   const [fechaRecepcion, setFechaRecepcion] = useState(todayISO());
   const [preview, setPreview] = useState(false);
   const [guardando, setGuardando] = useState(false);
-  // Confirmación de inventario (stock BC antes → después de registrar).
+  // Confirmación de lo que pasó en BC: stock antes → después (inventario) y el
+  // material que se consumió directo en una obra.
   // despues: number = stock BC verificado · null = BC no devolvió · undefined = verificando.
-  const [confirmInv, setConfirmInv] = useState<null | { itemNo: string; desc: string; antes: number | null; recibido: number; despues?: number | null }[]>(null);
+  const [confirmInv, setConfirmInv] = useState<null | { items: InvItem[]; consumo: ConsumoObra[] }>(null);
   // Líneas marcadas para NOTA DE CRÉDITO (dañado / menos cantidad / precio distinto).
   // Cantidad y precio se toman por defecto de la línea; Bodega elige el tipo y deja
   // un comentario (nota) de qué pasó con esa línea.
@@ -206,6 +214,24 @@ export default function RegistrarFacturaPage() {
     setNcModal(null);
   };
 
+  // Obra de una línea = su Job No. (es lo que viaja a BC y hace que el material se
+  // cargue como CONSUMO de la obra en vez de entrar a inventario). Si la orden no lo
+  // trae, se cae al destino de la solicitud que la originó — solo si es MATERIAL:
+  // un repuesto va a una máquina y ese sí entra a inventario. Mismo criterio que los
+  // reportes de compras.
+  const obraDeLinea = (l: OrdenLinea): { codigo: string; nombre?: string } | null => {
+    const ped = pedidos.find((p) =>
+      (l.pedidoLineaId && p.lineas.some((pl) => pl.id === l.pedidoLineaId)) ||
+      (!!l.pedidoNumero && p.numero === l.pedidoNumero));
+    const codigo = (l.proyecto ?? "").trim()
+      || (ped?.tipoSolicitud === "material" ? (ped.obraCodigo ?? "").trim() : "");
+    if (!codigo) return null;
+    // El nombre de obra suele venir "POR DEFINIR" de BC: en ese caso no se muestra.
+    const nombre = ped && (ped.obraCodigo ?? "").trim() === codigo && !esNombreObraVacio(ped.obraNombre)
+      ? ped.obraNombre?.trim() : undefined;
+    return { codigo, nombre };
+  };
+
   // Stock total (todas las ubicaciones) por artículo, desde BC — para confirmar
   // el "antes → después" al registrar. null = BC no devolvió stock.
   async function stockDeItems(items: string[]): Promise<Record<string, number | null>> {
@@ -239,10 +265,13 @@ export default function RegistrarFacturaPage() {
       .filter((l) => Number(recibir[l.id] || 0) > 0)
       .map((l) => ({ ordenLineaId: l.id, cantidadRecibida: Number(recibir[l.id]) }));
     if (nadaRecibidoAun && cargo) lineas.push({ ordenLineaId: cargo.id, cantidadRecibida: cargo.cantidad });
-    // Líneas para BC: cantidad recibida en esta factura por item (solo artículos).
-    const bcLineas = articulo
+    // Detalle de lo que se factura ahora, con la obra de cada línea: alimenta tanto
+    // las líneas que viajan a BC como el resumen final (inventario vs. consumo).
+    const detalle = articulo
       .filter((l) => Number(recibir[l.id] || 0) > 0 && l.articuloId)
-      .map((l) => ({ itemNo: l.articuloId as string, qty: Number(recibir[l.id]), variantCode: l.variantCode }));
+      .map((l) => ({ l, qty: Number(recibir[l.id]), obra: obraDeLinea(l) }));
+    // Líneas para BC: cantidad recibida en esta factura por item (solo artículos).
+    const bcLineas = detalle.map((d) => ({ itemNo: d.l.articuloId as string, qty: d.qty, variantCode: d.l.variantCode }));
 
     setGuardando(true);
     let aviso = ""; let bcOk = false;
@@ -294,14 +323,28 @@ export default function RegistrarFacturaPage() {
         // Mostramos el modal de inmediato (antes + facturado) y desbloqueamos; la
         // verificación del stock "después" en BC se consulta en segundo plano (no
         // re-bloquea el POST ya lento). despues=undefined → "verificando…".
-        setConfirmInv(items.map((it) => {
-          const qty = bcLineas.filter((l) => l.itemNo === it).reduce((s, l) => s + l.qty, 0);
-          return { itemNo: it, desc: articulo.find((a) => a.articuloId === it)?.descripcion ?? it, antes: antes[it] ?? null, recibido: qty, despues: undefined };
-        }));
+        setConfirmInv({
+          items: items.map((it) => {
+            const dels = detalle.filter((d) => d.l.articuloId === it);
+            const qty = dels.reduce((s, d) => s + d.qty, 0);
+            const aObra = dels.filter((d) => d.obra).reduce((s, d) => s + d.qty, 0);
+            return {
+              itemNo: it, desc: dels[0]?.l.descripcion ?? it, antes: antes[it] ?? null,
+              recibido: qty, aObra, aInventario: qty - aObra, despues: undefined,
+            };
+          }),
+          // Consumo directo: material que NO queda en inventario porque BC lo carga a
+          // la obra al registrar. Se guarda por línea (un item puede ir a dos obras).
+          consumo: detalle.filter((d) => d.obra).map((d) => ({
+            obra: d.obra!.codigo, obraNombre: d.obra!.nombre, taskNo: d.l.taskNo,
+            itemNo: d.l.articuloId, desc: d.l.descripcion, unidad: d.l.unidad, cantidad: d.qty,
+            importe: importeRecibir(d.l) + (distrib[d.l.id] ?? 0),
+          })),
+        });
         setGuardando(false);
         stockDeItems(items)
-          .then((despues) => setConfirmInv((prev) => prev && prev.map((x) => ({ ...x, despues: despues[x.itemNo] ?? null }))))
-          .catch(() => setConfirmInv((prev) => prev && prev.map((x) => ({ ...x, despues: null }))));
+          .then((despues) => setConfirmInv((prev) => prev && { ...prev, items: prev.items.map((x) => ({ ...x, despues: despues[x.itemNo] ?? null })) }))
+          .catch(() => setConfirmInv((prev) => prev && { ...prev, items: prev.items.map((x) => ({ ...x, despues: null })) }));
       } else {
         router.push(`/facturacion`);
       }
@@ -736,39 +779,112 @@ export default function RegistrarFacturaPage() {
           </Modal>
         )}
 
-        {confirmInv && (
+        {confirmInv && (() => {
+          const cerrar = () => { setConfirmInv(null); router.push("/facturacion"); };
+          // Consumo directo agrupado POR OBRA: "tales materiales, tales cantidades,
+          // en tal obra". Un mismo item puede ir a dos obras en la misma factura.
+          const porObra = confirmInv.consumo.reduce<{ obra: string; nombre?: string; filas: ConsumoObra[]; total: number }[]>((acc, c) => {
+            let g = acc.find((x) => x.obra === c.obra);
+            if (!g) { g = { obra: c.obra, nombre: c.obraNombre, filas: [], total: 0 }; acc.push(g); }
+            g.filas.push(c); g.total += c.importe;
+            return acc;
+          }, []);
+          // Solo se verifica el stock de lo que DEBÍA entrar a inventario. Lo de obra
+          // ya no sale con ⚠️ por no subir el stock: es justo lo que se espera.
+          const inv = confirmInv.items.filter((x) => x.aInventario > 1e-9);
+          // Si el stock subió TAMBIÉN lo que iba a la obra, BC no lo cargó como
+          // consumo: quedó en inventario y hay que decirlo (no darlo por bueno).
+          const quedoEnStock = confirmInv.items.filter((x) => x.aObra > 1e-9 && x.antes != null && x.despues != null
+            && Math.abs((x.despues as number) - ((x.antes as number) + x.recibido)) < 1e-6);
+          return (
           <Modal
-            title="Inventario actualizado en BC"
-            onClose={() => { setConfirmInv(null); router.push("/facturacion"); }}
-            footer={<Button onClick={() => { setConfirmInv(null); router.push("/facturacion"); }}>Listo</Button>}
+            title={porObra.length ? (inv.length ? "Así quedó en Business Central" : "Material consumido en la obra") : "Inventario actualizado en BC"}
+            onClose={cerrar}
+            footer={<Button onClick={cerrar}>Listo</Button>}
           >
-            <p className="ds-label">Stock en Business Central <span className="ds-strong">antes → después</span> de registrar esta factura:</p>
-            <div className="ds-table-wrap" style={{ boxShadow: "none", border: "1.5px solid var(--ds-color-gray-100)", marginTop: 8 }}>
-              <table className="ds-table">
-                <thead><tr><th>Artículo</th><th className="ds-num">Antes</th><th className="ds-num">Facturado</th><th className="ds-num">Después</th><th></th></tr></thead>
-                <tbody>
-                  {confirmInv.map((x) => {
-                    const verificando = x.despues === undefined;
-                    const sd = !verificando && (x.antes == null || x.despues == null);
-                    const ok = !verificando && !sd && Math.abs((x.despues as number) - ((x.antes as number) + x.recibido)) < 1e-6;
-                    return (
-                      <tr key={x.itemNo}>
-                        <td>{x.desc}<div className="ds-body-sm ds-muted">{x.itemNo}</div></td>
-                        <td className="ds-num">{x.antes == null ? "—" : num.format(x.antes)}</td>
-                        <td className="ds-num ds-strong" style={{ color: "var(--ds-color-green-300)" }}>+{num.format(x.recibido)}</td>
-                        <td className="ds-num ds-strong">{verificando ? <Skeleton style={{ display: "inline-block", width: 48, height: 14, borderRadius: 6 }} /> : x.despues == null ? "—" : num.format(x.despues)}</td>
-                        <td className="ds-num">{verificando ? <span className="ds-muted" title="Verificando en BC…">…</span> : sd ? <span className="ds-muted" title="BC no devolvió stock">s/d</span> : ok ? "✅" : <span title="El cambio no coincide con lo facturado" style={{ color: "var(--ds-color-red-200)" }}>⚠️</span>}</td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-            <p className="ds-body-sm ds-muted mt-4">
-              El material entró al almacén de recepción{orden.almacenRecepcion ? <> <span className="ds-strong">{orden.almacenRecepcion}</span></> : ""}. Un ✅ confirma que el stock subió justo lo facturado.
-            </p>
+            {porObra.length > 0 && (
+              <>
+                <p className="ds-label">
+                  Consumo directo: este material <span className="ds-strong">no queda en inventario</span> — BC lo carga a la obra al registrar la factura.
+                </p>
+                {porObra.map((g) => (
+                  <div key={g.obra} className="mt-4">
+                    <div className="row row--between wrap gap-2" style={{ alignItems: "baseline" }}>
+                      <span className="ds-strong">{g.obra}{g.nombre ? <span className="ds-muted"> · {g.nombre}</span> : null}</span>
+                      <span className="ds-body-sm ds-muted">Cargado a la obra {money(g.total, orden.currencyCode)} (sin IVA)</span>
+                    </div>
+                    <div className="ds-table-wrap" style={{ boxShadow: "none", border: "1.5px solid var(--ds-color-gray-100)", marginTop: "var(--ds-space-2)" }}>
+                      <table className="ds-table">
+                        <thead><tr><th>Material</th><th className="ds-num">Consumido</th><th className="ds-num">Importe</th></tr></thead>
+                        <tbody>
+                          {g.filas.map((c, i) => (
+                            <tr key={`${c.itemNo ?? "s/item"}-${i}`}>
+                              <td>
+                                {c.desc}
+                                {(c.itemNo || c.taskNo) && (
+                                  <div className="ds-body-sm ds-muted">{[c.itemNo, c.taskNo && `Tarea ${c.taskNo}`].filter(Boolean).join(" · ")}</div>
+                                )}
+                              </td>
+                              <td className="ds-num ds-strong">{num.format(c.cantidad)}{c.unidad ? ` ${c.unidad}` : ""}</td>
+                              <td className="ds-num">{money(c.importe, orden.currencyCode)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                ))}
+                {quedoEnStock.length > 0 && (
+                  <Card flat className="mt-4 ds-form-field--advertencia">
+                    <div className="row gap-3">
+                      <span style={{ color: "var(--ds-color-red-200)" }}><IconWarning /></span>
+                      <div>
+                        <div className="ds-strong">En BC quedó en inventario, no como consumo de la obra</div>
+                        <p className="ds-label ds-muted">
+                          El stock de {quedoEnStock.map((x) => x.itemNo).join(", ")} subió todo lo facturado. Revisá en BC si la línea llevaba la obra (Job No.).
+                        </p>
+                      </div>
+                    </div>
+                  </Card>
+                )}
+              </>
+            )}
+            {inv.length > 0 && (
+              <>
+                <p className={`ds-label${porObra.length ? " mt-4" : ""}`}>Stock en Business Central <span className="ds-strong">antes → después</span> de registrar esta factura:</p>
+                <div className="ds-table-wrap" style={{ boxShadow: "none", border: "1.5px solid var(--ds-color-gray-100)", marginTop: 8 }}>
+                  <table className="ds-table">
+                    <thead><tr><th>Artículo</th><th className="ds-num">Antes</th><th className="ds-num">{porObra.length ? "A inventario" : "Facturado"}</th><th className="ds-num">Después</th><th></th></tr></thead>
+                    <tbody>
+                      {inv.map((x) => {
+                        const verificando = x.despues === undefined;
+                        const sd = !verificando && (x.antes == null || x.despues == null);
+                        const ok = !verificando && !sd && Math.abs((x.despues as number) - ((x.antes as number) + x.aInventario)) < 1e-6;
+                        return (
+                          <tr key={x.itemNo}>
+                            <td>
+                              {x.desc}
+                              <div className="ds-body-sm ds-muted">{x.itemNo}</div>
+                              {x.aObra > 1e-9 && <div className="ds-body-sm ds-muted">Otras {num.format(x.aObra)} se consumieron en obra</div>}
+                            </td>
+                            <td className="ds-num">{x.antes == null ? "—" : num.format(x.antes)}</td>
+                            <td className="ds-num ds-strong" style={{ color: "var(--ds-color-green-300)" }}>+{num.format(x.aInventario)}</td>
+                            <td className="ds-num ds-strong">{verificando ? <Skeleton style={{ display: "inline-block", width: 48, height: 14, borderRadius: 6 }} /> : x.despues == null ? "—" : num.format(x.despues)}</td>
+                            <td className="ds-num">{verificando ? <span className="ds-muted" title="Verificando en BC…">…</span> : sd ? <span className="ds-muted" title="BC no devolvió stock">s/d</span> : ok ? "✅" : <span title="El cambio no coincide con lo que debía entrar a inventario" style={{ color: "var(--ds-color-red-200)" }}>⚠️</span>}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+                <p className="ds-body-sm ds-muted mt-4">
+                  El material entró al almacén de recepción{orden.almacenRecepcion ? <> <span className="ds-strong">{orden.almacenRecepcion}</span></> : ""}. Un ✅ confirma que el stock subió justo lo que debía entrar.
+                </p>
+              </>
+            )}
           </Modal>
-        )}
+          );
+        })()}
       </main>
     </>
   );

@@ -20,7 +20,7 @@ export function destinoCodigo(p: Pedido): string {
 }
 
 // Nombres de obra "vacíos" que no le dicen nada a Proveeduría (vienen así de BC).
-function esNombreObraVacio(s?: string): boolean {
+export function esNombreObraVacio(s?: string): boolean {
   const t = (s ?? "").trim().toLowerCase();
   return !t || t === "por definir" || t === "sin definir" || t === "n/d";
 }
