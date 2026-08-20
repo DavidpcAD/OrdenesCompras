@@ -15,6 +15,15 @@ import {
 
 const cap = (s: string) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : s);
 
+// "hace 40 s" / "hace 3 min" / "hace 2 h" — para el indicador de frescura.
+function haceCuanto(ms: number): string {
+  const s = Math.max(0, Math.round(ms / 1000));
+  if (s < 60) return `hace ${s} s`;
+  const m = Math.round(s / 60);
+  if (m < 60) return `hace ${m} min`;
+  return `hace ${Math.round(m / 60)} h`;
+}
+
 // Íconos de tema (sol/luna). SVG inline como la hamburguesa/cerrar del riel.
 const IconMoon = () => (
   <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
@@ -77,7 +86,7 @@ const ROLE_META: Record<Role, { label: string; persona: string; home: string; na
 };
 
 export function AppShell({ role, children }: { role: Role; children: React.ReactNode }) {
-  const { role: current, setRole, usuario, setUsuario, pedidos, ordenes, notificaciones, marcarNotifsLeidas, marcarNotifLeida, hydrated, errorCarga, cargando, recargar } = useStore();
+  const { role: current, setRole, usuario, setUsuario, pedidos, ordenes, notificaciones, marcarNotifsLeidas, marcarNotifLeida, hydrated, errorCarga, cargando, recargar, ultimaSync, modoApi, sesionExpirada } = useStore();
   const router = useRouter();
   const pathname = usePathname();
   const [notifOpen, setNotifOpen] = useState(false);
@@ -92,6 +101,17 @@ export function AppShell({ role, children }: { role: Role; children: React.React
   // Tema (claro/oscuro). El valor real vive en <html data-theme>; el script
   // no-flash del layout lo fija antes de pintar. Aquí solo lo reflejamos/alternamos.
   const [theme, setTheme] = useState<"light" | "dark">("light");
+  // Reloj lento, solo para que el indicador de frescura envejezca a la vista
+  // ("hace 2 min" tiene que subir a 3 sin tocar nada). 15 s es suficiente.
+  const [ahora, setAhora] = useState(0);
+  useEffect(() => {
+    if (!modoApi) return;
+    // También al sincronizar (no solo cada 15 s): si no, apenas después de un
+    // refresco el rótulo seguiría diciendo "hace 40 s" hasta el próximo tic.
+    setAhora(Date.now());
+    const id = setInterval(() => setAhora(Date.now()), 15000);
+    return () => clearInterval(id);
+  }, [modoApi, ultimaSync]);
   const isMobile = () => typeof window !== "undefined" && window.matchMedia("(max-width: 760px)").matches;
   const closeNavOnMobile = () => { if (isMobile()) setNavOpen(false); };
   useEffect(() => {
@@ -175,6 +195,20 @@ export function AppShell({ role, children }: { role: Role; children: React.React
     .filter((x) => x.len > 0)
     .sort((a, b) => b.len - a.len)[0]?.href ?? "";  // sin match → no se marca ninguna (no cae al home)
 
+  // Frescura de los datos. La app se refresca sola cada 45 s (y al volver a la
+  // pestaña), pero eso el usuario no lo puede ver: sin este indicador, "estar al
+  // día" era un acto de fe y la única forma de asegurarse era recargar a mano.
+  const edadMs = ultimaSync ? Math.max(0, ahora - ultimaSync) : null;
+  const sesionVencida = sesionExpirada;
+  const sync = errorCarga
+    ? { clase: " is-error", texto: sesionVencida ? "Sesión vencida" : "Sin conexión",
+        tip: sesionVencida ? "Tu sesión venció: iniciá sesión otra vez" : `No se pudo confirmar con el servidor · ${errorCarga}` }
+    : edadMs === null
+      ? { clase: "", texto: "Conectando…", tip: "Trayendo los datos del servidor" }
+      : edadMs < 90_000
+        ? { clase: " is-ok", texto: "Al día", tip: `Confirmado con el servidor ${haceCuanto(edadMs)} · se actualiza solo` }
+        : { clase: " is-stale", texto: haceCuanto(edadMs), tip: `Última confirmación con el servidor ${haceCuanto(edadMs)}` };
+
   return (
     <div className={`app-shell${pinned ? " pinned" : ""}${navOpen ? " nav-open" : ""}${ready ? " is-ready" : ""}`}>
       {/* Skip link (a11y, WCAG 2.4.1): primer foco de teclado; salta el nav. */}
@@ -182,6 +216,16 @@ export function AppShell({ role, children }: { role: Role; children: React.React
       <header className="topbar">
         <div className="topbar__spacer" />
         <div className="topbar__user">
+          {/* Frescura de los datos: verde = confirmado con el servidor hace poco.
+              Clickeable para forzar la sincronización sin recargar la página. */}
+          {modoApi && (
+            <button type="button" className={`sync-chip ds-tip${sync.clase}`} data-tip={sync.tip} title={sync.tip}
+              onClick={() => { if (sesionVencida) window.location.assign("/?motivo=sesion"); else void recargar(); }}
+              disabled={cargando} aria-label={sync.tip}>
+              <span className="sync-chip__dot" aria-hidden />
+              <span className="sync-chip__txt">{cargando ? "Actualizando…" : sync.texto}</span>
+            </button>
+          )}
           {/* Ayuda de la pantalla (qué es / para qué sirve) */}
           <button type="button" className="notif-bell ds-tip" data-tip="Qué es esta pantalla" title="Qué es esta pantalla"
             onClick={() => setHelpOpen(true)} aria-label="Ayuda de esta pantalla" aria-haspopup="dialog">
@@ -307,16 +351,31 @@ export function AppShell({ role, children }: { role: Role; children: React.React
           {/* Si no se pudieron traer los datos, avisarlo: si no, la app se ve vacía
               y parece que no hay pedidos/órdenes (era solo un console.error). */}
           {errorCarga && (
-            <div className="ds-callout ds-callout--red carga-error" role="alert">
+            <div className={`ds-callout ${sesionVencida ? "ds-callout--yellow" : "ds-callout--red"} carga-error`} role="alert">
               <span className="ds-callout__icon"><IconWarning size={18} /></span>
               <div style={{ flex: 1 }}>
-                <div className="ds-callout__title">No se pudieron cargar los datos</div>
-                <div className="ds-callout__body">Lo que ves puede estar incompleto o desactualizado.</div>
-                <div className="ds-label ds-muted" style={{ marginTop: 2 }}>{errorCarga}</div>
+                <div className="ds-callout__title">
+                  {sesionVencida ? "Tu sesión venció" : "No se pudo confirmar con el servidor"}
+                </div>
+                {/* Decir QUÉ se está viendo, no un "puede estar incompleto" genérico:
+                    en modo base ya no hay datos de relleno, así que o es lo último
+                    que cargó bien (y se dice de cuándo), o no hay nada. */}
+                <div className="ds-callout__body">
+                  {sesionVencida
+                    ? "Por seguridad se cierra sola después de 12 horas sin usarla. Iniciá sesión otra vez para seguir."
+                    : ultimaSync
+                      ? `Estás viendo lo último que cargó bien (${haceCuanto(edadMs ?? 0)}). Puede haber cambios más nuevos.`
+                      : "Todavía no se pudieron traer los datos, así que esta pantalla está vacía: no es que no haya nada."}
+                </div>
+                {!sesionVencida && <div className="ds-label ds-muted" style={{ marginTop: 2 }}>{errorCarga}</div>}
               </div>
-              <Button variant="outline" size="sm" disabled={cargando} onClick={() => { void recargar(); }}>
-                {cargando ? "Reintentando…" : "Reintentar"}
-              </Button>
+              {sesionVencida ? (
+                <Button size="sm" onClick={() => window.location.assign("/?motivo=sesion")}>Iniciar sesión</Button>
+              ) : (
+                <Button variant="outline" size="sm" disabled={cargando} onClick={() => { void recargar(); }}>
+                  {cargando ? "Reintentando…" : "Reintentar"}
+                </Button>
+              )}
             </div>
           )}
           {children}

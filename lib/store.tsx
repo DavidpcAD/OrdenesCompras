@@ -10,6 +10,7 @@ import type {
 import * as seed from "./seed";
 import { devolverPendienteAPedidos, nextNumero, nowISO, ordenEstaCompleta, PERSONA_POR_ROL, todayISO } from "./helpers";
 import { api, USE_API as USE_API_BUILD } from "./api";
+import { instalarGuardFetch, EVENTO_SESION_VENCIDA } from "./fetch-guard";
 
 export interface NewPedidoInput {
   tipoSolicitud: TipoSolicitud;
@@ -64,6 +65,13 @@ interface StoreShape {
   // Falló traer los datos del servidor (SQL caído, sesión vencida, red). Si no se
   // avisa, la app se ve VACÍA y parece que no hay pedidos/órdenes.
   errorCarga: string | null;
+  // La sesión venció (401 en cualquier llamada). Es un estado APARTE de errorCarga
+  // porque la salida es distinta —volver a entrar, no reintentar— y adivinarlo
+  // leyendo el texto del error es de las cosas que se rompen solas después.
+  sesionExpirada: boolean;
+  // Momento (epoch ms) en que el servidor confirmó por última vez que lo que se ve
+  // es lo que hay en la base. null = todavía no se ha confirmado ninguna vez.
+  ultimaSync: number | null;
   recargar: () => Promise<void>;
 
   proveedores: Proveedor[];
@@ -135,7 +143,16 @@ interface Persisted {
   notificaciones: Notificacion[];
 }
 
-function freshData(): Persisted {
+// `vacio` = modo API (datos de SQL). En ese modo NO se siembra NADA de demo.
+//
+// Por qué importa: la semilla existe para el modo mock, pero se usaba también en
+// modo API como estado inicial. Si el bootstrap fallaba (sesión vencida, base
+// dormida), la pantalla quedaba mostrando pedidos y montos INVENTADOS —₡2.125.000
+// de "FERRETERIA EPA"— con un aviso chiquito que decía "puede estar
+// desactualizado". Datos falsos con cara de reales es peor que una pantalla vacía:
+// ahora, si no hay datos del servidor, no hay números.
+function freshData(vacio = false): Persisted {
+  if (vacio) return { notificaciones: [], pedidos: [], ordenes: [], recepciones: [], movimientos: [] };
   return {
     notificaciones: [],
     pedidos: structuredClone(seed.pedidos),
@@ -144,6 +161,10 @@ function freshData(): Persisted {
     movimientos: structuredClone(seed.movimientos),
   };
 }
+
+// El guard de /api/* se instala al IMPORTAR el store (antes de que cualquier
+// pantalla monte y dispare su primer fetch). Ver lib/fetch-guard.ts.
+if (typeof window !== "undefined") instalarGuardFetch();
 
 // Mensaje corto y legible para el usuario a partir de un error de red/API.
 function mensajeError(e: unknown): string {
@@ -158,11 +179,15 @@ export function StoreProvider({ children, useApi }: { children: React.ReactNode;
   const USE_API = useApi ?? USE_API_BUILD;
   const [role, setRole] = useState<Role | null>(null);
   const [usuario, setUsuario] = useState<string | null>(null);
-  const [data, setData] = useState<Persisted>(() => freshData());
+  const [data, setData] = useState<Persisted>(() => freshData(USE_API));
   const [borrador, setBorrador] = useState<StoreShape["borrador"]>([]);
   const [hydrated, setHydrated] = useState(false);
   const [cargando, setCargando] = useState(USE_API);
   const [errorCarga, setErrorCarga] = useState<string | null>(null);
+  // Cuándo se confirmó por última vez que lo que se ve es lo que hay en la base.
+  // Se muestra en la barra superior: "al día" no puede ser un acto de fe.
+  const [ultimaSync, setUltimaSync] = useState<number | null>(null);
+  const [sesionExpirada, setSesionExpirada] = useState(false);
   // Notas de crédito (aparte del bootstrap para no romper la carga si la tabla no existe).
   const [notasCredito, setNotasCredito] = useState<NotaCreditoLinea[]>([]);
   // Firma del último bootstrap, para no re-renderizar cuando el poll trae lo mismo.
@@ -185,21 +210,50 @@ export function StoreProvider({ children, useApi }: { children: React.ReactNode;
     const u = localStorage.getItem("adelante_oc_usuario");
     if (u) setUsuario(u);
     if (USE_API) {
-      api.bootstrap()
-        .then((b) => {
-          ultimoBootstrap.current = JSON.stringify(b);   // así el primer poll no re-renderiza de gratis
-          setData((d) => ({ ...d, pedidos: b.pedidos, ordenes: b.ordenes, recepciones: b.recepciones }));
-          setErrorCarga(null);
-        })
-        .catch((e) => { console.error("bootstrap", e); setErrorCarga(mensajeError(e)); })
-        .finally(() => { setCargando(false); setHydrated(true); });
+      // Los datos NO se piden acá, sino en el efecto de abajo (en cuanto hay rol).
+      // Sin rol no hay nadie adentro (pantalla de login) y pedir el bootstrap ahí
+      // solo podía terminar en 401: encima disparaba el manejo de "sesión vencida"
+      // y le borraba a la URL el ?next= con el que el middleware nos trajo.
+      if (!(r && ROLES_VALIDOS.includes(r as Role))) setCargando(false);
     } else {
       try {
         const raw = localStorage.getItem(LS_KEY);
         if (raw) setData({ ...freshData(), ...JSON.parse(raw) } as Persisted); // merge: rellena llaves nuevas
       } catch { /* ignore */ }
-      setHydrated(true);
     }
+    setHydrated(true);
+  }, []);
+
+  // Carga de datos: arranca en cuanto hay ALGUIEN adentro (rol) y no se ha traído
+  // nada todavía. Cubre los dos caminos con el mismo código:
+  //   · recargar la página con sesión abierta (el rol sale de localStorage), y
+  //   · el momento justo después del login, donde antes no se pedía nada y la
+  //     pantalla se quedaba como estuviera hasta que corriera el poll de 45 s.
+  useEffect(() => {
+    if (!USE_API || !hydrated || !role || ultimaSync) return;
+    setCargando(true);
+    refreshFromApi()
+      .catch((e) => { console.error("bootstrap", e); setErrorCarga(mensajeError(e)); })
+      .finally(() => setCargando(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hydrated, role, ultimaSync]);
+
+  // Sesión vencida (la avisa lib/fetch-guard.ts ante cualquier 401): se deja de
+  // fingir que hay alguien logueado. Sin esto, la app seguía pintando el nombre y
+  // el menú del rol mientras NADA cargaba — exactamente la pantalla que había que
+  // eliminar. El guard además manda al login guardando a dónde volver.
+  useEffect(() => {
+    const alVencer = () => {
+      setSesionExpirada(true);
+      setRole(null);
+      setUsuario(null);
+      setData(freshData(USE_API));
+      setNotasCredito([]);
+      setErrorCarga("Tu sesión venció. Iniciá sesión otra vez.");
+    };
+    window.addEventListener(EVENTO_SESION_VENCIDA, alVencer);
+    return () => window.removeEventListener(EVENTO_SESION_VENCIDA, alVencer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Auto-refresh (modo API): recarga los datos SOLA, sin tener que recargar la
@@ -207,7 +261,7 @@ export function StoreProvider({ children, useApi }: { children: React.ReactNode;
   // (comparten la misma base). Poll cada 45s con la pestaña visible + refresco al
   // volver a la pestaña (instantáneo al cambiar de app). No corre oculta (ahorra).
   useEffect(() => {
-    if (!USE_API || !hydrated) return;
+    if (!USE_API || !hydrated || !role) return;
     const refrescar = () => {
       if (document.hidden) return;
       refreshFromApi()
@@ -232,7 +286,7 @@ export function StoreProvider({ children, useApi }: { children: React.ReactNode;
       window.removeEventListener("pageshow", refrescar);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hydrated]);
+  }, [hydrated, role]);
 
   // Al cambiar de pantalla, resincronizar. Es el momento en que la gente espera ver
   // lo nuevo (entra a "Órdenes" a ver si ya le llegó algo) y donde antes tenía que
@@ -240,13 +294,13 @@ export function StoreProvider({ children, useApi }: { children: React.ReactNode;
   const pathname = usePathname();
   const pathAnterior = useRef<string | null>(null);
   useEffect(() => {
-    if (!USE_API || !hydrated) return;
+    if (!USE_API || !hydrated || !role) return;
     // La primera vez no: la carga inicial ya trajo los datos recién.
     if (pathAnterior.current === null || pathAnterior.current === pathname) { pathAnterior.current = pathname; return; }
     pathAnterior.current = pathname;
     refreshFromApi().catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pathname, hydrated]);
+  }, [pathname, hydrated, role]);
 
   // persistencia local solo en modo mock
   useEffect(() => {
@@ -265,10 +319,15 @@ export function StoreProvider({ children, useApi }: { children: React.ReactNode;
   async function refreshFromApi() {
     const b = await api.bootstrap();
     setErrorCarga(null);   // volvió a responder: se limpia el aviso
-    // El auto-refresh corre cada 45s con la pantalla abierta todo el día, y casi
-    // siempre trae LO MISMO. Si el payload no cambió, no se toca el estado: así no
-    // se re-renderiza la app entera (ni se pierden cosas derivadas de esos datos)
-    // por gusto. Comparar el JSON es mucho más barato que el re-render.
+    setSesionExpirada(false);
+    setUltimaSync(Date.now());
+    // null = el servidor contestó 304: nada cambió desde la última vez. No bajó
+    // cuerpo, no hay nada que comparar ni que volver a pintar. Es el caso NORMAL
+    // del poll de 45 s (y el que ahorra datos móviles y batería).
+    if (!b) return;
+    // Segunda red: aunque el servidor haya mandado 200, si el contenido es igual al
+    // que ya teníamos no se toca el estado (no se re-renderiza la app entera por
+    // gusto). Comparar el JSON es mucho más barato que el re-render.
     const firma = JSON.stringify(b);
     if (firma !== ultimoBootstrap.current) {
       ultimoBootstrap.current = firma;
@@ -276,14 +335,11 @@ export function StoreProvider({ children, useApi }: { children: React.ReactNode;
       // en components/timeline.tsx). Bajar la tabla entera cada 45s era carísimo.
       setData((d) => ({ ...d, pedidos: b.pedidos, ordenes: b.ordenes, recepciones: b.recepciones }));
     }
-    // Notas de crédito: no vienen en el bootstrap y las pantallas las cargaban SOLO al
-    // montar, así que Contabilidad no veía una NC nueva hasta recargar a mano. Van acá
-    // para que entren por el mismo poll que todo lo demás.
-    try {
-      const nc = await api.listNotasCredito();
-      const firmaNc = JSON.stringify(nc);
-      if (firmaNc !== ultimaNc.current) { ultimaNc.current = firmaNc; setNotasCredito(nc); }
-    } catch { /* la tabla puede no existir aún: no debe tumbar el refresco */ }
+    // Notas de crédito: vienen en el MISMO payload (antes eran un request aparte que
+    // las pantallas pedían solo al montar, así que Contabilidad no veía una NC nueva
+    // hasta recargar a mano — y un segundo viaje cada 45 s).
+    const firmaNc = JSON.stringify(b.notas ?? []);
+    if (firmaNc !== ultimaNc.current) { ultimaNc.current = firmaNc; setNotasCredito(b.notas ?? []); }
   }
 
   // Reintento manual desde el aviso de error (no recarga la página).
@@ -740,10 +796,10 @@ export function StoreProvider({ children, useApi }: { children: React.ReactNode;
     const marcarNotifLeida: StoreShape["marcarNotifLeida"] = (id) =>
       setData((d) => ({ ...d, notificaciones: d.notificaciones.map((n) => (n.id === id ? { ...n, leida: true } : n)) }));
 
-    const reset: StoreShape["reset"] = () => setData(freshData());
+    const reset: StoreShape["reset"] = () => setData(freshData(USE_API));
 
     return {
-      role, setRole, usuario, setUsuario, cargando, hydrated, modoApi: USE_API, errorCarga, recargar,
+      role, setRole, usuario, setUsuario, cargando, hydrated, modoApi: USE_API, errorCarga, sesionExpirada, ultimaSync, recargar,
       proveedores: seed.proveedores, articulos: seed.articulos, obras: seed.obras,
       maquinas: seed.maquinas, almacenes: seed.almacenes,
       pedidos: data.pedidos, ordenes: data.ordenes, recepciones: data.recepciones, movimientos: data.movimientos,
@@ -756,7 +812,7 @@ export function StoreProvider({ children, useApi }: { children: React.ReactNode;
     // OJO: TODO estado que el store exponga debe estar en estas deps o el value
     // queda "congelado" con su valor viejo — así las notas de crédito cargadas
     // por cargarNotasCredito() nunca llegaban a Contabilidad (lista vacía).
-  }, [role, usuario, data, borrador, cargando, notasCredito, hydrated, errorCarga]);
+  }, [role, usuario, data, borrador, cargando, notasCredito, hydrated, errorCarga, sesionExpirada, ultimaSync]);
 
   return <StoreCtx.Provider value={api2}>{children}</StoreCtx.Provider>;
 }

@@ -17,6 +17,11 @@
   --ds-color-yellow: #f0c802;
   --ds-color-green-100: #add010;
   --ds-color-green-200: #88a024;
+  /* Verde de TEXTO (números de stock, ✓, "recibido"). Se usaba en 7 lugares sin
+     estar definido nunca: el navegador descartaba la regla y todo salía del color
+     de texto normal. Este tono pasa AA sobre fondo claro (4.96:1); el bloque
+     oscuro lo cambia por el verde de marca, que sobre oscuro sí contrasta. */
+  --ds-color-green-300: #5f7a1a;
   --ds-color-red-100: #c96c6c;
   --ds-color-red-200: #bb4a4a;
 
@@ -59,6 +64,8 @@
   --ds-shadow-01: 0 4px 8px #aaafb640;
   --ds-shadow-02-soft: 0 0 6px #00000029;
   --ds-shadow-03-big: 0 2px 4px #00000029, 0 0 6px #00000029;
+  /* Sombra hacia ARRIBA, para barras fijas al pie (action-bar). */
+  --ds-shadow-bar: 0 -4px 18px #0000001f;
 
   /* status semantics */
   --st-open: var(--ds-color-gray-400);
@@ -101,11 +108,14 @@
   --ds-color-gray-300: #6b7280;
   --ds-color-gray-400: #9aa1ad;
   --ds-color-gray-500: #c3c8d1;
+  /* Sobre oscuro el verde de texto es el verde de marca (8.5:1). */
+  --ds-color-green-300: var(--ds-color-green-100);
 
   /* Sombras: en oscuro, más opacas para dar separación. */
   --ds-shadow-01: 0 4px 8px #00000059;
   --ds-shadow-02-soft: 0 0 6px #00000066;
   --ds-shadow-03-big: 0 2px 4px #0000006b, 0 0 6px #0000006b;
+  --ds-shadow-bar: 0 -8px 24px #00000091;
 }
 
 /* En oscuro, el texto sobre relleno de marca sólido (verde/amarillo) debe seguir
@@ -836,7 +846,7 @@ h1, h2, h3, h4, p { margin: 0; }
 @media (prefers-reduced-motion: reduce) { .ds-tip::after { transition: none; } }
 
 /* sticky action bar (appears when there's a selection) */
-.action-bar { position: fixed; left: 72px; right: 0; bottom: 0; z-index: 45; background: var(--ds-surface); box-shadow: 0 -4px 18px #0000001f; padding: var(--ds-space-3) var(--ds-space-6); animation: barUp .2s ease; transition: left .26s cubic-bezier(.34, 1.2, .5, 1); }
+.action-bar { position: fixed; left: 72px; right: 0; bottom: 0; z-index: 45; background: var(--ds-surface); border-top: 1.5px solid var(--ds-color-gray-100); box-shadow: var(--ds-shadow-bar); padding: var(--ds-space-3) var(--ds-space-6); animation: barUp .2s ease; transition: left .26s cubic-bezier(.34, 1.2, .5, 1); }
 /* La barra sigue al riel: 72px colapsado, nav-w fijado, 0 en móvil. */
 .app-shell.pinned .action-bar { left: var(--nav-w); }
 @media (max-width: 760px) {
@@ -1681,4 +1691,50 @@ button.ana-kpi:active { transform: translateY(1px); }
 @media (max-width: 560px) {
   .carga-error { flex-wrap: wrap; }
   .carga-error > .ds-btn { width: 100%; }
+}
+
+/* Estado de carga de Inventarios: una línea con barra fina, en vez de un esqueleto
+   en cada celda. La tabla ya se puede usar mientras el stock se sigue sumando. */
+.inv-estado { display: flex; align-items: center; gap: var(--ds-space-3); min-height: 20px; flex-wrap: wrap; }
+.inv-barra { flex: 0 0 120px; height: 4px; border-radius: 999px; background: var(--ds-color-gray-100); overflow: hidden; }
+.inv-barra i { display: block; height: 100%; border-radius: 999px; background: var(--ds-color-green-100); transition: width .3s ease; }
+
+/* Indicador de frescura de los datos (barra superior). La app se refresca sola,
+   pero eso no se veía: este chip dice cuándo fue la última vez que el servidor
+   confirmó que lo que hay en pantalla es lo que hay en la base. Verde = recién;
+   ámbar = hace rato; rojo = no se pudo confirmar. Clickeable para forzarlo. */
+.sync-chip {
+  display: inline-flex; align-items: center; gap: var(--ds-space-2);
+  height: 36px; padding: 0 var(--ds-space-3);
+  border: 1.5px solid var(--ds-color-gray-200); border-radius: var(--ds-radius-xl);
+  background: var(--ds-surface); color: var(--ds-color-gray-500);
+  font-size: var(--ds-font-size-label); font-weight: var(--ds-font-weight-semibold);
+  cursor: pointer; transition: border-color .15s ease, color .15s ease;
+}
+.sync-chip:hover:not(:disabled) { border-color: var(--ds-color-gray-300); color: var(--ds-text); }
+.sync-chip:disabled { cursor: default; opacity: .7; }
+.sync-chip__dot {
+  width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
+  background: var(--ds-color-gray-300);
+}
+.sync-chip.is-ok .sync-chip__dot { background: var(--ds-color-green-100); }
+.sync-chip.is-stale .sync-chip__dot { background: var(--ds-color-yellow); }
+.sync-chip.is-error { border-color: color-mix(in srgb, var(--ds-color-red-100) 35%, var(--ds-tint-base)); color: var(--ds-color-red-200); }
+.sync-chip.is-error .sync-chip__dot { background: var(--ds-color-red-200); }
+/* En móvil la fila superior es angosta: queda solo el punto (el tooltip/aria
+   siguen contando la historia completa). */
+@media (max-width: 760px) {
+  .sync-chip { padding: 0; width: 36px; justify-content: center; }
+  .sync-chip__txt { display: none; }
+}
+
+/* Móvil: el FAB de menú flota ENCIMA de la barra superior (z-index mayor), así que
+   la fila de la derecha tiene que empezar después de él. Sin este aire, lo que
+   quede más a la izquierda —el indicador de frescura— se pierde debajo del botón
+   negro. El nombre se recorta con "…" antes que taparse algo. */
+@media (max-width: 760px) {
+  .topbar { padding-left: 84px; }
+  .topbar__user { min-width: 0; }
+  .topbar__identity { min-width: 0; overflow: hidden; }
+  .topbar__identity > span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 }

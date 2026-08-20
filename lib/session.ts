@@ -9,6 +9,17 @@ import type { Role } from "./types";
 export const SESSION_COOKIE = "adelante_oc_session";
 export const SESSION_MAX_AGE_S = 60 * 60 * 12; // 12 horas
 
+// La sesión se RENUEVA sola mientras la persona esté usando la app (ver
+// middleware.ts). Cuando a la cookie le queda menos de esto por vivir, el próximo
+// request la vuelve a firmar por otras 12 horas.
+//
+// Por qué: antes la cookie duraba 12 h fijas desde el login y NADIE la renovaba.
+// A la hora 12 —en plena jornada— toda llamada empezaba a contestar 401 "No
+// autenticado", la pantalla seguía mostrando la app (el rol vive en localStorage)
+// y aparecía el aviso rojo encima de datos viejos. Con renovación deslizante, el
+// que trabaja no se cae nunca; solo caduca por INACTIVIDAD de 12 h.
+export const SESSION_RENEW_AFTER_S = 60 * 60 * 6; // renovar cuando falten <6 h
+
 export type SessionPayload = { u: string; r: Role; n: string; exp: number };
 
 const nowS = () => Math.floor(Date.now() / 1000);
@@ -62,6 +73,25 @@ function safeEqual(a: string, b: string): boolean {
   let diff = 0;
   for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
   return diff === 0;
+}
+
+// Opciones de la cookie de sesión, en UN solo lugar: si login, middleware y logout
+// no coinciden EXACTAMENTE en path/sameSite/secure, el navegador guarda dos cookies
+// distintas y la sesión se "pierde" sin motivo aparente.
+export function sessionCookieOptions() {
+  return {
+    httpOnly: true,
+    secure: true,
+    sameSite: "lax" as const,
+    path: "/",
+    maxAge: SESSION_MAX_AGE_S,
+  };
+}
+
+// ¿Toca renovar? Sí cuando a la sesión le queda menos que SESSION_RENEW_AFTER_S.
+// Se exporta aparte (sin cookies ni request) para poder probarlo.
+export function debeRenovar(payload: SessionPayload, ahoraS: number = nowS()): boolean {
+  return payload.exp - ahoraS < SESSION_RENEW_AFTER_S;
 }
 
 export async function signSession(u: string, r: Role, n: string): Promise<string> {

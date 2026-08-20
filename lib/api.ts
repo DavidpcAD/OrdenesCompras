@@ -5,14 +5,9 @@ export const USE_API = process.env.NEXT_PUBLIC_USE_API === "1";
 
 async function jsonOrThrow(res: Response) {
   if (!res.ok) {
-    // Sesión vencida o ausente: limpiamos el estado local y volvemos al login.
-    if (res.status === 401 && typeof window !== "undefined") {
-      try {
-        localStorage.removeItem("adelante_oc_role");
-        localStorage.removeItem("adelante_oc_usuario");
-      } catch {}
-      if (window.location.pathname !== "/") window.location.href = "/";
-    }
+    // El 401 (sesión vencida) lo maneja lib/fetch-guard.ts para TODA la app —
+    // también para los fetch sueltos que no pasan por acá. Acá solo se traduce
+    // el error para que la pantalla pueda decir algo con sentido.
     const body = await res.json().catch(() => ({}));
     throw new Error(body.error ?? `HTTP ${res.status}`);
   }
@@ -23,10 +18,39 @@ export interface Bootstrap {
   pedidos: Pedido[];
   ordenes: Orden[];
   recepciones: Recepcion[];
+  // Van en el mismo viaje que el resto: así el ETag las cubre y una NC nueva
+  // invalida la caché igual que una orden nueva (antes eran un request aparte
+  // que las pantallas pedían solo al montar).
+  notas: NotaCreditoLinea[];
 }
 
+// ETag del último bootstrap recibido. El servidor calcula la "versión" de los datos
+// con una consulta barata (conteos + última modificación) y contesta 304 si nada
+// cambió: el poll de 45 s deja de bajar TODAS las órdenes y líneas cada vez.
+let etagBootstrap: string | null = null;
+// Un solo bootstrap a la vez: el refresco se dispara por varias vías (poll, volver
+// a la pestaña, cambiar de pantalla) y dos llegando juntos hacían el mismo trabajo
+// de SQL dos veces.
+let bootstrapEnVuelo: Promise<Bootstrap | null> | null = null;
+
 export const api = {
-  bootstrap: (): Promise<Bootstrap> => fetch("/api/bootstrap").then(jsonOrThrow),
+  // null = el servidor dijo 304 (nada cambió desde la última vez).
+  bootstrap: (): Promise<Bootstrap | null> => {
+    if (bootstrapEnVuelo) return bootstrapEnVuelo;
+    bootstrapEnVuelo = (async () => {
+      const res = await fetch("/api/bootstrap", {
+        headers: etagBootstrap ? { "If-None-Match": etagBootstrap } : undefined,
+      });
+      if (res.status === 304) return null;
+      const etag = res.headers.get("ETag");
+      const data = (await jsonOrThrow(res)) as Bootstrap;
+      // El ETag se guarda DESPUÉS de tener los datos en mano: si el parseo falla,
+      // no queremos quedar diciendo "ya la tengo" sin tenerla.
+      if (etag) etagBootstrap = etag;
+      return data;
+    })().finally(() => { bootstrapEnVuelo = null; });
+    return bootstrapEnVuelo;
+  },
 
   createPedido: (body: unknown): Promise<{ idPedidoCompra: number }> =>
     fetch("/api/pedidos", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }).then(jsonOrThrow),

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { autenticar } from "@/lib/auth";
-import { SESSION_COOKIE, SESSION_MAX_AGE_S, signSession, authEnabled } from "@/lib/session";
+import { SESSION_COOKIE, signSession, authEnabled, sessionCookieOptions } from "@/lib/session";
 import { demoraPorFallos, esperar, registrarExito, registrarFallo } from "@/lib/login-throttle";
 
 export const runtime = "nodejs";
@@ -27,13 +27,8 @@ export async function POST(req: Request) {
     // falta SESSION_SECRET, signSession lanza y respondemos 500 con mensaje claro.
     if (authEnabled()) {
       const token = await signSession(username, role, nombre);
-      out.cookies.set(SESSION_COOKIE, token, {
-        httpOnly: true,
-        secure: true,
-        sameSite: "lax",
-        path: "/",
-        maxAge: SESSION_MAX_AGE_S,
-      });
+      // Mismas opciones que usa el middleware al renovarla (un solo lugar).
+      out.cookies.set(SESSION_COOKIE, token, sessionCookieOptions());
     }
     return out;
   } catch (e: any) {

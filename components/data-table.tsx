@@ -76,7 +76,7 @@ export function DataTable<T>({
   // Si true y aún no hay datos, muestra filas/tarjetas skeleton (carga de SQL/BC).
   loading?: boolean;
 }) {
-  const { usuario, cargando } = useStore();
+  const { usuario, cargando, errorCarga, ultimaSync, modoApi } = useStore();
   // Inyecta el filtro multi-selección a las columnas que no traigan uno propio.
   const cols = useMemo(() => columns.map((c) => (c.filterFn ? c : { ...c, filterFn: isDateCol(c) ? dateRangeFilter : multiFilter })), [columns]);
   const [sorting, setSorting] = useState<SortingState>([]);
@@ -215,8 +215,14 @@ export function DataTable<T>({
   const skeletonRows = Array.from({ length: 6 });
   // ¿La tabla está vacía por un filtro/búsqueda activos? Cambia el mensaje del vacío.
   const filtrando = globalFilter.trim() !== "" || columnFilters.length > 0;
-  const emptyTitle = filtrando ? "Sin resultados" : vacio;
-  const emptyHint = filtrando ? "Probá ajustar la búsqueda o quitar los filtros." : undefined;
+  // ¿O está vacía porque los datos NUNCA llegaron? Entonces no se puede decir
+  // "todavía no hay órdenes": eso afirma algo sobre la base que no sabemos. Es el
+  // mismo criterio del aviso de arriba, aplicado a todas las tablas de la app.
+  const vacioPorFalla = modoApi && !!errorCarga && !ultimaSync;
+  const emptyTitle = filtrando ? "Sin resultados" : vacioPorFalla ? "No se pudieron cargar los datos" : vacio;
+  const emptyHint = filtrando
+    ? "Probá ajustar la búsqueda o quitar los filtros."
+    : vacioPorFalla ? "La tabla está vacía porque no se pudo consultar el servidor, no porque no haya registros." : undefined;
 
   // --- Exportar (CSV / PDF) — usa las filas FILTRADAS y las columnas visibles ---
   const valCelda = (row: any, colId: string): string => {

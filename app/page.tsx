@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useStore } from "@/lib/store";
 import { Button } from "@/components/ui";
 import { ROLE_META } from "@/components/shell";
@@ -15,6 +15,21 @@ export default function LoginPage() {
   const [error, setError] = useState("");
   const [cargando, setCargando] = useState(false);
   const [ayudaPw, setAyudaPw] = useState(false);
+  // A dónde volver después de entrar, y por qué está acá. Los pone quien lo mandó
+  // al login: el middleware (página protegida sin sesión) o el guard de fetch
+  // (401 en medio del trabajo). Se leen de window y no con useSearchParams para no
+  // arrastrar un Suspense en la pantalla de entrada.
+  const [volverA, setVolverA] = useState<string | null>(null);
+  const [vencida, setVencida] = useState(false);
+
+  useEffect(() => {
+    const sp = new URLSearchParams(window.location.search);
+    setVencida(sp.get("motivo") === "sesion");
+    const next = sp.get("next");
+    // Solo rutas internas: un "next" que venga con http(s):// o con "//" sería un
+    // redirect abierto (te logueás acá y terminás en otro sitio).
+    if (next && next.startsWith("/") && !next.startsWith("//")) setVolverA(next);
+  }, []);
 
   async function entrar() {
     if (!username.trim() || !password) { setError("Ingresá usuario y contraseña."); return; }
@@ -28,7 +43,11 @@ export default function LoginPage() {
       if (!r.ok) { setError(data?.error || "No se pudo iniciar sesión."); setCargando(false); return; }
       setRole(data.role);
       setUsuario(data.nombre || username.trim());
-      router.push(ROLE_META[data.role as keyof typeof ROLE_META]?.home ?? `/${data.role}`);
+      const home = ROLE_META[data.role as keyof typeof ROLE_META]?.home ?? `/${data.role}`;
+      // Vuelve a la pantalla donde lo cortó la sesión, si es del área de su rol.
+      const area = `/${home.split("/")[1]}`;
+      const vuelveAlArea = !!volverA && (volverA === area || volverA.startsWith(area + "/"));
+      router.push(vuelveAlArea ? volverA! : home);
     } catch (e: any) {
       const raw = String(e?.message ?? e);
       // "Failed to fetch" no le dice nada a nadie.
@@ -96,6 +115,20 @@ export default function LoginPage() {
           <h2 className="ds-subtitle">Iniciar sesión</h2>
           <p className="ds-muted ds-body-sm">Ingresá tu usuario y contraseña para continuar</p>
         </div>
+
+        {/* Por qué lo devolvimos acá. Sin este aviso, el que estaba trabajando y de
+            repente aterriza en el login cree que la app se rompió. */}
+        {vencida && !error && (
+          <div className="ds-callout ds-callout--yellow" role="status" style={{ marginBottom: 12 }}>
+            <div style={{ flex: 1 }}>
+              <div className="ds-callout__title">Tu sesión venció</div>
+              <div className="ds-callout__body">
+                Por seguridad se cierra sola después de 12 horas sin usarla. Entrá de nuevo
+                {volverA ? " y te devolvemos a la pantalla donde estabas." : "."}
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Form de verdad (no divs): así los gestores de contraseñas ofrecen guardar
             y Enter envía sin depender de handlers por campo. */}

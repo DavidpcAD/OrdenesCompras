@@ -1,5 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { SESSION_COOKIE, verifySession, authEnabled } from "@/lib/session";
+import { SESSION_COOKIE, verifySession, authEnabled, debeRenovar, signSession, sessionCookieOptions, type SessionPayload } from "@/lib/session";
 import { autorizacionActiva, mensajeNoAutorizado, rolPuede } from "@/lib/autorizacion";
 
 // Guardia central de acceso. Solo actúa en modo API (producción); en mock local
@@ -11,6 +11,22 @@ import { autorizacionActiva, mensajeNoAutorizado, rolPuede } from "@/lib/autoriz
 
 // API públicas (no requieren sesión).
 const PUBLIC_API = ["/api/login", "/api/logout", "/api/health"];
+
+// Renovación deslizante: si a la sesión le queda poco, se vuelve a firmar y se
+// devuelve la cookie nueva en ESTA respuesta. Así quien está trabajando nunca ve
+// un 401 en medio de la jornada (era la causa del aviso "No autenticado" con la
+// pantalla ya abierta); la sesión solo caduca tras 12 h SIN usar la app.
+async function conSesionRenovada(res: NextResponse, session: SessionPayload): Promise<NextResponse> {
+  if (!debeRenovar(session)) return res;
+  try {
+    const token = await signSession(session.u, session.r, session.n);
+    res.cookies.set(SESSION_COOKIE, token, sessionCookieOptions());
+  } catch {
+    // Si firmar falla, seguimos con la cookie vieja: pierde la renovación, pero
+    // NO tumbamos el request (mejor sesión corta que pantalla caída).
+  }
+  return res;
+}
 
 export async function middleware(req: NextRequest) {
   if (!authEnabled()) return NextResponse.next();
@@ -33,17 +49,20 @@ export async function middleware(req: NextRequest) {
     if (autorizacionActiva() && !rolPuede(pathname, req.method, session.r)) {
       return NextResponse.json({ error: mensajeNoAutorizado(pathname, req.method) }, { status: 403 });
     }
-    return NextResponse.next();
+    return conSesionRenovada(NextResponse.next(), session);
   }
 
   // ---- Páginas protegidas ----
   if (!session) {
     const url = req.nextUrl.clone();
     url.pathname = "/";
-    url.search = "";
+    // Se le dice al login POR QUÉ está ahí y A DÓNDE volver: sin esto, quien
+    // llevaba media orden escrita aterrizaba en el login sin explicación y
+    // después tenía que buscar de nuevo la pantalla donde estaba.
+    url.search = `?motivo=sesion&next=${encodeURIComponent(pathname + (req.nextUrl.search || ""))}`;
     return NextResponse.redirect(url);
   }
-  return NextResponse.next();
+  return conSesionRenovada(NextResponse.next(), session);
 }
 
 export const config = {
