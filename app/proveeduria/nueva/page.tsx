@@ -2,11 +2,11 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
-import { Badge, Button, Card, EmptyState, Field, Input, Modal, Select, useToast } from "@/components/ui";
+import { Badge, Button, Card, EmptyState, Field, Input, Modal, Select, Textarea, useToast } from "@/components/ui";
 import { Combobox } from "@/components/combobox";
 import { IconWarning } from "@/components/icons";
 import { useStore } from "@/lib/store";
-import { money, ultimoPrecioProveedor, almacenesFisicos, pedidoLineaPendiente, monedaApp } from "@/lib/helpers";
+import { money, ultimoPrecioProveedor, almacenesParaRecepcion, esAlmacenFisico, pedidoLineaPendiente, monedaApp } from "@/lib/helpers";
 import type { OrdenLinea } from "@/lib/types";
 
 interface Row {
@@ -42,6 +42,7 @@ export default function ArmarOrdenPage() {
   const [metodoAsig, setMetodoAsig] = useState("Amount"); // Amount|Weight|Volume|Equally
   const [itemCharges, setItemCharges] = useState<{ no: string; descripcion: string }[]>([]);
   const [almacen, setAlmacen] = useState("ALM-GRAL");
+  const [observaciones, setObservaciones] = useState("");
 
   // Proveedores en vivo desde Business Central (fallback al catálogo si BC falla).
   // Si el fallback se activa hay que DECIRLO: armar la orden contra el catálogo de
@@ -96,7 +97,7 @@ export default function ArmarOrdenPage() {
       })
       .catch(() => { /* sin BC, usa seed */ });
   }, []);
-  const catAlm = almacenesFisicos(bcAlm ?? almacenes);
+  const catAlm = almacenesParaRecepcion(bcAlm ?? almacenes);
 
   const [rows, setRows] = useState<Row[]>(() =>
     borrador.map((b) => {
@@ -253,7 +254,7 @@ export default function ArmarOrdenPage() {
         cantidad: Number(c.cantidad) || 1, unidad: "UND", almacen: rows[0].almacen,
         precioUnitario: Number(c.precio) || 0, ivaPct: 13 });
     }
-    const orden = await createOrden({ proveedorId, proveedorNo: provSel?.code, proveedorNombre: provSel?.nombre, currencyCode: currency, almacenRecepcion: almacen, lineas: ls });
+    const orden = await createOrden({ proveedorId, proveedorNo: provSel?.code, proveedorNombre: provSel?.nombre, currencyCode: currency, almacenRecepcion: almacen, observaciones: observaciones.trim() || undefined, lineas: ls });
     if (aprobar) await setOrdenEstado(orden.id, "pendiente_aprobacion");
     navegandoRef.current = true; // evita que el redirect de borrador-vacío pise el push al detalle
     setBorrador([]);
@@ -302,12 +303,22 @@ export default function ArmarOrdenPage() {
                 <option value="USD">USD (dólares)</option>
               </Select>
             </Field>
-            <Field label="Almacén de recepción" help="Dónde entra el material en BC (por defecto el General)">
-              <Select value={almacen} onChange={(e) => setAlmacen(e.target.value)}>
-                {catAlm.map((a) => <option key={a.codigo} value={a.codigo}>{a.codigo} — {a.nombre}</option>)}
-              </Select>
+            <Field label="Almacén / centro de costo de recepción" help="Dónde entra el material en BC. Por defecto el Almacén General, pero podés elegir cualquier centro de costo.">
+              <Combobox items={catAlm} value={almacen} onChange={(k) => setAlmacen(k)}
+                getKey={(a) => a.codigo} getLabel={(a) => `${a.codigo} — ${a.nombre}`}
+                getSearch={(a) => `${a.codigo} ${a.nombre}`}
+                groupBy={(a) => (esAlmacenFisico(a.codigo) ? "Bodegas" : "Centros de costo")}
+                placeholder="Buscar almacén o centro de costo…" />
             </Field>
           </div>
+          {/* Observaciones de la orden: instrucciones para el proveedor (horario de
+              entrega, contacto, referencia de cotización…). Se imprimen AL FINAL del
+              PDF que se le manda, así que es lo que él va a leer. */}
+          <Field label="Observaciones para el proveedor" help="Opcional. Salen impresas al final del PDF de la orden." className="mt-4">
+            <Textarea rows={3} value={observaciones} maxLength={500}
+              onChange={(e) => setObservaciones(e.target.value)}
+              placeholder="Ej. Entregar en bodega de 7 a. m. a 3 p. m., preguntar por Fernando. Referencia cotización #4471." />
+          </Field>
           <div className="row gap-2 wrap mt-4">
             <span className="ds-muted ds-label">Solicitudes en esta orden:</span>
             {pedidosDistintos.map((n) => <Badge key={n} tone="gray">{n}</Badge>)}

@@ -9,7 +9,7 @@ import assert from "node:assert/strict";
 import {
   ordenRecibidoPct, ordenEstaCompleta, ordenEsParcial, ordenAvance, ordenLineaImporte,
   ordenSubtotal, recibidoPorLineaPedido, recibidoDeLineaPedido, pedidoLineaPendiente,
-  distribuirCargo, monedaApp, formatDate, todayISO, nextNumero, almacenesFisicos,
+  distribuirCargo, monedaApp, formatDate, todayISO, nextNumero, almacenesParaRecepcion, esAlmacenFisico,
   ordenPedidos, ordenEsDirecta, money, pedidoOrdenadoPct, pedidoCompraBadge, pedidoTieneSaldo,
   destinoLabel, destinoCodigo, ordenLineaPendiente, ordenLineaCompleta, ultimoPrecioProveedor,
   ordenPendienteResumen, devolverPendienteAPedidos, proveedorLabel,
@@ -137,9 +137,15 @@ test("el próximo número sigue al máximo existente", () => {
   assert.equal(nextNumero("CP", ["basura"]), "CP-000001");
 });
 
-test("solo se ofrecen almacenes físicos ALM-*", () => {
-  const list = [{ codigo: "ALM-GRAL" }, { codigo: "VN-M.28" }, { codigo: "alm-sso" }];
-  assert.deepEqual(almacenesFisicos(list).map((a) => a.codigo), ["ALM-GRAL", "alm-sso"]);
+test("se ofrecen TODOS los centros de costo, con las bodegas primero", () => {
+  const list = [{ codigo: "VN-M.28" }, { codigo: "ALM-GRAL" }, { codigo: "COM-MER" }, { codigo: "alm-sso" }];
+  // Nadie se pierde (el material puede entrar a cualquier centro de costo) y las
+  // bodegas ALM-* quedan arriba, que es donde se recibe casi siempre.
+  assert.deepEqual(almacenesParaRecepcion(list).map((a) => a.codigo), ["ALM-GRAL", "alm-sso", "COM-MER", "VN-M.28"]);
+  assert.equal(almacenesParaRecepcion(list).length, list.length);
+  assert.equal(esAlmacenFisico("ALM-GRAL"), true);
+  assert.equal(esAlmacenFisico("alm-sso"), true);   // no depende de mayúsculas
+  assert.equal(esAlmacenFisico("VN-M.28"), false);
 });
 
 test("las solicitudes de origen no repiten y las líneas manuales no cuentan", () => {

@@ -1,16 +1,24 @@
 "use client";
 
 import { useParams, useRouter } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
-import { Badge, Button, Card, EmptyState, Field, Input, Select, useToast, Skeleton } from "@/components/ui";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Badge, Button, Card, EmptyState, Field, Input, Select, Textarea, useToast, Skeleton } from "@/components/ui";
 import { IconWarning } from "@/components/icons";
 import { Combobox } from "@/components/combobox";
 import { useStore } from "@/lib/store";
-import { money, ordenEsDirecta, ordenPedidos, almacenesFisicos, monedaApp } from "@/lib/helpers";
+import { money, ordenEsDirecta, ordenPedidos, almacenesParaRecepcion, esAlmacenFisico, monedaApp } from "@/lib/helpers";
 import type { OrdenLinea } from "@/lib/types";
 
 interface Row { key: string; articuloId: string; descripcion: string; unidad: string; obra: string; cantidad: string; precio: string; iva: string; descuento: string; proyecto?: string; taskNo?: string; pedidoLineaId?: string; pedidoNumero?: string; }
 const uid = () => Math.random().toString(36).slice(2, 9);
+
+// Líneas de la orden -> filas editables. Se usa en el estado inicial y al hidratar.
+const filasDeOrden = (lineas: OrdenLinea[]): Row[] =>
+  lineas.filter((l) => l.tipo === "articulo").map((l) => ({
+    key: l.id, articuloId: l.articuloId ?? "", descripcion: l.descripcion, unidad: l.unidad, obra: l.proyecto ?? l.almacen ?? "",
+    cantidad: String(l.cantidad), precio: String(l.precioUnitario), iva: String(l.ivaPct ?? 13), descuento: String(l.descuentoPct ?? 0),
+    proyecto: l.proyecto, taskNo: l.taskNo, pedidoLineaId: l.pedidoLineaId, pedidoNumero: l.pedidoNumero,
+  }));
 
 export default function EditarOrdenPage() {
   const { id } = useParams<{ id: string }>();
@@ -33,20 +41,33 @@ export default function EditarOrdenPage() {
     fetch("/api/bc/almacenes").then((r) => (r.ok ? r.json() : { almacenes: [] })).then((d) => { if (Array.isArray(d.almacenes) && d.almacenes.length) setBcAlm(d.almacenes); }).catch(() => {});
   }, []);
   const catProv = bcProv ?? proveedores;
-  const catAlm = almacenesFisicos(bcAlm ?? almacenes);
+  const catAlm = almacenesParaRecepcion(bcAlm ?? almacenes);
 
   const cargo = orden?.lineas.find((l) => l.tipo === "cargo");
   const [proveedorId, setProveedorId] = useState(orden?.proveedorId ?? "");
   const [currency, setCurrency] = useState(monedaApp(orden?.currencyCode));
   const [flete, setFlete] = useState(cargo ? String(cargo.precioUnitario) : "");
   const [almacen, setAlmacen] = useState(orden?.almacenRecepcion ?? "ALM-GRAL");
-  const [rows, setRows] = useState<Row[]>(
-    (orden?.lineas ?? []).filter((l) => l.tipo === "articulo").map((l) => ({
-      key: l.id, articuloId: l.articuloId ?? "", descripcion: l.descripcion, unidad: l.unidad, obra: l.proyecto ?? l.almacen ?? "",
-      cantidad: String(l.cantidad), precio: String(l.precioUnitario), iva: String(l.ivaPct ?? 13), descuento: String(l.descuentoPct ?? 0),
-      proyecto: l.proyecto, taskNo: l.taskNo, pedidoLineaId: l.pedidoLineaId, pedidoNumero: l.pedidoNumero,
-    }))
-  );
+  const [observaciones, setObservaciones] = useState(orden?.observaciones ?? "");
+  const [rows, setRows] = useState<Row[]>(filasDeOrden(orden?.lineas ?? []));
+
+  // Si la orden llega DESPUÉS del primer render (modo API: el bootstrap tarda, o se
+  // entra por link directo), los useState de arriba ya corrieron con `undefined` y el
+  // formulario quedaba VACÍO aunque la orden tuviera datos. Se rellena UNA sola vez,
+  // cuando aparece; después no se vuelve a tocar, para no pisar lo que el usuario
+  // escribió cuando el auto-refresh trae la orden de nuevo.
+  const hidratado = useRef(false);
+  useEffect(() => {
+    if (!orden || hidratado.current) return;
+    hidratado.current = true;
+    setProveedorId(orden.proveedorId ?? "");
+    setCurrency(monedaApp(orden.currencyCode));
+    setAlmacen(orden.almacenRecepcion ?? "ALM-GRAL");
+    setObservaciones(orden.observaciones ?? "");
+    const cg = orden.lineas.find((l) => l.tipo === "cargo");
+    setFlete(cg ? String(cg.precioUnitario) : "");
+    setRows(filasDeOrden(orden.lineas));
+  }, [orden]);
   const [qaCode, setQaCode] = useState(""); const [qaQty, setQaQty] = useState(""); const [qaPrecio, setQaPrecio] = useState("");
 
   // El proveedor de la orden viene como CÓDIGO ("PROV-000002": mapOrden pone
@@ -138,7 +159,7 @@ export default function EditarOrdenPage() {
           ivaPct: cargo?.ivaPct ?? 13,
         });
       }
-      const r = await updateOrden(orden!.id, { proveedorId, proveedorNo: provSel?.code, proveedorNombre: provSel?.nombre, currencyCode: currency, almacenRecepcion: almacen, lineas: ls });
+      const r = await updateOrden(orden!.id, { proveedorId, proveedorNo: provSel?.code, proveedorNombre: provSel?.nombre, currencyCode: currency, almacenRecepcion: almacen, observaciones: observaciones.trim() || undefined, lineas: ls });
       // Si BC no quedó sincronizado, ese aviso manda: el pedido allá tendría las
       // líneas viejas y Bodega recibiría contra ellas.
       if (r?.bcAviso) toast(r.bcAviso, "info");
@@ -171,12 +192,22 @@ export default function EditarOrdenPage() {
             <Field label="Flete / transporte" help="Opcional, se distribuye al facturar">
               <Input type="number" min={0} value={flete} onChange={(e) => setFlete(e.target.value)} placeholder="0" />
             </Field>
-            <Field label="Almacén de recepción" help="Dónde entra el material en BC (por defecto el General)">
-              <Select value={almacen} onChange={(e) => setAlmacen(e.target.value)}>
-                {catAlm.map((a) => <option key={a.codigo} value={a.codigo}>{a.codigo} — {a.nombre}</option>)}
-              </Select>
+            <Field label="Almacén / centro de costo de recepción" help="Dónde entra el material en BC. Por defecto el Almacén General, pero podés elegir cualquier centro de costo.">
+              <Combobox items={catAlm} value={almacen} onChange={(k) => setAlmacen(k)}
+                getKey={(a) => a.codigo} getLabel={(a) => `${a.codigo} — ${a.nombre}`}
+                getSearch={(a) => `${a.codigo} ${a.nombre}`}
+                groupBy={(a) => (esAlmacenFisico(a.codigo) ? "Bodegas" : "Centros de costo")}
+                placeholder="Buscar almacén o centro de costo…" />
             </Field>
           </div>
+          {/* Observaciones de la orden: instrucciones para el proveedor (horario de
+              entrega, contacto, referencia de cotización…). Se imprimen AL FINAL del
+              PDF que se le manda, así que es lo que él va a leer. */}
+          <Field label="Observaciones para el proveedor" help="Opcional. Salen impresas al final del PDF de la orden." className="mt-4">
+            <Textarea rows={3} value={observaciones} maxLength={500}
+              onChange={(e) => setObservaciones(e.target.value)}
+              placeholder="Ej. Entregar en bodega de 7 a. m. a 3 p. m., preguntar por Fernando. Referencia cotización #4471." />
+          </Field>
         </Card>
 
         <Card className="mt-4" style={{ padding: 0, overflow: "hidden" }}>

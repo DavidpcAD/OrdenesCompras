@@ -155,6 +155,10 @@ export interface Orden {
   bcNumber?: string;        // Nº del Pedido de compra en Business Central (CP-…)
   bcDeepLink?: string;      // link directo al Pedido en BC (editar / registrar / vista previa)
   notas?: string;           // motivo de la última devolución/denegación (Aprobación → Proveeduría)
+  // Observaciones que escribe Proveeduría al armar la orden: instrucciones para el
+  // proveedor (horario de entrega, contacto, referencia de cotización…). SALEN EN EL
+  // PDF que se le manda, al final. En SQL viven en OrdenCompra.notaCreador.
+  observaciones?: string;
   motivoRechazo?: string;   // motivo del rechazo (Aprobación); también queda en el histórico
 }
 

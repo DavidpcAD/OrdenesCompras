@@ -395,6 +395,8 @@ function mapOrden(o: any, lineas: any[], motivoRechazo?: string): Orden {
     versionesArchivadas: Number(o.versionesArchivadas ?? 0),
     motivoRechazo: motivoRechazo || undefined,
     creadoPor: o.creadoPor || undefined,     // quién generó la OC (reportes)
+    observaciones: o.notaCreador || undefined,   // se imprimen en el PDF del proveedor
+
     bcNumber: o.bcNo || undefined,           // Nº del Pedido en BC (para recibir/facturar)
     // Deep link al Pedido en BC. FALTABA en modo API: `bcDeepLink` solo se llenaba
     // en mock, así que en producción el botón "Abrir en BC" nunca aparecía y el
@@ -415,6 +417,7 @@ function mapOrden(o: any, lineas: any[], motivoRechazo?: string): Orden {
 
 export interface NewOrdenDB {
   proveedorNo: string; proveedorNombre?: string; currencyCode: string; usuario: string; rol: Role;
+  observaciones?: string;   // -> OrdenCompra.notaCreador (sale en el PDF)
   lineas: {
     tipoLinea: string; itemNo?: string; variantCode?: string; idPedidoCompraDet?: number; descripcion: string; cantidad: number;
     unidad: string; almacen: string; precioUnitario: number; ivaPct: number; descuentoPct?: number; jobNo?: string; taskNo?: string;
@@ -457,9 +460,10 @@ export async function createOrden(input: NewOrdenDB): Promise<number> {
       .input("proveedorNombre", sql.NVarChar(150), input.proveedorNombre ?? null)
       .input("currencyCode", sql.NVarChar(10), input.currencyCode || null)
       .input("creadoPor", sql.NVarChar(100), input.usuario)
-      .query(`INSERT dbo.OrdenCompra (idEstado,ordenNo,proveedorNo,proveedorNombre,currencyCode,fechaEmision,esEliminada,fechaCreacion,creadoPor)
+      .input("notaCreador", sql.NVarChar(500), (input.observaciones ?? "").trim() || null)
+      .query(`INSERT dbo.OrdenCompra (idEstado,ordenNo,proveedorNo,proveedorNombre,currencyCode,fechaEmision,notaCreador,esEliminada,fechaCreacion,creadoPor)
               OUTPUT INSERTED.idOrdenCompra
-              VALUES (@idEstado,@ordenNo,@proveedorNo,@proveedorNombre,@currencyCode,CAST(getdate() AS date),0,getdate(),@creadoPor)`);
+              VALUES (@idEstado,@ordenNo,@proveedorNo,@proveedorNombre,@currencyCode,CAST(getdate() AS date),@notaCreador,0,getdate(),@creadoPor)`);
     const idOrden = ins.recordset[0].idOrdenCompra as number;
 
     let line = 10000;
@@ -503,6 +507,7 @@ export async function createOrden(input: NewOrdenDB): Promise<number> {
 
 export interface UpdateOrdenDB {
   proveedorNo: string; proveedorNombre?: string; currencyCode: string; usuario: string; rol: Role;
+  observaciones?: string;   // -> OrdenCompra.notaCreador (sale en el PDF)
   lineas: NewOrdenDB["lineas"];
 }
 
@@ -554,7 +559,8 @@ export async function updateOrden(id: number, input: UpdateOrdenDB) {
       .input("proveedorNombre", sql.NVarChar(150), input.proveedorNombre ?? null)
       .input("currencyCode", sql.NVarChar(10), input.currencyCode || null)
       .input("u", sql.NVarChar(100), input.usuario)
-      .query("UPDATE dbo.OrdenCompra SET proveedorNo=@proveedorNo, proveedorNombre=@proveedorNombre, currencyCode=@currencyCode, fechaModificacion=getdate(), modificadoPor=@u WHERE idOrdenCompra=@id");
+      .input("notaCreador", sql.NVarChar(500), (input.observaciones ?? "").trim() || null)
+      .query("UPDATE dbo.OrdenCompra SET proveedorNo=@proveedorNo, proveedorNombre=@proveedorNombre, currencyCode=@currencyCode, notaCreador=@notaCreador, fechaModificacion=getdate(), modificadoPor=@u WHERE idOrdenCompra=@id");
     // 4) reinsertar líneas + reaplicar saldo
     let line = 10000;
     for (const l of lineas) {

@@ -2,17 +2,18 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect, useId, useMemo, useState } from "react";
-import { Badge, Button, Card, Field, Input, Select, useToast } from "@/components/ui";
+import { Badge, Button, Card, Field, Input, Select, Textarea, useToast } from "@/components/ui";
 import { Combobox } from "@/components/combobox";
 import { IconWarning } from "@/components/icons";
 import { useStore } from "@/lib/store";
-import { money, almacenesFisicos, monedaApp } from "@/lib/helpers";
+import { money, almacenesParaRecepcion, esAlmacenFisico, monedaApp } from "@/lib/helpers";
 import type { OrdenLinea } from "@/lib/types";
 
 // Orden DIRECTA: compra armada por Proveeduría sin partir de una solicitud de
 // Ingeniería (material que no vino en ningún pedido). Todas las líneas son
 // manuales (pedidoNumero "Manual"); en la lista/detalle se marca como "Directa".
-interface Row { key: string; articuloId: string; descripcion: string; unidad: string; obra: string; cantidad: string; precio: string; iva: string; descuento: string; variantCode: string; variantNombre: string; }
+// Sin `obra`: una compra directa NO se carga a una obra (ver comentario en crear()).
+interface Row { key: string; articuloId: string; descripcion: string; unidad: string; cantidad: string; precio: string; iva: string; descuento: string; variantCode: string; variantNombre: string; }
 type Variante = { code: string; descripcion: string };
 // Cargo de producto (Item Charge) a agregar a la orden: tipo (chargeNo del catálogo
 // BC), cantidad y precio. chargeNo "" = flete por defecto. Igual que en "nueva".
@@ -29,6 +30,7 @@ export default function OrdenDirectaPage() {
   const [proveedorId, setProveedorId] = useState("");
   const [currency, setCurrency] = useState("");
   const [almacen, setAlmacen] = useState("ALM-GRAL");
+  const [observaciones, setObservaciones] = useState("");
   // Cargos de producto (Item Charge): igual que al armar una orden desde un pedido.
   const [cargos, setCargos] = useState<Cargo[]>([]);
   const [metodoAsig, setMetodoAsig] = useState("Amount"); // Amount|Weight|Volume|Equally
@@ -54,7 +56,7 @@ export default function OrdenDirectaPage() {
       .then((d) => { if (Array.isArray(d.itemCharges)) setItemCharges(d.itemCharges); }).catch(() => {});
   }, []);
   const catProv = bcProv ?? proveedores;
-  const catAlm = almacenesFisicos(bcAlm ?? almacenes);
+  const catAlm = almacenesParaRecepcion(bcAlm ?? almacenes);
   const provSel = catProv.find((x) => x.id === proveedorId);
 
   const [rows, setRows] = useState<Row[]>([]);
@@ -79,7 +81,7 @@ export default function OrdenDirectaPage() {
     if (!it || !(Number(qaQty) > 0)) { toast("Elegí un artículo y una cantidad.", "error"); return; }
     if (variantePendiente) { toast("Este artículo tiene variantes: elegí una antes de agregar la línea.", "error"); return; }
     const variante = qaVariantes.find((v) => v.code === qaVariante);
-    setRows((rs) => [...rs, { key: `m-${uid()}`, articuloId: it.code, descripcion: it.descripcion, unidad: it.unidad, obra: "", cantidad: String(Number(qaQty)), precio: String(Number(qaPrecio) || it.precioUltimo || 0), iva: "13", descuento: "0", variantCode: qaVariante, variantNombre: variante?.descripcion ?? "" }]);
+    setRows((rs) => [...rs, { key: `m-${uid()}`, articuloId: it.code, descripcion: it.descripcion, unidad: it.unidad, cantidad: String(Number(qaQty)), precio: String(Number(qaPrecio) || it.precioUltimo || 0), iva: "13", descuento: "0", variantCode: qaVariante, variantNombre: variante?.descripcion ?? "" }]);
     setQaCode(""); setQaQty(""); setQaPrecio(""); setQaVariantes([]); setQaVariante(""); setQaVariantesError(false);
   }
 
@@ -114,18 +116,22 @@ export default function OrdenDirectaPage() {
     if (malPrecio) { toast(`El precio de "${malPrecio.descripcion}" no es un número válido.`, "error"); return; }
     setGuardando(true);
     try {
+      // Una compra directa NO lleva obra: el material entra al ALMACÉN de recepción
+      // elegido arriba y queda en inventario. Antes había una casilla "Obra" por línea
+      // que se usaba a la vez de almacén y de Job No., y con Job No. BC lo carga como
+      // CONSUMO de la obra (el stock no sube). Si la compra es para una obra, va por
+      // la solicitud de Ingeniería, que es la que trae la obra de verdad.
       const ls: Omit<OrdenLinea, "id" | "cantidadRecibida" | "cantidadFacturada">[] = rows.map((r) => ({
         tipo: "articulo", articuloId: r.articuloId, variantCode: r.variantCode || undefined, pedidoNumero: "Manual",
-        descripcion: r.descripcion, cantidad: Number(r.cantidad), unidad: r.unidad, almacen: r.obra,
+        descripcion: r.descripcion, cantidad: Number(r.cantidad), unidad: r.unidad, almacen,
         precioUnitario: Number(r.precio), ivaPct: Number(r.iva) || 0, descuentoPct: Number(r.descuento) || 0,
-        proyecto: r.obra || undefined,
       }));
       for (const c of cargos) {
         if (cargoImporte(c) <= 0) continue;
         ls.push({ tipo: "cargo", chargeNo: c.chargeNo || undefined, chargeMethod: metodoAsig, descripcion: c.descripcion || "CARGO",
-          cantidad: Number(c.cantidad) || 1, unidad: "UND", almacen: rows[0]?.obra ?? "", precioUnitario: Number(c.precio) || 0, ivaPct: 13 });
+          cantidad: Number(c.cantidad) || 1, unidad: "UND", almacen, precioUnitario: Number(c.precio) || 0, ivaPct: 13 });
       }
-      const orden = await createOrden({ proveedorId, proveedorNo: provSel?.code, proveedorNombre: provSel?.nombre, currencyCode: currency, almacenRecepcion: almacen, lineas: ls });
+      const orden = await createOrden({ proveedorId, proveedorNo: provSel?.code, proveedorNombre: provSel?.nombre, currencyCode: currency, almacenRecepcion: almacen, observaciones: observaciones.trim() || undefined, lineas: ls });
       if (aprobar) await setOrdenEstado(orden.id, "pendiente_aprobacion");
       toast(`Orden directa ${orden.numero} ${aprobar ? "enviada a aprobación" : "guardada como abierta"}`, "success");
       router.push(`/proveeduria/ordenes/${orden.id}`);
@@ -165,12 +171,22 @@ export default function OrdenDirectaPage() {
             <Field label="Moneda">
               <Select value={currency} onChange={(e) => setCurrency(e.target.value)}><option value="">CRC (colones)</option><option value="USD">USD (dólares)</option></Select>
             </Field>
-            <Field label="Almacén de recepción" help="Dónde entra el material en BC (por defecto el General)">
-              <Select value={almacen} onChange={(e) => setAlmacen(e.target.value)}>
-                {catAlm.map((a) => <option key={a.codigo} value={a.codigo}>{a.codigo} — {a.nombre}</option>)}
-              </Select>
+            <Field label="Almacén / centro de costo de recepción" help="Dónde entra el material en BC. Por defecto el Almacén General, pero podés elegir cualquier centro de costo.">
+              <Combobox items={catAlm} value={almacen} onChange={(k) => setAlmacen(k)}
+                getKey={(a) => a.codigo} getLabel={(a) => `${a.codigo} — ${a.nombre}`}
+                getSearch={(a) => `${a.codigo} ${a.nombre}`}
+                groupBy={(a) => (esAlmacenFisico(a.codigo) ? "Bodegas" : "Centros de costo")}
+                placeholder="Buscar almacén o centro de costo…" />
             </Field>
           </div>
+          {/* Observaciones de la orden: instrucciones para el proveedor (horario de
+              entrega, contacto, referencia de cotización…). Se imprimen AL FINAL del
+              PDF que se le manda, así que es lo que él va a leer. */}
+          <Field label="Observaciones para el proveedor" help="Opcional. Salen impresas al final del PDF de la orden." className="mt-4">
+            <Textarea rows={3} value={observaciones} maxLength={500}
+              onChange={(e) => setObservaciones(e.target.value)}
+              placeholder="Ej. Entregar en bodega de 7 a. m. a 3 p. m., preguntar por Fernando. Referencia cotización #4471." />
+          </Field>
         </Card>
 
         <Card className="mt-4" style={{ padding: 0, overflow: "hidden" }}>
@@ -212,13 +228,12 @@ export default function OrdenDirectaPage() {
           )}
           <div className="ds-table-wrap" style={{ boxShadow: "none" }}>
             <table className="ds-table">
-              <thead><tr><th>Artículo</th><th>Obra</th><th className="ds-num">Cantidad</th><th className="ds-num">Precio</th><th className="ds-num">Desc%</th><th className="ds-num">IVA%</th><th className="ds-num">Importe</th><th></th></tr></thead>
+              <thead><tr><th>Artículo</th><th className="ds-num">Cantidad</th><th className="ds-num">Precio</th><th className="ds-num">Desc%</th><th className="ds-num">IVA%</th><th className="ds-num">Importe</th><th></th></tr></thead>
               <tbody>
-                {rows.length === 0 && <tr><td colSpan={8}><div className="empty">Sin líneas. Buscá un artículo del catálogo y agregalo.</div></td></tr>}
+                {rows.length === 0 && <tr><td colSpan={7}><div className="empty">Sin líneas. Buscá un artículo del catálogo y agregalo.</div></td></tr>}
                 {rows.map((r) => (
                   <tr key={r.key}>
                     <td><div className="ds-truncate" title={r.descripcion} style={{ maxWidth: 220 }}>{r.descripcion}</div><div className="ds-body-sm ds-muted">{r.articuloId}{r.variantCode ? ` · var. ${r.variantCode}${r.variantNombre ? ` (${r.variantNombre})` : ""}` : ""}</div></td>
-                    <td><input className="ds-cell-input" aria-label="Obra" value={r.obra} placeholder="—" style={{ width: 92 }} onChange={(e) => setRow(r.key, { obra: e.target.value })} /></td>
                     <td className="ds-num"><input className="ds-cell-input" aria-label="Cantidad" type="number" min={0} value={r.cantidad} style={{ width: 70 }} onChange={(e) => setRow(r.key, { cantidad: e.target.value })} /></td>
                     <td className="ds-num"><input className="ds-cell-input" aria-label="Precio" type="number" min={0} value={r.precio} style={{ width: 92 }} onChange={(e) => setRow(r.key, { precio: e.target.value })} /></td>
                     <td className="ds-num"><input className="ds-cell-input" aria-label="Descuento %" type="number" min={0} max={100} value={r.descuento} style={{ width: 60 }} onChange={(e) => setRow(r.key, { descuento: e.target.value })} /></td>

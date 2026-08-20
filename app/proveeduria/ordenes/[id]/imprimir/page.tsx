@@ -125,6 +125,12 @@ export default function ImprimirOrdenPage() {
         .po-ivaspec td { text-align:right; padding:4px 6px; }
         .po-ivaspec td:first-child { text-align:left; }
         .po-ivaspec tr.tot td { border-top:1.5px solid var(--ds-color-black); font-weight:700; }
+        /* Observaciones de la orden: lo último que lee el proveedor. Con borde arriba
+           para que se lea como una nota del documento y no como una línea perdida, y
+           sin partirse entre dos hojas. */
+        .po-obs { margin-top:34px; border-top:1.5px solid var(--ds-color-black); padding-top:10px; page-break-inside:avoid; }
+        .po-obs h4 { margin:0 0 6px; font-size:12px; }
+        .po-obs p { margin:0; font-size:11px; white-space:pre-wrap; }
         .po-firmas { margin-top:54px; display:flex; gap:48px; }
         .po-firmas .f { flex:1; border-top:1.4px solid var(--ds-color-gray-400); padding-top:6px; text-align:center; color:var(--ds-color-gray-500); font-size:10.5px; }
         @media print {
@@ -244,6 +250,15 @@ export default function ImprimirOrdenPage() {
             </tbody>
           </table>
         </div>
+
+        {/* Observaciones que escribió Proveeduría al armar la orden. Van al final, que
+            es donde el proveedor busca las indicaciones (horario, contacto, referencia). */}
+        {orden.observaciones?.trim() && (
+          <div className="po-obs">
+            <h4>Observaciones</h4>
+            <p>{orden.observaciones.trim()}</p>
+          </div>
+        )}
 
       </div>
     </div>

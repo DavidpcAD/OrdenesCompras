@@ -113,6 +113,17 @@ export function OrdenDetalle({
         </div>
       )}
 
+      {/* Observaciones para el proveedor: se imprimen en el PDF, así que hay que
+          poder verlas (y notar que están) sin abrir la vista de impresión. */}
+      {orden.observaciones?.trim() && (
+        <Card flat className="mb-4">
+          <div className="col" style={{ gap: 4 }}>
+            <span className="ds-label ds-muted">Observaciones para el proveedor · salen en el PDF</span>
+            <p style={{ margin: 0, whiteSpace: "pre-wrap" }}>{orden.observaciones.trim()}</p>
+          </div>
+        </Card>
+      )}
+
       <Card style={{ padding: 0, overflow: "hidden" }}>
         <OrderLinesTable orden={orden} solicitudHref={solicitudHref} />
       </Card>

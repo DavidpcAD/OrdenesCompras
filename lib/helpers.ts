@@ -353,6 +353,18 @@ export function nextNumero(prefix: string, existentes: string[]): string {
 
 // Solo almacenes físicos (códigos ALM-*). Oculta bodegas de obra (VN-M.28, etc.),
 // que no son ubicaciones físicas de recepción y no deben ofrecerse al armar órdenes.
-export function almacenesFisicos<T extends { codigo: string }>(list: T[]): T[] {
-  return list.filter((a) => a.codigo.toUpperCase().startsWith("ALM-"));
+// Un almacén FÍSICO es una bodega de la empresa (ALM-*). El resto de las
+// ubicaciones de BC son centros de costo: una por obra/área.
+export function esAlmacenFisico(codigo: string): boolean {
+  return (codigo ?? "").toUpperCase().startsWith("ALM-");
+}
+
+// TODOS los almacenes/centros de costo de BC para elegir dónde se recibe, con las
+// BODEGAS primero y el resto por código. Antes la lista se filtraba a ALM-* y solo
+// se ofrecían 4 opciones; el material puede entrar a cualquier centro de costo, así
+// que filtrarlos era decidir por el usuario algo que no nos toca.
+export function almacenesParaRecepcion<T extends { codigo: string }>(list: T[]): T[] {
+  return [...list].sort((a, b) =>
+    Number(esAlmacenFisico(b.codigo)) - Number(esAlmacenFisico(a.codigo)) ||
+    a.codigo.localeCompare(b.codigo, "es"));
 }
