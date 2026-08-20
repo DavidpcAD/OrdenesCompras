@@ -1112,6 +1112,7 @@ export async function listWbs(): Promise<{ etapas: WbsEtapa[]; partidas: WbsPart
 export async function etapasDeUsuario(username: string): Promise<number[]> {
   const u = (username ?? "").trim();
   if (!u) return [];
+  let etapas: number[] = [];
   try {
     const pool = await getAuthPool();
     const r = await pool.request().input("u", sql.NVarChar(256), u).query(
@@ -1119,12 +1120,39 @@ export async function etapasDeUsuario(username: string): Promise<number[]> {
       "JOIN dbo.Usuario us ON us.idUsuario = ue.idUsuario " +
       "WHERE us.username = @u"
     );
-    return r.recordset.map((x) => x.idEtapa as number).filter((n) => n != null);
+    etapas = r.recordset.map((x) => x.idEtapa as number).filter((n) => n != null);
   } catch (e) {
     // Se traga el error (la Matriz no se cae por esto) pero lo DEJA en el log: en
     // silencio, "sin mapeo" y "la tabla no existe en ninguna base" se ven igual.
     console.warn("etapasDeUsuario:", e);
     return [];
+  }
+  if (!etapas.length) return [];
+
+  // Una etapa SIN clasificaciones activas no sirve como filtro: al ingeniero se le
+  // abriría la Matriz filtrada y VACÍA, que se lee como "se perdió mi trabajo".
+  // Mientras la etapa no tenga nada que mostrar es mejor no mandarla y que caiga a
+  // "todas las etapas". Pasa hoy con ELECTROMECANICO (2 partidas, 0 clasificaciones)
+  // y con las etapas nuevas de Infraestructura y Postventa.
+  //
+  // Va en DOS consultas, una por pool, a propósito: `UsuarioEtapa` vive con el padrón
+  // y `partida`/`clasificacion` con los datos. Hoy son la misma base, pero un JOIN
+  // entre las dos se rompería el día que se vuelvan a separar.
+  try {
+    const pool = await getPool();
+    const req = pool.request();
+    const params = etapas.map((e, i) => { req.input(`e${i}`, sql.Int, e); return `@e${i}`; });
+    const r = await req.query(
+      `SELECT DISTINCT pa.idEtapa FROM dbo.partida pa
+         JOIN dbo.clasificacion c ON c.partida_id = pa.idPartida
+        WHERE pa.idEtapa IN (${params.join(",")}) AND pa.esActivo = 1 AND c.activo = 1`
+    );
+    const conContenido = new Set(r.recordset.map((x) => x.idEtapa as number));
+    return etapas.filter((e) => conContenido.has(e));
+  } catch (e) {
+    // Si no se pudo verificar, se devuelve lo que hay mapeado: es lo que pasaba antes.
+    console.warn("etapasDeUsuario: no se pudo comprobar si las etapas tienen contenido:", e);
+    return etapas;
   }
 }
 
