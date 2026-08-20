@@ -1,6 +1,7 @@
 "use client";
 
 import React, { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { usePathname } from "next/navigation";
 import type {
   Almacen, Articulo, Maquina, Movimiento, Notificacion, Obra, Orden, OrdenLinea, Pedido, PedidoLinea,
   Proveedor, Recepcion, RecepcionLinea, Role, TipoSolicitud,
@@ -166,6 +167,10 @@ export function StoreProvider({ children, useApi }: { children: React.ReactNode;
   const [notasCredito, setNotasCredito] = useState<NotaCreditoLinea[]>([]);
   // Firma del último bootstrap, para no re-renderizar cuando el poll trae lo mismo.
   const ultimoBootstrap = useRef<string>("");
+  // Íd. para las notas de crédito, que se refrescan junto con el bootstrap.
+  const ultimaNc = useRef<string>("");
+  // Fallos seguidos del auto-refresh: uno suelto puede ser la red, dos ya hay que avisarlo.
+  const fallosSeguidos = useRef(0);
 
   // hidratación
   useEffect(() => {
@@ -203,13 +208,45 @@ export function StoreProvider({ children, useApi }: { children: React.ReactNode;
   // volver a la pestaña (instantáneo al cambiar de app). No corre oculta (ahorra).
   useEffect(() => {
     if (!USE_API || !hydrated) return;
-    const refrescar = () => { if (!document.hidden) refreshFromApi().catch(() => {}); };
+    const refrescar = () => {
+      if (document.hidden) return;
+      refreshFromApi()
+        .then(() => { fallosSeguidos.current = 0; })
+        .catch((e) => {
+          // Si el refresco falla en silencio (sesión vencida, SQL caído), la pantalla
+          // se queda vieja sin decir nada y la gente le da refresh a mano sin saber
+          // por qué. Un fallo puede ser un bache de red; dos seguidos se avisan.
+          if (++fallosSeguidos.current >= 2) setErrorCarga(mensajeError(e));
+        });
+    };
     const id = setInterval(refrescar, 45000);
     document.addEventListener("visibilitychange", refrescar);
     window.addEventListener("focus", refrescar);
-    return () => { clearInterval(id); document.removeEventListener("visibilitychange", refrescar); window.removeEventListener("focus", refrescar); };
+    // Volver con atrás/adelante restaura la página desde el bfcache: no dispara
+    // focus ni visibilitychange, así que sin esto se veía data congelada.
+    window.addEventListener("pageshow", refrescar);
+    return () => {
+      clearInterval(id);
+      document.removeEventListener("visibilitychange", refrescar);
+      window.removeEventListener("focus", refrescar);
+      window.removeEventListener("pageshow", refrescar);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hydrated]);
+
+  // Al cambiar de pantalla, resincronizar. Es el momento en que la gente espera ver
+  // lo nuevo (entra a "Órdenes" a ver si ya le llegó algo) y donde antes tenía que
+  // recargar a mano si el poll de 45s todavía no había corrido.
+  const pathname = usePathname();
+  const pathAnterior = useRef<string | null>(null);
+  useEffect(() => {
+    if (!USE_API || !hydrated) return;
+    // La primera vez no: la carga inicial ya trajo los datos recién.
+    if (pathAnterior.current === null || pathAnterior.current === pathname) { pathAnterior.current = pathname; return; }
+    pathAnterior.current = pathname;
+    refreshFromApi().catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pathname, hydrated]);
 
   // persistencia local solo en modo mock
   useEffect(() => {
@@ -233,11 +270,20 @@ export function StoreProvider({ children, useApi }: { children: React.ReactNode;
     // se re-renderiza la app entera (ni se pierden cosas derivadas de esos datos)
     // por gusto. Comparar el JSON es mucho más barato que el re-render.
     const firma = JSON.stringify(b);
-    if (firma === ultimoBootstrap.current) return;
-    ultimoBootstrap.current = firma;
-    // OJO: `movimientos` NO viene en el bootstrap (el historial se pide por entidad
-    // en components/timeline.tsx). Bajar la tabla entera cada 45s era carísimo.
-    setData((d) => ({ ...d, pedidos: b.pedidos, ordenes: b.ordenes, recepciones: b.recepciones }));
+    if (firma !== ultimoBootstrap.current) {
+      ultimoBootstrap.current = firma;
+      // OJO: `movimientos` NO viene en el bootstrap (el historial se pide por entidad
+      // en components/timeline.tsx). Bajar la tabla entera cada 45s era carísimo.
+      setData((d) => ({ ...d, pedidos: b.pedidos, ordenes: b.ordenes, recepciones: b.recepciones }));
+    }
+    // Notas de crédito: no vienen en el bootstrap y las pantallas las cargaban SOLO al
+    // montar, así que Contabilidad no veía una NC nueva hasta recargar a mano. Van acá
+    // para que entren por el mismo poll que todo lo demás.
+    try {
+      const nc = await api.listNotasCredito();
+      const firmaNc = JSON.stringify(nc);
+      if (firmaNc !== ultimaNc.current) { ultimaNc.current = firmaNc; setNotasCredito(nc); }
+    } catch { /* la tabla puede no existir aún: no debe tumbar el refresco */ }
   }
 
   // Reintento manual desde el aviso de error (no recarga la página).

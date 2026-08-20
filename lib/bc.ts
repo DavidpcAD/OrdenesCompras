@@ -19,11 +19,36 @@ function soloGuid(v?: string): string | null {
   return m ? m[0] : null;
 }
 
-function tenantYEntorno(): { tenant: string; environment: string } {
-  const base = process.env.BC_BASE_URL ?? "";
-  const m = base.match(/\/v2\.0\/([^/]+)\/([^/]+)\/api\b/i);
+// Tenant y entorno de BC. Salen de BC_BASE_URL (que los trae en la ruta) o, si esa
+// no los tiene, de BC_TENANT_ID + BC_ENVIRONMENT.
+//
+// NO se asume ningún entorno: si no viene por ningún lado, FALLA. Antes caía a
+// "Sandbox", y eso significaba que borrar o escribir mal una variable mandaba toda la
+// app al entorno de PRUEBAS sin un solo error: los pedidos que Aprobación lanzaba en
+// Production simplemente no aparecían, y nada explicaba por qué.
+export function resolverEntornoBc(cfg: { baseUrl?: string; tenantId?: string; environment?: string }): { tenant: string; environment: string } {
+  // Acepta ".../v2.0/{tenant}/{entorno}/api/..." y ".../v2.0/{tenant}/{entorno}".
+  const m = (cfg.baseUrl ?? "").trim().match(/\/v2\.0\/([^/\s]+)\/([^/?#\s]+)/);
   if (m) return { tenant: m[1], environment: m[2] };
-  return { tenant: env("BC_TENANT_ID"), environment: process.env.BC_ENVIRONMENT ?? "Sandbox" };
+  const tenant = (cfg.tenantId ?? "").trim();
+  const environment = (cfg.environment ?? "").trim();
+  if (!tenant) throw new Error("Falta la variable de entorno BC_TENANT_ID");
+  if (!environment) {
+    throw new Error(
+      "Falta el entorno de Business Central: definí BC_ENVIRONMENT (p.ej. Production) o " +
+      "incluílo en BC_BASE_URL (.../v2.0/<tenant>/<entorno>). No se asume ninguno a propósito: " +
+      "asumir 'Sandbox' hacía que la app trabajara contra el entorno de pruebas sin avisar."
+    );
+  }
+  return { tenant, environment };
+}
+
+function tenantYEntorno(): { tenant: string; environment: string } {
+  return resolverEntornoBc({
+    baseUrl: process.env.BC_BASE_URL,
+    tenantId: process.env.BC_TENANT_ID,
+    environment: process.env.BC_ENVIRONMENT,
+  });
 }
 
 // Raíz de una API personalizada de Adelante para un grupo dado.
@@ -1028,37 +1053,47 @@ export async function bcHealth() {
     // - standard  : si 401 => BC no reconoce la app en el entorno (registro/consent/entorno).
     // - automation: confirma reconocimiento de la app a nivel automation.
     // - custom    : si standard OK pero este 401 => permiso del API 'adelante' o extensión no publicada.
-    const t = process.env.BC_TENANT_ID;
-    const envName = (process.env.BC_ENVIRONMENT ?? "Sandbox");
-    const base = `https://api.businesscentral.dynamics.com/v2.0/${t}/${envName}`;
-    const probe = async (label: string, url: string) => {
+    // Mismo resolutor que usa la app (no una copia con su propio default, que fue
+    // justo lo que escondía el problema). Si la config está incompleta se REPORTA y
+    // se saltan las sondas: este endpoint es el que uno abre precisamente cuando la
+    // config está mal, así que no puede caerse por eso.
+    let entorno: { tenant: string; environment: string } | null = null;
+    try { entorno = tenantYEntorno(); }
+    catch (e: any) { out.diag.entornoError = String(e?.message ?? e); }
+    out.diag.environment = entorno?.environment ?? null;
+    // Las sondas necesitan tenant+entorno. Sin ellos no se inventa ninguno: se
+    // reporta en diag.entornoError y el resto del diagnóstico sigue igual.
+    if (entorno) {
+      const base = `https://api.businesscentral.dynamics.com/v2.0/${entorno.tenant}/${entorno.environment}`;
+      const probe = async (label: string, url: string) => {
+        try {
+          const r = await fetch(url, { cache: "no-store", headers: { Authorization: `Bearer ${tok}`, Accept: "application/json" } });
+          let bodyMsg: string | null = null;
+          if (!r.ok) { try { bodyMsg = (await r.text()).slice(0, 200); } catch { /* noop */ } }
+          return {
+            label, status: r.status, ok: r.ok,
+            wwwAuthenticate: r.headers.get("www-authenticate"),
+            msDiagnostics: r.headers.get("ms-diagnostics"),
+            requestId: r.headers.get("request-id") ?? r.headers.get("x-ms-request-id"),
+            body: bodyMsg,
+          };
+        } catch (e: any) { return { label, error: String(e?.message ?? e) }; }
+      };
+      const cidGuid = soloGuid(process.env.BC_COMPANY_ID);
+      // Compañías que ve la API ESTÁNDAR (su systemId puede diferir del de la custom).
       try {
-        const r = await fetch(url, { cache: "no-store", headers: { Authorization: `Bearer ${tok}`, Accept: "application/json" } });
-        let bodyMsg: string | null = null;
-        if (!r.ok) { try { bodyMsg = (await r.text()).slice(0, 200); } catch { /* noop */ } }
-        return {
-          label, status: r.status, ok: r.ok,
-          wwwAuthenticate: r.headers.get("www-authenticate"),
-          msDiagnostics: r.headers.get("ms-diagnostics"),
-          requestId: r.headers.get("request-id") ?? r.headers.get("x-ms-request-id"),
-          body: bodyMsg,
-        };
-      } catch (e: any) { return { label, error: String(e?.message ?? e) }; }
-    };
-    const cidGuid = soloGuid(process.env.BC_COMPANY_ID);
-    // Compañías que ve la API ESTÁNDAR (su systemId puede diferir del de la custom).
-    try {
-      const rc = await fetch(`${base}/api/v2.0/companies`, { cache: "no-store", headers: { Authorization: `Bearer ${tok}`, Accept: "application/json" } });
-      if (rc.ok) out.diag.stdCompanies = ((await rc.json()).value ?? []).map((c: any) => ({ id: c.id, name: c.name }));
-    } catch { /* noop */ }
-    const stdCid = out.diag.stdCompanies?.[0]?.id ?? cidGuid;
-    out.diag.probes = await Promise.all([
-      probe("standard", `${base}/api/v2.0/companies`),
-      probe("automation", `${base}/api/microsoft/automation/v2.0/companies`),
-      probe("custom-adelante", `${base}/api/adelante/inventory/v1.0/companies`),
-      probe("custom-itemVariants", `${base}/api/adelante/inventory/v1.0/companies(${cidGuid})/itemVariants?$top=1`),
-      probe("std-itemVariants(stdCid)", `${base}/api/v2.0/companies(${stdCid})/itemVariants?$top=1`),
-    ]);
+        const rc = await fetch(`${base}/api/v2.0/companies`, { cache: "no-store", headers: { Authorization: `Bearer ${tok}`, Accept: "application/json" } });
+        if (rc.ok) out.diag.stdCompanies = ((await rc.json()).value ?? []).map((c: any) => ({ id: c.id, name: c.name }));
+      } catch { /* noop */ }
+      const stdCid = out.diag.stdCompanies?.[0]?.id ?? cidGuid;
+      out.diag.probes = await Promise.all([
+        probe("standard", `${base}/api/v2.0/companies`),
+        probe("automation", `${base}/api/microsoft/automation/v2.0/companies`),
+        probe("custom-adelante", `${base}/api/adelante/inventory/v1.0/companies`),
+        probe("custom-itemVariants", `${base}/api/adelante/inventory/v1.0/companies(${cidGuid})/itemVariants?$top=1`),
+        probe("std-itemVariants(stdCid)", `${base}/api/v2.0/companies(${stdCid})/itemVariants?$top=1`),
+      ]);
+    }
   } catch (e: any) { out.diag.tokenError = String(e?.message ?? e); }
   try {
     out.diag.outboundIp = (await (await fetch("https://api.ipify.org")).text()).trim();
