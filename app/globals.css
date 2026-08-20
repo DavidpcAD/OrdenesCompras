@@ -1125,7 +1125,29 @@ h1, h2, h3, h4, p { margin: 0; }
 .ds-empty__icon { display: inline-flex; align-items: center; justify-content: center; width: 52px; height: 52px; border-radius: 50%; background: var(--ds-color-gray-100); color: var(--ds-color-gray-400); margin-bottom: var(--ds-space-1); }
 .ds-empty__title { font-weight: var(--ds-font-weight-semibold); color: var(--ds-color-gray-500); }
 .ds-empty__hint { font-size: var(--ds-font-size-body-sm); color: var(--ds-color-gray-400); max-width: 48ch; line-height: 1.5; }
-.link-btn { background: none; border: 0; color: var(--ds-color-green-200); font-weight: 600; cursor: pointer; font-size: var(--ds-font-size-label); padding: 0; }
+.link-btn { background: none; border: 0; color: var(--ds-color-green-300); font-weight: 600; cursor: pointer; font-size: var(--ds-font-size-label); padding: 0; border-radius: var(--ds-radius-sm, 6px); }
+/* Un link sin estado de hover no se lee como link: subraya y aclara al pasar. */
+.link-btn:hover { text-decoration: underline; text-underline-offset: 2px; color: var(--ds-color-green-200); }
+.link-btn:focus-visible { outline: 3px solid color-mix(in srgb, var(--ds-color-green-100) 60%, transparent); outline-offset: 2px; }
+
+/* CHIP que navega (N.º de orden en Solicitudes, N.º de solicitud en Órdenes).
+   Tiene la forma de la etiqueta de al lado para no romper el ritmo de la tabla,
+   pero se comporta como un link: al pasar por encima se tiñe y se subraya, y la
+   flecha ↗ avisa que te saca de esta fila. */
+.chip-link {
+  display: inline-flex; align-items: center; gap: 4px;
+  border: 1.5px solid color-mix(in srgb, var(--ds-color-green-100) 45%, var(--ds-color-gray-200));
+  background: color-mix(in srgb, var(--ds-color-green-100) 10%, var(--ds-surface));
+  color: var(--ds-color-green-300);
+  font-family: inherit; font-size: var(--ds-font-size-label); font-weight: var(--ds-font-weight-semibold);
+  padding: 3px 10px; border-radius: 999px; cursor: pointer; white-space: nowrap;
+  transition: background .12s ease, border-color .12s ease, transform .12s ease;
+}
+.chip-link__ir { opacity: .55; font-size: 11px; transition: opacity .12s ease, transform .12s ease; }
+.chip-link:hover { background: color-mix(in srgb, var(--ds-color-green-100) 26%, var(--ds-surface)); border-color: var(--ds-color-green-100); text-decoration: underline; text-underline-offset: 2px; }
+.chip-link:hover .chip-link__ir { opacity: 1; transform: translate(1px, -1px); }
+.chip-link:active { transform: translateY(1px); }
+.chip-link:focus-visible { outline: 3px solid color-mix(in srgb, var(--ds-color-green-100) 60%, transparent); outline-offset: 2px; }
 .icon-btn { background: none; border: 0; cursor: pointer; padding: var(--ds-space-2); border-radius: var(--ds-radius-md); color: var(--ds-color-gray-400); display: inline-grid; place-items: center; }
 .icon-btn:hover { background: var(--ds-color-gray-100); color: var(--ds-text); }
 /* Foco visible por teclado en los controles custom (a11y). Solo :focus-visible

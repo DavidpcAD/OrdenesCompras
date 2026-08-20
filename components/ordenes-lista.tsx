@@ -10,16 +10,34 @@ import { useStore } from "@/lib/store";
 import { money, formatDate, ordenAvance, ordenBadge, ordenRecibidoPct, ordenSubtotal, ordenPedidos, ordenEsDirecta, ordenLineaImporte, proveedorLabel, num } from "@/lib/helpers";
 import type { Orden } from "@/lib/types";
 
+// N.º de solicitud de origen. Con link es un botón que abre esa solicitud (y no
+// dispara el clic de la fila, que va a la orden); sin link, la etiqueta de siempre.
+export function ChipPedido({ numero, href }: { numero: string; href: string | null }) {
+  const router = useRouter();
+  if (!href) return <Badge tone="gray">{numero}</Badge>;
+  return (
+    <button type="button" className="chip-link" title={`Abrir la solicitud ${numero}`}
+      onClick={(e) => { e.stopPropagation(); router.push(href); }}>
+      {numero}<span className="chip-link__ir" aria-hidden>↗</span>
+    </button>
+  );
+}
+
 // Lista de órdenes reutilizable (Proveeduría / Aprobación / Bodega), sobre DataTable
 // (ordenar, filtrar, columnas, vistas). Toggle "Por proveedor" agrupa las órdenes
 // del mismo proveedor en secciones colapsables con su total por moneda.
 export function OrdenesLista({
   ordenes,
   hrefDetalle,
+  pedidoHref,
   vacio = "No hay órdenes.",
 }: {
   ordenes: Orden[];
   hrefDetalle: (id: string) => string;
+  // Link a la solicitud de origen. Lo arma la PÁGINA porque la ruta depende del rol
+  // (Proveeduría entra a /proveeduria/solicitudes/…; Bodega no tiene esa pantalla).
+  // Sin esta prop los N.º de solicitud se muestran como hasta ahora, sin link.
+  pedidoHref?: (numeroPedido: string) => string | null;
   vacio?: string;
 }) {
   const { proveedores } = useStore();
@@ -39,7 +57,7 @@ export function OrdenesLista({
       id: "solic", header: "Solicitudes", accessorFn: (o) => (ordenEsDirecta(o) ? "Directa" : ordenPedidos(o).join(" ")), meta: { label: "Solicitudes" },
       cell: (c) => {
         const o = c.row.original; const peds = ordenPedidos(o); const dir = ordenEsDirecta(o);
-        return <div className="row gap-2 wrap">{dir && <Badge tone="yellow">Directa</Badge>}{peds.slice(0, 2).map((n) => <Badge key={n} tone="gray">{n}</Badge>)}{peds.length > 2 && <span className="ds-muted ds-body-sm">+{peds.length - 2}</span>}</div>;
+        return <div className="row gap-2 wrap">{dir && <Badge tone="yellow">Directa</Badge>}{peds.slice(0, 2).map((n) => <ChipPedido key={n} numero={n} href={pedidoHref?.(n) ?? null} />)}{peds.length > 2 && <span className="ds-muted ds-body-sm">+{peds.length - 2}</span>}</div>;
       },
     },
     { id: "fecha", header: "Fecha", accessorFn: (o) => o.fecha, meta: { label: "Fecha", date: true }, cell: (c) => formatDate(c.getValue()) },
@@ -54,7 +72,7 @@ export function OrdenesLista({
       },
     },
     { id: "estado", header: "Estado", accessorFn: (o) => ordenBadge(o.estado).label, meta: { label: "Estado" }, cell: (c) => { const b = ordenBadge(c.row.original.estado); return <Badge tone={b.tone}>{b.label}</Badge>; } },
-  ], [proveedores]); // eslint-disable-line react-hooks/exhaustive-deps
+  ], [proveedores, pedidoHref]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const renderLineas = (o: Orden) => (
     <table className="ds-table" style={{ boxShadow: "none", background: "transparent" }}>
@@ -149,7 +167,7 @@ export function OrdenesLista({
                             <tr key={o.id} className="is-clickable" onClick={() => router.push(hrefDetalle(o.id))} style={{ cursor: "pointer" }}
                               tabIndex={0} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); router.push(hrefDetalle(o.id)); } }}>
                               <td className="ds-strong">{o.numero}</td>
-                              <td><div className="row gap-2 wrap">{dir && <Badge tone="yellow">Directa</Badge>}{peds.slice(0, 2).map((n) => <Badge key={n} tone="gray">{n}</Badge>)}{peds.length > 2 && <span className="ds-muted ds-body-sm">+{peds.length - 2}</span>}</div></td>
+                              <td><div className="row gap-2 wrap">{dir && <Badge tone="yellow">Directa</Badge>}{peds.slice(0, 2).map((n) => <ChipPedido key={n} numero={n} href={pedidoHref?.(n) ?? null} />)}{peds.length > 2 && <span className="ds-muted ds-body-sm">+{peds.length - 2}</span>}</div></td>
                               <td className="ds-body-sm">{formatDate(o.fecha)}</td>
                               <td className="ds-num ds-strong">{money(ordenSubtotal(o), o.currencyCode)}</td>
                               <td><ProgressBar compact value={ordenAvance(o).recibida} total={ordenAvance(o).total} /></td>

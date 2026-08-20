@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { ColumnDef } from "@tanstack/react-table";
 import { Badge, QtyRing, Tile } from "@/components/ui";
 import { DataTable } from "@/components/data-table";
@@ -16,7 +16,15 @@ type Filtro = "todas" | "pendiente" | "parcial" | "ordenado";
 export default function ProveeduriaSolicitudesPage() {
   const { pedidos, ordenes } = useStore();
   const router = useRouter();
+  // El recuadro elegido arriba es un filtro más: se recuerda por sesión, así que
+  // volver de un detalle te deja la pantalla como estaba.
+  const CLAVE_FILTRO = "adelante_oc_kpi_solicitudes-prov";
   const [filtro, setFiltro] = useState<Filtro>("todas");
+  useEffect(() => {
+    try { const v = sessionStorage.getItem(CLAVE_FILTRO); if (v) setFiltro(v as Filtro); } catch { /* sin sessionStorage */ }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  const elegirFiltro = (f: Filtro) => { setFiltro(f); try { sessionStorage.setItem(CLAVE_FILTRO, f); } catch { /* noop */ } };
 
   // Proveeduría solo ve solicitudes ENVIADAS (no borrador ni devueltas).
   const enviadas = pedidos.filter((p) => p.estado !== "borrador" && p.estado !== "devuelto");
@@ -64,9 +72,9 @@ export default function ProveeduriaSolicitudesPage() {
             {ocs.length > 0 && (
               <div className="row gap-2 wrap">
                 {ocs.map((o) => (
-                  <button key={o.id} type="button" className="link-btn ds-strong" title={`Abrir la orden ${o.numero}`}
+                  <button key={o.id} type="button" className="chip-link" title={`Abrir la orden ${o.numero}`}
                     onClick={(e) => { e.stopPropagation(); router.push(`/proveeduria/ordenes/${o.id}`); }}>
-                    {o.numero}
+                    {o.numero}<span className="chip-link__ir" aria-hidden>↗</span>
                   </button>
                 ))}
               </div>
@@ -95,10 +103,10 @@ export default function ProveeduriaSolicitudesPage() {
         ]} />
 
         <div className="tiles mt-2">
-          <Tile value={cuenta("todas")} label="Todas" onClick={() => setFiltro("todas")} active={filtro === "todas"} />
-          <Tile value={cuenta("pendiente")} label="Sin orden de compra" accent="var(--ds-color-gray-300)" onClick={() => setFiltro("pendiente")} active={filtro === "pendiente"} />
-          <Tile value={cuenta("parcial")} label="Parcialmente ordenadas" accent="var(--ds-color-yellow)" onClick={() => setFiltro("parcial")} active={filtro === "parcial"} />
-          <Tile value={cuenta("ordenado")} label="100% ordenadas" accent="var(--ds-color-green-200)" onClick={() => setFiltro("ordenado")} active={filtro === "ordenado"} />
+          <Tile value={cuenta("todas")} label="Todas" onClick={() => elegirFiltro("todas")} active={filtro === "todas"} />
+          <Tile value={cuenta("pendiente")} label="Sin orden de compra" accent="var(--ds-color-gray-300)" onClick={() => elegirFiltro("pendiente")} active={filtro === "pendiente"} />
+          <Tile value={cuenta("parcial")} label="Parcialmente ordenadas" accent="var(--ds-color-yellow)" onClick={() => elegirFiltro("parcial")} active={filtro === "parcial"} />
+          <Tile value={cuenta("ordenado")} label="100% ordenadas" accent="var(--ds-color-green-200)" onClick={() => elegirFiltro("ordenado")} active={filtro === "ordenado"} />
         </div>
 
         <div className="mt-6">

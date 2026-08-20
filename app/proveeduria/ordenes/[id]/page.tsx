@@ -156,6 +156,7 @@ export default function ProvOrdenDetallePage() {
   return (
     <>
       <OrdenDetalle orden={orden} volverHref="/proveeduria/ordenes" volverLabel="Volver a órdenes" acciones={acciones} solicitudHref={solicitudHref}
+        pedidoHref={(n) => { const p = pedidos.find((x) => x.numero === n); return p ? `/proveeduria/solicitudes/${p.id}` : null; }}
         aviso={avisoBc ? (
           <div className="ds-callout ds-callout--yellow mb-4" role="alert">
             <span className="ds-callout__icon"><IconWarning size={18} /></span>

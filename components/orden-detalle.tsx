@@ -8,6 +8,8 @@ import { OrderLinesTable } from "@/components/order-lines";
 import { Timeline } from "@/components/timeline";
 import { useStore } from "@/lib/store";
 import { money, num, formatDate, ordenBadge, proveedorLabel, ordenLineaImporte, ordenRecibidoPct, ordenPedidos, ordenEsDirecta } from "@/lib/helpers";
+import { ChipPedido } from "@/components/ordenes-lista";
+import { useVolver } from "@/lib/use-volver";
 import type { Orden } from "@/lib/types";
 
 // Vista de detalle de una orden, reutilizada por Proveeduría, Aprobación y Bodega.
@@ -18,6 +20,7 @@ export function OrdenDetalle({
   volverLabel = "Volver",
   acciones,
   solicitudHref,
+  pedidoHref,
   aviso,
 }: {
   orden: Orden;
@@ -25,6 +28,9 @@ export function OrdenDetalle({
   volverLabel?: string;
   acciones?: React.ReactNode;
   solicitudHref?: (l: Orden["lineas"][number]) => string | null;
+  // Link por N.º de solicitud (los chips del encabezado). Igual que en la lista: lo
+  // arma la página, porque la ruta depende del rol.
+  pedidoHref?: (numeroPedido: string) => string | null;
   // Aviso que tiene que QUEDARSE en pantalla (no un toast que se desvanece): p. ej.
   // "se reabrió acá pero en BC sigue Lanzado". Si eso se pierde, la orden queda
   // descuadrada con BC y nadie se enteró.
@@ -47,6 +53,8 @@ export function OrdenDetalle({
 
   const prov = proveedores.find((p) => p.id === orden.proveedorId);
   const b = ordenBadge(orden.estado);
+  // Volver = pantalla anterior (con su filtro), no una ruta fija.
+  const { volver, etiqueta: volverTexto } = useVolver(volverHref, volverLabel);
   const peds = ordenPedidos(orden);
   const esDirecta = ordenEsDirecta(orden);
   const recs = recepciones.filter((r) => r.ordenId === orden.id);
@@ -59,7 +67,7 @@ export function OrdenDetalle({
 
   return (
     <main className="page">
-      <button type="button" className="back-link" onClick={() => router.push(volverHref)}>{volverLabel}</button>
+      <button type="button" className="back-link" onClick={volver}>{volverTexto}</button>
       <div className="page__head">
         <div className="page__title">
           <div className="row gap-3">
@@ -75,7 +83,7 @@ export function OrdenDetalle({
             ) : (
               <>
                 <span className="ds-muted ds-body-sm">Solicitudes origen:</span>
-                {peds.map((n) => <Badge key={n} tone="gray">{n}</Badge>)}
+                {peds.map((n) => <ChipPedido key={n} numero={n} href={pedidoHref?.(n) ?? null} />)}
               </>
             )}
           </div>
