@@ -1048,8 +1048,16 @@ export async function bcPostChargeOnReceipts(input: {
 }
 
 // Base de un deep link a BC apuntando a una `page` con un `filtro` OData de la UI.
+//
+// NUNCA lanza: devuelve "" si no se puede resolver el entorno. Un deep link es una
+// comodidad ("Abrir en BC"), y `mapOrden` lo arma para CADA orden con bcNo — cuando
+// esto tiraba excepción, faltar una variable de BC no dejaba a la app sin el botón:
+// reventaba el bootstrap entero y la pantalla salía SIN DATOS. Las llamadas de
+// verdad a BC sí siguen fallando fuerte, que es donde hay que enterarse.
 function bcDeepLink(page: number, filtro: string): string {
-  const { tenant, environment } = tenantYEntorno();
+  let tenant: string, environment: string;
+  try { ({ tenant, environment } = tenantYEntorno()); }
+  catch (e) { console.warn("bcDeepLink: sin config de BC, se omite el link:", e); return ""; }
   const company = process.env.BC_COMPANY || "ADELANTE_DESARROLLOS_NUEVA";
   return `https://businesscentral.dynamics.com/${tenant}/${environment}?company=${encodeURIComponent(company)}&page=${page}&filter=${encodeURIComponent(filtro)}`;
 }

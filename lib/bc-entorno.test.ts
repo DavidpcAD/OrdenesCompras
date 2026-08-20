@@ -41,3 +41,15 @@ test("NO asume Sandbox: sin entorno por ningún lado, falla", () => {
 test("sin tenant, también falla (y lo dice)", () => {
   assert.throws(() => resolverEntornoBc({ environment: "Production" }), /BC_TENANT_ID/);
 });
+
+// Un deep link es una comodidad, no un dato crítico: si falta la config de BC tiene
+// que devolver vacío y NO tirar. Cuando tiraba, `mapOrden` lo llamaba por cada orden
+// con bcNo y se caía el bootstrap: la app aparecía sin datos por un link.
+test("el deep link a BC devuelve vacío en vez de tirar cuando falta la config", async () => {
+  const guardado = { ...process.env };
+  delete process.env.BC_BASE_URL; delete process.env.BC_ENVIRONMENT; delete process.env.BC_TENANT_ID;
+  const { bcDeepLinkPedido, bcDeepLinkFacturaRegistrada } = await import("./bc.ts");
+  assert.equal(bcDeepLinkPedido("CP-000123"), "");
+  assert.equal(bcDeepLinkFacturaRegistrada("CP-000123"), "");
+  Object.assign(process.env, guardado);
+});

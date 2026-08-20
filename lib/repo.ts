@@ -401,7 +401,7 @@ function mapOrden(o: any, lineas: any[], motivoRechazo?: string): Orden {
     // Deep link al Pedido en BC. FALTABA en modo API: `bcDeepLink` solo se llenaba
     // en mock, así que en producción el botón "Abrir en BC" nunca aparecía y el
     // "Volver a abrir" no abría nada (hacía window.open(undefined)).
-    bcDeepLink: o.bcNo ? bcDeepLinkPedido(String(o.bcNo)) : undefined,
+    bcDeepLink: (o.bcNo && bcDeepLinkPedido(String(o.bcNo))) || undefined,
     lineas: lineas.map((l): OrdenLinea => ({
       id: String(l.idOrdenCompraDet), tipo: (l.tipoLinea === "cargo" ? "cargo" : "articulo"),
       articuloId: l.itemNo ?? undefined, variantCode: l.variantCode ?? undefined, pedidoLineaId: l.idPedidoCompraDet ? String(l.idPedidoCompraDet) : undefined,
@@ -1444,7 +1444,7 @@ export async function listNotasCredito(): Promise<NotaCreditoLinea[]> {
     // Deep links a BC (por N.º BC; si no hay, cae al N.º de la app):
     //  • bcFacturaUrl → Facturas de compra registradas (para hacer la NC).
     //  • bcUrl → el Pedido de compra (la orden que armó Proveeduría).
-    bcFacturaUrl: (x.bcNo || x.ordenNo) ? bcDeepLinkFacturaRegistrada(String(x.bcNo || x.ordenNo)) : undefined,
-    bcUrl: (x.bcNo || x.ordenNo) ? bcDeepLinkPedido(String(x.bcNo || x.ordenNo)) : undefined,
+    bcFacturaUrl: ((x.bcNo || x.ordenNo) && bcDeepLinkFacturaRegistrada(String(x.bcNo || x.ordenNo))) || undefined,
+    bcUrl: ((x.bcNo || x.ordenNo) && bcDeepLinkPedido(String(x.bcNo || x.ordenNo))) || undefined,
   }));
 }
