@@ -60,3 +60,14 @@ export const IconChevronDown = ({ size = 20, ...p }: P) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M6 9l6 6 6-6" /></svg>
 );
 export const IconChevronLeft = ds("back", 18);
+
+// MARCA de Adelante (AdelanteMark del DS, react/AdelanteMark/AdelanteMark.tsx).
+// No es un ícono: es el logo. Dos paths, viewBox 163×71, `fill=currentColor` — se
+// recolorea con el `color` del padre y NO se le toca el fill (así una sola copia
+// sirve para los tres modos del DS: verde sobre claro, negro sobre verde, #111
+// sobre gris). Se pasa solo el ANCHO; la altura sale de la proporción.
+export const AdelanteMark = ({ width = 96, ...p }: { width?: number } & React.SVGProps<SVGSVGElement>) => (
+  <svg width={width} viewBox="0 0 163 71" fill="currentColor" role="img" aria-label="Adelante" xmlns="http://www.w3.org/2000/svg" {...p}>
+    <path fillRule="evenodd" clipRule="evenodd" d="M0 0H45.645L87.8835 70.7845H41.4411L0 0ZM72.5219 20.6455H118.403L133.203 45.715H162.804L148.004 70.7845H102.257L72.5219 20.6455Z" />
+  </svg>
+);

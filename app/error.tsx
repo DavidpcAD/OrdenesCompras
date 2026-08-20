@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { AdelanteMark } from "@/components/icons";
 
 // Error boundary con la identidad de la app: ante un error de runtime en un
 // segmento, muestra una pantalla amable con reintentar / volver, en vez de la
@@ -10,7 +11,7 @@ export default function Error({ error, reset }: { error: Error & { digest?: stri
     <div className="login">
       <div className="login__card" style={{ maxWidth: 480, textAlign: "center" }}>
         <div className="row gap-3" style={{ justifyContent: "center", marginBottom: 16 }}>
-          <span className="topbar__logo" style={{ width: 44, height: 44, fontSize: 22 }}>A</span>
+          <span className="topbar__logo" style={{ width: 44, height: 44 }}><AdelanteMark width={26} /></span>
         </div>
         <h1 className="ds-subtitle-lg" style={{ marginBottom: 8 }}>Algo salió mal</h1>
         <p className="ds-muted ds-body-sm" style={{ marginBottom: 24 }}>

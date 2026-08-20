@@ -4,6 +4,7 @@ import { useParams, useRouter } from "next/navigation";
 import { useStore } from "@/lib/store";
 import { num, formatDate, ordenLineaImporte } from "@/lib/helpers";
 import { Button } from "@/components/ui";
+import { AdelanteMark } from "@/components/icons";
 
 // Datos de la empresa (Adelante) para el encabezado del documento.
 const EMPRESA = {
@@ -150,10 +151,11 @@ export default function ImprimirOrdenPage() {
         {/* encabezado: logo + título */}
         <div className="po-head">
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <svg width="46" height="40" viewBox="0 0 46 40" aria-hidden>
-              <path d="M4 30 C14 6 26 4 42 4 C30 12 26 24 22 36 C16 30 10 30 4 30 Z" fill="var(--ds-color-green-200)" />
-              <path d="M2 36 C12 18 24 16 38 16 C28 22 24 30 21 38 C15 34 9 35 2 36 Z" fill="var(--ds-color-green-100)" />
-            </svg>
+            {/* Marca del Design System (AdelanteMark). Antes acá había una hoja
+                dibujada a mano que no es la marca de la empresa. Documento blanco =
+                modo "Light" del DS: la marca en verde de marca, recoloreada con el
+                `color` del padre (nunca tocando el fill). */}
+            <AdelanteMark width={84} style={{ color: "var(--ds-color-green-100)", flexShrink: 0 }} />
             <div style={{ fontWeight: 800, letterSpacing: 1, color: "var(--ds-color-green-200)", fontSize: 13, lineHeight: 1 }}>
               ADELANTE<br /><span style={{ fontSize: 8, letterSpacing: 3, color: "var(--ds-color-gray-400)" }}>DESARROLLOS</span>
             </div>

@@ -11,6 +11,7 @@ import { helpForPath } from "@/lib/help";
 import {
   IconBell, IconList, IconReceipt, IconCheck, IconDelivery, IconFolder,
   IconPlus, IconLogout, IconBox, IconWarning, IconDashboard, IconEdit, IconMatrix,
+  AdelanteMark,
 } from "@/components/icons";
 
 const cap = (s: string) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : s);
@@ -294,7 +295,7 @@ export function AppShell({ role, children }: { role: Role; children: React.React
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><path d="M3 6h18M3 12h18M3 18h18" /></svg>
               </button>
               <Link href={meta.home} className="app-nav__brand" title="Compras Adelante" onClick={closeNavOnMobile}>
-                <span className="topbar__logo">A</span>
+                <span className="topbar__logo"><AdelanteMark width={19} /></span>
                 <span className="app-nav__brand-name">Compras Adelante</span>
               </Link>
               {/* Móvil: cerrar el drawer. */}

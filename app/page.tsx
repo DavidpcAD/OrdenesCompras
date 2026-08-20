@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { useStore } from "@/lib/store";
 import { Button } from "@/components/ui";
+import { AdelanteMark } from "@/components/icons";
 import { ROLE_META } from "@/components/shell";
 
 export default function LoginPage() {
@@ -61,7 +62,7 @@ export default function LoginPage() {
       {/* Panel de marca (siempre oscuro), estilo "Sistema interno" */}
       <aside className="login__aside">
         <div className="login__brand">
-          <span className="topbar__logo" style={{ width: 44, height: 44, fontSize: 22 }}>A</span>
+          <span className="topbar__logo" style={{ width: 44, height: 44 }}><AdelanteMark width={26} /></span>
           <div>
             <div className="login__brand-name">Adelante</div>
             <div className="login__brand-sub">Desarrollos</div>
@@ -104,7 +105,7 @@ export default function LoginPage() {
       <div className="login__card">
         {/* Marca compacta: solo visible en móvil (en desktop está en el panel izquierdo) */}
         <div className="login__card-brand">
-          <span className="topbar__logo" style={{ width: 40, height: 40, fontSize: 20 }}>A</span>
+          <span className="topbar__logo" style={{ width: 40, height: 40 }}><AdelanteMark width={24} /></span>
           <div>
             <h1 className="ds-subtitle">Compras Adelante</h1>
             <p className="ds-muted ds-body-sm">Solicitud de material a proveedores</p>
