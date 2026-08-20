@@ -8,10 +8,10 @@ import { DataTable } from "@/components/data-table";
 import { VistaToggle } from "@/components/vista-toggle";
 import { IconReceipt, IconList } from "@/components/icons";
 import { useStore } from "@/lib/store";
-import { formatDate, pedidoCompraBadge, pedidoOrdenadoPct, recibidoPorLineaPedido, destinoCodigo, destinoLabel, tipoSolicitudBadge } from "@/lib/helpers";
+import { formatDate, pedidoCompraBadge, pedidoOrdenadoPct, ordenesPorPedido, recibidoPorLineaPedido, destinoCodigo, destinoLabel, tipoSolicitudBadge } from "@/lib/helpers";
 import type { Pedido } from "@/lib/types";
 
-type Filtro = "todas" | "pendiente" | "parcial" | "comprado";
+type Filtro = "todas" | "pendiente" | "parcial" | "ordenado";
 
 export default function ProveeduriaSolicitudesPage() {
   const { pedidos, ordenes } = useStore();
@@ -22,11 +22,13 @@ export default function ProveeduriaSolicitudesPage() {
   const enviadas = pedidos.filter((p) => p.estado !== "borrador" && p.estado !== "devuelto");
   const bucket = (p: Pedido): Exclude<Filtro, "todas"> => {
     const pct = pedidoOrdenadoPct(p);
-    return pct >= 100 ? "comprado" : pct > 0 ? "parcial" : "pendiente";
+    return pct >= 100 ? "ordenado" : pct > 0 ? "parcial" : "pendiente";
   };
   // Índice recibido-por-línea: un pase sobre las órdenes en vez de recorrerlas
   // enteras por cada línea de cada fila (la tabla lo recalculaba en cada render).
   const recibidoPorLinea = useMemo(() => recibidoPorLineaPedido(ordenes), [ordenes]);
+  // En qué orden(es) de compra entró cada solicitud, para poder mostrarla y abrirla.
+  const ocsPorPedido = useMemo(() => ordenesPorPedido(pedidos, ordenes), [pedidos, ordenes]);
   const recibidoDe = (p: Pedido) => p.lineas.reduce((s, l) => s + (recibidoPorLinea.get(l.id) ?? 0), 0);
   const entregadoPct = (p: Pedido) => {
     const total = p.lineas.reduce((s, l) => s + l.cantidad, 0);
@@ -47,9 +49,35 @@ export default function ProveeduriaSolicitudesPage() {
     { id: "fecha", header: "Fecha", accessorFn: (p) => p.fecha, meta: { label: "Fecha", date: true }, cell: (c) => formatDate(c.getValue()) },
     { id: "lineas", header: "Líneas", accessorFn: (p) => p.lineas.length, meta: { label: "Líneas", num: true }, enableColumnFilter: false, cell: (c) => c.getValue() },
     { id: "prioridad", header: "Prioridad", accessorFn: (p) => p.prioridad, meta: { label: "Prioridad" }, cell: (c) => { const p = c.row.original; return p.prioridad === "urgente" ? <Badge tone="red">Urgente</Badge> : p.prioridad === "alta" ? <Badge tone="yellow">Alta</Badge> : <Badge tone="gray">Normal</Badge>; } },
-    { id: "estado", header: "Compra", accessorFn: (p) => pedidoCompraBadge(p).label, meta: { label: "Compra" }, cell: (c) => { const b = pedidoCompraBadge(c.row.original); return <Badge tone={b.tone}>{b.label}</Badge>; } },
+    {
+      // Lo útil acá es la ORDEN: su número, y poder abrirla. El estado ("parcialmente
+      // ordenado") queda como apoyo, y solo cuando falta algo por ordenar.
+      id: "estado", header: "Orden de compra", meta: { label: "Orden de compra" },
+      // El buscador de la tabla encuentra por N.º de orden además del estado.
+      accessorFn: (p) => [...(ocsPorPedido.get(p.numero) ?? []).map((o) => o.numero), pedidoCompraBadge(p).label].join(" "),
+      cell: (c) => {
+        const p = c.row.original;
+        const ocs = ocsPorPedido.get(p.numero) ?? [];
+        const b = pedidoCompraBadge(p);
+        return (
+          <div className="col" style={{ gap: 4, alignItems: "flex-start" }}>
+            {ocs.length > 0 && (
+              <div className="row gap-2 wrap">
+                {ocs.map((o) => (
+                  <button key={o.id} type="button" className="link-btn ds-strong" title={`Abrir la orden ${o.numero}`}
+                    onClick={(e) => { e.stopPropagation(); router.push(`/proveeduria/ordenes/${o.id}`); }}>
+                    {o.numero}
+                  </button>
+                ))}
+              </div>
+            )}
+            {(ocs.length === 0 || pedidoOrdenadoPct(p) < 100) && <Badge tone={b.tone}>{b.label}</Badge>}
+          </div>
+        );
+      },
+    },
     { id: "entregado", header: "Entregado", accessorFn: (p) => entregadoPct(p), meta: { label: "Entregado" }, enableColumnFilter: false, cell: (c) => { const p = c.row.original; const total = p.lineas.reduce((s, l) => s + l.cantidad, 0); return <div className="row gap-3" style={{ alignItems: "center" }}><QtyRing recibida={recibidoDe(p)} total={total} /><span className="ds-body-sm ds-muted">{entregadoPct(p)}%</span></div>; } },
-  ], [recibidoPorLinea]); // eslint-disable-line react-hooks/exhaustive-deps
+  ], [recibidoPorLinea, ocsPorPedido]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <>
@@ -57,7 +85,7 @@ export default function ProveeduriaSolicitudesPage() {
         <div className="page__head">
           <div className="page__title">
             <h1 className="ds-heading">Solicitudes de Ingeniería</h1>
-            <p className="ds-muted">Solicitudes enviadas por Ingeniería, con su avance de compra. Entrá a una para crear la orden de compra o devolverla.</p>
+            <p className="ds-muted">Solicitudes enviadas por Ingeniería, con el avance de sus órdenes de compra. Entrá a una para crear la orden o devolverla.</p>
           </div>
         </div>
 
@@ -68,9 +96,9 @@ export default function ProveeduriaSolicitudesPage() {
 
         <div className="tiles mt-2">
           <Tile value={cuenta("todas")} label="Todas" onClick={() => setFiltro("todas")} active={filtro === "todas"} />
-          <Tile value={cuenta("pendiente")} label="Pendientes de comprar" accent="var(--ds-color-gray-300)" onClick={() => setFiltro("pendiente")} active={filtro === "pendiente"} />
-          <Tile value={cuenta("parcial")} label="Parcialmente compradas" accent="var(--ds-color-yellow)" onClick={() => setFiltro("parcial")} active={filtro === "parcial"} />
-          <Tile value={cuenta("comprado")} label="100% compradas" accent="var(--ds-color-green-200)" onClick={() => setFiltro("comprado")} active={filtro === "comprado"} />
+          <Tile value={cuenta("pendiente")} label="Sin orden de compra" accent="var(--ds-color-gray-300)" onClick={() => setFiltro("pendiente")} active={filtro === "pendiente"} />
+          <Tile value={cuenta("parcial")} label="Parcialmente ordenadas" accent="var(--ds-color-yellow)" onClick={() => setFiltro("parcial")} active={filtro === "parcial"} />
+          <Tile value={cuenta("ordenado")} label="100% ordenadas" accent="var(--ds-color-green-200)" onClick={() => setFiltro("ordenado")} active={filtro === "ordenado"} />
         </div>
 
         <div className="mt-6">

@@ -10,7 +10,7 @@ import {
   ordenRecibidoPct, ordenEstaCompleta, ordenEsParcial, ordenAvance, ordenLineaImporte,
   ordenSubtotal, recibidoPorLineaPedido, recibidoDeLineaPedido, pedidoLineaPendiente,
   distribuirCargo, monedaApp, formatDate, todayISO, nextNumero, almacenesParaRecepcion, esAlmacenFisico,
-  ordenPedidos, ordenEsDirecta, money, pedidoOrdenadoPct, pedidoCompraBadge, pedidoTieneSaldo,
+  ordenPedidos, ordenEsDirecta, money, pedidoOrdenadoPct, pedidoCompraBadge, pedidoTieneSaldo, ordenesPorPedido,
   destinoLabel, destinoCodigo, ordenLineaPendiente, ordenLineaCompleta, ultimoPrecioProveedor,
   ordenPendienteResumen, devolverPendienteAPedidos, proveedorLabel,
 } from "./helpers.ts";
@@ -137,6 +137,23 @@ test("el próximo número sigue al máximo existente", () => {
   assert.equal(nextNumero("CP", ["basura"]), "CP-000001");
 });
 
+test("una solicitud sabe en qué órdenes de compra entró (y al revés)", () => {
+  // El enlace es N:M: PED-1 se repartió en dos órdenes, y CP-2 junta dos solicitudes.
+  const p1 = { numero: "PED-1", lineas: [{ id: "l1" }, { id: "l2" }] } as any;
+  const p2 = { numero: "PED-2", lineas: [{ id: "l9" }] } as any;
+  const ordenes = [
+    { id: "o1", numero: "CP-1", lineas: [{ pedidoNumero: "PED-1" }] },
+    // Sin pedidoNumero: se resuelve por el id de la línea de pedido.
+    { id: "o2", numero: "CP-2", lineas: [{ pedidoLineaId: "l2" }, { pedidoLineaId: "l9" }] },
+    // Directa: no aporta a ninguna solicitud.
+    { id: "o3", numero: "CP-3", lineas: [{ pedidoNumero: "Manual" }] },
+  ] as any[];
+  const m = ordenesPorPedido([p1, p2], ordenes);
+  assert.deepEqual(m.get("PED-1")?.map((o) => o.numero), ["CP-1", "CP-2"]);
+  assert.deepEqual(m.get("PED-2")?.map((o) => o.numero), ["CP-2"]);
+  assert.equal(m.size, 2);   // la directa no crea entradas
+});
+
 test("se ofrecen TODOS los centros de costo, con las bodegas primero", () => {
   const list = [{ codigo: "VN-M.28" }, { codigo: "ALM-GRAL" }, { codigo: "COM-MER" }, { codigo: "alm-sso" }];
   // Nadie se pierde (el material puede entrar a cualquier centro de costo) y las
@@ -179,7 +196,7 @@ const pedido = (lineas: PedidoLinea[], extra: Partial<Pedido> = {}): Pedido => (
 test("el % comprado de una solicitud no pasa de 100 aunque se ordene de más", () => {
   const p = pedido([pLinea({ id: "l1", cantidad: 10, cantidadOrdenada: 15 })]);
   assert.equal(pedidoOrdenadoPct(p), 100);
-  assert.equal(pedidoCompraBadge(p).label, "100% comprado");
+  assert.equal(pedidoCompraBadge(p).label, "100% ordenado");
   assert.equal(pedidoTieneSaldo(p), false);
 });
 
@@ -189,7 +206,7 @@ test("solicitud a medio comprar: badge parcial y saldo pendiente", () => {
     pLinea({ id: "l2", cantidad: 10, cantidadOrdenada: 0 }),
   ]);
   assert.equal(pedidoOrdenadoPct(p), 20);
-  assert.equal(pedidoCompraBadge(p).label, "Parcialmente comprado");
+  assert.equal(pedidoCompraBadge(p).label, "Parcialmente ordenado");
   assert.equal(pedidoTieneSaldo(p), true);
 });
 

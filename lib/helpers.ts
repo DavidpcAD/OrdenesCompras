@@ -312,13 +312,42 @@ export function pedidoBadge(estado: Pedido["estado"]): { label: string; tone: st
   }
 }
 
-// Estado de COMPRA de una solicitud, tal como lo ve Proveeduría (derivado del
-// avance de órdenes, no del ciclo de vida borrador/aprobado del pedido).
+// Estado de una solicitud frente a las ÓRDENES DE COMPRA, tal como lo ve
+// Proveeduría (derivado del avance de órdenes, no del ciclo borrador/aprobado).
+//
+// Dice "ordenado", no "comprado", a propósito: que exista la orden de compra solo
+// significa que se le pidió al proveedor. Comprado de verdad es cuando llega y se
+// factura, y eso lo cuenta la columna "Entregado".
 export function pedidoCompraBadge(p: Pedido): { label: string; tone: string } {
   const pct = pedidoOrdenadoPct(p);
-  if (pct >= 100) return { label: "100% comprado", tone: "green" };
-  if (pct > 0) return { label: "Parcialmente comprado", tone: "yellow" };
-  return { label: "Pendiente de comprar", tone: "gray" };
+  if (pct >= 100) return { label: "100% ordenado", tone: "green" };
+  if (pct > 0) return { label: "Parcialmente ordenado", tone: "yellow" };
+  return { label: "Sin orden de compra", tone: "gray" };
+}
+
+// Índice solicitud (N.º PED) -> órdenes de compra en las que entró. El enlace es
+// N:M: una solicitud puede repartirse en varias órdenes y una orden puede juntar
+// varias solicitudes. Se resuelve por el N.º de pedido de la línea y, si no viene,
+// por el id de la línea de pedido (más fiable que el string).
+export function ordenesPorPedido(pedidos: Pedido[], ordenes: Orden[]): Map<string, { id: string; numero: string }[]> {
+  const pedidoDeLinea = new Map<string, string>();
+  for (const p of pedidos) for (const l of p.lineas) pedidoDeLinea.set(l.id, p.numero);
+  const m = new Map<string, { id: string; numero: string }[]>();
+  for (const o of ordenes) {
+    const numeros = new Set<string>();
+    for (const l of o.lineas) {
+      const num = (l.pedidoNumero && l.pedidoNumero !== "Manual")
+        ? l.pedidoNumero
+        : (l.pedidoLineaId ? pedidoDeLinea.get(l.pedidoLineaId) : undefined);
+      if (num) numeros.add(num);
+    }
+    for (const num of numeros) {
+      const arr = m.get(num) ?? [];
+      if (!arr.some((x) => x.id === o.id)) arr.push({ id: o.id, numero: o.numero });
+      m.set(num, arr);
+    }
+  }
+  return m;
 }
 
 export function ordenBadge(estado: Orden["estado"]): { label: string; tone: string } {
