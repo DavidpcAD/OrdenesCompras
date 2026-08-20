@@ -1156,6 +1156,57 @@ export async function etapasDeUsuario(username: string): Promise<number[]> {
   }
 }
 
+// Obras por las que arranca la Matriz de un ingeniero, por username → dbo.UsuarioObra.
+//
+// Es el hermano de `etapasDeUsuario` por el otro eje. Para Ana y Marco la fase no
+// distingue su trabajo (infraestructura y postventa son OBRAS en BC, no fases de una
+// casa), así que su Matriz arranca por obra. `patron` puede ser un código exacto
+// ('INF-HDAII') o un patrón ('INF-%'), y se resuelve con LIKE: con el patrón, una
+// obra nueva de infraestructura entra sola, sin tocar el mapeo.
+//
+// Dos consultas, una por pool, por lo mismo que en etapasDeUsuario: `UsuarioObra`
+// vive con el padrón y `Obra` con los datos. Hoy son la misma base; un JOIN entre las
+// dos se rompería el día que se separen.
+//
+// Si los patrones no calzan con ninguna obra devuelve [] a propósito: el consumidor
+// cae a "todas las obras" en vez de abrir la Matriz filtrada y VACÍA.
+export type ObraDeUsuario = { idObra: number; numeroObra: string; nombreMostrado: string };
+export async function obrasDeUsuario(username: string): Promise<{ obras: ObraDeUsuario[]; patrones: string[] }> {
+  const u = (username ?? "").trim();
+  if (!u) return { obras: [], patrones: [] };
+  let patrones: string[] = [];
+  try {
+    const pool = await getAuthPool();
+    const r = await pool.request().input("u", sql.NVarChar(256), u).query(
+      "SELECT uo.patron FROM dbo.UsuarioObra uo " +
+      "JOIN dbo.Usuario us ON us.idUsuario = uo.idUsuario " +
+      "WHERE us.username = @u"
+    );
+    patrones = r.recordset.map((x) => String(x.patron ?? "").trim()).filter(Boolean);
+  } catch (e) {
+    // La tabla puede no estar creada todavía: se avisa en el log y la Matriz sigue
+    // mostrando todo (que es el comportamiento de siempre).
+    console.warn("obrasDeUsuario:", e);
+    return { obras: [], patrones: [] };
+  }
+  if (!patrones.length) return { obras: [], patrones: [] };
+  try {
+    const pool = await getPool();
+    const req = pool.request();
+    const cond = patrones.map((pat, i) => { req.input(`p${i}`, sql.NVarChar(50), pat); return `numeroObra LIKE @p${i}`; });
+    const r = await req.query(
+      `SELECT idObra, numeroObra, nombreMostrado FROM dbo.Obra
+        WHERE ${cond.join(" OR ")} ORDER BY numeroObra`);
+    return {
+      obras: r.recordset.map((x) => ({ idObra: x.idObra, numeroObra: String(x.numeroObra ?? "").trim(), nombreMostrado: x.nombreMostrado ?? "" })),
+      patrones,
+    };
+  } catch (e) {
+    console.warn("obrasDeUsuario: no se pudieron resolver los patrones:", e);
+    return { obras: [], patrones };
+  }
+}
+
 // Crea una clasificación (control del ingeniero) colgando de una partida O de una sub_partida.
 export async function createClasificacion(input: { nombre: string; partidaId?: number | null; subPartidaId?: number | null }): Promise<number> {
   const pool = await getPool();
