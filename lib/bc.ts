@@ -165,28 +165,49 @@ export type BcItem = { id: string; code: string; descripcion: string; unidad: st
 export type BcObra = { id: string; codigo: string; nombre: string };
 export type BcAlmacen = { codigo: string; nombre: string };
 
+// Una fila de `items` de la API custom -> BcItem. Compartido por el catálogo
+// completo (bcItems) y por la carga por páginas (bcItemsPagina).
+function mapearItem(i: any): BcItem {
+  const code = i.No ?? i.no ?? i.number ?? "";
+  const costCustom = Number(i.LastDirectCost ?? i.lastDirectCost ?? i.UnitCost ?? i.unitCost ?? 0) || undefined;
+  const catCustom = (i.ItemCategoryCode ?? i.itemCategoryCode ?? "").toString().trim() || undefined;
+  return {
+    id: i.id ?? i.systemId ?? code,
+    code,
+    descripcion: i.Description ?? i.description ?? i.displayName ?? code,
+    unidad: i.BaseUnitOfMeasure ?? i.baseUnitOfMeasure ?? i.baseUnitOfMeasureCode ?? "UND",
+    lastDirectCost: costCustom,
+    categoria: catCustom,
+    reorderPoint: Number(i.reorderPoint ?? i.ReorderPoint ?? 0) || undefined,
+    safetyStock: Number(i.safetyStockQuantity ?? i.SafetyStockQuantity ?? 0) || undefined,
+    reorderQty: Number(i.reorderQuantity ?? i.ReorderQuantity ?? 0) || undefined,
+  };
+}
+
+// UNA página del catálogo, para que Inventarios pinte las primeras filas sin
+// esperar los 5000+ artículos. Va directo a la API custom con $top/$skip y SIN el
+// enriquecido de la API estándar (costo/categoría), que es la parte cara: para la
+// primera pintada alcanza código, descripción y unidad. `hayMas` dice si seguir.
+export async function bcItemsPagina(top: number, skip: number): Promise<{ items: BcItem[]; hayMas: boolean }> {
+  const cid = await getCompanyId();
+  const url = `${customRoot("inventory")}/companies(${cid})/items?$orderby=no&$top=${top}&$skip=${skip}`;
+  const res = await bcFetch(url, { next: { revalidate: 300 } } as RequestInit);
+  if (!res.ok) throw new Error(`BC ${res.status} en items?$top=${top}&$skip=${skip}: ${(await res.text()).slice(0, 200)}`);
+  const data: any = await res.json();
+  const rows: any[] = data.value ?? [];
+  return {
+    items: rows.filter((i) => !(i.Blocked ?? i.blocked)).map(mapearItem),
+    // Los bloqueados se filtran DESPUÉS, así que para saber si quedan más hay que
+    // mirar cuántas filas trajo BC, no cuántas quedaron.
+    hayMas: !!data["@odata.nextLink"] || rows.length >= top,
+  };
+}
+
 let lastGoodItems: BcItem[] | null = null;
 export async function bcItems(): Promise<BcItem[]> {
   try {
     const rows = await listAll("inventory", "items");
-    let items: BcItem[] = rows
-      .filter((i) => !(i.Blocked ?? i.blocked))
-      .map((i) => {
-        const code = i.No ?? i.no ?? i.number ?? "";
-        const costCustom = Number(i.LastDirectCost ?? i.lastDirectCost ?? i.UnitCost ?? i.unitCost ?? 0) || undefined;
-        const catCustom = (i.ItemCategoryCode ?? i.itemCategoryCode ?? "").toString().trim() || undefined;
-        return {
-          id: i.id ?? i.systemId ?? code,
-          code,
-          descripcion: i.Description ?? i.description ?? i.displayName ?? code,
-          unidad: i.BaseUnitOfMeasure ?? i.baseUnitOfMeasure ?? i.baseUnitOfMeasureCode ?? "UND",
-          lastDirectCost: costCustom,
-          categoria: catCustom,
-          reorderPoint: Number(i.reorderPoint ?? i.ReorderPoint ?? 0) || undefined,
-          safetyStock: Number(i.safetyStockQuantity ?? i.SafetyStockQuantity ?? 0) || undefined,
-          reorderQty: Number(i.reorderQuantity ?? i.ReorderQuantity ?? 0) || undefined,
-        };
-      });
+    let items: BcItem[] = rows.filter((i) => !(i.Blocked ?? i.blocked)).map(mapearItem);
     // Enriquecer con ÚLTIMO COSTO DIRECTO (precio de la última compra) y CATEGORÍA
     // del ítem (= partida en Planificación) desde la API estándar v2.0.
     const extra = await bcItemExtra();
@@ -223,6 +244,25 @@ async function bcItemExtra(): Promise<Map<string, { cost?: number; categoria?: s
     }
   } catch { /* sin datos extra */ }
   return map;
+}
+
+// Precio de la ÚLTIMA COMPRA por artículo, en una sola pasada. La API estándar no
+// sirve para esto: `unitCost`/`lastDirectCost` vienen en 0 para todo el catálogo (y
+// ni se pueden filtrar), así que la columna "Precio ref." de Inventarios salía
+// ₡0,00 en las 5000 filas. El endpoint custom `lastPurchasePrices` sí trae el costo
+// real de cada recepción: ordenado por fecha desc, la PRIMERA aparición de cada
+// item es su última compra. Cache 5 min como el resto de maestros.
+export async function bcUltimosCostos(): Promise<Record<string, number>> {
+  const rows = await listCustom("purchasing", "lastPurchasePrices?$orderby=postingDate desc,entryNo desc&$top=5000",
+    { next: { revalidate: 300 } } as RequestInit);
+  const out: Record<string, number> = {};
+  for (const r of rows) {
+    const item = r.itemNo ?? r.ItemNo ?? "";
+    const costo = Number(r.unitCost ?? r.UnitCost ?? 0) || 0;
+    if (!item || costo <= 0 || out[item] !== undefined) continue;   // ya está la más reciente
+    out[item] = costo;
+  }
+  return out;
 }
 
 // Último costo directo de UN item (precio de su última compra), API estándar v2.0.
