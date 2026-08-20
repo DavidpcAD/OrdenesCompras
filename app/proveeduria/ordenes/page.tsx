@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button, Tile } from "@/components/ui";
 import { OrdenesLista } from "@/components/ordenes-lista";
@@ -11,9 +11,17 @@ import { useStore } from "@/lib/store";
 type Filtro = "todas" | "abierto" | "rechazado" | "lanzado" | "completado";
 
 export default function OrdenesPage() {
-  const { ordenes } = useStore();
+  const { ordenes, pedidos } = useStore();
   const router = useRouter();
+  // El recuadro elegido arriba es un filtro más: se recuerda por sesión, así que
+  // volver de un detalle te deja la pantalla como estaba.
+  const CLAVE_FILTRO = "adelante_oc_kpi_ordenes-prov";
   const [filtro, setFiltro] = useState<Filtro>("todas");
+  useEffect(() => {
+    try { const v = sessionStorage.getItem(CLAVE_FILTRO); if (v) setFiltro(v as Filtro); } catch { /* sin sessionStorage */ }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  const elegirFiltro = (f: Filtro) => { setFiltro(f); try { sessionStorage.setItem(CLAVE_FILTRO, f); } catch { /* noop */ } };
   const listaRef = useRef<HTMLDivElement>(null);
 
   function seleccionar(f: Filtro) {
@@ -61,10 +69,14 @@ export default function OrdenesPage() {
 
         <div ref={listaRef} className="row row--between mt-6" style={{ marginBottom: 12, alignItems: "baseline", scrollMarginTop: 80 }}>
           <span className="ds-label ds-muted">{etiqueta[filtro]}</span>
-          {filtro !== "todas" && <button className="link-btn" onClick={() => setFiltro("todas")}>Ver todas</button>}
+          {filtro !== "todas" && <button className="link-btn" onClick={() => elegirFiltro("todas")}>Ver todas</button>}
         </div>
 
-        <OrdenesLista key={filtro} ordenes={lista} hrefDetalle={(id) => `/proveeduria/ordenes/${id}`} vacio="No hay órdenes en esta categoría." />
+        <OrdenesLista key={filtro} ordenes={lista} hrefDetalle={(id) => `/proveeduria/ordenes/${id}`}
+          // El N.º de solicitud abre esa solicitud (el enlace va en los dos sentidos:
+          // desde Solicitudes se abre la orden, y desde acá la solicitud).
+          pedidoHref={(n) => { const p = pedidos.find((x) => x.numero === n); return p ? `/proveeduria/solicitudes/${p.id}` : null; }}
+          vacio="No hay órdenes en esta categoría." />
       </main>
     </>
   );

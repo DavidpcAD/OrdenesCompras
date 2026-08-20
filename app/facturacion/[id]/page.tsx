@@ -6,6 +6,7 @@ import { Badge, Button, Card, Checkbox, EmptyState, Field, Input, Modal, Select,
 import { IconWarning } from "@/components/icons";
 import { DateField } from "@/components/date-field";
 import { useStore } from "@/lib/store";
+import { useVolver } from "@/lib/use-volver";
 import { esNombreObraVacio, money, distribuirCargo, num, ordenBadge, ordenLineaPendiente, ordenRecibidoPct, todayISO } from "@/lib/helpers";
 import type { MotivoNC, OrdenLinea } from "@/lib/types";
 
@@ -25,6 +26,8 @@ const MOTIVO_NC: { v: MotivoNC; label: string }[] = [
 export default function RegistrarFacturaPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
+  // volver = pantalla anterior, con su filtro (el rótulo se ajusta solo)
+  const { volver, etiqueta: volverTexto } = useVolver("/facturacion", "Volver a órdenes por recibir");
   const toast = useToast();
   const { ordenes, pedidos, proveedores, recepciones, registrarRecepcion, marcarNotasCredito, role, cargando } = useStore();
   // La vista se elige por ROL, no por ancho de pantalla: Contabilidad usa la TABLA
@@ -416,7 +419,7 @@ export default function RegistrarFacturaPage() {
   return (
     <>
       <main className={esContabilidad ? "page page--wide" : "page"} style={esContabilidad ? undefined : { maxWidth: 760 }}>
-        <button type="button" className="back-link" onClick={() => router.push("/facturacion")}>Volver a órdenes por recibir</button>
+        <button type="button" className="back-link" onClick={volver}>{volverTexto}</button>
         <div className="page__head">
           <div className="page__title">
             <div className="row gap-3">

@@ -79,18 +79,28 @@ export function DataTable<T>({
   const { usuario, cargando, errorCarga, ultimaSync, modoApi } = useStore();
   // Inyecta el filtro multi-selección a las columnas que no traigan uno propio.
   const cols = useMemo(() => columns.map((c) => (c.filterFn ? c : { ...c, filterFn: isDateCol(c) ? dateRangeFilter : multiFilter })), [columns]);
-  const [sorting, setSorting] = useState<SortingState>([]);
+  // Estado de la tabla RECORDADO por pantalla, en sessionStorage: si filtro, entro a
+  // un detalle y vuelvo, la tabla tiene que estar como la dejé. Es por pestaña y por
+  // sesión a propósito: no se arrastra a mañana ni a otra pestaña. Es distinto de las
+  // "Vistas" (esas se guardan a mano y viven en la base).
+  const claveEstado = `adelante_oc_tabla_${tablaKey}`;
+  const guardado = useMemo<Partial<VistaCfg & { sorting: SortingState; pageIndex: number }>>(() => {
+    if (typeof window === "undefined") return {};
+    try { return JSON.parse(sessionStorage.getItem(claveEstado) ?? "{}") ?? {}; } catch { return {}; }
+  }, [claveEstado]);
+
+  const [sorting, setSorting] = useState<SortingState>(guardado.sorting ?? []);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const toggleExpanded = (id: string) => setExpanded((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
   const [filterCol, setFilterCol] = useState<string | null>(null);
   const [filterAnchor, setFilterAnchor] = useState<{ left: number; top: number }>({ left: 0, top: 0 });
   const filterBtnRef = useRef<HTMLElement | null>(null);   // disparador del popover, para devolverle el foco al cerrar
   const cerrarFiltro = () => { setFilterCol(null); filterBtnRef.current?.focus(); };
-  const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
-  const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({});
+  const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>(guardado.columnFilters ?? []);
+  const [columnVisibility, setColumnVisibility] = useState<VisibilityState>(guardado.columnVisibility ?? {});
   const [columnOrder, setColumnOrder] = useState<ColumnOrderState>(() => columns.map((c) => c.id!).filter(Boolean));
-  const [globalFilter, setGlobalFilter] = useState("");
-  const [pagination, setPagination] = useState<PaginationState>({ pageIndex: 0, pageSize: 50 });
+  const [globalFilter, setGlobalFilter] = useState(guardado.globalFilter ?? "");
+  const [pagination, setPagination] = useState<PaginationState>({ pageIndex: guardado.pageIndex ?? 0, pageSize: guardado.pageSize ?? 50 });
   const [panel, setPanel] = useState<null | "cols" | "vistas" | "export">(null);
   // Cerrar el panel (Columnas/Vistas/Exportar) con Escape, como el resto de popovers.
   useEffect(() => {
@@ -99,13 +109,24 @@ export function DataTable<T>({
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [panel]);
-  const [modo, setModo] = useState<"tabla" | "grid">(modoInicial);
+  const [modo, setModo] = useState<"tabla" | "grid">(guardado.modo ?? modoInicial);
   const [vistaABorrar, setVistaABorrar] = useState<Vista | null>(null);
   // Alta de vista con diálogo del DS (reemplaza window.prompt/confirm).
   const [guardarVistaOpen, setGuardarVistaOpen] = useState(false);
   const [nombreVista, setNombreVista] = useState("");
   const [predVista, setPredVista] = useState(false);
   const toast = useToast();
+
+  // Guardar el estado en cada cambio (barato: es un JSON chico por tabla).
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      sessionStorage.setItem(claveEstado, JSON.stringify({
+        sorting, columnFilters, columnVisibility, globalFilter, modo,
+        pageSize: pagination.pageSize, pageIndex: pagination.pageIndex,
+      }));
+    } catch { /* sessionStorage lleno o bloqueado: no es crítico */ }
+  }, [claveEstado, sorting, columnFilters, columnVisibility, globalFilter, modo, pagination]);
 
   const table = useReactTable({
     data, columns: cols,

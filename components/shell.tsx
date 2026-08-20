@@ -2,12 +2,13 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useStore } from "@/lib/store";
 import { Button, ConfirmDialog, Modal } from "@/components/ui";
 import type { Role, Notificacion } from "@/lib/types";
 import { devolucionesPendientes, formatDate } from "@/lib/helpers";
 import { helpForPath } from "@/lib/help";
+import { CLAVE_NAV_INTERNA } from "@/lib/use-volver";
 import {
   IconBell, IconList, IconReceipt, IconCheck, IconDelivery, IconFolder,
   IconPlus, IconLogout, IconBox, IconWarning, IconDashboard, IconEdit, IconMatrix,
@@ -132,6 +133,14 @@ export function AppShell({ role, children }: { role: Role; children: React.React
   useEffect(() => { if (ready) try { localStorage.setItem("adelante_oc_navpin", pinned ? "1" : "0"); } catch {} }, [pinned, ready]);
   // Cerrar el drawer móvil al navegar.
   useEffect(() => { if (isMobile()) setNavOpen(false); }, [pathname]);
+  // Marcar que YA hubo una navegación dentro de la app: desde acá "volver" puede usar
+  // el historial (y devolver la pantalla anterior tal como estaba) sin riesgo de
+  // sacar al usuario del sistema. La primera pintada no cuenta.
+  const primeraRuta = useRef(true);
+  useEffect(() => {
+    if (primeraRuta.current) { primeraRuta.current = false; return; }
+    try { sessionStorage.setItem(CLAVE_NAV_INTERNA, "1"); } catch { /* sin sessionStorage */ }
+  }, [pathname]);
   // Cerrar con Escape el drawer móvil y el panel de notificaciones.
   useEffect(() => {
     if (!navOpen && !notifOpen) return;

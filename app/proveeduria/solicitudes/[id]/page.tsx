@@ -6,11 +6,14 @@ import { Badge, Button, Card, EmptyState, Modal, Textarea, useToast, QtyRing, Sk
 import { IconWarning } from "@/components/icons";
 import { Timeline } from "@/components/timeline";
 import { useStore } from "@/lib/store";
+import { useVolver } from "@/lib/use-volver";
 import { formatDate, num, pedidoBadge, pedidoLineaPendiente, recibidoDeLineaPedido, destinoCodigo, destinoLabel, tipoSolicitudBadge } from "@/lib/helpers";
 
 export default function ProveeduriaPedidoDetallePage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
+  // volver = pantalla anterior, con su filtro (el rótulo se ajusta solo)
+  const { volver, etiqueta: volverTexto } = useVolver("/proveeduria/solicitudes", "Volver a solicitudes");
   const toast = useToast();
   const { pedidos, ordenes, setBorrador, devolverPedido, cargando } = useStore();
   const [devolverOpen, setDevolverOpen] = useState(false);
@@ -65,7 +68,7 @@ export default function ProveeduriaPedidoDetallePage() {
   return (
     <>
       <main className="page">
-        <button type="button" className="back-link" onClick={() => router.push("/proveeduria/solicitudes")}>Volver a solicitudes</button>
+        <button type="button" className="back-link" onClick={volver}>{volverTexto}</button>
         <div className="page__head">
           <div className="page__title">
             <div className="row gap-3">

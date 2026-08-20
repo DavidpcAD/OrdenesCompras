@@ -4,6 +4,7 @@ import { useParams, useRouter } from "next/navigation";
 import { Badge, Card, EmptyState, Skeleton } from "@/components/ui";
 import { IconWarning } from "@/components/icons";
 import { useStore } from "@/lib/store";
+import { useVolver } from "@/lib/use-volver";
 import { money, formatDate, num } from "@/lib/helpers";
 
 // Detalle de UNA recepción/factura: qué se recibió exactamente en ese registro
@@ -12,6 +13,8 @@ import { money, formatDate, num } from "@/lib/helpers";
 export default function RecepcionDetallePage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
+  // volver = pantalla anterior, con su filtro (el rótulo se ajusta solo)
+  const { volver, etiqueta: volverTexto } = useVolver("/facturacion/archivo", "Volver a archivo y recepciones");
   const { recepciones, ordenes, proveedores, cargando } = useStore();
 
   const rec = recepciones.find((r) => r.id === id);
@@ -49,7 +52,7 @@ export default function RecepcionDetallePage() {
   return (
     <>
       <main className="page page--wide">
-        <button type="button" className="back-link" onClick={() => router.push("/facturacion/archivo")}>Volver a archivo y recepciones</button>
+        <button type="button" className="back-link" onClick={volver}>{volverTexto}</button>
         <div className="page__head">
           <div className="page__title">
             <div className="row gap-3">
