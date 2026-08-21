@@ -4,6 +4,7 @@ import { useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useStore } from "@/lib/store";
 import { num, formatDate, ordenLineaImporte } from "@/lib/helpers";
+import { documentoDeOrden, destinoLineaDoc } from "@/lib/orden-doc";
 import { Button } from "@/components/ui";
 import { AdelanteMark } from "@/components/icons";
 
@@ -32,13 +33,13 @@ export default function ImprimirOrdenPage() {
   // El navegador propone el TÍTULO del documento como nombre del archivo al guardar
   // como PDF. Sin esto el archivo salía con el título genérico de la app, y había que
   // renombrarlo a mano para saber de qué orden era.
-  const numeroDoc = orden?.bcNumber || orden?.numero;
+  const numeroTitulo = orden?.bcNumber || orden?.numero;   // para el título de la pestaña
   useEffect(() => {
-    if (!numeroDoc) return;
+    if (!numeroTitulo) return;
     const previo = document.title;
-    document.title = `${numeroDoc} · Orden de compra · Adelante`;
+    document.title = `${numeroTitulo} · Orden de compra · Adelante`;
     return () => { document.title = previo; };
-  }, [numeroDoc]);
+  }, [numeroTitulo]);
 
   if (!orden) {
     // Durante la carga (SQL/BC) el store aún está vacío: no mostrar "no encontrada".
@@ -66,29 +67,10 @@ export default function ImprimirOrdenPage() {
   }
 
   const prov = proveedores.find((p) => p.id === orden.proveedorId);
-  const cur = orden.currencyCode || "CRC";
-  const articulos = orden.lineas.filter((l) => l.tipo === "articulo");
-  const cargos = orden.lineas.filter((l) => l.tipo === "cargo");
-  const lineas = [...articulos, ...cargos];
-  // Destino de cada línea: el almacén al que entra, y si no hay, la obra. Es lo que
-  // le sirve al proveedor (a dónde lo lleva); el Nº de material es interno.
-  const destinoLinea = (l: typeof lineas[number]) => l.almacen || l.proyecto || "";
-  const destinos = [...new Set(articulos.map(destinoLinea).filter(Boolean))];
-  const almacenUnico = destinos.length === 1 ? destinos[0] : null;
-  const subtotal = orden.lineas.reduce((s, l) => s + ordenLineaImporte(l), 0);
-  const ivaPct = articulos.find((l) => (l.ivaPct ?? 0) > 0)?.ivaPct ?? 13;
-  const iva = orden.lineas.reduce((s, l) => s + ordenLineaImporte(l) * ((l.ivaPct ?? 0) / 100), 0);
-  const total = subtotal + iva;
-  // Base e IVA agrupados por tasa (una orden puede mezclar 13% con exento).
-  const porTasaIva = [...orden.lineas.reduce((m, l) => {
-    const pct = Number(l.ivaPct ?? 0);
-    const base = ordenLineaImporte(l);
-    const g = m.get(pct) ?? { pct, base: 0, iva: 0 };
-    g.base += base; g.iva += base * (pct / 100);
-    m.set(pct, g);
-    return m;
-  }, new Map<number, { pct: number; base: number; iva: number }>()).values()]
-    .sort((a, b) => b.pct - a.pct);
+  // Los números del documento salen de UN solo lugar, compartido con el PDF que
+  // genera el servidor: si cada uno los calculara, un día dirían cosas distintas.
+  const { numeroDoc, moneda: cur, lineas, almacenUnico, subtotal, iva, ivaPct, total, porTasaIva } = documentoDeOrden(orden);
+  const destinoLinea = destinoLineaDoc;
 
   const Campo = ({ k, v, b }: { k: string; v: React.ReactNode; b?: boolean }) => (
     <div style={{ display: "flex", gap: 12, marginBottom: 3 }}>
@@ -156,7 +138,12 @@ export default function ImprimirOrdenPage() {
 
       <div className="po-toolbar">
         <button className="po-btn po-btn--ghost" onClick={() => router.back()}>‹ Volver</button>
-        <button className="po-btn po-btn--primary" onClick={() => window.print()}>🖨️ Imprimir / Guardar PDF</button>
+        <button className="po-btn po-btn--ghost" onClick={() => window.print()}>Imprimir</button>
+        {/* Descarga el .pdf que arma el servidor: un clic, sin diálogo y sin riesgo de
+            terminar guardando la página web en vez del documento. */}
+        <a className="po-btn po-btn--primary" href={`/api/ordenes/${orden.id}/pdf`} style={{ textDecoration: "none", display: "inline-block" }}>
+          ⬇ Descargar PDF
+        </a>
       </div>
 
       <div className="po-page">
@@ -191,7 +178,7 @@ export default function ImprimirOrdenPage() {
                 factura. El número interno de la app arranca en 1 en cada base y solo
                 sirve adentro. Si por algo faltara el de BC, se cae al interno para no
                 imprimir un documento sin número. */}
-            <Campo k="Nº orden de compra" v={orden.bcNumber || orden.numero} b />
+            <Campo k="Nº orden de compra" v={numeroDoc} b />
             <Campo k="Fecha emisión documento" v={formatDate(orden.fecha)} />
             {prov?.paymentTermsCode && <Campo k="Términos pago" v={prov.paymentTermsCode} />}
             <Campo k="Moneda" v={cur} />

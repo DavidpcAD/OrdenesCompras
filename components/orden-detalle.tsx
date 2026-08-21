@@ -90,7 +90,7 @@ export function OrdenDetalle({
         </div>
         <div className="row gap-3">
           <Button variant="outline" size="sm" disabled={!puedeImprimir}
-            title={puedeImprimir ? "Imprimir / Guardar PDF para el proveedor" : "El PDF para el proveedor se habilita cuando la orden esté aprobada (Lanzada)."}
+            title={puedeImprimir ? "Ver y descargar el PDF para el proveedor" : "El PDF para el proveedor se habilita cuando la orden esté aprobada (Lanzada)."}
             onClick={() => { if (puedeImprimir) router.push(`/proveeduria/ordenes/${orden.id}/imprimir`); }}>
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: 6 }}><path d="M6 9V3h12v6" /><path d="M6 18H4a2 2 0 0 1-2-2v-4a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2h-2" /><rect x="6" y="14" width="12" height="7" rx="1" /></svg>
             Imprimir
