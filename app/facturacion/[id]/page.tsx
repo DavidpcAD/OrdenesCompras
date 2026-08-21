@@ -13,7 +13,12 @@ import type { MotivoNC, OrdenLinea } from "@/lib/types";
 // Resumen que se muestra al terminar de registrar ("cómo quedó en BC").
 // `aInventario` es lo que DEBE subir el stock; lo que va a una obra (Job No. en la
 // línea) BC lo carga como CONSUMO en el mismo movimiento, así que no sube el stock.
-type InvItem = { itemNo: string; desc: string; antes: number | null; recibido: number; aInventario: number; aObra: number; despues?: number | null };
+// OJO con las unidades: `antes`/`despues` los devuelve BC en la unidad BASE del
+// ítem (gramos), mientras que lo recibido está en la unidad de COMPRA de la línea
+// (estañones). Por eso se guarda el factor: sin convertir, el chequeo
+// "después = antes + recibido" salía ⚠️ aunque BC hubiera hecho todo bien.
+type InvItem = { itemNo: string; desc: string; antes: number | null; recibido: number; aInventario: number; aObra: number; despues?: number | null;
+  unidad?: string; unidadBase?: string; factor?: number };
 // Material consumido de una vez en una obra (no queda en inventario).
 type ConsumoObra = { obra: string; obraNombre?: string; taskNo?: string; itemNo?: string; desc: string; unidad: string; cantidad: number; importe: number };
 
@@ -331,9 +336,11 @@ export default function RegistrarFacturaPage() {
             const dels = detalle.filter((d) => d.l.articuloId === it);
             const qty = dels.reduce((s, d) => s + d.qty, 0);
             const aObra = dels.filter((d) => d.obra).reduce((s, d) => s + d.qty, 0);
+            const l0 = dels[0]?.l;
             return {
-              itemNo: it, desc: dels[0]?.l.descripcion ?? it, antes: antes[it] ?? null,
+              itemNo: it, desc: l0?.descripcion ?? it, antes: antes[it] ?? null,
               recibido: qty, aObra, aInventario: qty - aObra, despues: undefined,
+              unidad: l0?.unidad, unidadBase: l0?.unidadBase, factor: l0?.factorCompra,
             };
           }),
           // Consumo directo: material que NO queda en inventario porque BC lo carga a
@@ -797,8 +804,10 @@ export default function RegistrarFacturaPage() {
           const inv = confirmInv.items.filter((x) => x.aInventario > 1e-9);
           // Si el stock subió TAMBIÉN lo que iba a la obra, BC no lo cargó como
           // consumo: quedó en inventario y hay que decirlo (no darlo por bueno).
+          // Todo lo que se compara con el stock de BC va convertido a unidad base.
+          const enBase = (x: InvItem, qty: number) => qty * (x.factor && x.factor > 0 ? x.factor : 1);
           const quedoEnStock = confirmInv.items.filter((x) => x.aObra > 1e-9 && x.antes != null && x.despues != null
-            && Math.abs((x.despues as number) - ((x.antes as number) + x.recibido)) < 1e-6);
+            && Math.abs((x.despues as number) - ((x.antes as number) + enBase(x, x.recibido))) < 1e-6);
           return (
           <Modal
             title={porObra.length ? (inv.length ? "Así quedó en Business Central" : "Material consumido en la obra") : "Inventario actualizado en BC"}
@@ -862,16 +871,23 @@ export default function RegistrarFacturaPage() {
                       {inv.map((x) => {
                         const verificando = x.despues === undefined;
                         const sd = !verificando && (x.antes == null || x.despues == null);
-                        const ok = !verificando && !sd && Math.abs((x.despues as number) - ((x.antes as number) + x.aInventario)) < 1e-6;
+                        const ok = !verificando && !sd && Math.abs((x.despues as number) - ((x.antes as number) + enBase(x, x.aInventario))) < 1e-6;
                         return (
                           <tr key={x.itemNo}>
                             <td>
                               {x.desc}
                               <div className="ds-body-sm ds-muted">{x.itemNo}</div>
-                              {x.aObra > 1e-9 && <div className="ds-body-sm ds-muted">Otras {num.format(x.aObra)} se consumieron en obra</div>}
+                              {x.aObra > 1e-9 && <div className="ds-body-sm ds-muted">Otras {num.format(x.aObra)} {x.unidad ?? ""} se consumieron en obra</div>}
                             </td>
                             <td className="ds-num">{x.antes == null ? "—" : num.format(x.antes)}</td>
-                            <td className="ds-num ds-strong" style={{ color: "var(--ds-color-green-300)" }}>+{num.format(x.aInventario)}</td>
+                            <td className="ds-num ds-strong" style={{ color: "var(--ds-color-green-300)" }}>
+                              +{num.format(enBase(x, x.aInventario))}{x.unidadBase ? ` ${x.unidadBase}` : ""}
+                              {/* Si se compró en otra unidad, se dice de dónde salen esos
+                                  gramos: "= 1 EST". Antes el número no cuadraba con nada. */}
+                              {enBase(x, x.aInventario) !== x.aInventario && (
+                                <div className="ds-body-sm ds-muted" style={{ fontWeight: 400 }}>= {num.format(x.aInventario)} {x.unidad ?? ""}</div>
+                              )}
+                            </td>
                             <td className="ds-num ds-strong">{verificando ? <Skeleton style={{ display: "inline-block", width: 48, height: 14, borderRadius: 6 }} /> : x.despues == null ? "—" : num.format(x.despues)}</td>
                             <td className="ds-num">{verificando ? <span className="ds-muted" title="Verificando en BC…">…</span> : sd ? <span className="ds-muted" title="BC no devolvió stock">s/d</span> : ok ? "✅" : <span title="El cambio no coincide con lo que debía entrar a inventario" style={{ color: "var(--ds-color-red-200)" }}>⚠️</span>}</td>
                           </tr>

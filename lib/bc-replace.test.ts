@@ -15,16 +15,30 @@ const item = (p: Partial<LineaReplaceBc> = {}): LineaReplaceBc => ({
 
 test("una línea de artículo viaja con el shape que espera el codeunit", () => {
   const { lines, omitidas } = payloadReplaceLines([item({
-    variantCode: "AZUL", descuentoPct: 5, jobNo: "VB-5.01", taskNo: "1000",
+    variantCode: "AZUL", descuentoPct: 5, jobNo: "VB-5.01", taskNo: "1000", unidad: "UND",
   })]);
   assert.equal(omitidas.length, 0);
   assert.deepEqual(lines[0], {
     type: "Item", itemNo: "M01-0147", variantCode: "AZUL", locationCode: "ALM-GRAL",
+    unitOfMeasureCode: "UND",
     quantity: 6, directUnitCost: 1100, lineDiscountPct: 5, jobNo: "VB-5.01", taskNo: "1000",
   });
 });
 
 // El flete NO va como artículo: BC lo necesita como Item Charge o lo rechaza.
+// La unidad de COMPRA es parte del contrato: cantidad y precio están expresados en
+// ella. Un estañón de adhesivo son 255.000 gramos, así que mandar la unidad
+// equivocada es un error de 255.000×.
+test("la línea de artículo lleva la unidad de compra, en mayúscula y sin espacios", () => {
+  const { lines } = payloadReplaceLines([item({ unidad: " est " })]);
+  assert.equal(lines[0].unitOfMeasureCode, "EST");
+});
+
+test("sin unidad se manda vacío y BC pone la del ítem (no se inventa una)", () => {
+  const { lines } = payloadReplaceLines([item({})]);
+  assert.equal(lines[0].unitOfMeasureCode, "");
+});
+
 test("el cargo viaja como Charge con su tipo y método", () => {
   const { lines } = payloadReplaceLines([{
     tipo: "cargo", chargeNo: "FLETE", descripcion: "FLETE / TRANSPORTE",

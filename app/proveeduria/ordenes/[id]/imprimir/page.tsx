@@ -1,10 +1,10 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useStore } from "@/lib/store";
 import { num, formatDate, ordenLineaImporte } from "@/lib/helpers";
-import { documentoDeOrden, destinoLineaDoc } from "@/lib/orden-doc";
+import { documentoDeOrden, destinoLineaDoc, etiquetaUnidad } from "@/lib/orden-doc";
 import { Button } from "@/components/ui";
 import { AdelanteMark } from "@/components/icons";
 
@@ -69,7 +69,14 @@ export default function ImprimirOrdenPage() {
   const prov = proveedores.find((p) => p.id === orden.proveedorId);
   // Los números del documento salen de UN solo lugar, compartido con el PDF que
   // genera el servidor: si cada uno los calculara, un día dirían cosas distintas.
-  const { numeroDoc, moneda: cur, lineas, almacenUnico, subtotal, iva, ivaPct, total, porTasaIva } = documentoDeOrden(orden);
+  // Descripciones de unidad de BC ("EST" -> "ESTAÑON"), las mismas que imprime el
+  // PDF del servidor. Mientras cargan se ve el código; no hay salto de layout.
+  const [unidadesBc, setUnidadesBc] = useState<Record<string, string>>({});
+  useEffect(() => {
+    fetch("/api/bc/unidades").then((r) => (r.ok ? r.json() : { unidades: {} }))
+      .then((d) => setUnidadesBc(d.unidades ?? {})).catch(() => {});
+  }, []);
+  const { numeroDoc, moneda: cur, lineas, almacenUnico, subtotal, iva, ivaPct, total, porTasaIva, unidades } = documentoDeOrden(orden, unidadesBc);
   const destinoLinea = destinoLineaDoc;
 
   const Campo = ({ k, v, b }: { k: string; v: React.ReactNode; b?: boolean }) => (
@@ -216,7 +223,7 @@ export default function ImprimirOrdenPage() {
                 <td style={{ whiteSpace: "nowrap", fontWeight: 600 }}>{l.tipo === "cargo" ? "—" : (destinoLinea(l) || "—")}</td>
                 <td>{l.descripcion}</td>
                 <td className="n">{num.format(l.cantidad)}</td>
-                <td>{l.unidad}</td>
+                <td>{etiquetaUnidad(l.unidad, unidades)}</td>
                 <td className="n">{fmt(l.precioUnitario)}</td>
                 <td className="n">{(l.descuentoPct ?? 0) > 0 ? fmt(l.descuentoPct!, 0) : ""}</td>
                 <td className="n">{fmt(ordenLineaImporte(l))}</td>

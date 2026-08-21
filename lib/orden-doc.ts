@@ -28,6 +28,16 @@ export function destinoLineaDoc(l: OrdenLinea): string {
   return l.almacen || l.proyecto || "";
 }
 
+// BC imprime la DESCRIPCIÓN de la unidad ("ESTAÑON"), no el código ("EST"): es lo
+// que el proveedor lee y reconoce. Si no tenemos la descripción (BC caído o unidad
+// nueva), va el código — nunca queda en blanco.
+export function etiquetaUnidad(code: string, unidades: Record<string, string> = {}): string {
+  const c = (code ?? "").trim();
+  if (!c) return "";
+  const desc = unidades[c] ?? unidades[c.toUpperCase()] ?? "";
+  return desc.trim() || c;
+}
+
 export type GrupoIva = { pct: number; base: number; iva: number };
 export type DocumentoOrden = {
   // El N.º que va al proveedor es el de BUSINESS CENTRAL: es el que existe en el ERP,
@@ -42,9 +52,11 @@ export type DocumentoOrden = {
   ivaPct: number;
   total: number;
   porTasaIva: GrupoIva[];
+  // código de unidad -> descripción, para imprimir "ESTAÑON" y no "EST".
+  unidades: Record<string, string>;
 };
 
-export function documentoDeOrden(orden: Orden): DocumentoOrden {
+export function documentoDeOrden(orden: Orden, unidades: Record<string, string> = {}): DocumentoOrden {
   const articulos = orden.lineas.filter((l) => l.tipo === "articulo");
   const cargos = orden.lineas.filter((l) => l.tipo === "cargo");
   const lineas = [...articulos, ...cargos];
@@ -72,6 +84,7 @@ export function documentoDeOrden(orden: Orden): DocumentoOrden {
     ivaPct: articulos.find((l) => (l.ivaPct ?? 0) > 0)?.ivaPct ?? 13,
     total: subtotal + iva,
     porTasaIva,
+    unidades,
   };
 }
 

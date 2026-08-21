@@ -83,7 +83,9 @@ export interface PedidoLinea {
   articuloId: string;
   descripcion: string;
   cantidad: number;
-  unidad: string;
+  unidad: string;           // la de COMPRA de BC (EST), no la de inventario
+  unidadBase?: string;      // la de inventario/consumo (GR), para la equivalencia
+  factorCompra?: number;    // cuántas unidades base trae la de compra (255000)
   almacen: string;
   variantCode?: string;     // variante del item (si aplica)
   cantidadOrdenada: number; // cuánto de esta línea ya pasó a una orden
@@ -125,9 +127,11 @@ export interface OrdenLinea {
   pedidoNumero?: string;
   descripcion: string;
   cantidad: number;
-  unidad: string;
+  unidad: string;           // la de COMPRA de BC (EST): es la que BC factura
+  unidadBase?: string;      // la de inventario/consumo (GR), para la equivalencia
+  factorCompra?: number;    // cuántas unidades base trae la de compra (255000)
   almacen: string;
-  precioUnitario: number;
+  precioUnitario: number;   // por `unidad`, en la moneda de la orden
   ivaPct: number;
   chargeNo?: string;         // N.º de Cargo de producto (Item Charge BC) — solo líneas tipo "cargo"
   chargeMethod?: string;     // método de asignación del cargo: Amount|Weight|Volume|Equally (default Amount)

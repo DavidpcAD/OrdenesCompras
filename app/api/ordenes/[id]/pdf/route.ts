@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getOrden } from "@/lib/repo";
 import { ordenAPdf } from "@/lib/orden-pdf";
+import { bcDescripcionUnidades } from "@/lib/bc";
 import { nombreArchivoOrden, ordenImprimible } from "@/lib/orden-doc";
 
 export const runtime = "nodejs";
@@ -23,7 +24,10 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     if (!ordenImprimible(orden)) {
       return NextResponse.json({ error: "La orden debe estar aprobada (Lanzada) para generar el PDF." }, { status: 409 });
     }
-    const pdf = await ordenAPdf(orden);
+    // Las descripciones de las unidades vienen de BC para imprimir "ESTAÑON" en vez
+    // de "EST", igual que el reporte de BC. Si BC no responde, el PDF sale con el
+    // código: no se cae por esto.
+    const pdf = await ordenAPdf(orden, await bcDescripcionUnidades().catch(() => ({})));
     const verEnPantalla = new URL(req.url).searchParams.get("ver") === "1";
     return new NextResponse(pdf as any, {
       headers: {

@@ -1,5 +1,7 @@
 import { getAuthPool, getPool, sql } from "./db";
-import { bcDeepLinkPedido, bcDeepLinkFacturaRegistrada } from "./bc";
+import { bcDeepLinkPedido, bcDeepLinkFacturaRegistrada, bcUnidadesDeCompra } from "./bc";
+import { unidadCorregida } from "./unidad";
+import type { UnidadCompraItem } from "./bc";
 import type { Orden, OrdenLinea, Pedido, PedidoLinea, Recepcion, RecepcionLinea, Role, NotaCreditoLinea } from "./types";
 
 /* ============================================================================
@@ -102,7 +104,8 @@ export async function listPedidos(): Promise<Pedido[]> {
   const h = await pool.request().query("SELECT * FROM dbo.PedidoCompra WHERE esEliminada = 0 ORDER BY idPedidoCompra DESC");
   const d = await pool.request().query("SELECT * FROM dbo.PedidoCompraDet ORDER BY idPedidoCompraDet");
   const porPedido = porCabecera(d.recordset, "idPedidoCompra");
-  return h.recordset.map((p) => mapPedido(p, porPedido.get(p.idPedidoCompra) ?? []));
+  const unidades = await mapaUnidades();
+  return h.recordset.map((p) => mapPedido(p, porPedido.get(p.idPedidoCompra) ?? [], unidades));
 }
 
 export async function getPedido(id: number): Promise<Pedido | null> {
@@ -111,10 +114,31 @@ export async function getPedido(id: number): Promise<Pedido | null> {
   const h = await pool.request().input("id", sql.Int, id).query("SELECT * FROM dbo.PedidoCompra WHERE idPedidoCompra=@id");
   if (!h.recordset.length) return null;
   const d = await pool.request().input("id", sql.Int, id).query("SELECT * FROM dbo.PedidoCompraDet WHERE idPedidoCompra=@id ORDER BY idPedidoCompraDet");
-  return mapPedido(h.recordset[0], d.recordset);
+  return mapPedido(h.recordset[0], d.recordset, await mapaUnidades());
 }
 
-function mapPedido(p: any, lineas: any[]): Pedido {
+// Unidades de compra de BC, una sola vez por request. Si BC no responde devuelve
+// {} y cada línea se queda con la unidad que tiene guardada.
+//
+// Por qué se corrige al LEER y no solo al escribir: las solicitudes las crea la app
+// de Producción, que copia la unidad BASE del catálogo. Cuando esa línea llega a
+// Proveeduría ya viene con "GR" aunque el material se compre por ESTAÑON, y es acá
+// donde se decide qué se le pide al proveedor. `unidadCorregida` solo cambia la
+// unidad cuando la guardada es exactamente la base (o sea, la heredada por defecto).
+async function mapaUnidades(): Promise<Record<string, UnidadCompraItem>> {
+  try { return await bcUnidadesDeCompra(); } catch { return {}; }
+}
+
+function unidadLinea(itemNo: string, guardada: string, mapa: Record<string, UnidadCompraItem>) {
+  const u = mapa[itemNo];
+  return {
+    unidad: unidadCorregida(guardada, u),
+    unidadBase: u?.base || undefined,
+    factorCompra: u?.factor,
+  };
+}
+
+function mapPedido(p: any, lineas: any[], unidades: Record<string, UnidadCompraItem> = {}): Pedido {
   return {
     id: String(p.idPedidoCompra), numero: p.pedidoNo ?? "",
     tipoSolicitud: (p.tipoSolicitud ?? "material") as Pedido["tipoSolicitud"],
@@ -126,7 +150,8 @@ function mapPedido(p: any, lineas: any[]): Pedido {
     idClasificacion: p.idClasificacion ?? null,
     lineas: lineas.map((l): PedidoLinea => ({
       id: String(l.idPedidoCompraDet), articuloId: l.itemNo ?? "", descripcion: l.descripcion ?? "",
-      cantidad: Number(l.quantitySolicitado ?? 0), unidad: l.unitOfMeasureCode ?? "",
+      cantidad: Number(l.quantitySolicitado ?? 0),
+      ...unidadLinea(l.itemNo ?? "", l.unitOfMeasureCode ?? "", unidades),
       almacen: l.locationCode ?? "", variantCode: l.variantCode ?? undefined, cantidadOrdenada: Number(l.quantityOrdenado ?? 0), notas: l.notaCreador ?? undefined,
     })),
   };
@@ -363,10 +388,12 @@ export async function listOrdenes(): Promise<Orden[]> {
   const rechazadas = h.recordset.filter((o) => codigoDeId(o.idEstado) === "rechazado").map((o) => o.idOrdenCompra as number);
   const motivos = await motivosRechazo(rechazadas);
   const porOrden = porCabecera(d.recordset, "idOrdenCompra");
+  const unidades = await mapaUnidades();
   return h.recordset.map((o) => mapOrden(
     o,
     porOrden.get(o.idOrdenCompra) ?? [],
     motivos.get(String(o.idOrdenCompra)),
+    unidades,
   ));
 }
 
@@ -382,10 +409,10 @@ export async function getOrden(id: number): Promise<Orden | null> {
       WHERE det.idOrdenCompra=@id ORDER BY det.idOrdenCompraDet`);
   const esRechazada = codigoDeId(h.recordset[0].idEstado) === "rechazado";
   const motivos = await motivosRechazo(esRechazada ? [id] : []);
-  return mapOrden(h.recordset[0], d.recordset, motivos.get(String(id)));
+  return mapOrden(h.recordset[0], d.recordset, motivos.get(String(id)), await mapaUnidades());
 }
 
-function mapOrden(o: any, lineas: any[], motivoRechazo?: string): Orden {
+function mapOrden(o: any, lineas: any[], motivoRechazo?: string, unidades: Record<string, UnidadCompraItem> = {}): Orden {
   return {
     id: String(o.idOrdenCompra), numero: o.ordenNo ?? "", proveedorId: o.proveedorNo ?? "",
     proveedorNo: o.proveedorNo ?? undefined, proveedorNombre: o.proveedorNombre ?? undefined,
@@ -406,7 +433,11 @@ function mapOrden(o: any, lineas: any[], motivoRechazo?: string): Orden {
       id: String(l.idOrdenCompraDet), tipo: (l.tipoLinea === "cargo" ? "cargo" : "articulo"),
       articuloId: l.itemNo ?? undefined, variantCode: l.variantCode ?? undefined, pedidoLineaId: l.idPedidoCompraDet ? String(l.idPedidoCompraDet) : undefined,
       pedidoNumero: l.pedidoNumero ?? undefined, descripcion: l.descripcion ?? "", cantidad: Number(l.quantity ?? 0),
-      unidad: l.unitOfMeasureCode ?? "", almacen: l.locationCode ?? "", precioUnitario: Number(l.directUnitCost ?? 0),
+      // Los cargos (flete) no son materiales: no tienen unidad de compra que corregir.
+      ...(l.tipoLinea === "cargo"
+        ? { unidad: l.unitOfMeasureCode ?? "" }
+        : unidadLinea(l.itemNo ?? "", l.unitOfMeasureCode ?? "", unidades)),
+      almacen: l.locationCode ?? "", precioUnitario: Number(l.directUnitCost ?? 0),
       ivaPct: Number(l.vatPct ?? 0), descuentoPct: Number(l.lineDiscountPct ?? 0) || undefined,
       proyecto: l.jobNo ?? undefined, taskNo: l.taskNo ?? undefined,
       chargeNo: l.chargeNo ?? undefined, chargeMethod: l.chargeMethod ?? undefined,

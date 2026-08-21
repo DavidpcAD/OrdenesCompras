@@ -79,6 +79,7 @@ export async function PUT(req: Request, { params }: { params: { id: string } }) 
         const r = await bcReplaceOrderLines(o.bcNumber, o.lineas.map((l) => ({
           tipo: l.tipo === "cargo" ? "cargo" as const : "articulo" as const,
           itemNo: l.articuloId, variantCode: l.variantCode, locationCode: l.almacen,
+          unidad: l.unidad,
           cantidad: l.cantidad, precio: l.precioUnitario, descuentoPct: l.descuentoPct,
           jobNo: l.proyecto, taskNo: l.taskNo,
           chargeNo: l.chargeNo, chargeMethod: l.chargeMethod, descripcion: l.descripcion,

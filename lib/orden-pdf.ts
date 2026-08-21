@@ -6,7 +6,7 @@
 import PDFDocument from "pdfkit/js/pdfkit.standalone.js";
 import type { Orden, OrdenLinea } from "./types";
 import { ordenLineaImporte } from "./helpers";
-import { documentoDeOrden, destinoLineaDoc, fmtDoc, EMPRESA_DOC } from "./orden-doc";
+import { documentoDeOrden, destinoLineaDoc, fmtDoc, etiquetaUnidad, EMPRESA_DOC } from "./orden-doc";
 
 // PDF de la orden de compra que se le manda al proveedor, dibujado en el SERVIDOR con
 // pdfkit. Existe para que "Descargar PDF" baje un .pdf de una vez, sin pasar por el
@@ -42,8 +42,8 @@ const COLS = {
   importe: { x: MARGEN + 455, w: 60 },
 };
 
-export function ordenAPdf(orden: Orden): Promise<Buffer> {
-  const d = documentoDeOrden(orden);
+export function ordenAPdf(orden: Orden, unidades: Record<string, string> = {}): Promise<Buffer> {
+  const d = documentoDeOrden(orden, unidades);
   const doc = new PDFDocument({ size: "A4", margin: MARGEN, bufferPages: true,
     info: { Title: `${d.numeroDoc} · Orden de compra`, Author: EMPRESA_DOC.nombre } });
 
@@ -143,8 +143,14 @@ export function ordenAPdf(orden: Orden): Promise<Buffer> {
     const cargo = l.tipo === "cargo";
     txt(cargo ? "—" : (destinoLineaDoc(l) || "—"), COLS.destino.x, y, { size: 8, bold: !cargo });
     doc.font("Helvetica").fontSize(8).fillColor(NEGRO).text(desc, COLS.desc.x, y, { width: COLS.desc.w });
-    txt(fmtDoc(l.cantidad, 0), COLS.cant.x, y, { size: 8, width: COLS.cant.w, align: "right" });
-    txt(l.unidad || "", COLS.unidad.x, y, { size: 8, width: COLS.unidad.w, align: "right" });
+    // Cantidad sin decimales cuando es entera (1 ESTAÑON), con dos cuando no
+    // (2,5 M3). Antes iba siempre a 0 decimales y 0,5 se imprimía como 1.
+    txt(fmtDoc(l.cantidad, Number.isInteger(l.cantidad) ? 0 : 2), COLS.cant.x, y, { size: 8, width: COLS.cant.w, align: "right" });
+    // La descripción de la unidad, como el reporte de BC ("ESTAÑON"). Si no cabe en
+    // la columna se cae al código, que siempre entra.
+    const etiqueta = etiquetaUnidad(l.unidad || "", d.unidades);
+    const cabe = doc.font("Helvetica").fontSize(8).widthOfString(etiqueta) <= COLS.unidad.w;
+    txt(cabe ? etiqueta : (l.unidad || ""), COLS.unidad.x, y, { size: 8, width: COLS.unidad.w, align: "right" });
     txt(fmtDoc(l.precioUnitario), COLS.precio.x, y, { size: 8, width: COLS.precio.w, align: "right" });
     txt((l.descuentoPct ?? 0) > 0 ? fmtDoc(l.descuentoPct!, 0) : "", COLS.desc_pct.x, y, { size: 8, width: COLS.desc_pct.w, align: "right" });
     txt(fmtDoc(ordenLineaImporte(l)), COLS.importe.x, y, { size: 8, width: COLS.importe.w, align: "right" });

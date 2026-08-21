@@ -7,13 +7,16 @@ import { Combobox } from "@/components/combobox";
 import { IconWarning } from "@/components/icons";
 import { useStore } from "@/lib/store";
 import { money, almacenesParaRecepcion, esAlmacenFisico, monedaApp } from "@/lib/helpers";
+import { precioEnUnidad, equivalencia, mismaMoneda } from "@/lib/unidad";
 import type { OrdenLinea } from "@/lib/types";
 
 // Orden DIRECTA: compra armada por Proveeduría sin partir de una solicitud de
 // Ingeniería (material que no vino en ningún pedido). Todas las líneas son
 // manuales (pedidoNumero "Manual"); en la lista/detalle se marca como "Directa".
 // Sin `obra`: una compra directa NO se carga a una obra (ver comentario en crear()).
-interface Row { key: string; articuloId: string; descripcion: string; unidad: string; cantidad: string; precio: string; iva: string; descuento: string; variantCode: string; variantNombre: string; }
+// `unidad` es la de COMPRA (la que BC pone en la línea del pedido y la que factura
+// el proveedor); `unidadBase` es la de inventario, solo para explicar la equivalencia.
+interface Row { key: string; articuloId: string; descripcion: string; unidad: string; unidadBase?: string; factorCompra?: number; cantidad: string; precio: string; iva: string; descuento: string; variantCode: string; variantNombre: string; }
 type Variante = { code: string; descripcion: string };
 // Cargo de producto (Item Charge) a agregar a la orden: tipo (chargeNo del catálogo
 // BC), cantidad y precio. chargeNo "" = flete por defecto. Igual que en "nueva".
@@ -38,7 +41,7 @@ export default function OrdenDirectaPage() {
 
   // Catálogos en vivo desde Business Central (con respaldo al catálogo seed).
   const [bcProv, setBcProv] = useState<typeof proveedores | null>(null);
-  const [itemsBc, setItemsBc] = useState<{ code: string; descripcion: string; unidad: string; precioUltimo?: number }[]>([]);
+  const [itemsBc, setItemsBc] = useState<{ code: string; descripcion: string; unidad: string; unidadBase?: string; factorCompra?: number }[]>([]);
   const [bcAlm, setBcAlm] = useState<typeof almacenes | null>(null);
   const [bcCaido, setBcCaido] = useState(false);
   useEffect(() => {
@@ -47,7 +50,9 @@ export default function OrdenDirectaPage() {
         if (Array.isArray(d.proveedores) && d.proveedores.length) setBcProv(d.proveedores);
         else setBcCaido(true);   // se ve el catálogo de respaldo: hay que avisarlo
       }).catch(() => setBcCaido(true));
-    fetch("/api/bc/items").then((r) => (r.ok ? r.json() : { items: [] })).then((d) => { if (Array.isArray(d.items)) setItemsBc(d.items.map((i: any) => ({ code: i.code, descripcion: i.descripcion, unidad: i.unidad || "UND", precioUltimo: typeof i.lastDirectCost === "number" ? i.lastDirectCost : undefined }))); }).catch(() => {});
+    // La unidad que se muestra y se guarda es la de COMPRA: este material se pide
+    // por ESTAÑON aunque el inventario lo lleve en gramos.
+    fetch("/api/bc/items").then((r) => (r.ok ? r.json() : { items: [] })).then((d) => { if (Array.isArray(d.items)) setItemsBc(d.items.map((i: any) => ({ code: i.code, descripcion: i.descripcion, unidad: (i.unidadCompra || i.unidad || "UND"), unidadBase: i.unidad || undefined, factorCompra: i.factorCompra }))); }).catch(() => {});
     fetch("/api/bc/almacenes").then((r) => (r.ok ? r.json() : { almacenes: [] })).then((d) => {
       if (Array.isArray(d.almacenes) && d.almacenes.length) { setBcAlm(d.almacenes); if (!d.almacenes.some((a: any) => a.codigo === "ALM-GRAL")) setAlmacen(d.almacenes[0].codigo); }
     }).catch(() => {});
@@ -61,13 +66,18 @@ export default function OrdenDirectaPage() {
 
   const [rows, setRows] = useState<Row[]>([]);
   const [qaCode, setQaCode] = useState(""); const [qaQty, setQaQty] = useState(""); const [qaPrecio, setQaPrecio] = useState("");
+  // Último precio de BC del artículo elegido, con la unidad y la moneda a las que
+  // corresponde (puede no ser la de esta línea).
+  const [qaRef, setQaRef] = useState<{ precio: number; unidad: string; moneda: string; factor?: number } | null>(null);
   // Variantes del artículo elegido (color/medida/etc. en BC). Si el item tiene
   // variantes, hay que elegir una ANTES de agregar la línea (BC la exige).
   const [qaVariantes, setQaVariantes] = useState<Variante[]>([]);
   const [qaVariante, setQaVariante] = useState("");
   const [qaVariantesError, setQaVariantesError] = useState(false);
   // Unidad de medida del artículo elegido en "Agregar artículo".
-  const qaUnidad = itemsBc.find((x) => x.code === qaCode)?.unidad ?? "";
+  const qaItem = itemsBc.find((x) => x.code === qaCode);
+  const qaUnidad = qaItem?.unidad ?? "";
+  const qaEquiv = equivalencia({ base: qaItem?.unidadBase ?? "", compra: qaUnidad, factor: qaItem?.factorCompra });
   const variantePendiente = qaVariantes.length > 0 && !qaVariante;
 
   const setRow = (k: string, patch: Partial<Row>) => setRows((rs) => rs.map((r) => (r.key === k ? { ...r, ...patch } : r)));
@@ -83,7 +93,7 @@ export default function OrdenDirectaPage() {
     if (!it || !(Number(qaQty) > 0)) { toast("Elegí un artículo y una cantidad.", "error"); return; }
     if (variantePendiente) { toast("Este artículo tiene variantes: elegí una antes de agregar la línea.", "error"); return; }
     const variante = qaVariantes.find((v) => v.code === qaVariante);
-    setRows((rs) => [...rs, { key: `m-${uid()}`, articuloId: it.code, descripcion: it.descripcion, unidad: it.unidad, cantidad: String(Number(qaQty)), precio: String(Number(qaPrecio) || it.precioUltimo || 0), iva: "13", descuento: "0", variantCode: qaVariante, variantNombre: variante?.descripcion ?? "" }]);
+    setRows((rs) => [...rs, { key: `m-${uid()}`, articuloId: it.code, descripcion: it.descripcion, unidad: it.unidad, unidadBase: it.unidadBase, factorCompra: it.factorCompra, cantidad: String(Number(qaQty)), precio: String(Number(qaPrecio) || 0), iva: "13", descuento: "0", variantCode: qaVariante, variantNombre: variante?.descripcion ?? "" }]);
     setQaCode(""); setQaQty(""); setQaPrecio(""); setQaVariantes([]); setQaVariante(""); setQaVariantesError(false);
   }
 
@@ -199,10 +209,22 @@ export default function OrdenDirectaPage() {
                   setQaCode(k);
                   setQaVariantes([]); setQaVariante(""); setQaVariantesError(false);
                   const it = itemsBc.find((x) => x.code === k);
-                  if (it?.precioUltimo) setQaPrecio(String(it.precioUltimo)); // respaldo inmediato
+                  setQaPrecio(""); setQaRef(null);
                   if (k) {
                     fetch(`/api/bc/lastprice?item=${encodeURIComponent(k)}&vendor=${encodeURIComponent(provSel?.code ?? "")}`)
-                      .then((r) => r.json()).then((d) => { if (typeof d.precio === "number" && d.precio > 0) setQaPrecio(String(d.precio)); }).catch(() => {});
+                      .then((r) => r.json()).then((d) => {
+                        if (!(typeof d.precio === "number" && d.precio > 0)) return;
+                        const ref = { precio: d.precio, unidad: String(d.unidad ?? ""), moneda: String(d.moneda ?? ""), factor: d.factor };
+                        setQaRef(ref);
+                        // Solo se prellena si ese precio corresponde a ESTA unidad y a la
+                        // moneda de la orden. Si no, se muestra rotulado y lo escribe
+                        // Proveeduría: un costo por gramo en una línea de estañones deja
+                        // la orden 255.000 veces más barata.
+                        const p = mismaMoneda(ref.moneda, currency)
+                          ? precioEnUnidad(ref, it?.unidad ?? ref.unidad, it?.unidadBase ?? ref.unidad)
+                          : null;
+                        if (p != null) setQaPrecio(String(p));
+                      }).catch(() => {});
                     // Variantes del item: si tiene, se exige elegir una antes de agregar.
                     fetch(`/api/bc/variants?item=${encodeURIComponent(k)}`)
                       .then((r) => (r.ok ? r.json() : { variantes: [], disponible: false }))
@@ -214,7 +236,8 @@ export default function OrdenDirectaPage() {
                   // va por SACO, M3 o UND, sin tener que elegirlo para averiguarlo.
                   // `.combo__item` es flex, así que el margin-left:auto la manda a la
                   // derecha y queda en columna, alineada entre filas.
-                  renderItem={(i) => <>{`${i.code} — ${i.descripcion}`}<small style={{ marginLeft: "auto", paddingLeft: 12, whiteSpace: "nowrap" }}>{i.unidad}</small></>}
+                  renderItem={(i) => <>{`${i.code} — ${i.descripcion}`}<small style={{ marginLeft: "auto", paddingLeft: 12, whiteSpace: "nowrap" }}
+                    title={equivalencia({ base: i.unidadBase ?? "", compra: i.unidad, factor: i.factorCompra }) ?? undefined}>{i.unidad}</small></>}
                   // También se puede buscar por unidad ("saco", "m3").
                   getSearch={(i) => `${i.code} ${i.descripcion} ${i.unidad}`} minChars={2} placeholder="Buscar artículo del catálogo…" />
             </div>
@@ -232,10 +255,13 @@ export default function OrdenDirectaPage() {
                   hay que saber 40 de qué (UND, M3, SACO…). Aparece al elegir. */}
               <span className="row gap-2" style={{ alignItems: "center" }}>
                 <Input id={qtyId} type="number" min={0} value={qaQty} onChange={(e) => setQaQty(e.target.value)} placeholder="0" style={{ width: 90 }} />
-                {qaUnidad && <span className="ds-body-sm ds-muted" style={{ whiteSpace: "nowrap" }}>{qaUnidad}</span>}
+                {qaUnidad && <span className="ds-body-sm ds-muted" style={{ whiteSpace: "nowrap" }} title={qaEquiv ?? undefined}>{qaUnidad}</span>}
               </span>
+              {/* La equivalencia a la vista: "1 EST = 255 000 GR". Sin esto nadie sabe
+                  cuánto está pidiendo cuando la unidad de compra no es la de inventario. */}
+              {qaEquiv && <div className="ds-body-sm ds-muted" style={{ marginTop: 2 }}>{qaEquiv}</div>}
             </div>
-            <div><label className="ds-label ds-muted" htmlFor={priceId} style={{ display: "block", marginBottom: 4 }}>Precio</label><Input id={priceId} type="number" min={0} value={qaPrecio} onChange={(e) => setQaPrecio(e.target.value)} placeholder="0" style={{ width: 110 }} />{(() => { const it = itemsBc.find((x) => x.code === qaCode); return it?.precioUltimo ? <div className="ds-body-sm ds-muted" style={{ marginTop: 2 }}>últ. compra {money(it.precioUltimo, currency)}</div> : null; })()}</div>
+            <div><label className="ds-label ds-muted" htmlFor={priceId} style={{ display: "block", marginBottom: 4 }}>Precio</label><Input id={priceId} type="number" min={0} value={qaPrecio} onChange={(e) => setQaPrecio(e.target.value)} placeholder="0" style={{ width: 110 }} />{qaRef ? <div className="ds-body-sm ds-muted" style={{ marginTop: 2 }}>últ. compra {money(qaRef.precio, monedaApp(qaRef.moneda))}{qaRef.unidad ? ` / ${qaRef.unidad}` : ""}</div> : null}</div>
             <Button variant="outline" onClick={agregarLinea} disabled={!qaCode || !(Number(qaQty) > 0) || variantePendiente}>+ Agregar línea</Button>
           </div>
           {qaCode && qaVariantesError && (
@@ -256,7 +282,8 @@ export default function OrdenDirectaPage() {
                           cuando el material se compra por M3, KG o SACO. */}
                       <span className="row gap-2" style={{ justifyContent: "flex-end", alignItems: "baseline" }}>
                         <input className="ds-cell-input" aria-label="Cantidad" type="number" min={0} value={r.cantidad} style={{ width: 70 }} onChange={(e) => setRow(r.key, { cantidad: e.target.value })} />
-                        <span className="ds-body-sm ds-muted" style={{ whiteSpace: "nowrap" }}>{r.unidad || "—"}</span>
+                        <span className="ds-body-sm ds-muted" style={{ whiteSpace: "nowrap" }}
+                          title={equivalencia({ base: r.unidadBase ?? "", compra: r.unidad, factor: r.factorCompra }) ?? undefined}>{r.unidad || "—"}</span>
                       </span>
                     </td>
                     <td className="ds-num"><input className="ds-cell-input" aria-label="Precio" type="number" min={0} value={r.precio} style={{ width: 92 }} onChange={(e) => setRow(r.key, { precio: e.target.value })} /></td>

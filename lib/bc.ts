@@ -161,7 +161,8 @@ async function listAll(group: string, entity: string): Promise<any[]> {
   return out;
 }
 
-export type BcItem = { id: string; code: string; descripcion: string; unidad: string; lastDirectCost?: number; categoria?: string; reorderPoint?: number; safetyStock?: number; reorderQty?: number };
+export type BcItem = { id: string; code: string; descripcion: string; unidad: string; unidadCompra?: string;
+  lastDirectCost?: number; categoria?: string; reorderPoint?: number; safetyStock?: number; reorderQty?: number };
 export type BcObra = { id: string; codigo: string; nombre: string };
 export type BcAlmacen = { codigo: string; nombre: string };
 
@@ -176,6 +177,11 @@ function mapearItem(i: any): BcItem {
     code,
     descripcion: i.Description ?? i.description ?? i.displayName ?? code,
     unidad: i.BaseUnitOfMeasure ?? i.baseUnitOfMeasure ?? i.baseUnitOfMeasureCode ?? "UND",
+    // La unidad con la que se COMPRA, que no siempre es la base. El adhesivo
+    // M06-0009 se consume en gramos (base GR) pero al proveedor se le pide por
+    // ESTAÑON, y BC arma la línea del pedido con ESA unidad. Si la extensión AL
+    // todavía no expone el campo, queda undefined y el llamador usa la base.
+    unidadCompra: (i.PurchUnitOfMeasure ?? i.purchUnitOfMeasure ?? "").toString().trim() || undefined,
     lastDirectCost: costCustom,
     categoria: catCustom,
     reorderPoint: Number(i.reorderPoint ?? i.ReorderPoint ?? 0) || undefined,
@@ -297,6 +303,163 @@ export async function bcItemUltimaCompra(itemNo: string): Promise<number | null>
     const uc = row?.unitCost;
     return (typeof uc === "number" && uc > 0) ? uc : null;
   } catch { return null; }
+}
+
+// Unidad BASE y unidad de COMPRA de cada material, en un mapa cacheado 5 min.
+// Es lo que permite que la orden y el documento del proveedor salgan en la misma
+// unidad que BC (ESTAÑON) en vez de en la unidad de inventario (GR).
+//
+// Dos fuentes, en este orden:
+//   1) el catálogo (page 50125, campo PurchUnitOfMeasure): es la que BC usa de
+//      verdad al armar la línea del pedido de compra.
+//   2) si la extensión AL todavía no expone ese campo, la unidad de la ÚLTIMA
+//      COMPRA registrada — `lastPurchasePrices` ya trae `unitOfMeasureCode`. Si el
+//      material se viene comprando en estañones, se pide en estañones.
+// El FACTOR (255.000 GR por estañón) se pide solo para los materiales donde las
+// dos unidades difieren: hoy son 7 en todo el catálogo, no vale traer 5.500.
+let cacheUnidades: { at: number; mapa: Record<string, UnidadCompraItem> } | null = null;
+const TTL_UNIDADES = 5 * 60 * 1000;
+
+export type UnidadCompraItem = { base: string; compra: string; factor?: number };
+
+export async function bcUnidadesDeCompra(): Promise<Record<string, UnidadCompraItem>> {
+  if (cacheUnidades && Date.now() - cacheUnidades.at < TTL_UNIDADES) return cacheUnidades.mapa;
+  const mapa: Record<string, UnidadCompraItem> = {};
+  try {
+    const items = await bcItems();
+    const ultimas = await unidadUltimaCompraPorItem();
+    for (const it of items) {
+      const base = (it.unidad ?? "").trim().toUpperCase();
+      const compra = (it.unidadCompra ?? "").trim().toUpperCase() || ultimas[it.code] || base;
+      if (base || compra) mapa[it.code] = { base, compra: compra || base };
+    }
+    const distintos = Object.keys(mapa).filter((c) => mapa[c].compra && mapa[c].compra !== mapa[c].base);
+    for (const lote of trozos(distintos, 20)) {
+      const filtro = lote.map((c) => `itemNo eq '${c.replace(/'/g, "''")}'`).join(" or ");
+      let rows: any[] = [];
+      try {
+        rows = await listCustom("inventory", `itemUnitsOfMeasure?$filter=${encodeURIComponent(filtro)}`,
+          { next: { revalidate: 300 } } as RequestInit);
+      } catch { rows = []; }   // página sin publicar: se queda sin factor
+      for (const r of rows) {
+        const item = (r.itemNo ?? "").toString();
+        const code = (r.code ?? "").toString().trim().toUpperCase();
+        const f = Number(r.qtyPerUnitOfMeasure ?? 0) || 0;
+        if (mapa[item] && code === mapa[item].compra && f > 0) mapa[item].factor = f;
+      }
+    }
+    cacheUnidades = { at: Date.now(), mapa };
+    return mapa;
+  } catch {
+    // Sin BC se devuelve lo último bueno, o vacío: el llamador respeta la unidad
+    // que ya tenía guardada la línea.
+    return cacheUnidades?.mapa ?? {};
+  }
+}
+
+function trozos<T>(xs: T[], n: number): T[][] {
+  const out: T[][] = [];
+  for (let i = 0; i < xs.length; i += n) out.push(xs.slice(i, i + n));
+  return out;
+}
+
+// Unidad con la que se compró cada material la última vez. Misma URL que
+// `bcUltimosCostos`, así que comparten el cache de fetch de Next.
+async function unidadUltimaCompraPorItem(): Promise<Record<string, string>> {
+  const out: Record<string, string> = {};
+  try {
+    const rows = await listCustom("purchasing", "lastPurchasePrices?$orderby=postingDate desc,entryNo desc&$top=5000",
+      { next: { revalidate: 300 } } as RequestInit);
+    for (const r of rows) {
+      const item = (r.itemNo ?? r.ItemNo ?? "").toString();
+      const u = (r.unitOfMeasureCode ?? r.UnitOfMeasureCode ?? "").toString().trim().toUpperCase();
+      if (item && u && out[item] === undefined) out[item] = u;   // la más reciente
+    }
+  } catch { /* sin historial */ }
+  return out;
+}
+
+export type BcUnidadItem = { code: string; factor: number };
+
+// Unidades de medida de UN material con su FACTOR a la unidad base: para M06-0009,
+// GR con factor 1 y EST con factor 255.000 (un estañón trae 255.000 gramos). Es el
+// dato que permite pasar un costo por gramo a precio por estañón.
+// Page 50244 (grupo inventory). Defensiva: si la extensión AL todavía no está
+// publicada devuelve [] — sin factor no se convierte nada, nunca se inventa uno.
+export async function bcUnidadesDeItem(itemNo: string): Promise<BcUnidadItem[]> {
+  if (!itemNo) return [];
+  try {
+    const filtro = `$filter=${encodeURIComponent(`itemNo eq '${itemNo}'`)}`;
+    const rows = await listCustom("inventory", `itemUnitsOfMeasure?${filtro}`,
+      { next: { revalidate: 300 } } as RequestInit);
+    return rows
+      .map((r) => ({
+        code: (r.code ?? r.Code ?? "").toString().trim(),
+        factor: Number(r.qtyPerUnitOfMeasure ?? r.QtyPerUnitOfMeasure ?? 0) || 0,
+      }))
+      .filter((u) => u.code && u.factor > 0);
+  } catch { return []; }
+}
+
+export type BcUltimaCompra = {
+  precio: number;      // por `unidad`, en `moneda` (NO por unidad base)
+  unidad: string;      // la unidad con que se compró: EST
+  factor: number;      // unidades base que trae esa unidad: 255000
+  moneda: string;      // "" = colones (moneda local)
+  documento: string;
+  fecha: string;
+};
+
+// Última compra del material TAL COMO QUEDÓ EN EL DOCUMENTO: precio por la unidad
+// con la que se compró y en la moneda del documento.
+//
+// Es distinto de `bcItemUltimaCompra`, que devuelve el costo por unidad BASE en
+// colones (sirve para valorar inventario). Para cotizarle a un proveedor hay que
+// usar esto: pegarle a una línea en estañones un costo por gramo la deja 255.000
+// veces más barata.
+//
+// Defensiva: si la página 50239 no expone todavía la unidad (extensión AL sin
+// publicar) devuelve null y el llamador se queda con el camino viejo.
+export async function bcUltimaCompraDocumento(itemNo: string): Promise<BcUltimaCompra | null> {
+  if (!itemNo) return null;
+  try {
+    const filtro = `$filter=${encodeURIComponent(`no eq '${itemNo}'`)}`;
+    const rows = await listCustom("purchasing",
+      `postedReceiptLines?${filtro}&$orderby=postingDate desc,documentNo desc&$top=1`,
+      { next: { revalidate: 300 } } as RequestInit);
+    const r = rows[0];
+    if (!r) return null;
+    const unidad = (r.unitOfMeasureCode ?? "").toString().trim();
+    const precio = Number(r.directUnitCost ?? 0) || 0;
+    if (!unidad || precio <= 0) return null;   // sin unidad no se sabe a qué corresponde el precio
+    return {
+      precio,
+      unidad,
+      factor: Number(r.qtyPerUnitOfMeasure ?? 0) || 1,
+      moneda: (r.currencyCode ?? "").toString().trim(),
+      documento: (r.documentNo ?? "").toString(),
+      fecha: (r.postingDate ?? "").toString(),
+    };
+  } catch { return null; }
+}
+
+// Descripción de cada unidad de medida de BC: EST -> "ESTAÑON", GR -> "Gramos".
+// El documento que ve el proveedor lleva la descripción, no el código, igual que
+// el reporte de BC. API estándar v2.0, cache 5 min como el resto de maestros.
+export async function bcDescripcionUnidades(): Promise<Record<string, string>> {
+  try {
+    const cid = await getStdCompanyId();
+    const url = `${stdRoot()}/companies(${cid})/unitsOfMeasure?$select=code,displayName&$top=500`;
+    const res = await bcFetch(url, { next: { revalidate: 300 } } as RequestInit);
+    if (!res.ok) return {};
+    const out: Record<string, string> = {};
+    for (const u of ((await res.json())?.value ?? [])) {
+      const code = (u.code ?? "").toString().trim();
+      const desc = (u.displayName ?? "").toString().trim();
+      if (code && desc) out[code] = desc;
+    }
+    return out;
+  } catch { return {}; }
 }
 
 export async function bcObras(): Promise<BcObra[]> {
@@ -497,15 +660,15 @@ export async function bcVendors(): Promise<BcVendor[]> {
 // de compra registradas en BC (API estándar v2.0). Revisa las facturas más
 // recientes del proveedor y devuelve el precio de la línea de ese item.
 // Devuelve null si no hay historial o si BC no responde (la UI cae al historial local).
-export async function bcUltimoPrecioFacturado(itemNo: string, vendorNo: string): Promise<number | null> {
+export async function bcUltimoPrecioFacturado(itemNo: string, vendorNo: string): Promise<PrecioFacturado | null> {
   if (!itemNo || !vendorNo) return null;
   try {
     const cid = await getStdCompanyId();
     const filtro = `$filter=${encodeURIComponent(`vendorNumber eq '${vendorNo}'`)}`;
     const url =
       `${stdRoot()}/companies(${cid})/purchaseInvoices?${filtro}` +
-      `&$orderby=invoiceDate desc&$top=20` +
-      `&$expand=purchaseInvoiceLines($select=lineType,lineObjectNumber,directUnitCost,unitCost)`;
+      `&$orderby=invoiceDate desc&$top=20&$select=id,currencyCode,invoiceDate` +
+      `&$expand=purchaseInvoiceLines($select=lineType,lineObjectNumber,unitOfMeasureCode,directUnitCost,unitCost)`;
     const res = await bcFetch(url, { cache: "no-store" });
     if (!res.ok) return null;
     const data: any = await res.json();
@@ -514,7 +677,15 @@ export async function bcUltimoPrecioFacturado(itemNo: string, vendorNo: string):
         if ((l.lineObjectNumber ?? "") === itemNo) {
           const precio = (typeof l.directUnitCost === "number" && l.directUnitCost > 0) ? l.directUnitCost
             : (typeof l.unitCost === "number" && l.unitCost > 0) ? l.unitCost : null;
-          if (precio != null) return precio;
+          // La unidad y la moneda VIAJAN CON EL PRECIO: ese precio es por la unidad
+          // de la línea facturada (estañón) y en la moneda de la factura. Devolver
+          // el número pelado fue justo el error que puso ₡1,74 en una línea de
+          // estañones.
+          if (precio != null) return {
+            precio,
+            unidad: (l.unitOfMeasureCode ?? "").toString().trim().toUpperCase(),
+            moneda: (inv.currencyCode ?? "").toString().trim(),
+          };
         }
       }
     }
@@ -523,6 +694,8 @@ export async function bcUltimoPrecioFacturado(itemNo: string, vendorNo: string):
     return null;
   }
 }
+
+export type PrecioFacturado = { precio: number; unidad: string; moneda: string };
 
 export type BcOrdenTotales = { subtotal: number; iva: number; total: number; currencyCode: string };
 
@@ -818,6 +991,7 @@ export async function bcReopenPedido(orderNo: string): Promise<string> {
 export type LineaReplaceBc = {
   tipo: "articulo" | "cargo";
   itemNo?: string; variantCode?: string; locationCode?: string;
+  unidad?: string;   // unidad de COMPRA (EST): en ella están cantidad y precio
   cantidad: number; precio: number | string; descuentoPct?: number;
   jobNo?: string; taskNo?: string;
   chargeNo?: string; chargeMethod?: string; descripcion?: string;
@@ -850,8 +1024,13 @@ export function payloadReplaceLines(lineas: LineaReplaceBc[]): { lines: Record<s
     }
     const itemNo = (l.itemNo ?? "").trim();
     if (!itemNo) { omitidas.push(`${nombre} (sin Nº de artículo)`); continue; }
+    // La unidad viaja junto a la cantidad y el precio. BC igual pone la unidad de
+    // compra del ítem al validar el N.º, pero mandarla explícita deja constancia de
+    // en qué unidad están estos números: si algún día no coinciden, BC se queda con
+    // la del ítem en vez de facturar 1 gramo al precio de un estañón.
     lines.push({
       type: "Item", itemNo, variantCode: l.variantCode ?? "", locationCode: l.locationCode ?? "",
+      unitOfMeasureCode: (l.unidad ?? "").trim().toUpperCase(),
       quantity: cantidad, directUnitCost: precio, lineDiscountPct: Number(l.descuentoPct) || 0,
       jobNo: l.jobNo ?? "", taskNo: l.taskNo ?? "",
     });

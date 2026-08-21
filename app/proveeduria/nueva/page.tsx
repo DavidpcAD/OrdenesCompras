@@ -7,6 +7,7 @@ import { Combobox } from "@/components/combobox";
 import { IconWarning } from "@/components/icons";
 import { useStore } from "@/lib/store";
 import { money, ultimoPrecioProveedor, almacenesParaRecepcion, esAlmacenFisico, pedidoLineaPendiente, monedaApp } from "@/lib/helpers";
+import { precioEnUnidad, equivalencia, mismaMoneda, type PrecioRef } from "@/lib/unidad";
 import type { OrdenLinea } from "@/lib/types";
 
 interface Row {
@@ -15,7 +16,9 @@ interface Row {
   articuloId: string;
   variantCode: string;
   descripcion: string;
-  unidad: string;
+  unidad: string;           // la de COMPRA (EST): es la que BC va a facturar
+  unidadBase?: string;      // la de inventario (GR), solo para explicar la equivalencia
+  factorCompra?: number;
   almacen: string;
   cantidad: string;
   precio: string;
@@ -78,15 +81,13 @@ export default function ArmarOrdenPage() {
   };
   const cargoImporte = (c: Cargo) => (Number(c.cantidad) || 0) * (Number(c.precio) || 0);
 
-  // Catálogo de items de BC para agregar líneas manualmente a la orden.
-  const [itemsBc, setItemsBc] = useState<{ code: string; descripcion: string; unidad: string; precioUltimo?: number }[]>([]);
   // Almacenes reales de BC (fallback al catálogo seed si BC no responde).
   const [bcAlm, setBcAlm] = useState<typeof almacenes | null>(null);
   useEffect(() => {
-    fetch("/api/bc/items")
-      .then((r) => (r.ok ? r.json() : { items: [] }))
-      .then((d) => { if (Array.isArray(d.items)) setItemsBc(d.items.map((i: any) => ({ code: i.code, descripcion: i.descripcion, unidad: i.unidad || "UND", precioUltimo: typeof i.lastDirectCost === "number" ? i.lastDirectCost : undefined }))); })
-      .catch(() => { /* sin BC */ });
+    // Acá NO se baja el catálogo de ítems: esta pantalla no tiene buscador de
+    // artículos (las líneas vienen de solicitudes ya hechas). Solo se usaba para
+    // el precio de referencia, que ahora lo da /api/bc/lastprice con su unidad y
+    // su moneda — y eran 5.500 ítems por cada vez que se abría la pantalla.
     fetch("/api/bc/almacenes")
       .then((r) => (r.ok ? r.json() : { almacenes: [] }))
       .then((d) => {
@@ -101,15 +102,15 @@ export default function ArmarOrdenPage() {
 
   const [rows, setRows] = useState<Row[]>(() =>
     borrador.map((b) => {
-      let info = { pedidoNumero: "", articuloId: "", variantCode: "", descripcion: "", unidad: "", almacen: "", proyecto: "" };
+      let info: Partial<Row> = { pedidoNumero: "", articuloId: "", variantCode: "", descripcion: "", unidad: "", almacen: "", proyecto: "" };
       for (const p of pedidos) {
         const l = p.lineas.find((x) => x.id === b.pedidoLineaId);
-        if (l) { info = { pedidoNumero: p.numero, articuloId: l.articuloId, variantCode: l.variantCode ?? "", descripcion: l.descripcion, unidad: l.unidad, almacen: l.almacen, proyecto: p.tipoSolicitud === "material" ? (l.almacen || p.obraCodigo || "") : "" }; break; }
+        if (l) { info = { pedidoNumero: p.numero, articuloId: l.articuloId, variantCode: l.variantCode ?? "", descripcion: l.descripcion, unidad: l.unidad, unidadBase: l.unidadBase, factorCompra: l.factorCompra, almacen: l.almacen, proyecto: p.tipoSolicitud === "material" ? (l.almacen || p.obraCodigo || "") : "" }; break; }
       }
       return {
         pedidoLineaId: b.pedidoLineaId, ...info,
         cantidad: String(b.cantidad), precio: String(b.precio), iva: String(b.iva), descuento: "0", tarea: "",
-      };
+      } as Row;
     })
   );
 
@@ -123,7 +124,7 @@ export default function ArmarOrdenPage() {
   // Último precio de compra por BC: con proveedor trae el precio FACTURADO a ese
   // proveedor; SIN proveedor cae al último costo directo del item. Así el precio
   // del material aparece aunque todavía no se haya elegido proveedor.
-  const [bcPrices, setBcPrices] = useState<Record<string, number | null>>({});
+  const [bcPrices, setBcPrices] = useState<Record<string, PrecioRef | null>>({});
   const itemIdsKey = [...new Set(rows.map((r) => r.articuloId).filter(Boolean))].sort().join(",");
   useEffect(() => {
     const code = provSel?.code ?? "";
@@ -134,7 +135,12 @@ export default function ArmarOrdenPage() {
       try {
         const r = await fetch(`/api/bc/lastprice?item=${encodeURIComponent(it)}&vendor=${encodeURIComponent(code)}`);
         const d = await r.json();
-        return [it, typeof d.precio === "number" ? d.precio : null] as const;
+        // El precio viene rotulado con SU unidad y SU moneda: sin eso no se sabe si
+        // aplica a esta línea (₡1,74 por gramo no es el precio de un estañón).
+        const ref: PrecioRef | null = typeof d.precio === "number" && d.precio > 0
+          ? { precio: d.precio, unidad: String(d.unidad ?? ""), moneda: String(d.moneda ?? ""), factor: d.factor }
+          : null;
+        return [it, ref] as const;
       } catch { return [it, null] as const; }
     })).then((pairs) => { if (!cancel) setBcPrices(Object.fromEntries(pairs)); });
     return () => { cancel = true; };
@@ -160,10 +166,10 @@ export default function ArmarOrdenPage() {
   function agregarDeSolicitud(p: (typeof pedidos)[number], l: (typeof pedidos)[number]["lineas"][number], pend: number) {
     // Precio inicial = último precio de compra real (BC); si no hay historial, 0
     // para que proveeduría escriba lo acordado con el proveedor.
-    const hist = itemsBc.find((x) => x.code === l.articuloId)?.precioUltimo ?? bcPrices[l.articuloId] ?? 0;
+    const hist = precioRefEnLinea(l.articuloId, l.unidad, l.unidadBase) ?? 0;
     setRows((rs) => [...rs, {
       pedidoNumero: p.numero, pedidoLineaId: l.id, articuloId: l.articuloId, variantCode: l.variantCode ?? "",
-      descripcion: l.descripcion, unidad: l.unidad, almacen: l.almacen,
+      descripcion: l.descripcion, unidad: l.unidad, unidadBase: l.unidadBase, factorCompra: l.factorCompra, almacen: l.almacen,
       cantidad: String(pend), precio: String(hist || 0), iva: "13", descuento: "0",
       proyecto: p.tipoSolicitud === "material" ? (l.almacen || p.obraCodigo || "") : "", tarea: "",
     }]);
@@ -181,12 +187,26 @@ export default function ArmarOrdenPage() {
     if (metodoAsig === "Amount") return subtotal > 0 ? cargosTotal * calcImporte(r) / subtotal : 0;
     return 0; // Weight / Volume → se calcula en BC
   };
-  const lastPrice = (r: Row) => {
-    const bc = bcPrices[r.articuloId];
-    if (typeof bc === "number") return bc;
-    const it = itemsBc.find((x) => x.code === r.articuloId);
-    if (it?.precioUltimo) return it.precioUltimo;
-    return proveedorId ? ultimoPrecioProveedor(ordenes, r.articuloId, proveedorId) : null;
+  // Precio de referencia LLEVADO A LA UNIDAD de la línea. Devuelve null cuando no
+  // se puede convertir (o cuando el precio está en otra moneda): mejor sin número
+  // que con uno que parece precio y está 255.000 veces abajo.
+  function precioRefEnLinea(articuloId: string, unidadLinea: string, unidadBase?: string): number | null {
+    const ref = bcPrices[articuloId];
+    if (ref) {
+      if (!mismaMoneda(ref.moneda, currency)) return null;
+      const p = precioEnUnidad(ref, unidadLinea, unidadBase ?? ref.unidad);
+      if (p != null) return p;
+    }
+    // Historial de la propia app: ya está guardado en la unidad de la orden.
+    return proveedorId ? ultimoPrecioProveedor(ordenes, articuloId, proveedorId) : null;
+  }
+  const lastPrice = (r: Row) => precioRefEnLinea(r.articuloId, r.unidad, r.unidadBase);
+  // Referencia que NO aplica a esta línea (otra unidad u otra moneda): se muestra
+  // rotulada, sin ofrecer pegarla.
+  const refAjena = (r: Row): PrecioRef | null => {
+    const ref = bcPrices[r.articuloId];
+    if (!ref) return null;
+    return lastPrice(r) == null ? ref : null;
   };
   // Prellenar el precio con el ÚLTIMO precio mostrado (que incluye el historial de
   // órdenes de la app al mismo proveedor), para las líneas que sigan en 0. Antes
@@ -199,7 +219,7 @@ export default function ArmarOrdenPage() {
       return typeof lp === "number" && lp > 0 ? { ...r, precio: String(lp) } : r;
     }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [bcPrices, itemsBc, proveedorId, ordenes]);
+  }, [bcPrices, proveedorId, ordenes, currency]);
   // El IVA se aplica a los materiales Y al flete/cargo (13%), igual que en BC. Antes
   // el cargo quedaba sin IVA y el total no cuadraba con BC (faltaba el 13% del flete).
   const ivaCargos = cargosTotal * 0.13;
@@ -405,14 +425,27 @@ export default function ArmarOrdenPage() {
                           cuando el material se compra por M3, KG o SACO. */}
                       <span className="row gap-2" style={{ justifyContent: "flex-end", alignItems: "baseline" }}>
                         <input className="ds-cell-input" aria-label="Cantidad" type="number" min={0} value={r.cantidad} style={{ width: 70 }} onChange={(e) => setRow(r.pedidoLineaId, { cantidad: e.target.value })} />
-                        <span className="ds-body-sm ds-muted" style={{ whiteSpace: "nowrap" }}>{r.unidad || "—"}</span>
+                        <span className="ds-body-sm ds-muted" style={{ whiteSpace: "nowrap" }}
+                          title={equivalencia({ base: r.unidadBase ?? "", compra: r.unidad, factor: r.factorCompra }) ?? undefined}>
+                          {r.unidad || "—"}
+                        </span>
                       </span>
                     </td>
                     <td className="ds-num">
                       <input className="ds-cell-input" aria-label="Precio" type="number" min={0} value={r.precio} style={{ width: 92 }} onChange={(e) => setRow(r.pedidoLineaId, { precio: e.target.value })} />
                       {(() => {
                         const lp = lastPrice(r);
-                        if (lp == null) return <div className="ds-body-sm ds-muted">sin historial</div>;
+                        if (lp == null) {
+                          const aj = refAjena(r);
+                          // Rotulada con su unidad y su moneda para que se vea POR QUÉ
+                          // no se puede usar tal cual.
+                          if (aj) return (
+                            <div className="ds-body-sm ds-muted" title="El último precio de BC está en otra unidad o moneda: escribí el precio acordado con el proveedor.">
+                              últ. {money(aj.precio, monedaApp(aj.moneda))} / {aj.unidad || "?"}
+                            </div>
+                          );
+                          return <div className="ds-body-sm ds-muted">sin historial</div>;
+                        }
                         const up = Number(r.precio) > lp, down = Number(r.precio) < lp;
                         const igual = !up && !down;
                         return (
