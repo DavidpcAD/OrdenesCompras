@@ -6,7 +6,7 @@ import { Badge, Button, Card, EmptyState, Field, Input, Select, Textarea, useToa
 import { IconWarning } from "@/components/icons";
 import { Combobox } from "@/components/combobox";
 import { useStore } from "@/lib/store";
-import { money, ordenEsDirecta, ordenPedidos, almacenesParaRecepcion, esAlmacenFisico, monedaApp } from "@/lib/helpers";
+import { money, ordenEsDirecta, ordenPedidos, almacenesParaRecepcion, esAlmacenFisico, monedaApp, numeroOrden } from "@/lib/helpers";
 import type { OrdenLinea } from "@/lib/types";
 
 interface Row { key: string; articuloId: string; descripcion: string; unidad: string; obra: string; cantidad: string; precio: string; iva: string; descuento: string; proyecto?: string; taskNo?: string; pedidoLineaId?: string; pedidoNumero?: string; }
@@ -165,7 +165,7 @@ export default function EditarOrdenPage() {
       // Si BC no quedó sincronizado, ese aviso manda: el pedido allá tendría las
       // líneas viejas y Bodega recibiría contra ellas.
       if (r?.bcAviso) toast(r.bcAviso, "info");
-      else toast(`Orden ${orden!.numero} actualizada`, "success");
+      else toast(`Orden ${numeroOrden(orden!)} actualizada`, "success");
       router.push(`/proveeduria/ordenes/${orden!.id}`);
     } catch (e: any) { toast(String(e?.message ?? e), "error"); setGuardando(false); }
   }
@@ -176,7 +176,7 @@ export default function EditarOrdenPage() {
         <button type="button" className="back-link" onClick={() => router.push(`/proveeduria/ordenes/${id}`)}>Volver a la orden</button>
         <div className="page__head">
           <div className="page__title">
-            <div className="row gap-3"><h1 className="ds-heading">Editar {orden.numero}</h1><Badge tone="gray">Abierta</Badge></div>
+            <div className="row gap-3"><h1 className="ds-heading">Editar {numeroOrden(orden)}</h1><Badge tone="gray">Abierta</Badge></div>
             <p className="ds-muted">Ajustá proveedor, almacén, líneas y precios. Solo se puede mientras la orden esté Abierta.</p>
           </div>
         </div>

@@ -290,6 +290,14 @@ export function ordenEsParcial(o: Orden): boolean {
 
 // Números de solicitud (PED-…) reales que originaron la orden. Las líneas
 // agregadas a mano llevan pedidoNumero "Manual" y no cuentan como solicitud.
+// N.º de la orden TAL COMO SE MANEJA: el de Business Central. Es el que existe en el
+// ERP, el que ve el proveedor en el PDF y el que Contabilidad busca. El `numero`
+// interno de la app es una serie aparte que arranca en 1 en cada base — solo se
+// muestra mientras la orden todavía no está en BC (recién creada, sin lanzar).
+export function numeroOrden(o: { numero: string; bcNumber?: string }): string {
+  return o.bcNumber || o.numero;
+}
+
 export function ordenPedidos(o: Orden): string[] {
   return [...new Set(o.lineas.filter((l) => l.pedidoNumero && l.pedidoNumero !== "Manual").map((l) => l.pedidoNumero!))];
 }
@@ -343,7 +351,8 @@ export function ordenesPorPedido(pedidos: Pedido[], ordenes: Orden[]): Map<strin
     }
     for (const num of numeros) {
       const arr = m.get(num) ?? [];
-      if (!arr.some((x) => x.id === o.id)) arr.push({ id: o.id, numero: o.numero });
+      // El N.º que se muestra es el que se maneja: el de BC (ver numeroOrden).
+      if (!arr.some((x) => x.id === o.id)) arr.push({ id: o.id, numero: numeroOrden(o) });
       m.set(num, arr);
     }
   }

@@ -6,7 +6,7 @@ import { Button, Checkbox, EmptyState, Field, Modal, Select, Skeleton, Textarea,
 import { IconWarning } from "@/components/icons";
 import { OrdenDetalle } from "@/components/orden-detalle";
 import { useStore } from "@/lib/store";
-import { num, ordenPendienteResumen } from "@/lib/helpers";
+import { num, ordenPendienteResumen, numeroOrden } from "@/lib/helpers";
 
 export default function ProvOrdenDetallePage() {
   const { id } = useParams<{ id: string }>();
@@ -89,15 +89,15 @@ export default function ProvOrdenDetallePage() {
       if (crearNueva) {
         const n = await nuevaOrdenConPendiente(orden!.id, texto);
         setCerrando(false);
-        toast(`${orden!.numero} cerrada · ${n.numero} creada con lo pendiente`, "success");
+        toast(`${numeroOrden(orden!)} cerrada · ${n.numero} creada con lo pendiente`, "success");
         if (n.id) router.push(`/proveeduria/ordenes/${n.id}`);
         return;
       }
       const r = await cerrarOrden(orden!.id, texto, devolver);
       setCerrando(false);
       toast(r.pendienteDevuelto > 0
-        ? `${orden!.numero} cerrada · ${num.format(r.pendienteDevuelto)} u. sin recibir ${devolver ? "volvieron a las solicitudes" : "quedaron consumidas"}`
-        : `${orden!.numero} cerrada`, "success");
+        ? `${numeroOrden(orden!)} cerrada · ${num.format(r.pendienteDevuelto)} u. sin recibir ${devolver ? "volvieron a las solicitudes" : "quedaron consumidas"}`
+        : `${numeroOrden(orden!)} cerrada`, "success");
     } catch (e: any) {
       toast(`No se pudo cerrar la orden: ${String(e?.message ?? e)}`, "error");
     } finally {
@@ -110,7 +110,7 @@ export default function ProvOrdenDetallePage() {
       {orden.estado === "abierto" && (
         <>
           <Button variant="outline" onClick={() => router.push(`/proveeduria/ordenes/${orden.id}/editar`)}>Editar</Button>
-          <Button disabled={procesando} onClick={() => act("pendiente_aprobacion", `${orden.numero} enviada a aprobación`)}>
+          <Button disabled={procesando} onClick={() => act("pendiente_aprobacion", `${numeroOrden(orden)} enviada a aprobación`)}>
             {procesando ? "Enviando…" : "Enviar a aprobación"}
           </Button>
         </>
@@ -124,7 +124,7 @@ export default function ProvOrdenDetallePage() {
       {orden.estado === "rechazado" && (
         <>
           <Button variant="outline" onClick={() => router.push(`/proveeduria/ordenes/${orden.id}/editar`)}>Editar</Button>
-          <Button disabled={procesando} onClick={() => act("pendiente_aprobacion", `${orden.numero} corregida y reenviada a aprobación`)}>
+          <Button disabled={procesando} onClick={() => act("pendiente_aprobacion", `${numeroOrden(orden)} corregida y reenviada a aprobación`)}>
             {procesando ? "Reenviando…" : "Reenviar a aprobación"}
           </Button>
         </>
@@ -137,7 +137,7 @@ export default function ProvOrdenDetallePage() {
           title={tieneRecepciones
             ? "Ya tiene facturas/recepciones registradas: no se puede volver a abrir. Lo que llegó mal va por devolución."
             : "Reabre la orden acá y des-lanza el pedido en Business Central para corregirla y volver a enviarla a aprobación."}
-          onClick={() => void act("abierto", `${orden.numero} reabierta${orden.bcNumber ? ` · ${orden.bcNumber} des-lanzado en BC` : ""} — corregila y volvé a enviarla a aprobación`, { reabrirBc: true })}>
+          onClick={() => void act("abierto", `${numeroOrden(orden)} reabierta${orden.bcNumber ? ` · ${orden.bcNumber} des-lanzado en BC` : ""} — corregila y volvé a enviarla a aprobación`, { reabrirBc: true })}>
           Volver a abrir
         </Button>
       )}
@@ -169,7 +169,7 @@ export default function ProvOrdenDetallePage() {
         ) : null} />
 
       {cerrando && (
-        <Modal title={`Cerrar ${orden.numero}`} onClose={() => setCerrando(false)} footer={
+        <Modal title={`Cerrar ${numeroOrden(orden)}`} onClose={() => setCerrando(false)} footer={
           <>
             <Button variant="outline" onClick={() => setCerrando(false)} disabled={procesando}>Cancelar</Button>
             <Button onClick={() => void confirmarCierre()} disabled={procesando || !motivo}>

@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import { Badge, Button, Card, EmptyState, QtyRing, Tile } from "@/components/ui";
 import { IconDelivery } from "@/components/icons";
 import { useStore } from "@/lib/store";
-import { money, formatDate, ordenAvance, ordenEsParcial, ordenRecibidoPct, ordenSubtotal } from "@/lib/helpers";
+import { money, formatDate, ordenAvance, ordenEsParcial, ordenRecibidoPct, ordenSubtotal, numeroOrden } from "@/lib/helpers";
 
 export default function FacturacionPage() {
   const { ordenes, proveedores } = useStore();
@@ -46,7 +46,7 @@ export default function FacturacionPage() {
                     <QtyRing {...ordenAvance(o)} />
                     <div className="col" style={{ gap: 4 }}>
                       <div className="row gap-3">
-                        <span className="ds-strong">{o.numero}</span>
+                        <span className="ds-strong">{numeroOrden(o)}</span>
                         {ordenEsParcial(o) ? <Badge tone="yellow">Parcial · {ordenRecibidoPct(o)}%</Badge> : <Badge tone="green">Lanzado</Badge>}
                       </div>
                       <span className="ds-muted ds-label">{o.proveedorNombre ?? prov(o.proveedorId)?.nombre} · emitida {formatDate(o.fecha)}</span>

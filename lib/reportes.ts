@@ -1,4 +1,7 @@
 import type { Orden, OrdenEstado, Pedido } from "./types";
+// Con extensión a propósito: este módulo lo carga también el test con node puro
+// (sin el resolutor de Next), y ahí un import sin extensión no resuelve.
+import { numeroOrden } from "./helpers.ts";
 
 /* ============================================================================
    Reportes de compras.
@@ -95,7 +98,7 @@ export function filasDeCompra(ordenes: Orden[], pedidos: Pedido[], filtro: Filtr
       }
       filas.push({
         ordenId: o.id,
-        ordenNumero: o.numero,
+        ordenNumero: numeroOrden(o),
         bcNumber: o.bcNumber,
         fecha: o.fecha,
         estado: o.estado,

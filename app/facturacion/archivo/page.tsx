@@ -6,7 +6,7 @@ import type { ColumnDef } from "@tanstack/react-table";
 import { Badge, Button, Card, Field, Input, Modal, Tile, useToast } from "@/components/ui";
 import { DataTable } from "@/components/data-table";
 import { useStore } from "@/lib/store";
-import { money, formatDate } from "@/lib/helpers";
+import { money, formatDate, numeroOrden } from "@/lib/helpers";
 import type { Recepcion } from "@/lib/types";
 
 const esEnRevision = (r: Recepcion) => !!r.facturaEnRevision || !r.numeroFactura;
@@ -59,7 +59,7 @@ export default function ArchivoPage() {
 
   const columns = useMemo<ColumnDef<Recepcion, any>[]>(() => [
     { id: "factura", header: "Factura", accessorFn: (r) => r.numeroFactura, meta: { label: "Factura" }, cell: (c) => <span className="ds-strong">{c.getValue()}</span> },
-    { id: "orden", header: "Orden", accessorFn: (r) => ordenDe(r)?.numero ?? "—", meta: { label: "Orden" }, cell: (c) => c.getValue() },
+    { id: "orden", header: "Orden", accessorFn: (r) => { const o = ordenDe(r); return o ? numeroOrden(o) : "—"; }, meta: { label: "Orden" }, cell: (c) => c.getValue() },
     { id: "proveedor", header: "Proveedor", accessorFn: (r) => { const o = ordenDe(r); return (o ? (o.proveedorNombre ?? prov(o.proveedorId)?.nombre) : "") ?? "—"; }, meta: { label: "Proveedor" }, cell: (c) => c.getValue() },
     { id: "fecha", header: "Fecha registro", accessorFn: (r) => r.fechaRegistro, meta: { label: "Fecha registro" }, cell: (c) => formatDate(c.getValue()) },
     { id: "recibidoPor", header: "Recibido por", accessorFn: (r) => r.recibidoPor ?? "—", meta: { label: "Recibido por" }, cell: (c) => <span className="ds-body-sm">{c.getValue()}</span> },
@@ -99,7 +99,7 @@ export default function ArchivoPage() {
                     const o = ordenDe(r);
                     return (
                       <tr key={r.id}>
-                        <td className="ds-strong ds-body-sm">{o?.numero ?? "—"}</td>
+                        <td className="ds-strong ds-body-sm">{o ? numeroOrden(o) : "—"}</td>
                         <td className="ds-body-sm">{(o ? (o.proveedorNombre ?? prov(o.proveedorId)?.nombre) : "") ?? "—"}</td>
                         <td className="ds-body-sm ds-muted">{formatDate(r.fechaRecepcion)} · {r.lineas.length} línea(s)</td>
                         <td className="ds-num">{money(r.total, o?.currencyCode)}</td>
@@ -117,7 +117,7 @@ export default function ArchivoPage() {
         <DataTable data={registradas} columns={columns} tablaKey="recepciones" buscarPlaceholder="Buscar por N.º de factura o proveedor…" getRowId={(r) => r.id} onRowClick={(r) => router.push(`/facturacion/recepcion/${r.id}`)} vacio="Sin facturas registradas." />
 
         {facObj && (
-          <Modal title={`Registrar factura · ${ordenDe(facObj)?.numero ?? ""}`} onClose={() => setFacObj(null)}
+          <Modal title={`Registrar factura · ${(() => { const o = ordenDe(facObj); return o ? numeroOrden(o) : ""; })()}`} onClose={() => setFacObj(null)}
             footer={<><Button variant="outline" onClick={() => setFacObj(null)}>Cancelar</Button><Button variant="green" onClick={confirmarFactura} disabled={!numFac.trim() || guardando}>{guardando ? "Registrando…" : "Registrar factura"}</Button></>}>
             <p className="ds-muted ds-body-sm" style={{ marginTop: 0 }}>El material ya se recibió. Registrá la factura del proveedor (se contabiliza en BC lo ya recibido).</p>
             <Field label="N.º de factura del proveedor">

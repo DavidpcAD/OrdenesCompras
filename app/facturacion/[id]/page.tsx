@@ -7,7 +7,7 @@ import { IconWarning } from "@/components/icons";
 import { DateField } from "@/components/date-field";
 import { useStore } from "@/lib/store";
 import { useVolver } from "@/lib/use-volver";
-import { esNombreObraVacio, money, distribuirCargo, num, ordenBadge, ordenLineaPendiente, ordenRecibidoPct, todayISO } from "@/lib/helpers";
+import { esNombreObraVacio, money, distribuirCargo, num, ordenBadge, ordenLineaPendiente, ordenRecibidoPct, todayISO, numeroOrden } from "@/lib/helpers";
 import type { MotivoNC, OrdenLinea } from "@/lib/types";
 
 // Resumen que se muestra al terminar de registrar ("cómo quedó en BC").
@@ -317,7 +317,7 @@ export default function RegistrarFacturaPage() {
       // y Contabilidad nunca las ve.
       let avisoNc = "";
       if (nc.length) {
-        try { await marcarNotasCredito(orden!.id, orden!.numero, orden!.proveedorNombre ?? prov?.nombre, nc); }
+        try { await marcarNotasCredito(orden!.id, numeroOrden(orden!), orden!.proveedorNombre ?? prov?.nombre, nc); }
         catch (e: any) { avisoNc = ` · OJO: no se pudieron guardar las ${nc.length} línea(s) marcadas para nota de crédito (${String(e?.message ?? e)}). Avisale a Contabilidad.`; }
       }
       const falloBc = aviso.includes("NO se pudo") || aviso.includes("no disponible");
@@ -404,7 +404,7 @@ export default function RegistrarFacturaPage() {
       // y Contabilidad nunca las ve.
       let avisoNc = "";
       if (nc.length) {
-        try { await marcarNotasCredito(orden!.id, orden!.numero, orden!.proveedorNombre ?? prov?.nombre, nc); }
+        try { await marcarNotasCredito(orden!.id, numeroOrden(orden!), orden!.proveedorNombre ?? prov?.nombre, nc); }
         catch (e: any) { avisoNc = ` · OJO: no se pudieron guardar las ${nc.length} línea(s) marcadas para nota de crédito (${String(e?.message ?? e)}). Avisale a Contabilidad.`; }
       }
       const falloBc = aviso.includes("NO se pudo") || aviso.includes("no disponible");
@@ -423,7 +423,7 @@ export default function RegistrarFacturaPage() {
         <div className="page__head">
           <div className="page__title">
             <div className="row gap-3">
-              <h1 className="ds-heading">Registrar factura · {orden.bcNumber ?? orden.numero}</h1>
+              <h1 className="ds-heading">Registrar factura · {numeroOrden(orden)}</h1>
               <Badge tone={ordenBadge(orden.estado).tone}>{ordenBadge(orden.estado).label}</Badge>
             </div>
             <p className="ds-muted">{orden.proveedorNombre ?? prov?.nombre} · recibido {ordenRecibidoPct(orden)}%</p>

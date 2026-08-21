@@ -8,7 +8,7 @@ import { DataTable } from "@/components/data-table";
 import { VistaToggle } from "@/components/vista-toggle";
 import { IconReceipt, IconList } from "@/components/icons";
 import { useStore } from "@/lib/store";
-import { formatDate, pedidoCompraBadge, pedidoOrdenadoPct, ordenesPorPedido, recibidoPorLineaPedido, destinoCodigo, destinoLabel, tipoSolicitudBadge } from "@/lib/helpers";
+import { formatDate, pedidoCompraBadge, pedidoOrdenadoPct, ordenesPorPedido, recibidoPorLineaPedido, destinoCodigo, destinoLabel, tipoSolicitudBadge, numeroOrden } from "@/lib/helpers";
 import type { Pedido } from "@/lib/types";
 
 type Filtro = "todas" | "pendiente" | "parcial" | "ordenado";

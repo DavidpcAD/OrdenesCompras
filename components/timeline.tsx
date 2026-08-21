@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useStore } from "@/lib/store";
-import { formatDateTime, ROL_LABEL } from "@/lib/helpers";
+import { formatDateTime, ROL_LABEL, numeroOrden } from "@/lib/helpers";
 import type { Movimiento } from "@/lib/types";
 
 // Códigos de estado -> nombre legible (pedidos y órdenes).
@@ -98,7 +98,7 @@ export function Timeline({
   const { movimientos, pedidos, ordenes, modoApi } = useStore();
 
   // Mapa idOrden -> número de orden, para mostrar de qué orden viene cada evento.
-  const numeroDeOrden = new Map(ordenes.map((o) => [o.id, o.numero]));
+  const numeroDeOrden = new Map(ordenes.map((o) => [o.id, numeroOrden(o)]));
 
   // Órdenes que incluyen al menos una línea de este pedido (enlace N:M): sus
   // movimientos completan la traza pedido → orden → recepción.

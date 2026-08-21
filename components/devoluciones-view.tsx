@@ -6,7 +6,7 @@ import type { ColumnDef } from "@tanstack/react-table";
 import { Badge } from "@/components/ui";
 import { DataTable } from "@/components/data-table";
 import { useStore } from "@/lib/store";
-import { destinoLabel, devolucionesDeRol, formatDate } from "@/lib/helpers";
+import { destinoLabel, devolucionesDeRol, formatDate, numeroOrden } from "@/lib/helpers";
 import type { Role } from "@/lib/types";
 
 type Dev = { id: string; tipo: "Solicitud" | "Orden"; numero: string; contra: string; motivo: string; fecha: string; href: string };
@@ -35,7 +35,7 @@ export function DevolucionesView({ role }: { role: Role }) {
       // contra el catálogo igual que en el detalle, para no mostrar "—".
       const prov = proveedores.find((p) => p.id === o.proveedorId);
       out.push({
-        id: o.id, tipo: "Orden", numero: o.numero, contra: o.proveedorNombre ?? prov?.nombre ?? o.proveedorNo ?? prov?.code ?? "—",
+        id: o.id, tipo: "Orden", numero: numeroOrden(o), contra: o.proveedorNombre ?? prov?.nombre ?? o.proveedorNo ?? prov?.code ?? "—",
         motivo: o.motivoRechazo ?? "—", fecha: o.fecha,
         href: role === "proveeduria" ? `/proveeduria/ordenes/${o.id}` : "",
       });

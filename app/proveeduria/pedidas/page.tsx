@@ -7,7 +7,7 @@ import { DataTable } from "@/components/data-table";
 import { VistaToggle } from "@/components/vista-toggle";
 import { IconReceipt, IconList } from "@/components/icons";
 import { useStore } from "@/lib/store";
-import { num, formatDate } from "@/lib/helpers";
+import { num, formatDate, numeroOrden } from "@/lib/helpers";
 
 type Estado = "pendiente" | "parcial" | "llego";
 interface Row {
@@ -47,7 +47,7 @@ export default function ProveeduriaLineasPedidasPage() {
         const recibido = l.cantidadRecibida ?? 0;
         const estado: Estado = recibido >= l.cantidad - 1e-9 ? "llego" : recibido > 0 ? "parcial" : "pendiente";
         rows.push({
-          ordenId: o.id, ordenNumero: o.numero, itemNo: art?.code ?? l.articuloId ?? "—", descripcion: l.descripcion,
+          ordenId: o.id, ordenNumero: numeroOrden(o), itemNo: art?.code ?? l.articuloId ?? "—", descripcion: l.descripcion,
           proveedor: o.proveedorNombre ? `${o.proveedorNo ?? prov?.code ?? ""} · ${o.proveedorNombre}`.trim().replace(/^· /, "") : prov ? `${prov.code} · ${prov.nombre}` : "—",
           pedido: l.pedidoNumero ?? "—", solicitante: ped?.solicitante ?? "—", unidad: l.unidad, ordenado: l.cantidad, recibido, estado,
         });

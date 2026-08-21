@@ -7,7 +7,7 @@ import { IconChevronDown, IconWarning } from "@/components/icons";
 import { OrderLinesTable } from "@/components/order-lines";
 import { Timeline } from "@/components/timeline";
 import { useStore } from "@/lib/store";
-import { money, num, formatDate, ordenBadge, proveedorLabel, ordenLineaImporte, ordenRecibidoPct, ordenPedidos, ordenEsDirecta } from "@/lib/helpers";
+import { money, num, formatDate, ordenBadge, proveedorLabel, ordenLineaImporte, ordenRecibidoPct, ordenPedidos, ordenEsDirecta, numeroOrden } from "@/lib/helpers";
 import { ChipPedido } from "@/components/ordenes-lista";
 import { useVolver } from "@/lib/use-volver";
 import type { Orden } from "@/lib/types";
@@ -71,11 +71,11 @@ export function OrdenDetalle({
       <div className="page__head">
         <div className="page__title">
           <div className="row gap-3">
-            <h1 className="ds-heading">{orden.numero}</h1>
+            <h1 className="ds-heading">{numeroOrden(orden)}</h1>
             <Badge tone={b.tone}>{b.label}</Badge>
             {esDirecta && <Badge tone="yellow">Directa</Badge>}
           </div>
-          <p className="ds-muted">{orden.proveedorNo ?? prov?.code} · {proveedorLabel(orden, proveedores)} · emitida {formatDate(orden.fecha)} · recibido {ordenRecibidoPct(orden)}%{orden.bcNumber ? ` · BC ${orden.bcNumber}` : ""}</p>
+          <p className="ds-muted">{orden.proveedorNo ?? prov?.code} · {proveedorLabel(orden, proveedores)} · emitida {formatDate(orden.fecha)} · recibido {ordenRecibidoPct(orden)}%{numeroOrden(orden) !== orden.numero ? ` · interno ${orden.numero}` : " · todavía no está en BC"}</p>
           {orden.almacenRecepcion && <p className="ds-body-sm ds-muted">Recepción en almacén <span className="ds-strong">{orden.almacenRecepcion}</span></p>}
           <div className="row gap-2 wrap mt-2">
             {esDirecta ? (

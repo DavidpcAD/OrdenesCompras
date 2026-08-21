@@ -7,7 +7,7 @@ import { Badge, ProgressBar, EmptyState } from "@/components/ui";
 import { DataTable } from "@/components/data-table";
 import { IconChevronDown } from "@/components/icons";
 import { useStore } from "@/lib/store";
-import { money, formatDate, ordenAvance, ordenBadge, ordenRecibidoPct, ordenSubtotal, ordenPedidos, ordenEsDirecta, ordenLineaImporte, proveedorLabel, num } from "@/lib/helpers";
+import { money, formatDate, ordenAvance, ordenBadge, ordenRecibidoPct, ordenSubtotal, ordenPedidos, ordenEsDirecta, ordenLineaImporte, proveedorLabel, num, numeroOrden } from "@/lib/helpers";
 import type { Orden } from "@/lib/types";
 
 // N.º de solicitud de origen. Con link es un botón que abre esa solicitud (y no
@@ -51,7 +51,12 @@ export function OrdenesLista({
   const toggleGrupo = (k: string) => setAbiertos((s) => { const n = new Set(s); n.has(k) ? n.delete(k) : n.add(k); return n; });
 
   const columns = useMemo<ColumnDef<Orden, any>[]>(() => [
-    { id: "num", header: "N.º", accessorFn: (o) => o.numero, meta: { label: "N.º" }, cell: (c) => <span className="ds-strong">{c.getValue()}</span> },
+    {
+      // El N.º que se maneja es el de BC. El interno viaja en el accessor para poder
+      // buscar por los dos (soporte a veces tiene el CP-0000xx a mano).
+      id: "num", header: "N.º", accessorFn: (o) => `${numeroOrden(o)}${numeroOrden(o) !== o.numero ? ` ${o.numero}` : ""}`,
+      meta: { label: "N.º" }, cell: (c) => <span className="ds-strong">{numeroOrden(c.row.original)}</span>,
+    },
     { id: "prov", header: "Proveedor", accessorFn: (o) => proveedorLabel(o, proveedores), meta: { label: "Proveedor" }, cell: (c) => c.getValue() },
     {
       id: "solic", header: "Solicitudes", accessorFn: (o) => (ordenEsDirecta(o) ? "Directa" : ordenPedidos(o).join(" ")), meta: { label: "Solicitudes" },
@@ -166,7 +171,7 @@ export function OrdenesLista({
                           return (
                             <tr key={o.id} className="is-clickable" onClick={() => router.push(hrefDetalle(o.id))} style={{ cursor: "pointer" }}
                               tabIndex={0} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); router.push(hrefDetalle(o.id)); } }}>
-                              <td className="ds-strong">{o.numero}</td>
+                              <td className="ds-strong">{numeroOrden(o)}</td>
                               <td><div className="row gap-2 wrap">{dir && <Badge tone="yellow">Directa</Badge>}{peds.slice(0, 2).map((n) => <ChipPedido key={n} numero={n} href={pedidoHref?.(n) ?? null} />)}{peds.length > 2 && <span className="ds-muted ds-body-sm">+{peds.length - 2}</span>}</div></td>
                               <td className="ds-body-sm">{formatDate(o.fecha)}</td>
                               <td className="ds-num ds-strong">{money(ordenSubtotal(o), o.currencyCode)}</td>
