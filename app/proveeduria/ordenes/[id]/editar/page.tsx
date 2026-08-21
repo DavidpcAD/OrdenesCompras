@@ -85,6 +85,8 @@ export default function EditarOrdenPage() {
     setQaCode(""); setQaQty(""); setQaPrecio("");
   }
 
+  // Unidad de medida del artículo elegido en "Agregar artículo".
+  const qaUnidad = itemsBc.find((x) => x.code === qaCode)?.unidad ?? "";
   const calcImporte = (r: Row) => Number(r.cantidad) * Number(r.precio) * (1 - (Number(r.descuento) || 0) / 100);
   const subtotal = useMemo(() => rows.reduce((s, r) => s + calcImporte(r), 0), [rows]);
   const ivaTotal = useMemo(() => rows.reduce((s, r) => s + calcImporte(r) * ((Number(r.iva) || 0) / 100), 0), [rows]);
@@ -215,9 +217,24 @@ export default function EditarOrdenPage() {
             <div className="row wrap gap-2" style={{ alignItems: "flex-end", padding: "12px 16px", borderBottom: "1.5px solid var(--ds-color-gray-100)", background: "color-mix(in srgb, var(--ds-color-green-100) 6%, var(--ds-tint-base))" }}>
               <div style={{ flex: "1 1 280px", minWidth: 220 }}>
                 <label className="ds-label ds-muted" style={{ display: "block", marginBottom: 4 }}>Agregar artículo</label>
-                <Combobox items={itemsBc} value={qaCode} onChange={(k) => { setQaCode(k); const it = itemsBc.find((x) => x.code === k); if (it?.precioUltimo) setQaPrecio(String(it.precioUltimo)); }} getKey={(i) => i.code} getLabel={(i) => `${i.code} — ${i.descripcion}`} getSearch={(i) => `${i.code} ${i.descripcion}`} minChars={2} placeholder="Buscar artículo del catálogo…" />
+                <Combobox items={itemsBc} value={qaCode} onChange={(k) => { setQaCode(k); const it = itemsBc.find((x) => x.code === k); if (it?.precioUltimo) setQaPrecio(String(it.precioUltimo)); }} getKey={(i) => i.code} getLabel={(i) => `${i.code} — ${i.descripcion}`}
+                  // La UNIDAD a la par de cada opción: se elige el material sabiendo si
+                  // va por SACO, M3 o UND, sin tener que elegirlo para averiguarlo.
+                  // `.combo__item` es flex, así que el margin-left:auto la manda a la
+                  // derecha y queda en columna, alineada entre filas.
+                  renderItem={(i) => <>{`${i.code} — ${i.descripcion}`}<small style={{ marginLeft: "auto", paddingLeft: 12, whiteSpace: "nowrap" }}>{i.unidad}</small></>}
+                  // También se puede buscar por unidad ("saco", "m3").
+                  getSearch={(i) => `${i.code} ${i.descripcion} ${i.unidad}`} minChars={2} placeholder="Buscar artículo del catálogo…" />
               </div>
-              <div><label className="ds-label ds-muted" style={{ display: "block", marginBottom: 4 }}>Cantidad</label><Input type="number" min={0} value={qaQty} onChange={(e) => setQaQty(e.target.value)} placeholder="0" style={{ width: 90 }} /></div>
+              <div>
+                <label className="ds-label ds-muted" style={{ display: "block", marginBottom: 4 }}>Cantidad</label>
+                {/* Íd. que en compra directa: la unidad del artículo elegido al lado
+                    del campo, para no escribir una cantidad a ciegas. */}
+                <span className="row gap-2" style={{ alignItems: "center" }}>
+                  <Input type="number" min={0} value={qaQty} onChange={(e) => setQaQty(e.target.value)} placeholder="0" style={{ width: 90 }} />
+                  {qaUnidad && <span className="ds-body-sm ds-muted" style={{ whiteSpace: "nowrap" }}>{qaUnidad}</span>}
+                </span>
+              </div>
               <div><label className="ds-label ds-muted" style={{ display: "block", marginBottom: 4 }}>Precio</label><Input type="number" min={0} value={qaPrecio} onChange={(e) => setQaPrecio(e.target.value)} placeholder="0" style={{ width: 110 }} />{(() => { const it = itemsBc.find((x) => x.code === qaCode); return it?.precioUltimo ? <div className="ds-body-sm ds-muted" style={{ marginTop: 2 }}>últ. compra {money(it.precioUltimo, currency)}</div> : null; })()}</div>
               <Button variant="outline" onClick={agregarLinea} disabled={!qaCode || !(Number(qaQty) > 0)}>+ Agregar línea</Button>
             </div>

@@ -66,6 +66,8 @@ export default function OrdenDirectaPage() {
   const [qaVariantes, setQaVariantes] = useState<Variante[]>([]);
   const [qaVariante, setQaVariante] = useState("");
   const [qaVariantesError, setQaVariantesError] = useState(false);
+  // Unidad de medida del artículo elegido en "Agregar artículo".
+  const qaUnidad = itemsBc.find((x) => x.code === qaCode)?.unidad ?? "";
   const variantePendiente = qaVariantes.length > 0 && !qaVariante;
 
   const setRow = (k: string, patch: Partial<Row>) => setRows((rs) => rs.map((r) => (r.key === k ? { ...r, ...patch } : r)));
@@ -207,7 +209,14 @@ export default function OrdenDirectaPage() {
                       .then((d) => { setQaVariantes(d.variantes ?? []); setQaVariantesError(d.disponible === false); })
                       .catch(() => { setQaVariantes([]); setQaVariantesError(true); });
                   }
-                }} getKey={(i) => i.code} getLabel={(i) => `${i.code} — ${i.descripcion}`} getSearch={(i) => `${i.code} ${i.descripcion}`} minChars={2} placeholder="Buscar artículo del catálogo…" />
+                }} getKey={(i) => i.code} getLabel={(i) => `${i.code} — ${i.descripcion}`}
+                  // La UNIDAD a la par de cada opción: se elige el material sabiendo si
+                  // va por SACO, M3 o UND, sin tener que elegirlo para averiguarlo.
+                  // `.combo__item` es flex, así que el margin-left:auto la manda a la
+                  // derecha y queda en columna, alineada entre filas.
+                  renderItem={(i) => <>{`${i.code} — ${i.descripcion}`}<small style={{ marginLeft: "auto", paddingLeft: 12, whiteSpace: "nowrap" }}>{i.unidad}</small></>}
+                  // También se puede buscar por unidad ("saco", "m3").
+                  getSearch={(i) => `${i.code} ${i.descripcion} ${i.unidad}`} minChars={2} placeholder="Buscar artículo del catálogo…" />
             </div>
             {qaVariantes.length > 0 && (
               <div style={{ flex: "0 1 200px", minWidth: 170 }}>
@@ -217,7 +226,15 @@ export default function OrdenDirectaPage() {
                 </div>
               </div>
             )}
-            <div><label className="ds-label ds-muted" htmlFor={qtyId} style={{ display: "block", marginBottom: 4 }}>Cantidad</label><Input id={qtyId} type="number" min={0} value={qaQty} onChange={(e) => setQaQty(e.target.value)} placeholder="0" style={{ width: 90 }} /></div>
+            <div>
+              <label className="ds-label ds-muted" htmlFor={qtyId} style={{ display: "block", marginBottom: 4 }}>Cantidad</label>
+              {/* La unidad del artículo elegido, al lado del campo: al escribir "40"
+                  hay que saber 40 de qué (UND, M3, SACO…). Aparece al elegir. */}
+              <span className="row gap-2" style={{ alignItems: "center" }}>
+                <Input id={qtyId} type="number" min={0} value={qaQty} onChange={(e) => setQaQty(e.target.value)} placeholder="0" style={{ width: 90 }} />
+                {qaUnidad && <span className="ds-body-sm ds-muted" style={{ whiteSpace: "nowrap" }}>{qaUnidad}</span>}
+              </span>
+            </div>
             <div><label className="ds-label ds-muted" htmlFor={priceId} style={{ display: "block", marginBottom: 4 }}>Precio</label><Input id={priceId} type="number" min={0} value={qaPrecio} onChange={(e) => setQaPrecio(e.target.value)} placeholder="0" style={{ width: 110 }} />{(() => { const it = itemsBc.find((x) => x.code === qaCode); return it?.precioUltimo ? <div className="ds-body-sm ds-muted" style={{ marginTop: 2 }}>últ. compra {money(it.precioUltimo, currency)}</div> : null; })()}</div>
             <Button variant="outline" onClick={agregarLinea} disabled={!qaCode || !(Number(qaQty) > 0) || variantePendiente}>+ Agregar línea</Button>
           </div>
