@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useStore } from "@/lib/store";
 import { num, formatDate, ordenLineaImporte } from "@/lib/helpers";
@@ -27,6 +28,17 @@ export default function ImprimirOrdenPage() {
   const id = String(params?.id ?? "");
   const { ordenes, proveedores, cargando } = useStore();
   const orden = ordenes.find((o) => o.id === id);
+
+  // El navegador propone el TÍTULO del documento como nombre del archivo al guardar
+  // como PDF. Sin esto el archivo salía con el título genérico de la app, y había que
+  // renombrarlo a mano para saber de qué orden era.
+  const numeroDoc = orden?.bcNumber || orden?.numero;
+  useEffect(() => {
+    if (!numeroDoc) return;
+    const previo = document.title;
+    document.title = `${numeroDoc} · Orden de compra · Adelante`;
+    return () => { document.title = previo; };
+  }, [numeroDoc]);
 
   if (!orden) {
     // Durante la carga (SQL/BC) el store aún está vacío: no mostrar "no encontrada".
@@ -174,7 +186,12 @@ export default function ImprimirOrdenPage() {
             <div className="po-prov">{orden.proveedorNombre ?? prov?.nombre ?? "—"}</div>
             <Campo k="Compra a-Nº proveedor" v={orden.proveedorNo ?? prov?.code ?? "—"} />
             <div style={{ height: 14 }} />
-            <Campo k="Nº orden de compra" v={orden.numero} b />
+            {/* El N.º que va al proveedor es el de BUSINESS CENTRAL: es el que existe
+                en el ERP, el que Contabilidad va a buscar y el que él va a poner en su
+                factura. El número interno de la app arranca en 1 en cada base y solo
+                sirve adentro. Si por algo faltara el de BC, se cae al interno para no
+                imprimir un documento sin número. */}
+            <Campo k="Nº orden de compra" v={orden.bcNumber || orden.numero} b />
             <Campo k="Fecha emisión documento" v={formatDate(orden.fecha)} />
             {prov?.paymentTermsCode && <Campo k="Términos pago" v={prov.paymentTermsCode} />}
             <Campo k="Moneda" v={cur} />
