@@ -400,7 +400,14 @@ export default function ArmarOrdenPage() {
                     <td className="ds-body-sm ds-strong">{r.pedidoNumero}</td>
                     <td><div className="ds-truncate" title={`${r.articuloId} — ${r.descripcion}`} style={{ maxWidth: 260 }}><span className="ds-strong ds-body-sm">{r.articuloId}</span> <span className="ds-muted">— {r.descripcion}</span></div></td>
                     <td className="ds-muted ds-body-sm">{r.almacen}</td>
-                    <td className="ds-num"><input className="ds-cell-input" aria-label="Cantidad" type="number" min={0} value={r.cantidad} style={{ width: 70 }} onChange={(e) => setRow(r.pedidoLineaId, { cantidad: e.target.value })} /></td>
+                    <td className="ds-num">
+                      {/* La unidad al lado de la cantidad: "40" solo no dice nada
+                          cuando el material se compra por M3, KG o SACO. */}
+                      <span className="row gap-2" style={{ justifyContent: "flex-end", alignItems: "baseline" }}>
+                        <input className="ds-cell-input" aria-label="Cantidad" type="number" min={0} value={r.cantidad} style={{ width: 70 }} onChange={(e) => setRow(r.pedidoLineaId, { cantidad: e.target.value })} />
+                        <span className="ds-body-sm ds-muted" style={{ whiteSpace: "nowrap" }}>{r.unidad || "—"}</span>
+                      </span>
+                    </td>
                     <td className="ds-num">
                       <input className="ds-cell-input" aria-label="Precio" type="number" min={0} value={r.precio} style={{ width: 92 }} onChange={(e) => setRow(r.pedidoLineaId, { precio: e.target.value })} />
                       {(() => {
