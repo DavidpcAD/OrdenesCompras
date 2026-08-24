@@ -106,14 +106,17 @@ export function Select({
   // una tabla (que scrollea en X) o de cualquier contenedor con overflow, un menú
   // absoluto queda recortado. Por eso una celda tenía que usar un <select> nativo,
   // que abre el desplegable feo del sistema en vez del del DS.
-  const [pos, setPos] = useState<{ left: number; top: number; bottom: number; width: number; up: boolean } | null>(null);
+  const [pos, setPos] = useState<{ left: number; top: number; bottom: number; width: number; avail: number; up: boolean } | null>(null);
   function reposition() {
     const el = triggerRef.current;
     if (!el) return;
     const r = el.getBoundingClientRect();
     const spaceBelow = window.innerHeight - r.bottom;
     const up = spaceBelow < 260 && r.top > spaceBelow;
-    setPos({ left: r.left, top: r.bottom, bottom: window.innerHeight - r.top, width: r.width, up });
+    // avail = lo que queda hasta el borde derecho de la ventana. El menú puede ser
+    // más ancho que el campo, y con position: fixed lo que se sale no genera scroll:
+    // simplemente se corta y no hay forma de leerlo.
+    setPos({ left: r.left, top: r.bottom, bottom: window.innerHeight - r.top, width: r.width, avail: window.innerWidth - r.left - 8, up });
   }
   useLayoutEffect(() => { if (open) reposition(); /* eslint-disable-next-line */ }, [open]);
   useEffect(() => {
@@ -127,16 +130,29 @@ export function Select({
   const closeAndFocus = () => { setOpen(false); setQ(""); triggerRef.current?.focus(); };
   // Al abrir, llevar el foco a la opción seleccionada (o la primera) para navegar
   // con teclado. Con buscador, se deja el foco en el input (autoFocus).
+  // Depende de `pos` a propósito: el menú no se dibuja en el mismo commit en que
+  // se abre (primero hay que medir el campo), así que en ese primer pase el menú
+  // todavía no existe y el foco se quedaba en el campo — con el menú abierto y
+  // las flechas y Escape muertos. El ref evita que un scroll, que recalcula pos,
+  // vuelva a robar el foco a media navegación.
+  const yaEnfocado = useRef(false);
   useEffect(() => {
-    if (!open) { setQ(""); return; }
-    if (searchable) return;
+    if (!open) { setQ(""); yaEnfocado.current = false; return; }
+    if (searchable || yaEnfocado.current) return;
     const items = Array.from(menuRef.current?.querySelectorAll<HTMLButtonElement>('[role="option"]') ?? []);
-    (items.find((b) => b.getAttribute("aria-selected") === "true") ?? items[0])?.focus();
-  }, [open, searchable]);
+    if (!items.length) return;
+    yaEnfocado.current = true;
+    (items.find((b) => b.getAttribute("aria-selected") === "true") ?? items[0]).focus();
+  }, [open, searchable, pos]);
   const onMenuKey = (e: React.KeyboardEvent) => {
     const items = Array.from(menuRef.current?.querySelectorAll<HTMLButtonElement>('[role="option"]') ?? []);
     const idx = items.indexOf(document.activeElement as HTMLButtonElement);
     if (e.key === "Escape") { e.preventDefault(); closeAndFocus(); }
+    // Tab cierra y devuelve el foco al campo, SIN preventDefault: así el salto sigue
+    // desde el campo al siguiente de la fila. Sin esto el menú quedaba abierto (vive
+    // en un portal al final del <body>, no al lado del campo) y adentro de un modal
+    // la trampa de foco veía el foco "afuera" del diálogo y lo tironeaba al principio.
+    else if (e.key === "Tab") { closeAndFocus(); }
     else if (e.key === "ArrowDown") { e.preventDefault(); (items[idx + 1] ?? items[0])?.focus(); }
     else if (e.key === "ArrowUp") { e.preventDefault(); (items[idx - 1] ?? items[items.length - 1])?.focus(); }
   };
@@ -158,7 +174,8 @@ export function Select({
               // Nunca más angosto que el campo, pero puede crecer si la opción no
               // cabe: en una celda de tabla el campo mide 110px y "TANQUETA ·
               // TANQUETA" quedaba partido en tres renglones.
-              minWidth: pos.width, width: "max-content", maxWidth: "min(90vw, 420px)",
+              minWidth: pos.width, width: "max-content",
+              maxWidth: `min(90vw, 420px, ${Math.max(pos.width, pos.avail)}px)`,
               // El borde que NO se usa va en auto a propósito: la clase .combo__menu
               // trae `top: calc(100% + 6px)` y `right: 0` de cuando el menú vivía
               // dentro del campo. Con position: fixed ese top vale la ALTURA DE LA

@@ -391,6 +391,11 @@ h1, h2, h3, h4, p { margin: 0; }
   padding: 6px 10px; border-radius: var(--ds-radius-md);
   border: 1.5px solid var(--ds-color-gray-200); box-shadow: none;
   gap: var(--ds-space-1);
+  /* Sin esto hereda los 24px de interlínea del campo de formulario grande y queda
+     39px de alto contra los 31,5px del input de Cantidad de al lado: la casilla de
+     la unidad sobresalía por arriba y por abajo en cada fila. */
+  line-height: normal;
+  background: var(--ds-surface-2); color: var(--ds-text);
 }
 .ds-select--celda .ds-select__chev { width: 16px; height: 16px; }
 /* Fallback para cualquier <select> nativo que quede: flecha custom separada */
@@ -478,6 +483,11 @@ h1, h2, h3, h4, p { margin: 0; }
   width: 90px; text-align: right; border: 1.5px solid var(--ds-color-gray-200);
   border-radius: var(--ds-radius-md); padding: 6px 10px; font-family: inherit; font-size: var(--ds-font-size-label);
   font-variant-numeric: tabular-nums; outline: none;
+  /* El relleno va tokenizado y NO al gris que el navegador le pone solo a los
+     controles: en oscuro ese gris (#3b3b3b) no es ninguno de los del DS y no
+     calzaba con el campo de unidad de al lado. --ds-surface-2 los deja apenas
+     levantados sobre la tarjeta; en claro es blanco, igual que antes. */
+  background: var(--ds-surface-2); color: var(--ds-text);
 }
 .ds-cell-input:focus { border-color: var(--ds-color-green-100); box-shadow: 0 0 0 3px color-mix(in srgb, var(--ds-color-green-100) 22%, transparent); }
 
