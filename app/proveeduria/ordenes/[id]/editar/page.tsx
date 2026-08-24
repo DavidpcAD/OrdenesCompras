@@ -52,6 +52,7 @@ export default function EditarOrdenPage() {
   const [flete, setFlete] = useState(cargo ? String(cargo.precioUnitario) : "");
   const [almacen, setAlmacen] = useState(orden?.almacenRecepcion ?? "ALM-GRAL");
   const [observaciones, setObservaciones] = useState(orden?.observaciones ?? "");
+  const [notaInterna, setNotaInterna] = useState(orden?.notaInterna ?? "");
   const [rows, setRows] = useState<Row[]>(filasDeOrden(orden?.lineas ?? []));
 
   // Si la orden llega DESPUÉS del primer render (modo API: el bootstrap tarda, o se
@@ -67,6 +68,7 @@ export default function EditarOrdenPage() {
     setCurrency(monedaApp(orden.currencyCode));
     setAlmacen(orden.almacenRecepcion ?? "ALM-GRAL");
     setObservaciones(orden.observaciones ?? "");
+    setNotaInterna(orden.notaInterna ?? "");
     const cg = orden.lineas.find((l) => l.tipo === "cargo");
     setFlete(cg ? String(cg.precioUnitario) : "");
     setRows(filasDeOrden(orden.lineas));
@@ -167,7 +169,7 @@ export default function EditarOrdenPage() {
           ivaPct: cargo?.ivaPct ?? 13,
         });
       }
-      const r = await updateOrden(orden!.id, { proveedorId, proveedorNo: provSel?.code, proveedorNombre: provSel?.nombre, currencyCode: currency, almacenRecepcion: almacen, observaciones: observaciones.trim() || undefined, lineas: ls });
+      const r = await updateOrden(orden!.id, { proveedorId, proveedorNo: provSel?.code, proveedorNombre: provSel?.nombre, currencyCode: currency, almacenRecepcion: almacen, observaciones: observaciones.trim() || undefined, notaInterna: notaInterna.trim() || undefined, lineas: ls });
       // Si BC no quedó sincronizado, ese aviso manda: el pedido allá tendría las
       // líneas viejas y Bodega recibiría contra ellas.
       if (r?.bcAviso) toast(r.bcAviso, "info");
@@ -215,6 +217,14 @@ export default function EditarOrdenPage() {
             <Textarea rows={3} value={observaciones} maxLength={500}
               onChange={(e) => setObservaciones(e.target.value)}
               placeholder="Ej. Entregar en bodega de 7 a. m. a 3 p. m., preguntar por Fernando. Referencia cotización #4471." />
+          </Field>
+          {/* Y este es el mensaje para QUIEN APRUEBA: por qué corre, por qué ese
+              precio, qué pasa si no se compra hoy. NO se imprime en el PDF del
+              proveedor — son dos campos distintos a propósito. */}
+          <Field label="Comentario para el aprobador" help="Opcional. Interno: NO sale en el PDF del proveedor." className="mt-4">
+            <Textarea rows={2} value={notaInterna} maxLength={500}
+              onChange={(e) => setNotaInterna(e.target.value)}
+              placeholder="Ej. Urgente para la colada del viernes. El precio subió 8% porque el proveedor cambió la presentación." />
           </Field>
         </Card>
 
@@ -273,7 +283,7 @@ export default function EditarOrdenPage() {
                 {rows.length === 0 && <tr><td colSpan={9}><div className="empty">Sin líneas. Agregá al menos una.</div></td></tr>}
                 {rows.map((r) => (
                   <tr key={r.key}>
-                    <td><div className="ds-truncate" title={r.descripcion} style={{ maxWidth: 220 }}>{r.descripcion}</div></td>
+                    <td><div className="ds-clamp-2" title={r.descripcion} style={{ maxWidth: 360 }}>{r.descripcion}</div></td>
                     <td className="ds-body-sm">{(() => {
                       const pid = pedidoIdDe(r.pedidoLineaId, r.pedidoNumero);
                       if (r.pedidoNumero && pid) return <button type="button" className="linklike" title="Ver la solicitud (quién la pidió)" onClick={() => router.push(`/proveeduria/solicitudes/${pid}`)}>{r.pedidoNumero}</button>;

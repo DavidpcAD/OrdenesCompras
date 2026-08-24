@@ -80,6 +80,12 @@ export default function ProveeduriaPedidoDetallePage() {
           </div>
           <div className="row gap-3" style={{ alignItems: "center" }}>
             <div className="row gap-2" style={{ alignItems: "center" }}><QtyRing recibida={rec} total={total} /><span className="ds-body-sm ds-muted">entregado</span></div>
+            {/* Manda la lista de materiales a cotizar. Es un <a> al endpoint del
+                servidor (no un botón con fetch) para que el navegador baje el .pdf
+                de una vez, igual que en la orden de compra. */}
+            <a className="ds-btn ds-btn--white" href={`/api/pedidos/${pedido.id}/pdf`}
+              title="Baja la solicitud en PDF con las columnas de precio en blanco, para mandarla a cotizar"
+              style={{ textDecoration: "none" }}>⬇ PDF para cotizar</a>
             <Button variant="red" onClick={() => setDevolverOpen(true)}>Devolver al ingeniero</Button>
             <Button onClick={crearOC} disabled={!hayPendiente}>Crear orden de compra →</Button>
           </div>
@@ -99,7 +105,7 @@ export default function ProveeduriaPedidoDetallePage() {
               <tbody>
                 {pedido.lineas.map((l) => (
                   <tr key={l.id}>
-                    <td><div className="ds-truncate" title={l.descripcion} style={{ maxWidth: 260 }}>{l.descripcion}</div></td>
+                    <td><div className="ds-clamp-2" title={l.descripcion} style={{ maxWidth: 420 }}>{l.descripcion}</div></td>
                     <td className="ds-muted ds-body-sm">{l.almacen || "—"}</td>
                     <td className="ds-num">{num.format(l.cantidad)} {l.unidad}</td>
                     <td className="ds-num">{num.format(l.cantidadOrdenada)}</td>

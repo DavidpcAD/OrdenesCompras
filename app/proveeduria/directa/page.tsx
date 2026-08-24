@@ -34,6 +34,8 @@ export default function OrdenDirectaPage() {
   const [currency, setCurrency] = useState("");
   const [almacen, setAlmacen] = useState("ALM-GRAL");
   const [observaciones, setObservaciones] = useState("");
+  // Comentario para el APROBADOR: interno, no viaja al proveedor.
+  const [notaInterna, setNotaInterna] = useState("");
   // Cargos de producto (Item Charge): igual que al armar una orden desde un pedido.
   const [cargos, setCargos] = useState<Cargo[]>([]);
   const [metodoAsig, setMetodoAsig] = useState("Amount"); // Amount|Weight|Volume|Equally
@@ -143,7 +145,7 @@ export default function OrdenDirectaPage() {
         ls.push({ tipo: "cargo", chargeNo: c.chargeNo || undefined, chargeMethod: metodoAsig, descripcion: c.descripcion || "CARGO",
           cantidad: Number(c.cantidad) || 1, unidad: "UND", almacen, precioUnitario: Number(c.precio) || 0, ivaPct: 13 });
       }
-      const orden = await createOrden({ proveedorId, proveedorNo: provSel?.code, proveedorNombre: provSel?.nombre, currencyCode: currency, almacenRecepcion: almacen, observaciones: observaciones.trim() || undefined, lineas: ls });
+      const orden = await createOrden({ proveedorId, proveedorNo: provSel?.code, proveedorNombre: provSel?.nombre, currencyCode: currency, almacenRecepcion: almacen, observaciones: observaciones.trim() || undefined, notaInterna: notaInterna.trim() || undefined, lineas: ls });
       if (aprobar) await setOrdenEstado(orden.id, "pendiente_aprobacion");
       toast(`Orden directa ${orden.numero} ${aprobar ? "enviada a aprobación" : "guardada como abierta"}`, "success");
       router.push(`/proveeduria/ordenes/${orden.id}`);
@@ -198,6 +200,14 @@ export default function OrdenDirectaPage() {
             <Textarea rows={3} value={observaciones} maxLength={500}
               onChange={(e) => setObservaciones(e.target.value)}
               placeholder="Ej. Entregar en bodega de 7 a. m. a 3 p. m., preguntar por Fernando. Referencia cotización #4471." />
+          </Field>
+          {/* Y este es el mensaje para QUIEN APRUEBA: por qué corre, por qué ese
+              precio, qué pasa si no se compra hoy. NO se imprime en el PDF del
+              proveedor — son dos campos distintos a propósito. */}
+          <Field label="Comentario para el aprobador" help="Opcional. Interno: NO sale en el PDF del proveedor." className="mt-4">
+            <Textarea rows={2} value={notaInterna} maxLength={500}
+              onChange={(e) => setNotaInterna(e.target.value)}
+              placeholder="Ej. Urgente para la colada del viernes. El precio subió 8% porque el proveedor cambió la presentación." />
           </Field>
         </Card>
 
@@ -276,7 +286,7 @@ export default function OrdenDirectaPage() {
                 {rows.length === 0 && <tr><td colSpan={7}><div className="empty">Sin líneas. Buscá un artículo del catálogo y agregalo.</div></td></tr>}
                 {rows.map((r) => (
                   <tr key={r.key}>
-                    <td><div className="ds-truncate" title={r.descripcion} style={{ maxWidth: 220 }}>{r.descripcion}</div><div className="ds-body-sm ds-muted">{r.articuloId}{r.variantCode ? ` · var. ${r.variantCode}${r.variantNombre ? ` (${r.variantNombre})` : ""}` : ""}</div></td>
+                    <td><div className="ds-clamp-2" title={r.descripcion} style={{ maxWidth: 380 }}>{r.descripcion}</div><div className="ds-body-sm ds-muted">{r.articuloId}{r.variantCode ? ` · var. ${r.variantCode}${r.variantNombre ? ` (${r.variantNombre})` : ""}` : ""}</div></td>
                     <td className="ds-num">
                       {/* La unidad al lado de la cantidad: "40" solo no dice nada
                           cuando el material se compra por M3, KG o SACO. */}

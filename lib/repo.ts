@@ -311,6 +311,29 @@ export async function softDeletePedido(id: number, usuario: string, rol: Role) {
 // nullable las agregan (idempotente). Si el usuario de la base no tiene permiso
 // de ALTER, se sigue trabajando exactamente como antes: `cargoColsListas` queda
 // en false y los INSERT no las mencionan.
+// Igual que `ensureCargoCols`, pero para el comentario interno de la orden (el
+// mensaje al aprobador, dbo.OrdenCompra.notaInterna). Mientras la columna no
+// exista, la app funciona igual y ese comentario simplemente no se guarda: nombrar
+// una columna inexistente en el INSERT rompería la creación de órdenes.
+// La migración es sql/orden_nota_interna.sql (o automática con MIGRAR_ESQUEMA=1).
+let notaInternaLista: boolean | null = null;
+async function ensureNotaInterna(): Promise<boolean> {
+  if (notaInternaLista !== null) return notaInternaLista;
+  try {
+    const pool = await getPool();
+    if (process.env.MIGRAR_ESQUEMA === "1") {
+      await pool.request().query(`
+        IF COL_LENGTH('dbo.OrdenCompra','notaInterna') IS NULL
+          ALTER TABLE dbo.OrdenCompra ADD notaInterna NVARCHAR(500) NULL;`);
+    }
+    const r = await pool.request().query("SELECT COL_LENGTH('dbo.OrdenCompra','notaInterna') AS a");
+    notaInternaLista = r.recordset[0]?.a != null;
+  } catch {
+    notaInternaLista = false;
+  }
+  return notaInternaLista;
+}
+
 let cargoColsListas: boolean | null = null;
 async function ensureCargoCols(): Promise<boolean> {
   if (cargoColsListas !== null) return cargoColsListas;
@@ -423,6 +446,7 @@ function mapOrden(o: any, lineas: any[], motivoRechazo?: string, unidades: Recor
     motivoRechazo: motivoRechazo || undefined,
     creadoPor: o.creadoPor || undefined,     // quién generó la OC (reportes)
     observaciones: o.notaCreador || undefined,   // se imprimen en el PDF del proveedor
+    notaInterna: o.notaInterna || undefined,     // mensaje al aprobador; NUNCA sale en el PDF
 
     bcNumber: o.bcNo || undefined,           // Nº del Pedido en BC (para recibir/facturar)
     // Deep link al Pedido en BC. FALTABA en modo API: `bcDeepLink` solo se llenaba
@@ -449,6 +473,7 @@ function mapOrden(o: any, lineas: any[], motivoRechazo?: string, unidades: Recor
 export interface NewOrdenDB {
   proveedorNo: string; proveedorNombre?: string; currencyCode: string; usuario: string; rol: Role;
   observaciones?: string;   // -> OrdenCompra.notaCreador (sale en el PDF)
+  notaInterna?: string;     // -> OrdenCompra.notaInterna (para el aprobador)
   lineas: {
     tipoLinea: string; itemNo?: string; variantCode?: string; idPedidoCompraDet?: number; descripcion: string; cantidad: number;
     unidad: string; almacen: string; precioUnitario: number; ivaPct: number; descuentoPct?: number; jobNo?: string; taskNo?: string;
@@ -480,6 +505,10 @@ export async function createOrden(input: NewOrdenDB): Promise<number> {
   const conCargo = await ensureCargoCols();
   const colsCargo = conCargo ? ",chargeNo,chargeMethod" : "";
   const valsCargo = conCargo ? ",@chargeNo,@chargeMethod" : "";
+  // Si la columna del comentario interno todavía no está, la orden se crea igual.
+  const conNotaInterna = await ensureNotaInterna();
+  const colNotaInterna = conNotaInterna ? ",notaInterna" : "";
+  const valNotaInterna = conNotaInterna ? ",@notaInterna" : "";
   const tx = new sql.Transaction(pool); await tx.begin();
   try {
     const max = await new sql.Request(tx).query("SELECT MAX(CAST(SUBSTRING(ordenNo,4,20) AS INT)) AS m FROM dbo.OrdenCompra WHERE ordenNo LIKE 'CP-%'");
@@ -492,9 +521,10 @@ export async function createOrden(input: NewOrdenDB): Promise<number> {
       .input("currencyCode", sql.NVarChar(10), input.currencyCode || null)
       .input("creadoPor", sql.NVarChar(100), input.usuario)
       .input("notaCreador", sql.NVarChar(500), (input.observaciones ?? "").trim() || null)
-      .query(`INSERT dbo.OrdenCompra (idEstado,ordenNo,proveedorNo,proveedorNombre,currencyCode,fechaEmision,notaCreador,esEliminada,fechaCreacion,creadoPor)
+      .input("notaInterna", sql.NVarChar(500), (input.notaInterna ?? "").trim() || null)
+      .query(`INSERT dbo.OrdenCompra (idEstado,ordenNo,proveedorNo,proveedorNombre,currencyCode,fechaEmision,notaCreador${colNotaInterna},esEliminada,fechaCreacion,creadoPor)
               OUTPUT INSERTED.idOrdenCompra
-              VALUES (@idEstado,@ordenNo,@proveedorNo,@proveedorNombre,@currencyCode,CAST(getdate() AS date),@notaCreador,0,getdate(),@creadoPor)`);
+              VALUES (@idEstado,@ordenNo,@proveedorNo,@proveedorNombre,@currencyCode,CAST(getdate() AS date),@notaCreador${valNotaInterna},0,getdate(),@creadoPor)`);
     const idOrden = ins.recordset[0].idOrdenCompra as number;
 
     let line = 10000;
@@ -539,6 +569,7 @@ export async function createOrden(input: NewOrdenDB): Promise<number> {
 export interface UpdateOrdenDB {
   proveedorNo: string; proveedorNombre?: string; currencyCode: string; usuario: string; rol: Role;
   observaciones?: string;   // -> OrdenCompra.notaCreador (sale en el PDF)
+  notaInterna?: string;     // -> OrdenCompra.notaInterna (para el aprobador)
   lineas: NewOrdenDB["lineas"];
 }
 
@@ -550,6 +581,7 @@ export async function updateOrden(id: number, input: UpdateOrdenDB) {
   const conCargo = await ensureCargoCols();
   const colsCargo = conCargo ? ",chargeNo,chargeMethod" : "";
   const valsCargo = conCargo ? ",@chargeNo,@chargeMethod" : "";
+  const setNotaInterna = (await ensureNotaInterna()) ? ", notaInterna=@notaInterna" : "";
   const rec = await pool.request().input("id", sql.Int, id)
     .query("SELECT COUNT(*) AS n FROM dbo.RecepcionCompra WHERE idOrdenCompra=@id AND esEliminada=0");
   if ((rec.recordset[0]?.n ?? 0) > 0) throw new Error("La orden ya tiene recepciones registradas; no se puede editar.");
@@ -591,7 +623,8 @@ export async function updateOrden(id: number, input: UpdateOrdenDB) {
       .input("currencyCode", sql.NVarChar(10), input.currencyCode || null)
       .input("u", sql.NVarChar(100), input.usuario)
       .input("notaCreador", sql.NVarChar(500), (input.observaciones ?? "").trim() || null)
-      .query("UPDATE dbo.OrdenCompra SET proveedorNo=@proveedorNo, proveedorNombre=@proveedorNombre, currencyCode=@currencyCode, notaCreador=@notaCreador, fechaModificacion=getdate(), modificadoPor=@u WHERE idOrdenCompra=@id");
+      .input("notaInterna", sql.NVarChar(500), (input.notaInterna ?? "").trim() || null)
+      .query(`UPDATE dbo.OrdenCompra SET proveedorNo=@proveedorNo, proveedorNombre=@proveedorNombre, currencyCode=@currencyCode, notaCreador=@notaCreador${setNotaInterna}, fechaModificacion=getdate(), modificadoPor=@u WHERE idOrdenCompra=@id`);
     // 4) reinsertar líneas + reaplicar saldo
     let line = 10000;
     for (const l of lineas) {

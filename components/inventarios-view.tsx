@@ -251,7 +251,7 @@ export function InventariosView({ tablaKey = "inventarios" }: { tablaKey?: strin
   const columns = useMemo<ColumnDef<Row, any>[]>(() => [
     { id: "code", header: "Código", accessorFn: (a) => a.code, meta: { label: "Código" }, cell: (c) => <span className="ds-strong">{c.getValue()}</span> },
     { id: "desc", header: "Descripción", accessorFn: (a) => a.descripcion, meta: { label: "Descripción" },
-      cell: (c) => <div className="ds-truncate" title={c.getValue()} style={{ maxWidth: angosto ? 132 : 340 }}>{c.getValue()}</div> },
+      cell: (c) => <div className="ds-clamp-2" title={c.getValue()} style={{ maxWidth: angosto ? 200 : 420 }}>{c.getValue()}</div> },
     ...(angosto ? [] : [{ id: "unidad", header: "Unidad", accessorFn: (a: Row) => a.unidad, meta: { label: "Unidad" }, cell: (c: any) => c.getValue() }]),
     {
       id: "stock", header: "Stock (BC)", accessorFn: (a) => stock[a.code]?.total ?? 0,

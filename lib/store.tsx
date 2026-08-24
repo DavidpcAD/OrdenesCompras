@@ -36,6 +36,7 @@ interface NewOrdenInput {
   bcDeepLink?: string;         // link directo al Pedido en BC
   almacenRecepcion?: string;   // almacén/ubicación de recepción en BC (default ALM-GRAL)
   observaciones?: string;      // notas para el proveedor; salen en el PDF de la orden
+  notaInterna?: string;        // comentario para el APROBADOR; nunca sale en el PDF
   lineas: Omit<OrdenLinea, "id" | "cantidadRecibida" | "cantidadFacturada">[];
 }
 
@@ -455,7 +456,7 @@ export function StoreProvider({ children, useApi }: { children: React.ReactNode;
         const p = prov(input.proveedorId);
         const { idOrdenCompra } = await api.createOrden({
           proveedorNo: input.proveedorNo ?? p?.code ?? input.proveedorId, proveedorNombre: input.proveedorNombre ?? p?.nombre, currencyCode: input.currencyCode,
-          usuario: persona, rol: rolActual, observaciones: input.observaciones,
+          usuario: persona, rol: rolActual, observaciones: input.observaciones, notaInterna: input.notaInterna,
           lineas: input.lineas.map((l) => ({
             tipoLinea: l.tipo, itemNo: l.articuloId, variantCode: l.variantCode, idPedidoCompraDet: l.pedidoLineaId ? Number(l.pedidoLineaId) : undefined,
             descripcion: l.descripcion, cantidad: l.cantidad, unidad: l.unidad, almacen: l.almacen,
@@ -478,7 +479,7 @@ export function StoreProvider({ children, useApi }: { children: React.ReactNode;
           fechaRecepEsperada: input.fechaRecepEsperada, currencyCode: input.currencyCode,
           estado: "abierto", versionesArchivadas: 0, lineas,
           proveedorNo: input.proveedorNo, proveedorNombre: input.proveedorNombre,
-          almacenRecepcion: input.almacenRecepcion, observaciones: input.observaciones,
+          almacenRecepcion: input.almacenRecepcion, observaciones: input.observaciones, notaInterna: input.notaInterna,
           bcNumber: input.bcNumber, bcDeepLink: input.bcDeepLink,
         };
         const pedidos = d.pedidos.map((p) => {
@@ -510,7 +511,7 @@ export function StoreProvider({ children, useApi }: { children: React.ReactNode;
         const p = prov(input.proveedorId);
         const r = await api.updateOrden(id, {
           proveedorNo: input.proveedorNo ?? p?.code ?? input.proveedorId, proveedorNombre: input.proveedorNombre ?? p?.nombre,
-          currencyCode: input.currencyCode, usuario: persona, rol: rolActual, observaciones: input.observaciones,
+          currencyCode: input.currencyCode, usuario: persona, rol: rolActual, observaciones: input.observaciones, notaInterna: input.notaInterna,
           lineas: input.lineas.map((l) => ({
             tipoLinea: l.tipo, itemNo: l.articuloId, variantCode: l.variantCode, idPedidoCompraDet: l.pedidoLineaId ? Number(l.pedidoLineaId) : undefined,
             descripcion: l.descripcion, cantidad: l.cantidad, unidad: l.unidad, almacen: l.almacen,
@@ -536,7 +537,7 @@ export function StoreProvider({ children, useApi }: { children: React.ReactNode;
         const ordenes = d.ordenes.map((o) => (o.id === id ? {
           ...o, proveedorId: input.proveedorId, proveedorNo: input.proveedorNo, proveedorNombre: input.proveedorNombre,
           currencyCode: input.currencyCode, almacenRecepcion: input.almacenRecepcion ?? o.almacenRecepcion,
-          observaciones: input.observaciones ?? o.observaciones, lineas,
+          observaciones: input.observaciones ?? o.observaciones, notaInterna: input.notaInterna ?? o.notaInterna, lineas,
         } : o));
         const mov = mkMov({ entidad: "orden", idEntidad: id, documentoNo: prevo?.numero ?? "", tipoMovimiento: "editado", detalle: `${lineas.filter((l) => l.tipo === "articulo").length} línea(s)` });
         return { ...d, ordenes, movimientos: [mov, ...d.movimientos] };

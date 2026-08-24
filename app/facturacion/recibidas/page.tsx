@@ -165,7 +165,7 @@ export default function RecibidasPage() {
                                   <div key={i} className="rec-line">
                                     <span className="rec-line__desc">
                                       {(ol?.articuloId || ol?.tipo === "cargo") && <span className="rec-line__code">{ol?.articuloId || (ol?.chargeNo ?? "CARGO")}</span>}
-                                      <span className="rec-line__name">{ol?.descripcion ?? "Línea"}</span>
+                                      <span className="rec-line__name" title={ol?.descripcion ?? "Línea"}>{ol?.descripcion ?? "Línea"}</span>
                                       {desc > 0 && <span className="rec-line__meta">Desc. {desc}%</span>}
                                     </span>
                                     <span className="rec-line__qty ds-num">{cant} {ol?.unidad ?? "und"}</span>

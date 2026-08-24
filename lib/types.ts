@@ -162,7 +162,8 @@ export interface Orden {
   // Observaciones que escribe Proveeduría al armar la orden: instrucciones para el
   // proveedor (horario de entrega, contacto, referencia de cotización…). SALEN EN EL
   // PDF que se le manda, al final. En SQL viven en OrdenCompra.notaCreador.
-  observaciones?: string;
+  observaciones?: string;    // para el PROVEEDOR: se imprimen en el PDF de la orden
+  notaInterna?: string;      // para el APROBADOR: interna, NO sale en el PDF
   motivoRechazo?: string;   // motivo del rechazo (Aprobación); también queda en el histórico
 }
 

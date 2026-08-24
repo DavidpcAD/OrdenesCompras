@@ -132,6 +132,17 @@ export function OrdenDetalle({
         </Card>
       )}
 
+      {/* Comentario interno para quien aprueba. Va en una tarjeta aparte y con otro
+          color para que nadie lo confunda con lo que lee el proveedor. */}
+      {orden.notaInterna?.trim() && (
+        <Card flat className="mb-4" style={{ background: "color-mix(in srgb, var(--ds-color-yellow) 8%, var(--ds-tint-base))" }}>
+          <div className="col" style={{ gap: 4 }}>
+            <span className="ds-label ds-muted">Comentario para el aprobador · interno, no sale en el PDF</span>
+            <p style={{ margin: 0, whiteSpace: "pre-wrap" }}>{orden.notaInterna.trim()}</p>
+          </div>
+        </Card>
+      )}
+
       <Card style={{ padding: 0, overflow: "hidden" }}>
         <OrderLinesTable orden={orden} solicitudHref={solicitudHref} />
       </Card>

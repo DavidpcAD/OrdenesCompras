@@ -166,7 +166,10 @@ export default function ProveeduriaMaterialesPage() {
     { id: "pedido", header: "Pedido", accessorFn: (r) => r.pedidoNumero, meta: { label: "Pedido" },
       cell: (c) => { const r = c.row.original; return <span className="row gap-2" style={{ alignItems: "center" }}>{dot(r.tipo === "repuesto" ? "yellow" : "green")}<span className="ds-body-sm ds-strong">{r.pedidoNumero}</span></span>; } },
     { id: "articulo", header: "Artículo", accessorFn: (r) => `${r.articuloId} ${r.descripcion}`, meta: { label: "Artículo" },
-      cell: (c) => { const r = c.row.original; return <div className="ds-truncate" title={`${r.articuloId} — ${r.descripcion}`} style={{ maxWidth: 320 }}><span className="ds-strong ds-body-sm">{r.articuloId}</span> <span className="ds-muted">— {r.descripcion}</span></div>; } },
+      // El código va ARRIBA en su propia línea y la descripción abajo en dos líneas:
+      // metidos en la misma fila, el código se comía ~90px y la medida del material
+      // ("… 3/4") quedaba siempre cortada.
+      cell: (c) => { const r = c.row.original; return <div style={{ maxWidth: 380 }} title={`${r.articuloId} — ${r.descripcion}`}><div className="ds-strong ds-body-sm">{r.articuloId}</div><div className="ds-clamp-2">{r.descripcion}</div></div>; } },
     { id: "obra", header: "Obra", accessorFn: (r) => r.almacen || "—", meta: { label: "Obra" },
       cell: (c) => <span className="ds-muted ds-body-sm">{c.getValue()}</span> },
     { id: "pend", header: "Pend.", accessorFn: (r) => r.pendiente, meta: { label: "Pend.", num: true }, enableColumnFilter: false,
@@ -292,7 +295,7 @@ export default function ProveeduriaMaterialesPage() {
               <tbody>
                 {preview.lineas.map((l) => (
                   <tr key={l.id}>
-                    <td><div className="ds-truncate" title={l.descripcion}>{l.descripcion}</div></td>
+                    <td><div className="ds-clamp-2" title={l.descripcion} style={{ maxWidth: 320 }}>{l.descripcion}</div></td>
                     <td className="ds-muted ds-body-sm">{l.almacen}</td>
                     <td className="ds-num">{num.format(l.cantidad)} {l.unidad}</td>
                     <td className="ds-num">{pedidoLineaPendiente(l) > 0 ? <span className="ds-pending-text">{num.format(pedidoLineaPendiente(l))}</span> : "0"}</td>

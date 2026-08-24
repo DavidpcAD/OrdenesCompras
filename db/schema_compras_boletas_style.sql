@@ -70,8 +70,9 @@ CREATE TABLE [dbo].[PedidoCompra](
 	[solicitante] [nvarchar](100) NULL,
 	[prioridad] [nvarchar](20) NULL,
 	[taskNo] [nvarchar](15) NULL,
-	[notaCreador] [nvarchar](500) NULL,
-	[notaAprobador] [nvarchar](250) NULL,
+	[notaCreador] [nvarchar](500) NULL,             -- observaciones PARA EL PROVEEDOR (salen en el PDF)
+	[notaInterna] [nvarchar](500) NULL,            -- comentario de Proveeduría PARA EL APROBADOR (nunca sale en el PDF)
+	[notaAprobador] [nvarchar](250) NULL,           -- lo que escribe EL APROBADOR (par de aprobadoPor/fechaAprobado)
 	[fechaAprobado] [datetime2](7) NULL,
 	[aprobadoPor] [nvarchar](100) NULL,
 	[esAprobado] [bit] NULL,

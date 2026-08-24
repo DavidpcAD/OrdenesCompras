@@ -200,6 +200,9 @@ export function Combobox<T>({
         aria-activedescendant={open && activo >= 0 ? optId(activo) : undefined}
         autoComplete="off"
         value={open ? query : sel ? getLabel(sel) : ""}
+        // El campo es de una línea: el tooltip es la única forma de leer completo el
+        // material ya elegido ("CODO 45 PVC PARED DELGADA 3/4").
+        title={!open && sel ? getLabel(sel) : undefined}
         onChange={(e) => { setQuery(e.target.value); setOpen(true); }}
         onFocus={() => { setQuery(""); setOpen(true); }}
         onKeyDown={onKeyDown}

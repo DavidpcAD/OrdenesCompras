@@ -46,6 +46,8 @@ export default function ArmarOrdenPage() {
   const [itemCharges, setItemCharges] = useState<{ no: string; descripcion: string }[]>([]);
   const [almacen, setAlmacen] = useState("ALM-GRAL");
   const [observaciones, setObservaciones] = useState("");
+  // Comentario para el APROBADOR: interno, no viaja al proveedor.
+  const [notaInterna, setNotaInterna] = useState("");
 
   // Proveedores en vivo desde Business Central (fallback al catálogo si BC falla).
   // Si el fallback se activa hay que DECIRLO: armar la orden contra el catálogo de
@@ -274,7 +276,7 @@ export default function ArmarOrdenPage() {
         cantidad: Number(c.cantidad) || 1, unidad: "UND", almacen: rows[0].almacen,
         precioUnitario: Number(c.precio) || 0, ivaPct: 13 });
     }
-    const orden = await createOrden({ proveedorId, proveedorNo: provSel?.code, proveedorNombre: provSel?.nombre, currencyCode: currency, almacenRecepcion: almacen, observaciones: observaciones.trim() || undefined, lineas: ls });
+    const orden = await createOrden({ proveedorId, proveedorNo: provSel?.code, proveedorNombre: provSel?.nombre, currencyCode: currency, almacenRecepcion: almacen, observaciones: observaciones.trim() || undefined, notaInterna: notaInterna.trim() || undefined, lineas: ls });
     if (aprobar) await setOrdenEstado(orden.id, "pendiente_aprobacion");
     navegandoRef.current = true; // evita que el redirect de borrador-vacío pise el push al detalle
     setBorrador([]);
@@ -338,6 +340,14 @@ export default function ArmarOrdenPage() {
             <Textarea rows={3} value={observaciones} maxLength={500}
               onChange={(e) => setObservaciones(e.target.value)}
               placeholder="Ej. Entregar en bodega de 7 a. m. a 3 p. m., preguntar por Fernando. Referencia cotización #4471." />
+          </Field>
+          {/* Y este es el mensaje para QUIEN APRUEBA: por qué corre, por qué ese
+              precio, qué pasa si no se compra hoy. NO se imprime en el PDF del
+              proveedor — son dos campos distintos a propósito. */}
+          <Field label="Comentario para el aprobador" help="Opcional. Interno: NO sale en el PDF del proveedor." className="mt-4">
+            <Textarea rows={2} value={notaInterna} maxLength={500}
+              onChange={(e) => setNotaInterna(e.target.value)}
+              placeholder="Ej. Urgente para la colada del viernes. El precio subió 8% porque el proveedor cambió la presentación." />
           </Field>
           <div className="row gap-2 wrap mt-4">
             <span className="ds-muted ds-label">Solicitudes en esta orden:</span>
@@ -418,7 +428,7 @@ export default function ArmarOrdenPage() {
                 {rows.map((r) => (
                   <tr key={r.pedidoLineaId}>
                     <td className="ds-body-sm ds-strong">{r.pedidoNumero}</td>
-                    <td><div className="ds-truncate" title={`${r.articuloId} — ${r.descripcion}`} style={{ maxWidth: 260 }}><span className="ds-strong ds-body-sm">{r.articuloId}</span> <span className="ds-muted">— {r.descripcion}</span></div></td>
+                    <td><div style={{ maxWidth: 400 }} title={`${r.articuloId} — ${r.descripcion}`}><div className="ds-strong ds-body-sm">{r.articuloId}</div><div className="ds-clamp-2">{r.descripcion}</div></div></td>
                     <td className="ds-muted ds-body-sm">{r.almacen}</td>
                     <td className="ds-num">
                       {/* La unidad al lado de la cantidad: "40" solo no dice nada
@@ -472,7 +482,7 @@ export default function ArmarOrdenPage() {
                 {cargos.map((c, i) => cargoImporte(c) > 0 ? (
                   <tr key={`cargo-${c.key}`} style={{ background: "color-mix(in srgb, var(--ds-color-yellow) 7%, var(--ds-tint-base))" }}>
                     <td><Badge tone="yellow">Cargo</Badge></td>
-                    <td><div className="ds-truncate" title={c.descripcion} style={{ maxWidth: 200 }}>{c.chargeNo ? `${c.chargeNo} · ` : ""}{c.descripcion}</div></td>
+                    <td><div style={{ maxWidth: 320 }} title={`${c.chargeNo ? `${c.chargeNo} · ` : ""}${c.descripcion}`}>{c.chargeNo && <div className="ds-strong ds-body-sm">{c.chargeNo}</div>}<div className="ds-clamp-2">{c.descripcion}</div></div></td>
                     <td className="ds-muted ds-body-sm">—</td>
                     <td className="ds-num ds-body-sm">{c.cantidad}</td>
                     <td className="ds-num ds-body-sm">{money(Number(c.precio) || 0, currency)}</td>
@@ -544,7 +554,7 @@ export default function ArmarOrdenPage() {
                   {lineasDispFiltradas.map(({ p, l, pend }) => (
                     <tr key={l.id}>
                       <td className="ds-body-sm ds-strong">{p.numero}</td>
-                      <td><div className="ds-truncate" style={{ maxWidth: 260 }} title={`${l.articuloId} — ${l.descripcion}`}><span className="ds-strong ds-body-sm">{l.articuloId}</span> <span className="ds-muted">— {l.descripcion}</span></div></td>
+                      <td><div style={{ maxWidth: 380 }} title={`${l.articuloId} — ${l.descripcion}`}><div className="ds-strong ds-body-sm">{l.articuloId}</div><div className="ds-clamp-2">{l.descripcion}</div></div></td>
                       <td className="ds-muted ds-body-sm">{l.almacen || p.obraCodigo || "—"}</td>
                       <td className="ds-num">{pend} {l.unidad}</td>
                       <td className="ds-num"><Button variant="outline" size="sm" onClick={() => agregarDeSolicitud(p, l, pend)}>Agregar</Button></td>
