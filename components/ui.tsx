@@ -159,7 +159,13 @@ export function Select({
               // cabe: en una celda de tabla el campo mide 110px y "TANQUETA ·
               // TANQUETA" quedaba partido en tres renglones.
               minWidth: pos.width, width: "max-content", maxWidth: "min(90vw, 420px)",
-              ...(pos.up ? { bottom: pos.bottom + 6 } : { top: pos.top + 6 }),
+              // El borde que NO se usa va en auto a propósito: la clase .combo__menu
+              // trae `top: calc(100% + 6px)` y `right: 0` de cuando el menú vivía
+              // dentro del campo. Con position: fixed ese top vale la ALTURA DE LA
+              // VENTANA, así que al abrir hacia arriba quedaban puestos top y bottom
+              // a la vez: el menú se aplastaba a 11px y se iba abajo del todo.
+              right: "auto",
+              ...(pos.up ? { bottom: pos.bottom + 6, top: "auto" } : { top: pos.top + 6, bottom: "auto" }),
             }}>
             {searchable && (
               <div style={{ padding: 8, borderBottom: "1.5px solid var(--ds-color-gray-100)", position: "sticky", top: 0, background: "var(--ds-surface)", zIndex: 1 }}>

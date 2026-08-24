@@ -147,7 +147,11 @@ export function Combobox<T>({
       ref={menuRef}
       style={{
         position: "fixed", left: pos.left, width: pos.width,
-        ...(pos.up ? { bottom: pos.bottom + 6 } : { top: pos.top + 6 }),
+        // Ver el mismo comentario en el Select: hay que apagar el borde que no se
+        // usa, o el `top` de la clase (que con fixed vale el alto de la ventana)
+        // se suma al `bottom` y el menú abierto hacia arriba se aplasta.
+        right: "auto",
+        ...(pos.up ? { bottom: pos.bottom + 6, top: "auto" } : { top: pos.top + 6, bottom: "auto" }),
       }}
       onMouseDown={(e) => e.preventDefault()}
     >
