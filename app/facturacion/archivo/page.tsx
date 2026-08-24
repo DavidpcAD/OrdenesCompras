@@ -60,6 +60,11 @@ export default function ArchivoPage() {
   const columns = useMemo<ColumnDef<Recepcion, any>[]>(() => [
     { id: "factura", header: "Factura", accessorFn: (r) => r.numeroFactura, meta: { label: "Factura" }, cell: (c) => <span className="ds-strong">{c.getValue()}</span> },
     { id: "orden", header: "Orden", accessorFn: (r) => { const o = ordenDe(r); return o ? numeroOrden(o) : "—"; }, meta: { label: "Orden" }, cell: (c) => c.getValue() },
+    // Existe para BUSCAR, no para leerse: arranca oculta (igual que en la lista de
+    // Órdenes). El N.º interno ya no se muestra en ninguna pantalla, pero está en
+    // correos viejos, así que pegarlo en el buscador tiene que seguir encontrando la
+    // factura. El buscador mira todas las columnas; el export, solo las visibles.
+    { id: "ordenInterno", header: "N.º interno", accessorFn: (r) => ordenDe(r)?.numero ?? "", meta: { label: "N.º interno" }, cell: (c) => <span className="ds-muted">{c.getValue()}</span> },
     { id: "proveedor", header: "Proveedor", accessorFn: (r) => { const o = ordenDe(r); return (o ? (o.proveedorNombre ?? prov(o.proveedorId)?.nombre) : "") ?? "—"; }, meta: { label: "Proveedor" }, cell: (c) => c.getValue() },
     { id: "fecha", header: "Fecha registro", accessorFn: (r) => r.fechaRegistro, meta: { label: "Fecha registro" }, cell: (c) => formatDate(c.getValue()) },
     { id: "recibidoPor", header: "Recibido por", accessorFn: (r) => r.recibidoPor ?? "—", meta: { label: "Recibido por" }, cell: (c) => <span className="ds-body-sm">{c.getValue()}</span> },
@@ -114,7 +119,7 @@ export default function ArchivoPage() {
         )}
 
         <h3 className="ds-subtitle mt-6" style={{ marginBottom: 12 }}>Facturas registradas</h3>
-        <DataTable data={registradas} columns={columns} tablaKey="recepciones" buscarPlaceholder="Buscar por N.º de factura o proveedor…" getRowId={(r) => r.id} onRowClick={(r) => router.push(`/facturacion/recepcion/${r.id}`)} vacio="Sin facturas registradas." />
+        <DataTable data={registradas} columns={columns} tablaKey="recepciones" columnVisibilityInicial={{ ordenInterno: false }} buscarPlaceholder="Buscar por N.º de factura o proveedor…" getRowId={(r) => r.id} onRowClick={(r) => router.push(`/facturacion/recepcion/${r.id}`)} vacio="Sin facturas registradas." />
 
         {facObj && (
           <Modal title={`Registrar factura · ${(() => { const o = ordenDe(facObj); return o ? numeroOrden(o) : ""; })()}`} onClose={() => setFacObj(null)}

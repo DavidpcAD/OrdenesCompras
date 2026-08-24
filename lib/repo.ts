@@ -774,7 +774,7 @@ export async function nuevaOrdenDesdePendiente(
 ): Promise<{ idOrden: number; numero: string; origen: string }> {
   const pool = await getPool();
   const head = await pool.request().input("id", sql.Int, id)
-    .query("SELECT ordenNo, proveedorNo, proveedorNombre, currencyCode FROM dbo.OrdenCompra WHERE idOrdenCompra=@id AND esEliminada=0");
+    .query("SELECT ordenNo, bcNo, proveedorNo, proveedorNombre, currencyCode FROM dbo.OrdenCompra WHERE idOrdenCompra=@id AND esEliminada=0");
   if (!head.recordset.length) throw new Error("Orden no encontrada.");
   const h = head.recordset[0];
   const det = await pool.request().input("id", sql.Int, id).query(`
@@ -809,7 +809,10 @@ export async function nuevaOrdenDesdePendiente(
   const tx = new sql.Transaction(pool); await tx.begin();
   try {
     await logMov(tx, { entidad: "orden", idEntidad: idOrden, documentoNo: numero, tipoMovimiento: "creado",
-      detalle: `Con el pendiente de ${h.ordenNo}`, usuario, rol });
+      // Por su N.º de BC si ya lo tiene: la orden vieja está lanzada (solo esas se
+      // cierran), así que en toda la app se la ve como CP-005156, y la bitácora
+      // decía CP-000037 — un número que allá no existe.
+      detalle: `Con el pendiente de ${h.bcNo || etiquetaInterna(h.ordenNo)}`, usuario, rol });
     await logMov(tx, { entidad: "orden", idEntidad: id, documentoNo: h.ordenNo, tipoMovimiento: "cerrado",
       // El rótulo y no el CP- interno: la orden nueva se muestra "Interno 46" en
       // toda la app, y dejar acá un "CP-000046" manda a buscarlo a BC, donde no
