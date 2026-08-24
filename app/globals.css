@@ -381,7 +381,18 @@ h1, h2, h3, h4, p { margin: 0; }
 .ds-select__ph { color: var(--ds-color-gray-300); }
 .ds-select__chev { flex-shrink: 0; color: var(--ds-color-gray-400); transition: transform .15s ease; }
 .ds-select__trigger[aria-expanded="true"] .ds-select__chev { transform: rotate(180deg); }
-.ds-select__overlay { position: fixed; inset: 0; z-index: 29; }
+/* Capa que cierra el Select al hacer clic afuera: justo debajo de su menú (90) y
+   por encima del modal, para que adentro de un diálogo también cierre. */
+.ds-select__overlay { position: fixed; inset: 0; z-index: 89; }
+/* Select dentro de una celda de tabla: tiene que verse como los otros campos de la
+   fila (.ds-cell-input), no como un campo de formulario grande. Mismo alto, mismo
+   borde y sin sombra; el menú lo sigue dibujando el DS. */
+.ds-select--celda .ds-select__trigger {
+  padding: 6px 10px; border-radius: var(--ds-radius-md);
+  border: 1.5px solid var(--ds-color-gray-200); box-shadow: none;
+  gap: var(--ds-space-1);
+}
+.ds-select--celda .ds-select__chev { width: 16px; height: 16px; }
 /* Fallback para cualquier <select> nativo que quede: flecha custom separada */
 .ds-form-field__select {
   appearance: none; -webkit-appearance: none; -moz-appearance: none;
@@ -421,10 +432,12 @@ h1, h2, h3, h4, p { margin: 0; }
 .combo__chev { position: absolute; right: 14px; top: 50%; transform: translateY(-50%); color: var(--ds-color-gray-400); pointer-events: none; display: inline-flex; transition: transform .15s ease; }
 .combo__chev.is-open { transform: translateY(-50%) rotate(180deg); }
 /* Menú desplegado bajo el trigger. DEBE ir posicionado (absolute) para que su
-   z-index gane por encima del overlay del Select (.ds-select__overlay, z-index 29);
-   si queda `static`, el z-index se ignora y el overlay tapa las opciones (no se
-   pueden clickear, sobre todo dentro de un Modal). */
-.combo__menu { position: absolute; top: calc(100% + 6px); left: 0; right: 0; z-index: 60; max-height: 300px; overflow-y: auto; background: var(--ds-surface); border: 1.5px solid var(--ds-color-gray-200); border-radius: var(--ds-radius-lg); box-shadow: 0 10px 30px #0000002a; padding: 4px; }
+   z-index cuente; si queda `static` se ignora y el overlay tapa las opciones.
+   Combobox y Select lo dibujan en un PORTAL sobre el <body> (para que no lo recorte
+   una tabla o cualquier contenedor con overflow), y por eso tiene que quedar por
+   ENCIMA del modal (.modal-overlay, z-index 80): fuera del modal en el DOM, con
+   z-index 60 las opciones se veían pero el clic se lo comía el modal. */
+.combo__menu { position: absolute; top: calc(100% + 6px); left: 0; right: 0; z-index: 90; max-height: 300px; overflow-y: auto; background: var(--ds-surface); border: 1.5px solid var(--ds-color-gray-200); border-radius: var(--ds-radius-lg); box-shadow: 0 10px 30px #0000002a; padding: 4px; }
 .combo__item { display: flex; align-items: center; min-height: 42px; width: 100%; text-align: left; background: transparent; border: 0; padding: 8px 12px; border-radius: 10px; cursor: pointer; font-size: var(--ds-font-size-label); color: var(--ds-text); }
 .combo__item:hover { background: color-mix(in srgb, var(--ds-color-green-100) 12%, var(--ds-tint-base)); }
 .combo__item.is-active { background: color-mix(in srgb, var(--ds-color-green-100) 26%, var(--ds-tint-base)); font-weight: var(--ds-font-weight-semibold); }

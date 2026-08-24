@@ -495,11 +495,12 @@ export default function OrdenDirectaPage() {
                         {/* La unidad de la línea se puede corregir acá mismo: al
                             cambiarla, el precio se convierte con ella. */}
                         {unidadesDe(r.articuloId).length > 1 ? (
-                          <select className="ds-cell-input" aria-label="Unidad de compra" value={r.unidad}
-                            title={equivFila(r) ?? undefined} style={{ width: 92 }}
-                            onChange={(e) => elegirUnidadFila(r, e.target.value)}>
-                            {unidadesDe(r.articuloId).map((u) => <option key={u.code} value={u.code}>{u.code}</option>)}
-                          </select>
+                          <span title={equivFila(r) ?? undefined}>
+                            <Select ariaLabel="Unidad de compra" className="ds-select--celda" value={r.unidad}
+                              style={{ width: 104 }} onChange={(e) => elegirUnidadFila(r, e.target.value)}>
+                              {unidadesDe(r.articuloId).map((u) => <option key={u.code} value={u.code}>{u.code}</option>)}
+                            </Select>
+                          </span>
                         ) : (
                           <span className="ds-body-sm ds-muted" style={{ whiteSpace: "nowrap" }}
                             title={equivFila(r) ?? undefined}>{r.unidad || "—"}</span>
