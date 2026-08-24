@@ -1,6 +1,7 @@
 "use client";
 
-import React, { createContext, useCallback, useContext, useEffect, useId, useRef, useState } from "react";
+import React, { createContext, useCallback, useContext, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { IconClose, IconChevronDown } from "@/components/icons";
 import { haptic } from "@/lib/haptic";
 
@@ -101,6 +102,27 @@ export function Select({
   const visibles = searchable && q.trim() ? options.filter((o) => o.label.toLowerCase().includes(q.trim().toLowerCase())) : options;
   const triggerRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
+  // El menú va en un PORTAL con posición fija, igual que el del Combobox: dentro de
+  // una tabla (que scrollea en X) o de cualquier contenedor con overflow, un menú
+  // absoluto queda recortado. Por eso una celda tenía que usar un <select> nativo,
+  // que abre el desplegable feo del sistema en vez del del DS.
+  const [pos, setPos] = useState<{ left: number; top: number; bottom: number; width: number; up: boolean } | null>(null);
+  function reposition() {
+    const el = triggerRef.current;
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    const spaceBelow = window.innerHeight - r.bottom;
+    const up = spaceBelow < 260 && r.top > spaceBelow;
+    setPos({ left: r.left, top: r.bottom, bottom: window.innerHeight - r.top, width: r.width, up });
+  }
+  useLayoutEffect(() => { if (open) reposition(); /* eslint-disable-next-line */ }, [open]);
+  useEffect(() => {
+    if (!open) return;
+    const h = () => reposition();
+    window.addEventListener("scroll", h, true);
+    window.addEventListener("resize", h);
+    return () => { window.removeEventListener("scroll", h, true); window.removeEventListener("resize", h); };
+  }, [open]);
   const pick = (v: string) => { onChange?.({ target: { value: v } }); setOpen(false); setQ(""); triggerRef.current?.focus(); };
   const closeAndFocus = () => { setOpen(false); setQ(""); triggerRef.current?.focus(); };
   // Al abrir, llevar el foco a la opción seleccionada (o la primera) para navegar
@@ -127,10 +149,18 @@ export function Select({
         <span className={sel ? "" : "ds-select__ph"}>{sel ? sel.label : placeholder}</span>
         <IconChevronDown size={20} className="ds-select__chev" />
       </button>
-      {open && !disabled && (
+      {open && !disabled && pos && createPortal(
         <>
           <div className="ds-select__overlay" onClick={() => setOpen(false)} />
-          <div ref={menuRef} className="combo__menu" role="listbox" onKeyDown={onMenuKey}>
+          <div ref={menuRef} className="combo__menu" role="listbox" onKeyDown={onMenuKey}
+            style={{
+              position: "fixed", left: pos.left,
+              // Nunca más angosto que el campo, pero puede crecer si la opción no
+              // cabe: en una celda de tabla el campo mide 110px y "TANQUETA ·
+              // TANQUETA" quedaba partido en tres renglones.
+              minWidth: pos.width, width: "max-content", maxWidth: "min(90vw, 420px)",
+              ...(pos.up ? { bottom: pos.bottom + 6 } : { top: pos.top + 6 }),
+            }}>
             {searchable && (
               <div style={{ padding: 8, borderBottom: "1.5px solid var(--ds-color-gray-100)", position: "sticky", top: 0, background: "var(--ds-surface)", zIndex: 1 }}>
                 <input autoFocus value={q} onChange={(e) => setQ(e.target.value)} className="ds-cell-input" style={{ width: "100%" }}
@@ -151,7 +181,8 @@ export function Select({
               </button>
             ))}
           </div>
-        </>
+        </>,
+        document.body
       )}
     </div>
   );
