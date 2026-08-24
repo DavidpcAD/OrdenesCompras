@@ -135,6 +135,7 @@ export function OrdenesLista({
           data={ordenes}
           columns={columns}
           tablaKey="ordenes"
+          columnVisibilityInicial={{ interno: false }}
           buscarPlaceholder="Buscar por N.º de orden o proveedor…"
           getRowId={(o) => o.id}
           onRowClick={(o) => router.push(hrefDetalle(o.id))}

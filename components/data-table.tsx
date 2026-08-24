@@ -56,7 +56,7 @@ type Vista = { id: number; nombre: string; config: VistaCfg; esPredeterminada: b
 
 export function DataTable<T>({
   data, columns, tablaKey, getRowId, onRowClick, rowClassName, vacio = "No hay registros.", modoInicial = "tabla", renderExpanded,
-  titulo = "Reporte", buscarPlaceholder = "Buscar en la tabla…", loading = false,
+  titulo = "Reporte", buscarPlaceholder = "Buscar en la tabla…", loading = false, columnVisibilityInicial,
 }: {
   data: T[];
   columns: ColumnDef<T, any>[];
@@ -75,6 +75,12 @@ export function DataTable<T>({
   buscarPlaceholder?: string;
   // Si true y aún no hay datos, muestra filas/tarjetas skeleton (carga de SQL/BC).
   loading?: boolean;
+  // Columnas que arrancan ocultas ({ interno: false }). Es la BASE: lo que el
+  // usuario haya elegido después en "Columnas" pisa esto, porque su elección viaja
+  // en el estado guardado. Sirve para columnas que existen para BUSCAR y no para
+  // leerse — el buscador global mira todas las columnas, visibles o no, y el
+  // export solo se lleva las visibles.
+  columnVisibilityInicial?: VisibilityState;
 }) {
   const { usuario, cargando, errorCarga, ultimaSync, modoApi } = useStore();
   // Inyecta el filtro multi-selección a las columnas que no traigan uno propio.
@@ -97,7 +103,7 @@ export function DataTable<T>({
   const filterBtnRef = useRef<HTMLElement | null>(null);   // disparador del popover, para devolverle el foco al cerrar
   const cerrarFiltro = () => { setFilterCol(null); filterBtnRef.current?.focus(); };
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>(guardado.columnFilters ?? []);
-  const [columnVisibility, setColumnVisibility] = useState<VisibilityState>(guardado.columnVisibility ?? {});
+  const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({ ...(columnVisibilityInicial ?? {}), ...(guardado.columnVisibility ?? {}) });
   const [columnOrder, setColumnOrder] = useState<ColumnOrderState>(() => columns.map((c) => c.id!).filter(Boolean));
   const [globalFilter, setGlobalFilter] = useState(guardado.globalFilter ?? "");
   const [pagination, setPagination] = useState<PaginationState>({ pageIndex: guardado.pageIndex ?? 0, pageSize: guardado.pageSize ?? 50 });
