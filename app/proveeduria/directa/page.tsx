@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect, useId, useMemo, useState } from "react";
-import { Badge, Button, Card, Field, Input, Select, Textarea, useToast } from "@/components/ui";
+import { Badge, Button, Card, Field, Input, Modal, Select, Textarea, useToast } from "@/components/ui";
 import { Combobox } from "@/components/combobox";
 import { IconWarning } from "@/components/icons";
 import { useStore } from "@/lib/store";
@@ -13,11 +13,15 @@ import type { OrdenLinea } from "@/lib/types";
 // Orden DIRECTA: compra armada por Proveeduría sin partir de una solicitud de
 // Ingeniería (material que no vino en ningún pedido). Todas las líneas son
 // manuales (pedidoNumero "Manual"); en la lista/detalle se marca como "Directa".
-// Sin `obra`: una compra directa NO se carga a una obra (ver comentario en crear()).
 // `unidad` es la de COMPRA (la que BC pone en la línea del pedido y la que factura
 // el proveedor); `unidadBase` es la de inventario, solo para explicar la equivalencia.
-interface Row { key: string; articuloId: string; descripcion: string; unidad: string; unidadBase?: string; factorCompra?: number; cantidad: string; precio: string; iva: string; descuento: string; variantCode: string; variantNombre: string; }
+// `obra`/`tarea` son OPCIONALES y van POR LÍNEA (Job No. + Job Task No. de BC): una
+// directa puede mezclar material que entra a bodega con un servicio que se carga a
+// una obra (ver comentario en crear()).
+interface Row { key: string; articuloId: string; descripcion: string; unidad: string; unidadBase?: string; factorCompra?: number; cantidad: string; precio: string; iva: string; descuento: string; variantCode: string; variantNombre: string; obra: string; obraNombre: string; tarea: string; tareaNombre: string; }
 type Variante = { code: string; descripcion: string };
+type Obra = { codigo: string; nombre: string };
+type Tarea = { jobTaskNo: string; descripcion: string; tipo: string };
 // Cargo de producto (Item Charge) a agregar a la orden: tipo (chargeNo del catálogo
 // BC), cantidad y precio. chargeNo "" = flete por defecto. Igual que en "nueva".
 interface Cargo { key: string; chargeNo: string; descripcion: string; cantidad: string; precio: string; }
@@ -61,6 +65,10 @@ export default function OrdenDirectaPage() {
     // Catálogo de Cargos de producto (Item Charge) de BC para el selector de tipo.
     fetch("/api/bc/itemcharges").then((r) => (r.ok ? r.json() : { itemCharges: [] }))
       .then((d) => { if (Array.isArray(d.itemCharges)) setItemCharges(d.itemCharges); }).catch(() => {});
+    // Obras (Jobs) de BC, para poder cargar una línea a una obra. Si no responde,
+    // el selector queda vacío y la orden se arma sin obra, como antes.
+    fetch("/api/bc/obras").then((r) => (r.ok ? r.json() : { obras: [] }))
+      .then((d) => { if (Array.isArray(d.obras)) setObras(d.obras.map((o: any) => ({ codigo: o.codigo, nombre: o.nombre }))); }).catch(() => {});
   }, []);
   const catProv = bcProv ?? proveedores;
   const catAlm = almacenesParaRecepcion(bcAlm ?? almacenes);
@@ -76,11 +84,52 @@ export default function OrdenDirectaPage() {
   const [qaVariantes, setQaVariantes] = useState<Variante[]>([]);
   const [qaVariante, setQaVariante] = useState("");
   const [qaVariantesError, setQaVariantesError] = useState(false);
+  // Obra (Job No.) y tarea (Job Task No.) que se le van a poner a la PRÓXIMA línea.
+  // Quedan pegadas después de agregar: una orden de servicio a una obra suele traer
+  // varias líneas de la misma obra y volver a elegirla en cada una es puro trámite.
+  const [obras, setObras] = useState<Obra[]>([]);
+  const [qaObra, setQaObra] = useState("");
+  const [qaTarea, setQaTarea] = useState("");
+  // Tareas por obra, cacheadas: las pide la barra de agregar y también el diálogo
+  // que corrige la obra de una línea ya agregada.
+  const [tareasPorObra, setTareasPorObra] = useState<Record<string, Tarea[]>>({});
+  // Línea cuya obra/tarea se está corrigiendo en el diálogo (null = cerrado).
+  const [editObra, setEditObra] = useState<Row | null>(null);
   // Unidad de medida del artículo elegido en "Agregar artículo".
   const qaItem = itemsBc.find((x) => x.code === qaCode);
   const qaUnidad = qaItem?.unidad ?? "";
   const qaEquiv = equivalencia({ base: qaItem?.unidadBase ?? "", compra: qaUnidad, factor: qaItem?.factorCompra });
   const variantePendiente = qaVariantes.length > 0 && !qaVariante;
+
+  // Tareas de una obra, una sola vez por obra. Solo se ofrecen las de tipo
+  // "Posting": las de tipo Heading/Total son rótulos del presupuesto y BC rechaza
+  // la línea de compra que apunte a una de ellas. Si la API no manda el tipo, se
+  // dejan todas antes que quedarse sin ninguna.
+  function cargarTareas(jobNo: string) {
+    const j = (jobNo ?? "").trim();
+    if (!j || tareasPorObra[j]) return;
+    fetch(`/api/bc/jobtasks?jobNo=${encodeURIComponent(j)}`)
+      .then((r) => (r.ok ? r.json() : { jobTasks: [] }))
+      .then((d) => {
+        const todas: Tarea[] = Array.isArray(d.jobTasks) ? d.jobTasks : [];
+        const posting = todas.filter((t) => (t.tipo ?? "").toLowerCase() === "posting");
+        setTareasPorObra((m) => ({ ...m, [j]: posting.length ? posting : todas }));
+      })
+      .catch(() => setTareasPorObra((m) => ({ ...m, [j]: [] })));
+  }
+  const tareasDe = (jobNo: string) => tareasPorObra[(jobNo ?? "").trim()] ?? [];
+  // El Combobox no tiene forma de vaciarse, así que "Sin obra" es una opción más
+  // (código ""). Sin ella, elegir una obra por error sería irreversible.
+  const obrasConVacio = useMemo(() => [{ codigo: "", nombre: "Sin obra — entra a bodega" }, ...obras], [obras]);
+  const etiquetaObra = (o: Obra) => (o.codigo ? `${o.codigo} — ${o.nombre}` : o.nombre);
+  const etiquetaTarea = (t: Tarea) => `${t.jobTaskNo} — ${t.descripcion}`;
+  const nombreObra = (codigo: string) => obras.find((o) => o.codigo === codigo)?.nombre ?? "";
+  const nombreTarea = (jobNo: string, taskNo: string) => tareasDe(jobNo).find((t) => t.jobTaskNo === taskNo)?.descripcion ?? "";
+  // Al cambiar la obra hay que soltar la tarea: una tarea pertenece a UNA obra y
+  // dejarla puesta manda a BC un Job Task No. que no existe en la obra nueva.
+  function elegirObra(codigo: string) { setQaObra(codigo); setQaTarea(""); if (codigo) cargarTareas(codigo); }
+  // La obra sin tarea no la acepta BC; solo se exige si las tareas ya cargaron.
+  const tareaPendiente = !!qaObra && tareasDe(qaObra).length > 0 && !qaTarea;
 
   const setRow = (k: string, patch: Partial<Row>) => setRows((rs) => rs.map((r) => (r.key === k ? { ...r, ...patch } : r)));
   const removeRow = (k: string) => setRows((rs) => rs.filter((r) => r.key !== k));
@@ -94,8 +143,15 @@ export default function OrdenDirectaPage() {
     const it = itemsBc.find((x) => x.code === qaCode);
     if (!it || !(Number(qaQty) > 0)) { toast("Elegí un artículo y una cantidad.", "error"); return; }
     if (variantePendiente) { toast("Este artículo tiene variantes: elegí una antes de agregar la línea.", "error"); return; }
+    // BC exige la tarea cuando la línea va a una obra (Job Task No. obligatorio si
+    // hay Job No.). Si las tareas no cargaron (BC caído) no se bloquea: se avisa en
+    // crear() y la orden se arma igual.
+    if (tareaPendiente) { toast("Elegí la tarea de la obra: sin ella Business Central no acepta la línea.", "error"); return; }
     const variante = qaVariantes.find((v) => v.code === qaVariante);
-    setRows((rs) => [...rs, { key: `m-${uid()}`, articuloId: it.code, descripcion: it.descripcion, unidad: it.unidad, unidadBase: it.unidadBase, factorCompra: it.factorCompra, cantidad: String(Number(qaQty)), precio: String(Number(qaPrecio) || 0), iva: "13", descuento: "0", variantCode: qaVariante, variantNombre: variante?.descripcion ?? "" }]);
+    setRows((rs) => [...rs, { key: `m-${uid()}`, articuloId: it.code, descripcion: it.descripcion, unidad: it.unidad, unidadBase: it.unidadBase, factorCompra: it.factorCompra, cantidad: String(Number(qaQty)), precio: String(Number(qaPrecio) || 0), iva: "13", descuento: "0", variantCode: qaVariante, variantNombre: variante?.descripcion ?? "",
+      obra: qaObra, obraNombre: nombreObra(qaObra), tarea: qaTarea, tareaNombre: nombreTarea(qaObra, qaTarea) }]);
+    // La obra y la tarea NO se limpian a propósito (ver el estado): siguen a la vista
+    // en la barra, así que es evidente a qué obra va a ir la línea siguiente.
     setQaCode(""); setQaQty(""); setQaPrecio(""); setQaVariantes([]); setQaVariante(""); setQaVariantesError(false);
   }
 
@@ -128,17 +184,23 @@ export default function OrdenDirectaPage() {
     if (malaCant) { toast(`Poné una cantidad mayor que 0 en "${malaCant.descripcion}".`, "error"); return; }
     const malPrecio = rows.find((r) => !Number.isFinite(Number(r.precio)) || Number(r.precio) < 0);
     if (malPrecio) { toast(`El precio de "${malPrecio.descripcion}" no es un número válido.`, "error"); return; }
+    // Última red antes de guardar: si una línea quedó con obra y sin tarea (p. ej.
+    // las tareas no habían cargado al agregarla), BC va a rechazarla.
+    const sinTarea = rows.find((r) => r.obra && !r.tarea);
+    if (sinTarea) { toast(`Falta la tarea de la obra ${sinTarea.obra} en "${sinTarea.descripcion}". Sin ella BC no acepta la línea.`, "error"); return; }
     setGuardando(true);
     try {
-      // Una compra directa NO lleva obra: el material entra al ALMACÉN de recepción
-      // elegido arriba y queda en inventario. Antes había una casilla "Obra" por línea
-      // que se usaba a la vez de almacén y de Job No., y con Job No. BC lo carga como
-      // CONSUMO de la obra (el stock no sube). Si la compra es para una obra, va por
-      // la solicitud de Ingeniería, que es la que trae la obra de verdad.
+      // La obra va POR LÍNEA y es opcional. Sin obra la línea es lo de siempre: el
+      // material entra al ALMACÉN de recepción elegido arriba y suma inventario. CON
+      // obra, BC la carga como CONSUMO de la obra y el stock NO sube — por eso el
+      // campo es explícito y la pantalla lo avisa, en vez de la vieja casilla "Obra"
+      // que se usaba a la vez de almacén y de Job No. sin que nadie lo supiera.
+      // El almacén de recepción se manda igual: es el locationCode de la línea.
       const ls: Omit<OrdenLinea, "id" | "cantidadRecibida" | "cantidadFacturada">[] = rows.map((r) => ({
         tipo: "articulo", articuloId: r.articuloId, variantCode: r.variantCode || undefined, pedidoNumero: "Manual",
         descripcion: r.descripcion, cantidad: Number(r.cantidad), unidad: r.unidad, almacen,
         precioUnitario: Number(r.precio), ivaPct: Number(r.iva) || 0, descuentoPct: Number(r.descuento) || 0,
+        proyecto: r.obra || undefined, taskNo: r.tarea || undefined,
       }));
       for (const c of cargos) {
         if (cargoImporte(c) <= 0) continue;
@@ -259,6 +321,24 @@ export default function OrdenDirectaPage() {
                 </div>
               </div>
             )}
+            {/* Obra y tarea de la línea (Job No. + Job Task No. de BC). Opcionales: sin
+                obra la línea entra a bodega como siempre. Se quedan puestas después
+                de agregar, así que se ve a qué obra va a ir la línea siguiente. */}
+            <div style={{ flex: "0 1 240px", minWidth: 190 }}>
+              <label className="ds-label ds-muted" style={{ display: "block", marginBottom: 4 }}>Obra <span className="ds-body-sm">(opcional)</span></label>
+              <Combobox items={obrasConVacio} value={qaObra} onChange={(k) => elegirObra(k)}
+                getKey={(o) => o.codigo} getLabel={etiquetaObra} getSearch={(o) => `${o.codigo} ${o.nombre}`} placeholder="Sin obra…" />
+            </div>
+            {qaObra && (
+              <div style={{ flex: "0 1 230px", minWidth: 180 }}>
+                <label className="ds-label ds-muted" style={{ display: "block", marginBottom: 4 }}>Tarea</label>
+                <div style={tareaPendiente ? { outline: "1.5px solid var(--ds-color-red-100)", borderRadius: 12 } : undefined}>
+                  <Combobox items={tareasDe(qaObra)} value={qaTarea} onChange={(k) => setQaTarea(k)}
+                    getKey={(t) => t.jobTaskNo} getLabel={etiquetaTarea} getSearch={(t) => `${t.jobTaskNo} ${t.descripcion}`}
+                    placeholder={tareasDe(qaObra).length ? "Elegí tarea…" : "Sin tareas en BC"} />
+                </div>
+              </div>
+            )}
             <div>
               <label className="ds-label ds-muted" htmlFor={qtyId} style={{ display: "block", marginBottom: 4 }}>Cantidad</label>
               {/* La unidad del artículo elegido, al lado del campo: al escribir "40"
@@ -272,21 +352,51 @@ export default function OrdenDirectaPage() {
               {qaEquiv && <div className="ds-body-sm ds-muted" style={{ marginTop: 2 }}>{qaEquiv}</div>}
             </div>
             <div><label className="ds-label ds-muted" htmlFor={priceId} style={{ display: "block", marginBottom: 4 }}>Precio</label><Input id={priceId} type="number" min={0} value={qaPrecio} onChange={(e) => setQaPrecio(e.target.value)} placeholder="0" style={{ width: 110 }} />{qaRef ? <div className="ds-body-sm ds-muted" style={{ marginTop: 2 }}>últ. compra {money(qaRef.precio, monedaApp(qaRef.moneda))}{qaRef.unidad ? ` / ${qaRef.unidad}` : ""}</div> : null}</div>
-            <Button variant="outline" onClick={agregarLinea} disabled={!qaCode || !(Number(qaQty) > 0) || variantePendiente}>+ Agregar línea</Button>
+            <Button variant="outline" onClick={agregarLinea} disabled={!qaCode || !(Number(qaQty) > 0) || variantePendiente || tareaPendiente}>+ Agregar línea</Button>
           </div>
           {qaCode && qaVariantesError && (
             <div role="alert" className="ds-body-sm" style={{ color: "var(--ds-color-red-100)", padding: "0 16px 10px" }}>
               No se pudieron cargar las variantes de este material. Si requiere variante, la orden podría fallar en Business Central.
             </div>
           )}
+          {/* Lo que NO es obvio y ya nos mordió una vez: con Job No. la recepción se
+              carga como consumo de la obra y el stock no sube. Se dice en la
+              pantalla, no en un comentario del código. */}
+          {rows.some((r) => r.obra) && (
+            <div className="ds-callout mb-4" role="status" style={{ margin: "12px 16px" }}>
+              <div>
+                <div className="ds-callout__title">Hay líneas cargadas a una obra</div>
+                <div className="ds-callout__body">
+                  En Business Central esas líneas se registran como <span className="ds-strong">consumo de la obra</span>: el material no suma inventario.
+                  Las líneas sin obra sí entran al almacén de recepción elegido arriba.
+                </div>
+              </div>
+            </div>
+          )}
           <div className="ds-table-wrap" style={{ boxShadow: "none" }}>
             <table className="ds-table">
-              <thead><tr><th>Artículo</th><th className="ds-num">Cantidad</th><th className="ds-num">Precio</th><th className="ds-num">Desc%</th><th className="ds-num">IVA%</th><th className="ds-num">Importe</th><th></th></tr></thead>
+              <thead><tr><th>Artículo</th><th>Obra / tarea</th><th className="ds-num">Cantidad</th><th className="ds-num">Precio</th><th className="ds-num">Desc%</th><th className="ds-num">IVA%</th><th className="ds-num">Importe</th><th></th></tr></thead>
               <tbody>
-                {rows.length === 0 && <tr><td colSpan={7}><div className="empty">Sin líneas. Buscá un artículo del catálogo y agregalo.</div></td></tr>}
+                {rows.length === 0 && <tr><td colSpan={8}><div className="empty">Sin líneas. Buscá un artículo del catálogo y agregalo.</div></td></tr>}
                 {rows.map((r) => (
                   <tr key={r.key}>
                     <td><div className="ds-clamp-2" title={r.descripcion} style={{ maxWidth: 380, minWidth: 240 }}>{r.descripcion}</div><div className="ds-body-sm ds-muted">{r.articuloId}{r.variantCode ? ` · var. ${r.variantCode}${r.variantNombre ? ` (${r.variantNombre})` : ""}` : ""}</div></td>
+                    {/* Obra y tarea de ESTA línea. Se corrige en un diálogo y no con
+                        dos selectores dentro de la celda: la tabla ya tiene seis
+                        campos editables y no le caben dos buscadores más. */}
+                    <td>
+                      {r.obra ? (
+                        <>
+                          <div className="ds-body-sm ds-strong" title={r.obraNombre || undefined}>{r.obra}</div>
+                          <div className="ds-body-sm ds-muted" title={r.tareaNombre || undefined}>{r.tarea ? `Tarea ${r.tarea}` : "Sin tarea"}</div>
+                        </>
+                      ) : (
+                        <div className="ds-body-sm ds-muted">Bodega</div>
+                      )}
+                      <button type="button" className="link-btn" onClick={() => { setEditObra(r); if (r.obra) cargarTareas(r.obra); }}>
+                        {r.obra ? "Cambiar" : "Asignar obra"}
+                      </button>
+                    </td>
                     <td className="ds-num">
                       {/* La unidad al lado de la cantidad: "40" solo no dice nada
                           cuando el material se compra por M3, KG o SACO. */}
@@ -367,6 +477,36 @@ export default function OrdenDirectaPage() {
           </div>
         </div>
       </main>
+
+      {editObra && (
+        <Modal title="Obra y tarea de la línea" onClose={() => setEditObra(null)}
+          footer={
+            <>
+              <Button variant="outline" onClick={() => setEditObra(null)}>Cancelar</Button>
+              <Button
+                disabled={!!editObra.obra && tareasDe(editObra.obra).length > 0 && !editObra.tarea}
+                onClick={() => {
+                  setRow(editObra.key, { obra: editObra.obra, obraNombre: editObra.obraNombre, tarea: editObra.tarea, tareaNombre: editObra.tareaNombre });
+                  setEditObra(null);
+                }}>Guardar</Button>
+            </>
+          }>
+          <p className="ds-body-sm ds-muted" style={{ marginBottom: 16 }}>{editObra.articuloId} — {editObra.descripcion}</p>
+          <Field label="Obra" help="Sin obra, la línea entra al almacén de recepción y suma inventario.">
+            <Combobox items={obrasConVacio} value={editObra.obra}
+              onChange={(k) => { setEditObra({ ...editObra, obra: k, obraNombre: nombreObra(k), tarea: "", tareaNombre: "" }); if (k) cargarTareas(k); }}
+              getKey={(o) => o.codigo} getLabel={etiquetaObra} getSearch={(o) => `${o.codigo} ${o.nombre}`} placeholder="Sin obra…" />
+          </Field>
+          {editObra.obra && (
+            <Field label="Tarea" help="Obligatoria cuando la línea va a una obra: BC no acepta un Job No. sin tarea." className="mt-4">
+              <Combobox items={tareasDe(editObra.obra)} value={editObra.tarea}
+                onChange={(k) => setEditObra({ ...editObra, tarea: k, tareaNombre: nombreTarea(editObra.obra, k) })}
+                getKey={(t) => t.jobTaskNo} getLabel={etiquetaTarea} getSearch={(t) => `${t.jobTaskNo} ${t.descripcion}`}
+                placeholder={tareasDe(editObra.obra).length ? "Elegí tarea…" : "Sin tareas en BC"} />
+            </Field>
+          )}
+        </Modal>
+      )}
 
       <div className="action-bar">
         <div className="action-bar__inner">

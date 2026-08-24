@@ -172,13 +172,18 @@ const DIRECTA: HelpEntry = {
   resumen: "Compra que no viene de una solicitud de Ingeniería.",
   detalle: [
     "Para comprar material que no pasó por una solicitud: agregás los artículos del catálogo directamente.",
+    "Cada línea puede ir a una obra (con su tarea) o quedarse sin obra. Sin obra el material entra al almacén de recepción y suma inventario; con obra, Business Central lo registra como consumo de esa obra y el inventario no sube. Así se compra un servicio para un proyecto sin pasar por Ingeniería.",
   ],
   pasos: [
     "Elegí el proveedor (hereda términos y moneda), la moneda y el almacén de recepción.",
     "Buscá un artículo del catálogo, poné la cantidad y el precio, y tocá “+ Agregar línea”.",
+    "Si esa línea va a una obra, elegí la obra y la tarea ANTES de agregarla (quedan puestas para las siguientes). Para corregirlas después, tocá “Cambiar” en la columna Obra / tarea.",
     "Repetí para cada material que necesites.",
     "(Opcional) activá el cargo de flete/transporte.",
     "Revisá Subtotal / IVA / Total y guardá como abierta o enviá a aprobación.",
+  ],
+  tips: [
+    "La tarea es obligatoria cuando ponés obra: sin ella Business Central rechaza la línea.",
   ],
 };
 const PEDIDAS: HelpEntry = {
