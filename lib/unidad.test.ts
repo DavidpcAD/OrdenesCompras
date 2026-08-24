@@ -5,7 +5,7 @@
 //   npm test
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { unidadDeCompra, unidadCorregida, equivalencia, equivalenciaDeUnidad, precioEnUnidad, precioEntreUnidades, cantidadEntreUnidades, mismaMoneda } from "./unidad.ts";
+import { unidadDeCompra, unidadCorregida, equivalencia, equivalenciaDeUnidad, precioEnUnidad, precioEntreUnidades, cantidadEntreUnidades, codigoDeItem, opcionesDeUnidad, mismaMoneda } from "./unidad.ts";
 
 const adhesivo = { base: "GR", compra: "EST", factor: 255000 };
 const casco = { base: "UND", compra: "UND", factor: 1 };
@@ -175,4 +175,42 @@ test("equivalenciaDeUnidad: sin base explícita la deduce de la lista (factor 1)
 
 test("equivalenciaDeUnidad: sin base y sin candidata no inventa", () => {
   assert.equal(equivalenciaDeUnidad([{ code: "EST", factor: 255000 }], "EST", ""), null);
+});
+
+// El caso real (24 ago 2026): en la pantalla de armar orden, las líneas con
+// variante no mostraban el selector de unidad. El itemNo guardado traía la
+// variante pegada y BC no reconocía ese código.
+test("codigoDeItem: quita la variante pegada al código", () => {
+  assert.equal(codigoDeItem("M11-0081 -VAR 12"), "M11-0081");
+  assert.equal(codigoDeItem("M11-0073 -VAR 05"), "M11-0073");
+});
+
+test("codigoDeItem: un código limpio no se toca", () => {
+  assert.equal(codigoDeItem("M06-0009"), "M06-0009");
+  assert.equal(codigoDeItem("  M11-0019  "), "M11-0019");
+});
+
+test("codigoDeItem: vacío o ausente no revienta", () => {
+  assert.equal(codigoDeItem(""), "");
+  assert.equal(codigoDeItem(undefined as any), "");
+});
+
+test("opcionesDeUnidad: la unidad guardada que BC no tiene se ofrece igual", () => {
+  // Solicitudes guardadas en UND para un material que en BC solo tiene CUB.
+  const enBc = [{ code: "CUB", factor: 1 }, { code: "HRS", factor: 1 }];
+  const r = opcionesDeUnidad(enBc, "UND");
+  assert.equal(r.length, 3);
+  assert.equal(r[0].code, "UND");
+  assert.equal(r[0].factor, 0);      // sin factor: la conversión se niega sola
+});
+
+test("opcionesDeUnidad: si ya está en BC no se duplica", () => {
+  const enBc = [{ code: "CUB", factor: 1 }, { code: "HRS", factor: 1 }];
+  assert.equal(opcionesDeUnidad(enBc, "CUB").length, 2);
+  assert.equal(opcionesDeUnidad(enBc, "cub").length, 2);   // sin importar mayúsculas
+});
+
+test("opcionesDeUnidad: sin unidad actual devuelve solo las de BC", () => {
+  assert.equal(opcionesDeUnidad([{ code: "CUB", factor: 1 }], "").length, 1);
+  assert.equal(opcionesDeUnidad(undefined, "UND").length, 1);
 });

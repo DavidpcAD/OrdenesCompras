@@ -101,6 +101,33 @@ export function precioEntreUnidades(precio: number, desde?: number, hasta?: numb
   return (p / fd) * fh;
 }
 
+// El código de artículo con el que hay que preguntarle a Business Central.
+//
+// El `itemNo` de una línea puede venir con la variante pegada —"M11-0081 -VAR 12"—
+// porque así lo guarda la solicitud. BC no conoce ese código (el suyo es
+// "M11-0081"), así que preguntarle por él devuelve cero unidades y la línea se
+// quedaba sin selector: justo las líneas con variante, que son las que más se
+// necesitan corregir. Un N.º de artículo de BC nunca lleva espacios, así que se
+// corta en el primero.
+export function codigoDeItem(itemNo: string): string {
+  return (itemNo ?? "").trim().split(/\s+/)[0] ?? "";
+}
+
+// Las unidades que se le ofrecen a una línea: las del material en BC, más la que
+// la línea YA tiene si no está entre ellas.
+//
+// Pasa de verdad: hay solicitudes guardadas en UND para materiales que en BC solo
+// tienen CUB (y HRS). Sin esta red el selector se dibujaba vacío —la unidad
+// guardada no calzaba con ninguna opción— y parecía que la línea había perdido su
+// unidad. Se muestra, se puede cambiar, y como esa unidad no tiene factor la
+// conversión se niega sola en vez de inventar un número.
+export function opcionesDeUnidad(unidades: UnidadDeItem[] | undefined, actual: string): UnidadDeItem[] {
+  const lista = unidades ?? [];
+  const a = norm(actual);
+  if (!a || lista.some((u) => norm(u.code) === a)) return lista;
+  return [{ code: actual.trim(), factor: 0, descripcion: "unidad guardada, no está en BC" }, ...lista];
+}
+
 // La MISMA cantidad expresada en otra unidad del material: 255.000 GR son 1 EST.
 // Va al revés que el precio (más unidades base por unidad = menos unidades), y por
 // eso es una función aparte y no un llamado invertido suelto en cada pantalla.

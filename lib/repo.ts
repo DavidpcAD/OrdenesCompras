@@ -520,13 +520,26 @@ export async function createOrden(input: NewOrdenDB): Promise<number> {
   const tx = new sql.Transaction(pool); await tx.begin();
   try {
     // Consecutivo INTERNO de la app (no tiene nada que ver con la serie C PED de
-    // Business Central; el N.º de BC llega después, al lanzarse). Dos detalles:
-    //  · TRY_CAST y no CAST: un ordenNo migrado con otro formato hacía fallar la
-    //    creación de CUALQUIER orden nueva, no solo la suya.
-    //  · UPDLOCK/HOLDLOCK: sin él dos creaciones simultáneas calculan el mismo
-    //    número y la segunda muere con el error crudo del índice único.
+    // Business Central; el N.º de BC llega después, al lanzarse).
+    //
+    // El applock serializa SOLO la generación del número, contra otras createOrden.
+    // Se probó antes con WITH (UPDLOCK, HOLDLOCK) sobre el SELECT y estaba mal: el
+    // único índice de `ordenNo` es filtrado (WHERE ordenNo IS NOT NULL AND
+    // esEliminada = 0) y esta consulta no filtra por esEliminada, así que el motor
+    // escanea el clustered y se queda con candados sobre TODA dbo.OrdenCompra hasta
+    // el commit — que llega después de insertar el encabezado, todas las líneas y la
+    // bitácora. Eso además invierte el orden de candados contra updateOrden y
+    // cerrarOrden (que tocan PedidoCompraDet primero y OrdenCompra después) y abre
+    // un deadlock que antes no existía. Si el applock no se consigue, devuelve < 0
+    // sin tirar error y se sigue: queda el comportamiento histórico (el índice único
+    // ux_OrdenCompra_ordenNo es la última red).
+    //
+    // TRY_CAST y no CAST: un ordenNo migrado con otro formato hacía fallar la
+    // creación de CUALQUIER orden nueva, no solo la suya.
+    await new sql.Request(tx).query(
+      "EXEC sp_getapplock @Resource='OrdenCompra:consecutivo', @LockMode='Exclusive', @LockOwner='Transaction', @LockTimeout=10000");
     const max = await new sql.Request(tx).query(
-      "SELECT MAX(TRY_CAST(SUBSTRING(ordenNo,4,20) AS INT)) AS m FROM dbo.OrdenCompra WITH (UPDLOCK, HOLDLOCK) WHERE ordenNo LIKE 'CP-%'");
+      "SELECT MAX(TRY_CAST(SUBSTRING(ordenNo,4,20) AS INT)) AS m FROM dbo.OrdenCompra WHERE ordenNo LIKE 'CP-%'");
     const numero = "CP-" + String((max.recordset[0].m ?? 0) + 1).padStart(6, "0");
     const ins = await new sql.Request(tx)
       .input("idEstado", sql.Int, idAbierto)

@@ -7,7 +7,7 @@ import { Combobox } from "@/components/combobox";
 import { IconWarning } from "@/components/icons";
 import { useStore } from "@/lib/store";
 import { money, almacenesParaRecepcion, esAlmacenFisico, monedaApp, numeroOrden } from "@/lib/helpers";
-import { precioEnUnidad, precioEntreUnidades, cantidadEntreUnidades, equivalencia, equivalenciaDeUnidad, mismaMoneda, type UnidadDeItem } from "@/lib/unidad";
+import { precioEnUnidad, precioEntreUnidades, cantidadEntreUnidades, equivalencia, equivalenciaDeUnidad, mismaMoneda, codigoDeItem, opcionesDeUnidad, type UnidadDeItem } from "@/lib/unidad";
 import type { OrdenLinea } from "@/lib/types";
 
 // Orden DIRECTA: compra armada por Proveeduría sin partir de una solicitud de
@@ -114,14 +114,16 @@ export default function OrdenDirectaPage() {
   // publicar), queda [] y la pantalla se queda con la unidad de siempre: el selector
   // no aparece y no se inventa ninguna.
   function cargarUnidades(itemNo: string) {
-    const c = (itemNo ?? "").trim();
+    const c = codigoDeItem(itemNo);
     if (!c || unidadesPorItem[c]) return;
     fetch(`/api/bc/unidades?item=${encodeURIComponent(c)}`)
       .then((r) => (r.ok ? r.json() : { unidades: [] }))
       .then((d) => setUnidadesPorItem((m) => ({ ...m, [c]: Array.isArray(d.unidades) ? d.unidades : [] })))
       .catch(() => setUnidadesPorItem((m) => ({ ...m, [c]: [] })));
   }
-  const unidadesDe = (itemNo: string) => unidadesPorItem[(itemNo ?? "").trim()] ?? [];
+  const unidadesDe = (itemNo: string) => unidadesPorItem[codigoDeItem(itemNo)] ?? [];
+  // Lo que se ofrece en la celda: las de BC + la que la línea ya tiene.
+  const opcionesFila = (itemNo: string, actual: string) => opcionesDeUnidad(unidadesDe(itemNo), actual);
   const factorDe = (itemNo: string, code: string) => {
     const c = (code ?? "").trim().toUpperCase();
     return unidadesDe(itemNo).find((u) => u.code.trim().toUpperCase() === c)?.factor;
@@ -494,11 +496,11 @@ export default function OrdenDirectaPage() {
                         <input className="ds-cell-input" aria-label="Cantidad" type="number" min={0} value={r.cantidad} style={{ width: 70 }} onChange={(e) => setRow(r.key, { cantidad: e.target.value })} />
                         {/* La unidad de la línea se puede corregir acá mismo: al
                             cambiarla, el precio se convierte con ella. */}
-                        {unidadesDe(r.articuloId).length > 1 ? (
+                        {opcionesFila(r.articuloId, r.unidad).length > 1 ? (
                           <span title={equivFila(r) ?? undefined}>
                             <Select ariaLabel="Unidad de compra" className="ds-select--celda" value={r.unidad}
                               style={{ width: 104 }} onChange={(e) => elegirUnidadFila(r, e.target.value)}>
-                              {unidadesDe(r.articuloId).map((u) => <option key={u.code} value={u.code}>{u.code}</option>)}
+                              {opcionesFila(r.articuloId, r.unidad).map((u) => <option key={u.code} value={u.code}>{u.code}</option>)}
                             </Select>
                           </span>
                         ) : (

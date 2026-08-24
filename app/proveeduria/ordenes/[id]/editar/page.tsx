@@ -7,7 +7,7 @@ import { IconWarning } from "@/components/icons";
 import { Combobox } from "@/components/combobox";
 import { useStore } from "@/lib/store";
 import { money, ordenEsDirecta, ordenPedidos, almacenesParaRecepcion, esAlmacenFisico, monedaApp, numeroOrden } from "@/lib/helpers";
-import { precioEnUnidad, precioEntreUnidades, cantidadEntreUnidades, equivalencia, equivalenciaDeUnidad, mismaMoneda, type UnidadDeItem } from "@/lib/unidad";
+import { precioEnUnidad, precioEntreUnidades, cantidadEntreUnidades, equivalencia, equivalenciaDeUnidad, mismaMoneda, codigoDeItem, opcionesDeUnidad, type UnidadDeItem } from "@/lib/unidad";
 import type { OrdenLinea } from "@/lib/types";
 
 interface Row { key: string; articuloId: string; descripcion: string; unidad: string; unidadBase?: string; factorCompra?: number; obra: string; cantidad: string; precio: string; iva: string; descuento: string; proyecto?: string; taskNo?: string; pedidoLineaId?: string; pedidoNumero?: string; }
@@ -101,7 +101,7 @@ export default function EditarOrdenPage() {
 
   // Unidades de los materiales de las líneas, una sola vez por material.
   useEffect(() => {
-    for (const itemNo of new Set(rows.map((r) => r.articuloId).filter(Boolean))) {
+    for (const itemNo of new Set(rows.map((r) => codigoDeItem(r.articuloId)).filter(Boolean))) {
       if (unidadesPedidasRef.current.has(itemNo)) continue;
       unidadesPedidasRef.current.add(itemNo);
       fetch(`/api/bc/unidades?item=${encodeURIComponent(itemNo)}`)
@@ -110,7 +110,9 @@ export default function EditarOrdenPage() {
         .catch(() => setUnidadesPorItem((m) => ({ ...m, [itemNo]: [] })));
     }
   }, [rows]);
-  const unidadesDe = (itemNo: string) => unidadesPorItem[(itemNo ?? "").trim()] ?? [];
+  const unidadesDe = (itemNo: string) => unidadesPorItem[codigoDeItem(itemNo)] ?? [];
+  // Lo que se ofrece en la celda: las de BC + la que la línea ya tiene.
+  const opcionesFila = (itemNo: string, actual: string) => opcionesDeUnidad(unidadesDe(itemNo), actual);
   const factorDe = (itemNo: string, code: string) => {
     const c = (code ?? "").trim().toUpperCase();
     return unidadesDe(itemNo).find((u) => u.code.trim().toUpperCase() === c)?.factor;
@@ -333,11 +335,11 @@ export default function EditarOrdenPage() {
                           cuando el material se compra por M3, KG o SACO. */}
                       <span className="row gap-2" style={{ justifyContent: "flex-end", alignItems: "baseline" }}>
                         <input className="ds-cell-input" aria-label="Cantidad" type="number" min={0} value={r.cantidad} style={{ width: 70 }} onChange={(e) => setRow(r.key, { cantidad: e.target.value })} />
-                        {unidadesDe(r.articuloId).length > 1 ? (
+                        {opcionesFila(r.articuloId, r.unidad).length > 1 ? (
                           <span title={equivFila(r) ?? undefined}>
                             <Select ariaLabel="Unidad de compra" className="ds-select--celda" value={r.unidad}
                               style={{ width: 104 }} onChange={(e) => elegirUnidadFila(r, e.target.value)}>
-                              {unidadesDe(r.articuloId).map((u) => <option key={u.code} value={u.code}>{u.code}</option>)}
+                              {opcionesFila(r.articuloId, r.unidad).map((u) => <option key={u.code} value={u.code}>{u.code}</option>)}
                             </Select>
                           </span>
                         ) : (
