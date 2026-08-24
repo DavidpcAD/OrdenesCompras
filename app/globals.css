@@ -783,8 +783,15 @@ h1, h2, h3, h4, p { margin: 0; }
    alcanzan para los ~100 caracteres que permite la descripción en BC. */
 .ds-clamp-2 {
   display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
-  overflow: hidden; overflow-wrap: anywhere;
+  overflow: hidden;
 }
+/* OJO: acá NO va `overflow-wrap: anywhere`. Las tablas son de layout AUTOMÁTICO
+   (.ds-table sin table-layout: fixed), así que el navegador reparte el ancho entre
+   el min-content y el max-content de cada celda. Con `anywhere`, el min-content de
+   la descripción baja a un carácter: la columna deja de defender su espacio y, en
+   pantallas de menos de ~1300px, los inputs de cantidad y precio se la comen y
+   vuelve el problema que esto venía a arreglar. Sin `anywhere`, el piso es la
+   palabra más larga. Y las celdas llevan además un `minWidth` explícito. */
 
 /* Recibidas (Bodega): tarjeta expandible con las líneas recibidas. */
 .rec-card__toggle {
@@ -800,7 +807,9 @@ h1, h2, h3, h4, p { margin: 0; }
 .rec-lines { margin-top: var(--ds-space-2); border-top: 1px solid var(--ds-color-gray-100); }
 .rec-lines__scroll { overflow-x: auto; }
 .rec-line {
-  display: grid; grid-template-columns: minmax(220px, 1fr) 96px 128px 56px 128px;
+  /* 280px de piso para el nombre del material: a 220px, dos líneas seguían
+     cortando la medida del final ("… 1-1/4\" METALICO"). */
+  display: grid; grid-template-columns: minmax(280px, 1fr) 96px 128px 56px 128px;
   align-items: center; gap: var(--ds-space-4);
   padding: 10px 2px; border-bottom: 1px solid var(--ds-color-gray-100);
 }
@@ -811,7 +820,7 @@ h1, h2, h3, h4, p { margin: 0; }
 .rec-line__desc { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
 .rec-line__code { font-size: 11px; font-weight: 700; letter-spacing: .02em; color: var(--ds-color-gray-400); }
 /* Dos líneas, por lo mismo que .ds-clamp-2: la medida del material va al final. */
-.rec-line__name { font-size: var(--ds-font-size-label); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
+.rec-line__name { font-size: var(--ds-font-size-label); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .rec-line__meta { font-size: 11px; color: var(--ds-color-red-200); }
 .rec-line__qty { font-size: var(--ds-font-size-label); font-weight: var(--ds-font-weight-semibold); white-space: nowrap; text-align: right; }
 .rec-line__price { font-size: var(--ds-font-size-label); white-space: nowrap; text-align: right; }

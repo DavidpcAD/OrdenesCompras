@@ -283,7 +283,7 @@ export default function EditarOrdenPage() {
                 {rows.length === 0 && <tr><td colSpan={9}><div className="empty">Sin líneas. Agregá al menos una.</div></td></tr>}
                 {rows.map((r) => (
                   <tr key={r.key}>
-                    <td><div className="ds-clamp-2" title={r.descripcion} style={{ maxWidth: 360 }}>{r.descripcion}</div></td>
+                    <td><div className="ds-clamp-2" title={r.descripcion} style={{ maxWidth: 360, minWidth: 220 }}>{r.descripcion}</div></td>
                     <td className="ds-body-sm">{(() => {
                       const pid = pedidoIdDe(r.pedidoLineaId, r.pedidoNumero);
                       if (r.pedidoNumero && pid) return <button type="button" className="linklike" title="Ver la solicitud (quién la pidió)" onClick={() => router.push(`/proveeduria/solicitudes/${pid}`)}>{r.pedidoNumero}</button>;

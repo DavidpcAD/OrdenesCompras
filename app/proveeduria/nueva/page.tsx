@@ -428,7 +428,7 @@ export default function ArmarOrdenPage() {
                 {rows.map((r) => (
                   <tr key={r.pedidoLineaId}>
                     <td className="ds-body-sm ds-strong">{r.pedidoNumero}</td>
-                    <td><div style={{ maxWidth: 400 }} title={`${r.articuloId} — ${r.descripcion}`}><div className="ds-strong ds-body-sm">{r.articuloId}</div><div className="ds-clamp-2">{r.descripcion}</div></div></td>
+                    <td><div style={{ maxWidth: 400, minWidth: 240 }} title={`${r.articuloId} — ${r.descripcion}`}><div className="ds-strong ds-body-sm">{r.articuloId}</div><div className="ds-clamp-2">{r.descripcion}</div></div></td>
                     <td className="ds-muted ds-body-sm">{r.almacen}</td>
                     <td className="ds-num">
                       {/* La unidad al lado de la cantidad: "40" solo no dice nada
@@ -482,7 +482,7 @@ export default function ArmarOrdenPage() {
                 {cargos.map((c, i) => cargoImporte(c) > 0 ? (
                   <tr key={`cargo-${c.key}`} style={{ background: "color-mix(in srgb, var(--ds-color-yellow) 7%, var(--ds-tint-base))" }}>
                     <td><Badge tone="yellow">Cargo</Badge></td>
-                    <td><div style={{ maxWidth: 320 }} title={`${c.chargeNo ? `${c.chargeNo} · ` : ""}${c.descripcion}`}>{c.chargeNo && <div className="ds-strong ds-body-sm">{c.chargeNo}</div>}<div className="ds-clamp-2">{c.descripcion}</div></div></td>
+                    <td><div style={{ maxWidth: 320, minWidth: 180 }} title={`${c.chargeNo ? `${c.chargeNo} · ` : ""}${c.descripcion}`}>{c.chargeNo && <div className="ds-strong ds-body-sm">{c.chargeNo}</div>}<div className="ds-clamp-2">{c.descripcion}</div></div></td>
                     <td className="ds-muted ds-body-sm">—</td>
                     <td className="ds-num ds-body-sm">{c.cantidad}</td>
                     <td className="ds-num ds-body-sm">{money(Number(c.precio) || 0, currency)}</td>
@@ -554,7 +554,7 @@ export default function ArmarOrdenPage() {
                   {lineasDispFiltradas.map(({ p, l, pend }) => (
                     <tr key={l.id}>
                       <td className="ds-body-sm ds-strong">{p.numero}</td>
-                      <td><div style={{ maxWidth: 380 }} title={`${l.articuloId} — ${l.descripcion}`}><div className="ds-strong ds-body-sm">{l.articuloId}</div><div className="ds-clamp-2">{l.descripcion}</div></div></td>
+                      <td><div style={{ maxWidth: 380, minWidth: 220 }} title={`${l.articuloId} — ${l.descripcion}`}><div className="ds-strong ds-body-sm">{l.articuloId}</div><div className="ds-clamp-2">{l.descripcion}</div></div></td>
                       <td className="ds-muted ds-body-sm">{l.almacen || p.obraCodigo || "—"}</td>
                       <td className="ds-num">{pend} {l.unidad}</td>
                       <td className="ds-num"><Button variant="outline" size="sm" onClick={() => agregarDeSolicitud(p, l, pend)}>Agregar</Button></td>

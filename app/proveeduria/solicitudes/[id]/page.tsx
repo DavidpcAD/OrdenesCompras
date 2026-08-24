@@ -105,7 +105,7 @@ export default function ProveeduriaPedidoDetallePage() {
               <tbody>
                 {pedido.lineas.map((l) => (
                   <tr key={l.id}>
-                    <td><div className="ds-clamp-2" title={l.descripcion} style={{ maxWidth: 420 }}>{l.descripcion}</div></td>
+                    <td><div className="ds-clamp-2" title={l.descripcion} style={{ maxWidth: 420, minWidth: 240 }}>{l.descripcion}</div></td>
                     <td className="ds-muted ds-body-sm">{l.almacen || "—"}</td>
                     <td className="ds-num">{num.format(l.cantidad)} {l.unidad}</td>
                     <td className="ds-num">{num.format(l.cantidadOrdenada)}</td>

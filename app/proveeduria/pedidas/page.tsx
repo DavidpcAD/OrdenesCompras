@@ -66,7 +66,7 @@ export default function ProveeduriaLineasPedidasPage() {
   const columns = useMemo<ColumnDef<Row, any>[]>(() => [
     { id: "orden", header: "Orden", accessorFn: (r) => r.ordenNumero, meta: { label: "Orden" }, cell: (c) => <span className="ds-strong ds-body-sm">{c.getValue()}</span> },
     { id: "itemNo", header: "Item", accessorFn: (r) => r.itemNo, meta: { label: "Item" }, cell: (c) => <span className="ds-body-sm">{c.getValue()}</span> },
-    { id: "descripcion", header: "Descripción", accessorFn: (r) => r.descripcion, meta: { label: "Descripción" }, cell: (c) => <div className="ds-clamp-2" title={c.getValue()} style={{ maxWidth: 380 }}>{c.getValue()}</div> },
+    { id: "descripcion", header: "Descripción", accessorFn: (r) => r.descripcion, meta: { label: "Descripción" }, cell: (c) => <div className="ds-clamp-2" title={c.getValue()} style={{ maxWidth: 380, minWidth: 220 }}>{c.getValue()}</div> },
     { id: "proveedor", header: "Proveedor", accessorFn: (r) => r.proveedor, meta: { label: "Proveedor" }, cell: (c) => <span className="ds-body-sm">{c.getValue()}</span> },
     { id: "pedido", header: "Pedido", accessorFn: (r) => r.pedido, meta: { label: "Pedido" }, cell: (c) => <span className="ds-body-sm">{c.getValue()}</span> },
     { id: "solicitante", header: "Solicitó", accessorFn: (r) => r.solicitante, meta: { label: "Solicitó" }, cell: (c) => <span className="ds-body-sm">{c.getValue()}</span> },

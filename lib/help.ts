@@ -68,6 +68,7 @@ const SOLICITUD_DET: HelpEntry = {
   ],
   pasos: [
     "Revisá las líneas y cantidades solicitadas.",
+    "¿Necesitás precios antes de comprar? \"⬇ PDF para cotizar\" baja la lista de materiales con las columnas de precio en blanco: se la mandás al proveedor y él la llena.",
     "Si vas a comprar, avanzá la solicitud a una orden de compra desde acá.",
   ],
 };
@@ -162,6 +163,7 @@ const NUEVA: HelpEntry = {
     "Revisá las líneas que traés de la solicitud; ajustá las cantidades.",
     "Corregí los precios unitarios si difieren de lo cotizado.",
     "(Opcional) agregá un cargo de flete/transporte que se reparte entre las líneas.",
+    "Hay DOS comentarios y no son lo mismo: “Observaciones para el proveedor” se imprimen en el PDF que él recibe; “Comentario para el aprobador” es interno y no sale en el PDF.",
     "Guardá como “Abierta” (borrador) o “Enviar a aprobación”.",
   ],
 };

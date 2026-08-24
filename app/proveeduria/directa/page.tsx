@@ -286,7 +286,7 @@ export default function OrdenDirectaPage() {
                 {rows.length === 0 && <tr><td colSpan={7}><div className="empty">Sin líneas. Buscá un artículo del catálogo y agregalo.</div></td></tr>}
                 {rows.map((r) => (
                   <tr key={r.key}>
-                    <td><div className="ds-clamp-2" title={r.descripcion} style={{ maxWidth: 380 }}>{r.descripcion}</div><div className="ds-body-sm ds-muted">{r.articuloId}{r.variantCode ? ` · var. ${r.variantCode}${r.variantNombre ? ` (${r.variantNombre})` : ""}` : ""}</div></td>
+                    <td><div className="ds-clamp-2" title={r.descripcion} style={{ maxWidth: 380, minWidth: 240 }}>{r.descripcion}</div><div className="ds-body-sm ds-muted">{r.articuloId}{r.variantCode ? ` · var. ${r.variantCode}${r.variantNombre ? ` (${r.variantNombre})` : ""}` : ""}</div></td>
                     <td className="ds-num">
                       {/* La unidad al lado de la cantidad: "40" solo no dice nada
                           cuando el material se compra por M3, KG o SACO. */}
