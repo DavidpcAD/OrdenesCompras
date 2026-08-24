@@ -13,6 +13,7 @@ import {
   ordenPedidos, ordenEsDirecta, money, pedidoOrdenadoPct, pedidoCompraBadge, pedidoTieneSaldo, ordenesPorPedido,
   destinoLabel, destinoCodigo, ordenLineaPendiente, ordenLineaCompleta, ultimoPrecioProveedor,
   ordenPendienteResumen, devolverPendienteAPedidos, proveedorLabel,
+  numeroOrden, etiquetaInterna, tieneBc,
 } from "./helpers.ts";
 import type { Orden, OrdenLinea, Pedido, PedidoLinea } from "./types.ts";
 
@@ -142,15 +143,17 @@ test("una solicitud sabe en qué órdenes de compra entró (y al revés)", () =>
   const p1 = { numero: "PED-1", lineas: [{ id: "l1" }, { id: "l2" }] } as any;
   const p2 = { numero: "PED-2", lineas: [{ id: "l9" }] } as any;
   const ordenes = [
-    { id: "o1", numero: "CP-1", lineas: [{ pedidoNumero: "PED-1" }] },
-    // Sin pedidoNumero: se resuelve por el id de la línea de pedido.
-    { id: "o2", numero: "CP-2", lineas: [{ pedidoLineaId: "l2" }, { pedidoLineaId: "l9" }] },
+    // Ya está en BC: se muestra su N.º de BC.
+    { id: "o1", numero: "CP-000001", bcNumber: "CP-005101", lineas: [{ pedidoNumero: "PED-1" }] },
+    // Todavía no está en BC y sin pedidoNumero: se resuelve por el id de la línea de
+    // pedido, y se muestra el rótulo interno (nunca un CP- que allá no existe).
+    { id: "o2", numero: "CP-000002", lineas: [{ pedidoLineaId: "l2" }, { pedidoLineaId: "l9" }] },
     // Directa: no aporta a ninguna solicitud.
-    { id: "o3", numero: "CP-3", lineas: [{ pedidoNumero: "Manual" }] },
+    { id: "o3", numero: "CP-000003", lineas: [{ pedidoNumero: "Manual" }] },
   ] as any[];
   const m = ordenesPorPedido([p1, p2], ordenes);
-  assert.deepEqual(m.get("PED-1")?.map((o) => o.numero), ["CP-1", "CP-2"]);
-  assert.deepEqual(m.get("PED-2")?.map((o) => o.numero), ["CP-2"]);
+  assert.deepEqual(m.get("PED-1")?.map((o) => o.numero), ["CP-005101", "Interno 2"]);
+  assert.deepEqual(m.get("PED-2")?.map((o) => o.numero), ["Interno 2"]);
   assert.equal(m.size, 2);   // la directa no crea entradas
 });
 
@@ -354,4 +357,42 @@ test("un nombre en blanco cuenta como ausente", () => {
 
 test("sin nada devuelve el guión", () => {
   assert.equal(proveedorLabel({ proveedorNombre: undefined, proveedorNo: undefined, proveedorId: "" }), "—");
+});
+
+// ---- El N.º que se muestra: el de BC, o un rótulo que no se confunda con él ----
+// El caso real (24 ago 2026): la app numera con MAX+1 sobre su propia tabla usando
+// el MISMO prefijo CP- y los mismos 6 dígitos que la serie C PED de BC. En pantalla
+// "CP-000037" (interno) y "CP-005156" (BC) se leían igual, y el interno no existe
+// en Business Central.
+
+test("numeroOrden: con N.º de BC gana el de BC", () => {
+  assert.equal(numeroOrden({ numero: "CP-000037", bcNumber: "CP-005156" }), "CP-005156");
+});
+
+test("numeroOrden: sin N.º de BC NO se muestra algo que parezca de BC", () => {
+  const r = numeroOrden({ numero: "CP-000037" });
+  assert.equal(r, "Interno 37");
+  assert.ok(!/^CP-/.test(r), "no puede empezar con CP-");
+});
+
+test("numeroOrden: bcNumber vacío o en blanco cuenta como sin BC", () => {
+  assert.equal(numeroOrden({ numero: "CP-000037", bcNumber: "" }), "Interno 37");
+});
+
+test("etiquetaInterna: quita el prefijo y los ceros de relleno", () => {
+  assert.equal(etiquetaInterna("CP-000001"), "Interno 1");
+  assert.equal(etiquetaInterna("CP-000862"), "Interno 862");
+  assert.equal(etiquetaInterna("cp-000037"), "Interno 37");
+});
+
+test("etiquetaInterna: un formato desconocido se devuelve tal cual", () => {
+  // Datos migrados o de otra serie: adivinar sería peor que mostrarlos.
+  assert.equal(etiquetaInterna("OC-2024-88"), "OC-2024-88");
+  assert.equal(etiquetaInterna(""), "—");
+});
+
+test("tieneBc: distingue la orden que ya existe en BC", () => {
+  assert.equal(tieneBc({ bcNumber: "CP-005156" }), true);
+  assert.equal(tieneBc({ bcNumber: "  " }), false);
+  assert.equal(tieneBc({}), false);
 });

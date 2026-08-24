@@ -6,7 +6,7 @@ import { Badge, Button, Card, EmptyState, Field, Input, Modal, Select, Textarea,
 import { Combobox } from "@/components/combobox";
 import { IconWarning } from "@/components/icons";
 import { useStore } from "@/lib/store";
-import { money, ultimoPrecioProveedor, almacenesParaRecepcion, esAlmacenFisico, pedidoLineaPendiente, monedaApp } from "@/lib/helpers";
+import { money, ultimoPrecioProveedor, almacenesParaRecepcion, esAlmacenFisico, pedidoLineaPendiente, monedaApp, numeroOrden } from "@/lib/helpers";
 import { precioEnUnidad, precioEntreUnidades, cantidadEntreUnidades, equivalencia, equivalenciaDeUnidad, mismaMoneda, type PrecioRef, type UnidadDeItem } from "@/lib/unidad";
 import type { OrdenLinea } from "@/lib/types";
 
@@ -360,7 +360,7 @@ export default function ArmarOrdenPage() {
     if (aprobar) await setOrdenEstado(orden.id, "pendiente_aprobacion");
     navegandoRef.current = true; // evita que el redirect de borrador-vacío pise el push al detalle
     setBorrador([]);
-    toast(`Orden ${orden.numero} ${aprobar ? "enviada a aprobación" : "guardada como abierta"}`, "success");
+    toast(`Orden ${aprobar ? "enviada a aprobación" : "guardada como abierta"} · ${numeroOrden(orden)}`, "success");
     router.push(`/proveeduria/ordenes/${orden.id}`);
     } catch (e: any) {
       toast(String(e?.message ?? e), "error");

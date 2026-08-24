@@ -78,10 +78,11 @@ const ORDENES: HelpEntry = {
   detalle: [
     "Lista de las órdenes que armaste. Quedan abiertas hasta recibir el 100% del material.",
     "Los paneles de arriba cuentan las órdenes por estado.",
+    "El N.º que ves (CP-005…) es el del pedido en Business Central, y aparece cuando Aprobación lanza la orden. Antes de eso la orden todavía no existe en BC y se muestra un rótulo interno (“Interno 37”), que sirve para nombrarla acá pero no se puede buscar en BC.",
   ],
   pasos: [
     "Tocá un panel de arriba para filtrar por estado (abiertas, pendientes de aprobación, rechazadas, completadas).",
-    "Buscá por N.º de orden o proveedor.",
+    "Buscá por N.º de orden o proveedor. También encontrás una orden escribiendo su N.º interno viejo (CP-000037).",
     "Clic en una orden para ver su detalle, estados e historial y las facturas asociadas.",
     "Desde el detalle podés editar (si está Abierta), enviar a aprobación, imprimir o revisar recepciones.",
     "Con el toggle ves por orden o por línea, y podés agrupar por proveedor.",

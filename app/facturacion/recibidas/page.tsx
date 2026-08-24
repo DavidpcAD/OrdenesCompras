@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Badge, Card, EmptyState, Input, Tile } from "@/components/ui";
 import { IconCheck, IconChevronDown } from "@/components/icons";
 import { useStore } from "@/lib/store";
-import { money, formatDate, todayISO } from "@/lib/helpers";
+import { money, formatDate, todayISO, numeroOrden } from "@/lib/helpers";
 
 // Bodega (recibe): historial de lo que se recibió, con quién lo recibió.
 // Pensada para celular/tablet: tarjetas grandes, sin tablas anchas.
@@ -41,7 +41,9 @@ export default function RecibidasPage() {
     return todas.filter((r) => {
       const o = ordenes.find((x) => x.id === r.ordenId);
       const prov = o ? (o.proveedorNombre ?? proveedores.find((p) => p.id === o.proveedorId)?.nombre ?? "") : "";
-      return [r.numeroFactura, o?.numero, o?.bcNumber, prov, formatDate(r.fechaRecepcion)]
+      // Se busca por lo que se VE (el rótulo o el N.º de BC) y también por el CP-
+      // interno crudo, que es el que anda en correos y en la bitácora.
+      return [r.numeroFactura, o ? numeroOrden(o) : "", o?.numero, o?.bcNumber, prov, formatDate(r.fechaRecepcion)]
         .some((v) => (v ?? "").toLowerCase().includes(t));
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -105,7 +107,7 @@ export default function RecibidasPage() {
                 <Card key={r.id} className="rec-card">
                   <div className="row row--between wrap gap-2" style={{ alignItems: "flex-start" }}>
                     <div className="col" style={{ gap: 3, minWidth: 0 }}>
-                      <span className="ds-strong" style={{ fontSize: "var(--ds-font-size-subtitle)" }}>{o?.numero ?? "—"}</span>
+                      <span className="ds-strong" style={{ fontSize: "var(--ds-font-size-subtitle)" }}>{o ? numeroOrden(o) : "—"}</span>
                       <span className="ds-body-sm ds-muted ds-truncate">{provNombre(r.ordenId)}</span>
                     </div>
                     <div className="row gap-2 wrap" style={{ justifyContent: "flex-end" }}>

@@ -5,7 +5,7 @@ import { Badge, Card, EmptyState, Skeleton } from "@/components/ui";
 import { IconWarning } from "@/components/icons";
 import { useStore } from "@/lib/store";
 import { useVolver } from "@/lib/use-volver";
-import { money, formatDate, num } from "@/lib/helpers";
+import { money, formatDate, num, numeroOrden } from "@/lib/helpers";
 
 // Detalle de UNA recepción/factura: qué se recibió exactamente en ese registro
 // (líneas, cantidad recibida, precio e importe), distinto del detalle acumulado
@@ -61,7 +61,7 @@ export default function RecepcionDetallePage() {
             </div>
             <p className="ds-muted">
               {provNombre ?? "—"}
-              {orden && <> · orden <button className="link-btn" onClick={() => router.push(`/facturacion/ver/${orden.id}`)}>{orden.numero}</button></>}
+              {orden && <> · orden <button className="link-btn" onClick={() => router.push(`/facturacion/ver/${orden.id}`)}>{numeroOrden(orden)}</button></>}
             </p>
             <div className="row gap-4 wrap mt-2 ds-body-sm ds-muted">
               <span>Fecha factura: <span className="ds-strong">{formatDate(rec.fechaFactura)}</span></span>

@@ -52,9 +52,10 @@ export function OrdenesLista({
 
   const columns = useMemo<ColumnDef<Orden, any>[]>(() => [
     {
-      // El N.º que se maneja es el de BC. El interno viaja en el accessor para poder
-      // buscar por los dos (soporte a veces tiene el CP-0000xx a mano).
-      id: "num", header: "N.º", accessorFn: (o) => `${numeroOrden(o)}${numeroOrden(o) !== o.numero ? ` ${o.numero}` : ""}`,
+      // El N.º que se maneja es el de BC. El interno CRUDO (CP-000037) viaja igual en
+      // el accessor para poder buscar por los dos: ya no se muestra en ningún lado,
+      // pero está en los correos y en la bitácora, y soporte lo tiene a mano.
+      id: "num", header: "N.º", accessorFn: (o) => `${numeroOrden(o)} ${o.numero}`,
       meta: { label: "N.º" }, cell: (c) => <span className="ds-strong">{numeroOrden(c.row.original)}</span>,
     },
     { id: "prov", header: "Proveedor", accessorFn: (o) => proveedorLabel(o, proveedores), meta: { label: "Proveedor" }, cell: (c) => c.getValue() },

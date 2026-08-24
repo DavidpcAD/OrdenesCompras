@@ -75,6 +75,10 @@ export function documentoDeOrden(orden: Orden, unidades: Record<string, string> 
   }, new Map<number, GrupoIva>()).values()].sort((a, b) => b.pct - a.pct);
 
   return {
+    // OJO: acá NO va `numeroOrden()`. Este es el documento que sale hacia afuera y
+    // necesita un identificador, no el rótulo de pantalla: al proveedor no se le
+    // manda un papel que diga "Interno 37". En la práctica siempre lleva el de BC
+    // (el PDF está bloqueado salvo orden lanzada o completada, ver ordenImprimible).
     numeroDoc: orden.bcNumber || orden.numero,
     moneda: orden.currencyCode || "CRC",
     lineas,
@@ -89,7 +93,7 @@ export function documentoDeOrden(orden: Orden, unidades: Record<string, string> 
 }
 
 // Nombre del archivo que se descarga. Con el N.º de BC adelante para que ordene solo
-// en la carpeta de descargas.
+// en la carpeta de descargas. Mismo criterio que `numeroDoc`: el crudo, no el rótulo.
 export function nombreArchivoOrden(orden: Orden): string {
   const num = (orden.bcNumber || orden.numero || "orden").replace(/[^\w.-]+/g, "-");
   return `${num}-orden-de-compra.pdf`;

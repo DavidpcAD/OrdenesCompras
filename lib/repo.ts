@@ -1,6 +1,7 @@
 import { getAuthPool, getPool, sql } from "./db";
 import { bcDeepLinkPedido, bcDeepLinkFacturaRegistrada, bcUnidadesDeCompra } from "./bc";
 import { unidadCorregida } from "./unidad";
+import { etiquetaInterna } from "./helpers";
 import type { UnidadCompraItem } from "./bc";
 import type { Orden, OrdenLinea, Pedido, PedidoLinea, Recepcion, RecepcionLinea, Role, NotaCreditoLinea } from "./types";
 
@@ -518,7 +519,14 @@ export async function createOrden(input: NewOrdenDB): Promise<number> {
   const valNotaInterna = conNotaInterna ? ",@notaInterna" : "";
   const tx = new sql.Transaction(pool); await tx.begin();
   try {
-    const max = await new sql.Request(tx).query("SELECT MAX(CAST(SUBSTRING(ordenNo,4,20) AS INT)) AS m FROM dbo.OrdenCompra WHERE ordenNo LIKE 'CP-%'");
+    // Consecutivo INTERNO de la app (no tiene nada que ver con la serie C PED de
+    // Business Central; el N.º de BC llega después, al lanzarse). Dos detalles:
+    //  · TRY_CAST y no CAST: un ordenNo migrado con otro formato hacía fallar la
+    //    creación de CUALQUIER orden nueva, no solo la suya.
+    //  · UPDLOCK/HOLDLOCK: sin él dos creaciones simultáneas calculan el mismo
+    //    número y la segunda muere con el error crudo del índice único.
+    const max = await new sql.Request(tx).query(
+      "SELECT MAX(TRY_CAST(SUBSTRING(ordenNo,4,20) AS INT)) AS m FROM dbo.OrdenCompra WITH (UPDLOCK, HOLDLOCK) WHERE ordenNo LIKE 'CP-%'");
     const numero = "CP-" + String((max.recordset[0].m ?? 0) + 1).padStart(6, "0");
     const ins = await new sql.Request(tx)
       .input("idEstado", sql.Int, idAbierto)
@@ -790,7 +798,10 @@ export async function nuevaOrdenDesdePendiente(
     await logMov(tx, { entidad: "orden", idEntidad: idOrden, documentoNo: numero, tipoMovimiento: "creado",
       detalle: `Con el pendiente de ${h.ordenNo}`, usuario, rol });
     await logMov(tx, { entidad: "orden", idEntidad: id, documentoNo: h.ordenNo, tipoMovimiento: "cerrado",
-      detalle: `El pendiente pasó a ${numero}`, usuario, rol });
+      // El rótulo y no el CP- interno: la orden nueva se muestra "Interno 46" en
+      // toda la app, y dejar acá un "CP-000046" manda a buscarlo a BC, donde no
+      // existe. (El `documentoNo` sí guarda el ordenNo crudo, que es la llave.)
+      detalle: `El pendiente pasó a ${etiquetaInterna(numero)}`, usuario, rol });
     await tx.commit();
   } catch { await tx.rollback(); /* la traza es informativa: no tumbar la operación */ }
 
@@ -1502,7 +1513,10 @@ export async function listNotasCredito(): Promise<NotaCreditoLinea[]> {
   return r.recordset.map((x: any) => ({
     id: String(x.idNotaCreditoDet),
     ordenId: String(x.idOrdenCompra),
-    ordenNumero: x.ordenNo ?? "",
+    // El N.º que se maneja es el de BC; sin él va el rótulo interno, nunca un
+    // "CP-…" que en BC no existe (antes salía el interno crudo aunque la orden ya
+    // tuviera su número de BC en la misma fila de la consulta).
+    ordenNumero: x.bcNo || etiquetaInterna(x.ordenNo ?? ""),
     ordenLineaId: x.idOrdenCompraDet != null ? String(x.idOrdenCompraDet) : undefined,
     articuloNo: x.articuloNo ?? undefined,
     descripcion: x.descripcion ?? "",
@@ -1512,10 +1526,13 @@ export async function listNotasCredito(): Promise<NotaCreditoLinea[]> {
     nota: x.nota ?? undefined,
     fecha: x.fechaCreacion instanceof Date ? x.fechaCreacion.toISOString() : String(x.fechaCreacion ?? ""),
     estado: (x.estado ?? "pendiente") as NotaCreditoLinea["estado"],
-    // Deep links a BC (por N.º BC; si no hay, cae al N.º de la app):
+    // Deep links a BC, SOLO con el N.º de BC:
     //  • bcFacturaUrl → Facturas de compra registradas (para hacer la NC).
     //  • bcUrl → el Pedido de compra (la orden que armó Proveeduría).
-    bcFacturaUrl: ((x.bcNo || x.ordenNo) && bcDeepLinkFacturaRegistrada(String(x.bcNo || x.ordenNo))) || undefined,
-    bcUrl: ((x.bcNo || x.ordenNo) && bcDeepLinkPedido(String(x.bcNo || x.ordenNo))) || undefined,
+    // Antes caían al N.º de la app cuando faltaba el de BC, y el link abría BC
+    // filtrando por un número que allá no existe: una lista vacía sin explicación.
+    // Sin N.º de BC no hay link.
+    bcFacturaUrl: (x.bcNo && bcDeepLinkFacturaRegistrada(String(x.bcNo))) || undefined,
+    bcUrl: (x.bcNo && bcDeepLinkPedido(String(x.bcNo))) || undefined,
   }));
 }

@@ -6,7 +6,7 @@ import { Button, Checkbox, EmptyState, Field, Modal, Select, Skeleton, Textarea,
 import { IconWarning } from "@/components/icons";
 import { OrdenDetalle } from "@/components/orden-detalle";
 import { useStore } from "@/lib/store";
-import { num, ordenPendienteResumen, numeroOrden } from "@/lib/helpers";
+import { num, ordenPendienteResumen, numeroOrden, etiquetaInterna } from "@/lib/helpers";
 
 export default function ProvOrdenDetallePage() {
   const { id } = useParams<{ id: string }>();
@@ -89,7 +89,10 @@ export default function ProvOrdenDetallePage() {
       if (crearNueva) {
         const n = await nuevaOrdenConPendiente(orden!.id, texto);
         setCerrando(false);
-        toast(`${numeroOrden(orden!)} cerrada · ${n.numero} creada con lo pendiente`, "success");
+        // `n` es una orden recién creada: nunca tiene N.º de BC todavía, así que va
+        // el rótulo. Si no, el toast decía "CP-000046" sobre una pantalla cuyo
+        // título ya dice "Interno 46".
+        toast(`${numeroOrden(orden!)} cerrada · ${etiquetaInterna(n.numero)} creada con lo pendiente`, "success");
         if (n.id) router.push(`/proveeduria/ordenes/${n.id}`);
         return;
       }

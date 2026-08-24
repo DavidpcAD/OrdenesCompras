@@ -6,7 +6,7 @@ import { Badge, Button, Card, Field, Input, Modal, Select, Textarea, useToast } 
 import { Combobox } from "@/components/combobox";
 import { IconWarning } from "@/components/icons";
 import { useStore } from "@/lib/store";
-import { money, almacenesParaRecepcion, esAlmacenFisico, monedaApp } from "@/lib/helpers";
+import { money, almacenesParaRecepcion, esAlmacenFisico, monedaApp, numeroOrden } from "@/lib/helpers";
 import { precioEnUnidad, precioEntreUnidades, cantidadEntreUnidades, equivalencia, equivalenciaDeUnidad, mismaMoneda, type UnidadDeItem } from "@/lib/unidad";
 import type { OrdenLinea } from "@/lib/types";
 
@@ -284,7 +284,7 @@ export default function OrdenDirectaPage() {
       }
       const orden = await createOrden({ proveedorId, proveedorNo: provSel?.code, proveedorNombre: provSel?.nombre, currencyCode: currency, almacenRecepcion: almacen, observaciones: observaciones.trim() || undefined, notaInterna: notaInterna.trim() || undefined, lineas: ls });
       if (aprobar) await setOrdenEstado(orden.id, "pendiente_aprobacion");
-      toast(`Orden directa ${orden.numero} ${aprobar ? "enviada a aprobación" : "guardada como abierta"}`, "success");
+      toast(`Orden directa ${aprobar ? "enviada a aprobación" : "guardada como abierta"} · ${numeroOrden(orden)}`, "success");
       router.push(`/proveeduria/ordenes/${orden.id}`);
     } catch (e: any) { toast(String(e?.message ?? e), "error"); setGuardando(false); }
   }

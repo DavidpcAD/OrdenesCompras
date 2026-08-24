@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useStore } from "@/lib/store";
-import { num, formatDate, ordenLineaImporte } from "@/lib/helpers";
+import { num, formatDate, ordenLineaImporte, numeroOrden } from "@/lib/helpers";
 import { documentoDeOrden, destinoLineaDoc, etiquetaUnidad } from "@/lib/orden-doc";
 import { Button } from "@/components/ui";
 import { AdelanteMark } from "@/components/icons";
@@ -60,7 +60,7 @@ export default function ImprimirOrdenPage() {
     return (
       <div style={{ padding: 40, fontFamily: "var(--ds-font-family)", display: "flex", flexDirection: "column", alignItems: "flex-start", gap: "var(--ds-space-4)" }}>
         <span style={{ fontWeight: 700 }}>El PDF para el proveedor aún no está disponible.</span>
-        <span style={{ color: "var(--ds-color-gray-500)", maxWidth: 540 }}>La orden <strong>{orden.numero}</strong> debe estar <strong>aprobada (Lanzada)</strong> antes de generar el documento que se envía al proveedor.</span>
+        <span style={{ color: "var(--ds-color-gray-500)", maxWidth: 540 }}>La orden <strong>{numeroOrden(orden)}</strong> debe estar <strong>aprobada (Lanzada)</strong> antes de generar el documento que se envía al proveedor.</span>
         <Button variant="outline" size="sm" onClick={() => router.back()}>Volver</Button>
       </div>
     );

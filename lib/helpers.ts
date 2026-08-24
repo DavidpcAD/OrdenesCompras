@@ -291,11 +291,35 @@ export function ordenEsParcial(o: Orden): boolean {
 // Números de solicitud (PED-…) reales que originaron la orden. Las líneas
 // agregadas a mano llevan pedidoNumero "Manual" y no cuentan como solicitud.
 // N.º de la orden TAL COMO SE MANEJA: el de Business Central. Es el que existe en el
-// ERP, el que ve el proveedor en el PDF y el que Contabilidad busca. El `numero`
-// interno de la app es una serie aparte que arranca en 1 en cada base — solo se
-// muestra mientras la orden todavía no está en BC (recién creada, sin lanzar).
+// ERP, el que ve el proveedor en el PDF y el que Contabilidad busca.
+//
+// Mientras la orden todavía no está en BC no hay número que mostrar, así que se
+// muestra un RÓTULO, no un número: ver `etiquetaInterna`.
 export function numeroOrden(o: { numero: string; bcNumber?: string }): string {
-  return o.bcNumber || o.numero;
+  return o.bcNumber || etiquetaInterna(o.numero);
+}
+
+// Rótulo de una orden que todavía no existe en Business Central.
+//
+// El `numero` interno de la app es una serie aparte (MAX+1 sobre su propia tabla,
+// ver createOrden) que además usa el MISMO prefijo y el MISMO formato de 6 dígitos
+// que la serie C PED de BC: "CP-000037" se lee igual que "CP-005156" pero en BC no
+// existe. Alguien lo buscaba allá y no aparecía. Por eso acá se rompe el disfraz:
+// "Interno 37" no se puede confundir con un pedido de BC.
+//
+// Un formato que no sea CP-<dígitos> se devuelve tal cual: es un dato migrado o de
+// otra serie y adivinar sería peor que mostrarlo.
+export function etiquetaInterna(numero: string): string {
+  const n = (numero ?? "").trim();
+  if (!n) return "—";
+  const m = /^CP-0*(\d+)$/i.exec(n);
+  return m ? `Interno ${m[1]}` : n;
+}
+
+// ¿La orden ya existe en Business Central? Es lo que separa "N.º de verdad" de
+// "rótulo interno", y decide si tiene sentido ofrecer un link a BC.
+export function tieneBc(o: { bcNumber?: string }): boolean {
+  return !!(o.bcNumber ?? "").trim();
 }
 
 export function ordenPedidos(o: Orden): string[] {
