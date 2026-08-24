@@ -28,6 +28,11 @@ interface Row {
   tarea: string;
 }
 
+// Tarea de obra (Job Task de BC). La obra la trae la solicitud; la tarea es lo
+// único que se elige acá, porque Ingeniería pide el material para una obra pero no
+// dice contra qué línea del presupuesto va.
+type Tarea = { jobTaskNo: string; descripcion: string; tipo: string };
+
 // Cargo de producto (Item Charge) a agregar a la orden: tipo (chargeNo del catálogo
 // BC), cantidad y precio. chargeNo "" = flete por defecto. `key` = id estable para
 // React (no usar el índice: al quitar un cargo se corrían los valores).
@@ -48,6 +53,12 @@ export default function ArmarOrdenPage() {
   const [observaciones, setObservaciones] = useState("");
   // Comentario para el APROBADOR: interno, no viaja al proveedor.
   const [notaInterna, setNotaInterna] = useState("");
+
+  // Tareas por obra, cacheadas. `undefined` = todavía no se pidieron; `[]` = BC
+  // contestó y esa obra no tiene tareas (se dice en la celda, no se deja el hueco).
+  const [tareasPorObra, setTareasPorObra] = useState<Record<string, Tarea[]>>({});
+  // Obras ya pedidas, para no repetir el fetch cada vez que cambian las líneas.
+  const tareasPedidasRef = useRef<Set<string>>(new Set());
 
   // Proveedores en vivo desde Business Central (fallback al catálogo si BC falla).
   // Si el fallback se activa hay que DECIRLO: armar la orden contra el catálogo de
@@ -151,6 +162,31 @@ export default function ArmarOrdenPage() {
   const setRow = (id: string, patch: Partial<Row>) =>
     setRows((rs) => rs.map((r) => (r.pedidoLineaId === id ? { ...r, ...patch } : r)));
   const removeRow = (id: string) => setRows((rs) => rs.filter((r) => r.pedidoLineaId !== id));
+
+  // Tareas de las obras que aparecen en las líneas. Se piden solas al entrar: la
+  // tarea se elige de una lista, no se escribe, y esperar a que el usuario toque
+  // algo para recién ir a buscarla haría que el selector se vea vacío.
+  // Solo las de tipo "Posting" admiten movimientos; las Heading/Total son rótulos
+  // del presupuesto. Si BC no manda el tipo, se dejan todas.
+  useEffect(() => {
+    const obras = [...new Set(rows.map((r) => r.proyecto).filter(Boolean))];
+    for (const jobNo of obras) {
+      if (tareasPedidasRef.current.has(jobNo)) continue;
+      tareasPedidasRef.current.add(jobNo);
+      fetch(`/api/bc/jobtasks?jobNo=${encodeURIComponent(jobNo)}`)
+        .then((r) => (r.ok ? r.json() : { jobTasks: [] }))
+        .then((d) => {
+          const todas: Tarea[] = Array.isArray(d.jobTasks) ? d.jobTasks : [];
+          const posting = todas.filter((t) => (t.tipo ?? "").toLowerCase() === "posting");
+          setTareasPorObra((m) => ({ ...m, [jobNo]: posting.length ? posting : todas }));
+        })
+        .catch(() => setTareasPorObra((m) => ({ ...m, [jobNo]: [] })));
+    }
+  }, [rows]);
+  const tareasDe = (jobNo: string) => tareasPorObra[(jobNo ?? "").trim()];
+  // Líneas que van a una obra y todavía no tienen tarea: se avisa arriba de la
+  // tabla. No bloquea guardar — hasta hoy las órdenes salían así.
+  const sinTarea = rows.filter((r) => r.proyecto && !r.tarea).length;
 
   // Agregar líneas de OTRAS solicitudes ya hechas (pendientes por ordenar) a la
   // orden que se está armando, sin salir de la página.
@@ -412,6 +448,11 @@ export default function ArmarOrdenPage() {
             <div className="col" style={{ gap: 2 }}>
               <span className="ds-strong ds-body-sm">Líneas de la orden</span>
               <span className="ds-muted ds-body-sm">Solo materiales de solicitudes ya hechas. ¿Material sin solicitud? Usá <span className="ds-strong">Compra directa</span>.</span>
+              {sinTarea > 0 && (
+                <span className="ds-muted ds-body-sm">
+                  {sinTarea} línea(s) con obra y <span className="ds-strong">sin tarea</span>: el costo llega a la obra, pero no queda ubicado en su presupuesto.
+                </span>
+              )}
             </div>
             <Button onClick={() => setAddOpen(true)} disabled={lineasDisponibles.length === 0} title="Sumar líneas pendientes de solicitudes ya hechas">+ De solicitudes{lineasDisponibles.length ? ` (${lineasDisponibles.length})` : ""}</Button>
           </div>
@@ -419,7 +460,7 @@ export default function ArmarOrdenPage() {
             <table className="ds-table">
               <thead>
                 <tr>
-                  <th>Pedido</th><th>Artículo</th><th>Obra</th>
+                  <th>Pedido</th><th>Artículo</th><th>Obra / tarea</th>
                   <th className="ds-num">Cantidad</th><th className="ds-num">Precio</th><th className="ds-num">Desc%</th><th className="ds-num">IVA%</th>
                   <th className="ds-num">Importe</th><th></th>
                 </tr>
@@ -429,7 +470,26 @@ export default function ArmarOrdenPage() {
                   <tr key={r.pedidoLineaId}>
                     <td className="ds-body-sm ds-strong">{r.pedidoNumero}</td>
                     <td><div style={{ maxWidth: 400, minWidth: 240 }} title={`${r.articuloId} — ${r.descripcion}`}><div className="ds-strong ds-body-sm">{r.articuloId}</div><div className="ds-clamp-2">{r.descripcion}</div></div></td>
-                    <td className="ds-muted ds-body-sm">{r.almacen}</td>
+                    {/* La obra viene de la solicitud y no se toca acá. La TAREA sí:
+                        Ingeniería pide el material para una obra, pero contra qué
+                        línea del presupuesto va lo decide Proveeduría al comprar.
+                        El menú del Combobox va en un portal, así que la tabla no lo
+                        recorta aunque la celda sea angosta. */}
+                    <td className="ds-body-sm">
+                      <div className="ds-muted">{r.almacen || "—"}</div>
+                      {r.proyecto && (() => {
+                        const ts = tareasDe(r.proyecto);
+                        if (!ts) return <div className="ds-muted" style={{ marginTop: 4 }}>tareas…</div>;
+                        if (!ts.length) return <div className="ds-muted" style={{ marginTop: 4 }}>sin tareas en BC</div>;
+                        return (
+                          <div style={{ minWidth: 150, marginTop: 4 }}>
+                            <Combobox items={ts} value={r.tarea} onChange={(k) => setRow(r.pedidoLineaId, { tarea: k })}
+                              getKey={(t) => t.jobTaskNo} getLabel={(t) => `${t.jobTaskNo} — ${t.descripcion}`}
+                              getSearch={(t) => `${t.jobTaskNo} ${t.descripcion}`} placeholder="Elegí tarea…" />
+                          </div>
+                        );
+                      })()}
+                    </td>
                     <td className="ds-num">
                       {/* La unidad al lado de la cantidad: "40" solo no dice nada
                           cuando el material se compra por M3, KG o SACO. */}
