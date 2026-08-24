@@ -7,7 +7,7 @@ import { IconWarning } from "@/components/icons";
 import { Combobox } from "@/components/combobox";
 import { useStore } from "@/lib/store";
 import { money, ordenEsDirecta, ordenPedidos, almacenesParaRecepcion, esAlmacenFisico, monedaApp, numeroOrden } from "@/lib/helpers";
-import { precioEnUnidad, equivalencia, mismaMoneda } from "@/lib/unidad";
+import { precioEnUnidad, precioEntreUnidades, cantidadEntreUnidades, equivalencia, equivalenciaDeUnidad, mismaMoneda, type UnidadDeItem } from "@/lib/unidad";
 import type { OrdenLinea } from "@/lib/types";
 
 interface Row { key: string; articuloId: string; descripcion: string; unidad: string; unidadBase?: string; factorCompra?: number; obra: string; cantidad: string; precio: string; iva: string; descuento: string; proyecto?: string; taskNo?: string; pedidoLineaId?: string; pedidoNumero?: string; }
@@ -36,6 +36,10 @@ export default function EditarOrdenPage() {
 
   const [bcProv, setBcProv] = useState<typeof proveedores | null>(null);
   const [itemsBc, setItemsBc] = useState<{ code: string; descripcion: string; unidad: string; unidadBase?: string; factorCompra?: number }[]>([]);
+  // Unidades de cada material tal como están en BC, para poder cambiar con cuál se
+  // le pide al proveedor sin salir de la corrección de la orden.
+  const [unidadesPorItem, setUnidadesPorItem] = useState<Record<string, UnidadDeItem[]>>({});
+  const unidadesPedidasRef = useRef<Set<string>>(new Set());
   const [bcAlm, setBcAlm] = useState<typeof almacenes | null>(null);
   useEffect(() => {
     fetch("/api/bc/vendors").then((r) => (r.ok ? r.json() : { proveedores: [] })).then((d) => { if (Array.isArray(d.proveedores) && d.proveedores.length) setBcProv(d.proveedores); }).catch(() => {});
@@ -94,6 +98,40 @@ export default function EditarOrdenPage() {
   const qaItem = itemsBc.find((x) => x.code === qaCode);
   const qaUnidad = qaItem?.unidad ?? "";
   const qaEquiv = equivalencia({ base: qaItem?.unidadBase ?? "", compra: qaUnidad, factor: qaItem?.factorCompra });
+
+  // Unidades de los materiales de las líneas, una sola vez por material.
+  useEffect(() => {
+    for (const itemNo of new Set(rows.map((r) => r.articuloId).filter(Boolean))) {
+      if (unidadesPedidasRef.current.has(itemNo)) continue;
+      unidadesPedidasRef.current.add(itemNo);
+      fetch(`/api/bc/unidades?item=${encodeURIComponent(itemNo)}`)
+        .then((r) => (r.ok ? r.json() : { unidades: [] }))
+        .then((d) => setUnidadesPorItem((m) => ({ ...m, [itemNo]: Array.isArray(d.unidades) ? d.unidades : [] })))
+        .catch(() => setUnidadesPorItem((m) => ({ ...m, [itemNo]: [] })));
+    }
+  }, [rows]);
+  const unidadesDe = (itemNo: string) => unidadesPorItem[(itemNo ?? "").trim()] ?? [];
+  const factorDe = (itemNo: string, code: string) => {
+    const c = (code ?? "").trim().toUpperCase();
+    return unidadesDe(itemNo).find((u) => u.code.trim().toUpperCase() === c)?.factor;
+  };
+  const equivFila = (r: Row) =>
+    equivalenciaDeUnidad(unidadesDe(r.articuloId), r.unidad, r.unidadBase ?? "")
+    ?? equivalencia({ base: r.unidadBase ?? "", compra: r.unidad, factor: r.factorCompra });
+  // Cambiar la unidad de una línea: cantidad y precio se convierten con ella, o el
+  // pedido pasa de 1 estañón a 255.000 sin que nadie lo note.
+  function elegirUnidadFila(r: Row, code: string) {
+    const p = Number(r.precio) || 0;
+    const q = Number(r.cantidad) || 0;
+    const nuevoP = precioEntreUnidades(p, factorDe(r.articuloId, r.unidad), factorDe(r.articuloId, code));
+    const nuevaQ = cantidadEntreUnidades(q, factorDe(r.articuloId, r.unidad), factorDe(r.articuloId, code));
+    setRow(r.key, {
+      unidad: code,
+      factorCompra: factorDe(r.articuloId, code),
+      ...(p > 0 ? { precio: nuevoP != null ? String(Number(nuevoP.toFixed(5))) : "" } : {}),
+      ...(q > 0 && nuevaQ != null ? { cantidad: String(Number(nuevaQ.toFixed(8))) } : {}),
+    });
+  }
   const [qaRef, setQaRef] = useState<{ precio: number; unidad: string; moneda: string; factor?: number } | null>(null);
   const calcImporte = (r: Row) => Number(r.cantidad) * Number(r.precio) * (1 - (Number(r.descuento) || 0) / 100);
   const subtotal = useMemo(() => rows.reduce((s, r) => s + calcImporte(r), 0), [rows]);
@@ -295,8 +333,16 @@ export default function EditarOrdenPage() {
                           cuando el material se compra por M3, KG o SACO. */}
                       <span className="row gap-2" style={{ justifyContent: "flex-end", alignItems: "baseline" }}>
                         <input className="ds-cell-input" aria-label="Cantidad" type="number" min={0} value={r.cantidad} style={{ width: 70 }} onChange={(e) => setRow(r.key, { cantidad: e.target.value })} />
-                        <span className="ds-body-sm ds-muted" style={{ whiteSpace: "nowrap" }}
-                          title={equivalencia({ base: r.unidadBase ?? "", compra: r.unidad, factor: r.factorCompra }) ?? undefined}>{r.unidad || "—"}</span>
+                        {unidadesDe(r.articuloId).length > 1 ? (
+                          <select className="ds-cell-input" aria-label="Unidad de compra" value={r.unidad}
+                            title={equivFila(r) ?? undefined} style={{ width: 92 }}
+                            onChange={(e) => elegirUnidadFila(r, e.target.value)}>
+                            {unidadesDe(r.articuloId).map((u) => <option key={u.code} value={u.code}>{u.code}</option>)}
+                          </select>
+                        ) : (
+                          <span className="ds-body-sm ds-muted" style={{ whiteSpace: "nowrap" }}
+                            title={equivFila(r) ?? undefined}>{r.unidad || "—"}</span>
+                        )}
                       </span>
                     </td>
                     <td className="ds-num"><input className="ds-cell-input" aria-label="Precio" type="number" min={0} value={r.precio} style={{ width: 92 }} onChange={(e) => setRow(r.key, { precio: e.target.value })} /></td>

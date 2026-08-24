@@ -131,10 +131,17 @@ async function mapaUnidades(): Promise<Record<string, UnidadCompraItem>> {
 
 function unidadLinea(itemNo: string, guardada: string, mapa: Record<string, UnidadCompraItem>) {
   const u = mapa[itemNo];
+  const unidad = unidadCorregida(guardada, u);
+  // El factor del catálogo dice cuántas unidades base trae la unidad de COMPRA
+  // (1 EST = 255.000 GR). Desde que se puede elegir con qué unidad se compra, la
+  // línea puede estar en otra (LT, TANQUETA…) y ese factor ya no la describe: se
+  // manda solo cuando la unidad de la línea ES la de compra. Sin factor no se
+  // muestra equivalencia, que es mejor que mostrar la de otra unidad.
+  const norm = (x?: string) => (x ?? "").trim().toUpperCase();
   return {
-    unidad: unidadCorregida(guardada, u),
+    unidad,
     unidadBase: u?.base || undefined,
-    factorCompra: u?.factor,
+    factorCompra: norm(unidad) === norm(u?.compra) ? u?.factor : undefined,
   };
 }
 

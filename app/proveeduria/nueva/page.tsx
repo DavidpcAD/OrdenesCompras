@@ -7,7 +7,7 @@ import { Combobox } from "@/components/combobox";
 import { IconWarning } from "@/components/icons";
 import { useStore } from "@/lib/store";
 import { money, ultimoPrecioProveedor, almacenesParaRecepcion, esAlmacenFisico, pedidoLineaPendiente, monedaApp } from "@/lib/helpers";
-import { precioEnUnidad, equivalencia, mismaMoneda, type PrecioRef } from "@/lib/unidad";
+import { precioEnUnidad, precioEntreUnidades, cantidadEntreUnidades, equivalencia, equivalenciaDeUnidad, mismaMoneda, type PrecioRef, type UnidadDeItem } from "@/lib/unidad";
 import type { OrdenLinea } from "@/lib/types";
 
 interface Row {
@@ -53,6 +53,12 @@ export default function ArmarOrdenPage() {
   const [observaciones, setObservaciones] = useState("");
   // Comentario para el APROBADOR: interno, no viaja al proveedor.
   const [notaInterna, setNotaInterna] = useState("");
+
+  // Unidades de cada material tal como están en BC (GR 1, EST 255.000, LT 244,01914…).
+  // Con esto Proveeduría elige con qué unidad se le pide al proveedor: la solicitud
+  // viene en la unidad de consumo y no siempre es en la que se compra.
+  const [unidadesPorItem, setUnidadesPorItem] = useState<Record<string, UnidadDeItem[]>>({});
+  const unidadesPedidasRef = useRef<Set<string>>(new Set());
 
   // Tareas por obra, cacheadas. `undefined` = todavía no se pidieron; `[]` = BC
   // contestó y esa obra no tiene tareas (se dice en la celda, no se deja el hueco).
@@ -184,6 +190,41 @@ export default function ArmarOrdenPage() {
     }
   }, [rows]);
   const tareasDe = (jobNo: string) => tareasPorObra[(jobNo ?? "").trim()];
+
+  // Unidades de los materiales de las líneas, una sola vez por material. Si BC no
+  // las da, queda [] y la línea se queda con su unidad de siempre.
+  useEffect(() => {
+    for (const itemNo of new Set(rows.map((r) => r.articuloId).filter(Boolean))) {
+      if (unidadesPedidasRef.current.has(itemNo)) continue;
+      unidadesPedidasRef.current.add(itemNo);
+      fetch(`/api/bc/unidades?item=${encodeURIComponent(itemNo)}`)
+        .then((r) => (r.ok ? r.json() : { unidades: [] }))
+        .then((d) => setUnidadesPorItem((m) => ({ ...m, [itemNo]: Array.isArray(d.unidades) ? d.unidades : [] })))
+        .catch(() => setUnidadesPorItem((m) => ({ ...m, [itemNo]: [] })));
+    }
+  }, [rows]);
+  const unidadesDe = (itemNo: string) => unidadesPorItem[(itemNo ?? "").trim()] ?? [];
+  const factorDe = (itemNo: string, code: string) => {
+    const c = (code ?? "").trim().toUpperCase();
+    return unidadesDe(itemNo).find((u) => u.code.trim().toUpperCase() === c)?.factor;
+  };
+  const equivFila = (r: Row) =>
+    equivalenciaDeUnidad(unidadesDe(r.articuloId), r.unidad, r.unidadBase ?? "")
+    ?? equivalencia({ base: r.unidadBase ?? "", compra: r.unidad, factor: r.factorCompra });
+  // Cambiar con qué unidad se compra esta línea. La cantidad y el precio se
+  // convierten con ella: la solicitud pidió 255.000 GR, que son 1 EST, no 255.000.
+  function elegirUnidadFila(r: Row, code: string) {
+    const p = Number(r.precio) || 0;
+    const q = Number(r.cantidad) || 0;
+    const nuevoP = precioEntreUnidades(p, factorDe(r.articuloId, r.unidad), factorDe(r.articuloId, code));
+    const nuevaQ = cantidadEntreUnidades(q, factorDe(r.articuloId, r.unidad), factorDe(r.articuloId, code));
+    setRow(r.pedidoLineaId, {
+      unidad: code,
+      factorCompra: factorDe(r.articuloId, code),
+      ...(p > 0 ? { precio: nuevoP != null ? String(Number(nuevoP.toFixed(5))) : "" } : {}),
+      ...(q > 0 && nuevaQ != null ? { cantidad: String(Number(nuevaQ.toFixed(8))) } : {}),
+    });
+  }
   // Líneas que van a una obra y todavía no tienen tarea: se avisa arriba de la
   // tabla. No bloquea guardar — hasta hoy las órdenes salían así.
   const sinTarea = rows.filter((r) => r.proyecto && !r.tarea).length;
@@ -232,7 +273,10 @@ export default function ArmarOrdenPage() {
     const ref = bcPrices[articuloId];
     if (ref) {
       if (!mismaMoneda(ref.moneda, currency)) return null;
-      const p = precioEnUnidad(ref, unidadLinea, unidadBase ?? ref.unidad);
+      const p = precioEnUnidad(ref, unidadLinea, unidadBase ?? ref.unidad)
+        // Con la tabla de unidades de BC también se puede convertir entre dos
+        // alternas (de EST a LT), que es lo que `precioEnUnidad` no sabe hacer.
+        ?? precioEntreUnidades(ref.precio, factorDe(articuloId, ref.unidad), factorDe(articuloId, unidadLinea));
       if (p != null) return p;
     }
     // Historial de la propia app: ya está guardado en la unidad de la orden.
@@ -495,10 +539,21 @@ export default function ArmarOrdenPage() {
                           cuando el material se compra por M3, KG o SACO. */}
                       <span className="row gap-2" style={{ justifyContent: "flex-end", alignItems: "baseline" }}>
                         <input className="ds-cell-input" aria-label="Cantidad" type="number" min={0} value={r.cantidad} style={{ width: 70 }} onChange={(e) => setRow(r.pedidoLineaId, { cantidad: e.target.value })} />
-                        <span className="ds-body-sm ds-muted" style={{ whiteSpace: "nowrap" }}
-                          title={equivalencia({ base: r.unidadBase ?? "", compra: r.unidad, factor: r.factorCompra }) ?? undefined}>
-                          {r.unidad || "—"}
-                        </span>
+                        {/* Con qué unidad se le pide al proveedor. La solicitud llega
+                            en la unidad de consumo (GR) y acá se decide si se compra
+                            por estañón, cubeta o litro. */}
+                        {unidadesDe(r.articuloId).length > 1 ? (
+                          <select className="ds-cell-input" aria-label="Unidad de compra" value={r.unidad}
+                            title={equivFila(r) ?? undefined} style={{ width: 92 }}
+                            onChange={(e) => elegirUnidadFila(r, e.target.value)}>
+                            {unidadesDe(r.articuloId).map((u) => <option key={u.code} value={u.code}>{u.code}</option>)}
+                          </select>
+                        ) : (
+                          <span className="ds-body-sm ds-muted" style={{ whiteSpace: "nowrap" }}
+                            title={equivFila(r) ?? undefined}>
+                            {r.unidad || "—"}
+                          </span>
+                        )}
                       </span>
                     </td>
                     <td className="ds-num">

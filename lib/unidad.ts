@@ -80,6 +80,54 @@ export function precioEnUnidad(ref: PrecioRef | null | undefined, unidadLinea: s
   return null;                                           // dos unidades alternas: no se adivina
 }
 
+// Una unidad del material tal como la tiene BC: su código y cuántas unidades BASE
+// trae (`qtyPerUnitOfMeasure`). Para M06-0009: GR 1, EST 255.000, LT 244,01914.
+export type UnidadDeItem = { code: string; factor: number; descripcion?: string };
+
+// Pasa un precio de una unidad a OTRA del mismo material, usando cuántas unidades
+// base trae cada una. Con GR 1 / EST 255.000: ₡1,74 el gramo son ₡443.700 el
+// estañón, y entre dos alternas (EST -> LT) sale igual de exacto.
+//
+// Devuelve null si falta un factor o si alguno no es positivo: acá tampoco se
+// adivina. Es la versión general de `precioEnUnidad`, que solo sabe ir de la base a
+// la de compra y viceversa porque es lo único que conoce el catálogo.
+export function precioEntreUnidades(precio: number, desde?: number, hasta?: number): number | null {
+  const p = Number(precio);
+  const fd = Number(desde ?? 0);
+  const fh = Number(hasta ?? 0);
+  if (!Number.isFinite(p) || p < 0) return null;
+  if (!(fd > 0) || !(fh > 0)) return null;
+  if (fd === fh) return p;
+  return (p / fd) * fh;
+}
+
+// La MISMA cantidad expresada en otra unidad del material: 255.000 GR son 1 EST.
+// Va al revés que el precio (más unidades base por unidad = menos unidades), y por
+// eso es una función aparte y no un llamado invertido suelto en cada pantalla.
+//
+// Cambiar la unidad SIN mover la cantidad es lo que convierte un pedido de 1
+// estañón en uno de 255.000: la conversión no es una comodidad, es el seguro.
+export function cantidadEntreUnidades(cantidad: number, desde?: number, hasta?: number): number | null {
+  return precioEntreUnidades(cantidad, hasta, desde);
+}
+
+// "1 EST = 255.000 GR" a partir de la lista de unidades del material, para la
+// unidad que se eligió. Null cuando no hay nada que aclarar (es la base, o no se
+// conoce el factor).
+export function equivalenciaDeUnidad(unidades: UnidadDeItem[] | undefined, code: string, base: string): string | null {
+  const c = norm(code);
+  // Sin base explícita se deduce de la lista: en BC la unidad base es la que trae
+  // exactamente 1 (Qty. per Unit of Measure = 1). Hace falta porque las líneas que
+  // vienen de una solicitud no siempre traen la base guardada, y sin ella el aviso
+  // de "1 EST = 255.000 GR" —que es justo el que evita pedir 255.000 de más— no
+  // aparecía.
+  const b = norm(base) || norm(unidades?.find((u) => Number(u.factor) === 1)?.code);
+  if (!c || !b || c === b) return null;
+  const f = Number(unidades?.find((u) => norm(u.code) === c)?.factor ?? 0);
+  if (!(f > 1)) return null;
+  return `1 ${c} = ${new Intl.NumberFormat("es-CR", { maximumFractionDigits: 5 }).format(f)} ${b}`;
+}
+
 // ¿La moneda del precio de referencia es la misma de la orden?
 // "" y "CRC" son lo mismo: BC deja la moneda local en blanco.
 export function mismaMoneda(a?: string, b?: string): boolean {

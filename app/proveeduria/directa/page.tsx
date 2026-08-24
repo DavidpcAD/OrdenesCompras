@@ -7,7 +7,7 @@ import { Combobox } from "@/components/combobox";
 import { IconWarning } from "@/components/icons";
 import { useStore } from "@/lib/store";
 import { money, almacenesParaRecepcion, esAlmacenFisico, monedaApp } from "@/lib/helpers";
-import { precioEnUnidad, equivalencia, mismaMoneda } from "@/lib/unidad";
+import { precioEnUnidad, precioEntreUnidades, cantidadEntreUnidades, equivalencia, equivalenciaDeUnidad, mismaMoneda, type UnidadDeItem } from "@/lib/unidad";
 import type { OrdenLinea } from "@/lib/types";
 
 // Orden DIRECTA: compra armada por Proveeduría sin partir de una solicitud de
@@ -84,6 +84,13 @@ export default function OrdenDirectaPage() {
   const [qaVariantes, setQaVariantes] = useState<Variante[]>([]);
   const [qaVariante, setQaVariante] = useState("");
   const [qaVariantesError, setQaVariantesError] = useState(false);
+  // Unidades de cada material tal como están en BC (GR 1, EST 255.000, LT 244,01914…),
+  // cacheadas por código. Con esto se elige CON QUÉ unidad se le pide al proveedor
+  // en vez de que la app imponga la de compra del catálogo.
+  const [unidadesPorItem, setUnidadesPorItem] = useState<Record<string, UnidadDeItem[]>>({});
+  // La unidad elegida para la próxima línea. Arranca en la de compra del material.
+  const [qaUnidad, setQaUnidad] = useState("");
+
   // Obra (Job No.) y tarea (Job Task No.) que se le van a poner a la PRÓXIMA línea.
   // Quedan pegadas después de agregar: una orden de servicio a una obra suele traer
   // varias líneas de la misma obra y volver a elegirla en cada una es puro trámite.
@@ -97,9 +104,71 @@ export default function OrdenDirectaPage() {
   const [editObra, setEditObra] = useState<Row | null>(null);
   // Unidad de medida del artículo elegido en "Agregar artículo".
   const qaItem = itemsBc.find((x) => x.code === qaCode);
-  const qaUnidad = qaItem?.unidad ?? "";
-  const qaEquiv = equivalencia({ base: qaItem?.unidadBase ?? "", compra: qaUnidad, factor: qaItem?.factorCompra });
+  const qaEquiv = equivalenciaDeUnidad(unidadesPorItem[qaCode], qaUnidad, qaItem?.unidadBase ?? qaItem?.unidad ?? "")
+    // Respaldo mientras la lista de BC no llegó (o la página no está publicada):
+    // la equivalencia de la unidad de compra, que es lo que había antes.
+    ?? equivalencia({ base: qaItem?.unidadBase ?? "", compra: qaUnidad, factor: qaItem?.factorCompra });
   const variantePendiente = qaVariantes.length > 0 && !qaVariante;
+
+  // Unidades de un material, una sola vez por material. Si BC no las da (página sin
+  // publicar), queda [] y la pantalla se queda con la unidad de siempre: el selector
+  // no aparece y no se inventa ninguna.
+  function cargarUnidades(itemNo: string) {
+    const c = (itemNo ?? "").trim();
+    if (!c || unidadesPorItem[c]) return;
+    fetch(`/api/bc/unidades?item=${encodeURIComponent(c)}`)
+      .then((r) => (r.ok ? r.json() : { unidades: [] }))
+      .then((d) => setUnidadesPorItem((m) => ({ ...m, [c]: Array.isArray(d.unidades) ? d.unidades : [] })))
+      .catch(() => setUnidadesPorItem((m) => ({ ...m, [c]: [] })));
+  }
+  const unidadesDe = (itemNo: string) => unidadesPorItem[(itemNo ?? "").trim()] ?? [];
+  const factorDe = (itemNo: string, code: string) => {
+    const c = (code ?? "").trim().toUpperCase();
+    return unidadesDe(itemNo).find((u) => u.code.trim().toUpperCase() === c)?.factor;
+  };
+  // Un precio pasado de una unidad a otra del MISMO material. Primero con la tabla
+  // de BC (sabe de todas las unidades); si no llegó, con lo que conoce el catálogo
+  // (base <-> compra). Null = no se puede convertir con certeza, y entonces el
+  // precio se limpia en vez de quedar en la unidad vieja.
+  function precioEnOtraUnidad(itemNo: string, precio: number, desde: string, hasta: string): number | null {
+    if (!(precio > 0) || !desde || !hasta) return null;
+    if (desde.trim().toUpperCase() === hasta.trim().toUpperCase()) return precio;
+    const porTabla = precioEntreUnidades(precio, factorDe(itemNo, desde), factorDe(itemNo, hasta));
+    if (porTabla != null) return porTabla;
+    const it = itemsBc.find((x) => x.code === itemNo);
+    return precioEnUnidad({ precio, unidad: desde, moneda: currency, factor: it?.factorCompra }, hasta, it?.unidadBase ?? "");
+  }
+  // Cambiar la unidad de la próxima línea: la CANTIDAD y el PRECIO van con ella.
+  // Cambiar solo la etiqueta convierte un pedido de 1 estañón en uno de 255.000, y
+  // deja un precio por estañón cobrándose por litro. Si algo no se puede convertir
+  // con certeza, el precio se limpia en vez de quedar en la unidad vieja.
+  function elegirUnidadQa(code: string) {
+    const p = Number(qaPrecio) || 0;
+    const q = Number(qaQty) || 0;
+    const nuevoP = precioEnOtraUnidad(qaCode, p, qaUnidad, code);
+    const nuevaQ = cantidadEntreUnidades(q, factorDe(qaCode, qaUnidad), factorDe(qaCode, code));
+    setQaUnidad(code);
+    if (p > 0) setQaPrecio(nuevoP != null ? String(Number(nuevoP.toFixed(5))) : "");
+    if (q > 0 && nuevaQ != null) setQaQty(String(Number(nuevaQ.toFixed(8))));
+  }
+
+  // Lo mismo para una línea ya agregada.
+  function elegirUnidadFila(r: Row, code: string) {
+    const p = Number(r.precio) || 0;
+    const q = Number(r.cantidad) || 0;
+    const nuevoP = precioEnOtraUnidad(r.articuloId, p, r.unidad, code);
+    const nuevaQ = cantidadEntreUnidades(q, factorDe(r.articuloId, r.unidad), factorDe(r.articuloId, code));
+    setRow(r.key, {
+      unidad: code,
+      factorCompra: factorDe(r.articuloId, code),
+      ...(p > 0 ? { precio: nuevoP != null ? String(Number(nuevoP.toFixed(5))) : "" } : {}),
+      ...(q > 0 && nuevaQ != null ? { cantidad: String(Number(nuevaQ.toFixed(8))) } : {}),
+    });
+  }
+  // La equivalencia de la unidad que tiene la línea ("1 LT = 244,01914 GR").
+  const equivFila = (r: Row) =>
+    equivalenciaDeUnidad(unidadesDe(r.articuloId), r.unidad, r.unidadBase ?? "")
+    ?? equivalencia({ base: r.unidadBase ?? "", compra: r.unidad, factor: r.factorCompra });
 
   // Tareas de una obra, una sola vez por obra. Solo se ofrecen las de tipo
   // "Posting": las de tipo Heading/Total son rótulos del presupuesto y BC rechaza
@@ -148,7 +217,13 @@ export default function OrdenDirectaPage() {
     // crear() y la orden se arma igual.
     if (tareaPendiente) { toast("Elegí la tarea de la obra: sin ella Business Central no acepta la línea.", "error"); return; }
     const variante = qaVariantes.find((v) => v.code === qaVariante);
-    setRows((rs) => [...rs, { key: `m-${uid()}`, articuloId: it.code, descripcion: it.descripcion, unidad: it.unidad, unidadBase: it.unidadBase, factorCompra: it.factorCompra, cantidad: String(Number(qaQty)), precio: String(Number(qaPrecio) || 0), iva: "13", descuento: "0", variantCode: qaVariante, variantNombre: variante?.descripcion ?? "",
+    const unidadElegida = qaUnidad || it.unidad;
+    setRows((rs) => [...rs, { key: `m-${uid()}`, articuloId: it.code, descripcion: it.descripcion,
+      unidad: unidadElegida, unidadBase: it.unidadBase,
+      // El factor de la unidad ELEGIDA (no el de la de compra): es el que explica
+      // "1 LT = 244,01914 GR" cuando se compró por litro.
+      factorCompra: factorDe(it.code, unidadElegida) ?? (unidadElegida === it.unidad ? it.factorCompra : undefined),
+      cantidad: String(Number(qaQty)), precio: String(Number(qaPrecio) || 0), iva: "13", descuento: "0", variantCode: qaVariante, variantNombre: variante?.descripcion ?? "",
       obra: qaObra, obraNombre: nombreObra(qaObra), tarea: qaTarea, tareaNombre: nombreTarea(qaObra, qaTarea) }]);
     // La obra y la tarea NO se limpian a propósito (ver el estado): siguen a la vista
     // en la barra, así que es evidente a qué obra va a ir la línea siguiente.
@@ -282,7 +357,11 @@ export default function OrdenDirectaPage() {
                   setQaVariantes([]); setQaVariante(""); setQaVariantesError(false);
                   const it = itemsBc.find((x) => x.code === k);
                   setQaPrecio(""); setQaRef(null);
+                  // Arranca en la unidad con la que BC compra este material; la lista
+                  // completa llega aparte y solo sirve para poder cambiarla.
+                  setQaUnidad(it?.unidad ?? "");
                   if (k) {
+                    cargarUnidades(k);
                     fetch(`/api/bc/lastprice?item=${encodeURIComponent(k)}&vendor=${encodeURIComponent(provSel?.code ?? "")}`)
                       .then((r) => r.json()).then((d) => {
                         if (!(typeof d.precio === "number" && d.precio > 0)) return;
@@ -345,7 +424,18 @@ export default function OrdenDirectaPage() {
                   hay que saber 40 de qué (UND, M3, SACO…). Aparece al elegir. */}
               <span className="row gap-2" style={{ alignItems: "center" }}>
                 <Input id={qtyId} type="number" min={0} value={qaQty} onChange={(e) => setQaQty(e.target.value)} placeholder="0" style={{ width: 90 }} />
-                {qaUnidad && <span className="ds-body-sm ds-muted" style={{ whiteSpace: "nowrap" }} title={qaEquiv ?? undefined}>{qaUnidad}</span>}
+                {/* Con qué unidad se le pide al proveedor. Si BC devolvió más de una
+                    para este material, se puede elegir (CUB, EST, LT, TANQUETA…);
+                    si no, se muestra la de siempre como texto. */}
+                {unidadesDe(qaCode).length > 1 ? (
+                  <Select ariaLabel="Unidad de compra" value={qaUnidad} onChange={(e) => elegirUnidadQa(e.target.value)} style={{ width: 130 }}>
+                    {unidadesDe(qaCode).map((u) => (
+                      <option key={u.code} value={u.code}>{u.code}{u.descripcion ? ` · ${u.descripcion}` : ""}</option>
+                    ))}
+                  </Select>
+                ) : (
+                  qaUnidad && <span className="ds-body-sm ds-muted" style={{ whiteSpace: "nowrap" }} title={qaEquiv ?? undefined}>{qaUnidad}</span>
+                )}
               </span>
               {/* La equivalencia a la vista: "1 EST = 255 000 GR". Sin esto nadie sabe
                   cuánto está pidiendo cuando la unidad de compra no es la de inventario. */}
@@ -402,8 +492,18 @@ export default function OrdenDirectaPage() {
                           cuando el material se compra por M3, KG o SACO. */}
                       <span className="row gap-2" style={{ justifyContent: "flex-end", alignItems: "baseline" }}>
                         <input className="ds-cell-input" aria-label="Cantidad" type="number" min={0} value={r.cantidad} style={{ width: 70 }} onChange={(e) => setRow(r.key, { cantidad: e.target.value })} />
-                        <span className="ds-body-sm ds-muted" style={{ whiteSpace: "nowrap" }}
-                          title={equivalencia({ base: r.unidadBase ?? "", compra: r.unidad, factor: r.factorCompra }) ?? undefined}>{r.unidad || "—"}</span>
+                        {/* La unidad de la línea se puede corregir acá mismo: al
+                            cambiarla, el precio se convierte con ella. */}
+                        {unidadesDe(r.articuloId).length > 1 ? (
+                          <select className="ds-cell-input" aria-label="Unidad de compra" value={r.unidad}
+                            title={equivFila(r) ?? undefined} style={{ width: 92 }}
+                            onChange={(e) => elegirUnidadFila(r, e.target.value)}>
+                            {unidadesDe(r.articuloId).map((u) => <option key={u.code} value={u.code}>{u.code}</option>)}
+                          </select>
+                        ) : (
+                          <span className="ds-body-sm ds-muted" style={{ whiteSpace: "nowrap" }}
+                            title={equivFila(r) ?? undefined}>{r.unidad || "—"}</span>
+                        )}
                       </span>
                     </td>
                     <td className="ds-num"><input className="ds-cell-input" aria-label="Precio" type="number" min={0} value={r.precio} style={{ width: 92 }} onChange={(e) => setRow(r.key, { precio: e.target.value })} /></td>
