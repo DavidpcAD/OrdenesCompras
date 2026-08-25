@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getOrden, setOrdenEstado, updateOrden, ordenTieneRecepciones, MSG_NO_REABRIR } from "@/lib/repo";
-import { bcReopenPedido, bcReplaceOrderLines, sanearObrasDeLineas, avisoDeSaneo } from "@/lib/bc";
+import { bcReopenPedido, bcReplaceOrderLines, bcCrearPedidoAbierto, crearEnBcAlEnviar, lineasOrdenParaBc, sanearObrasDeLineas, avisoDeSaneo } from "@/lib/bc";
 import { actor } from "@/lib/actor";
 
 export const runtime = "nodejs";
@@ -53,7 +53,44 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
       }
     }
 
-    await setOrdenEstado(id, estado, a.usuario, a.rol, motivo, bcNumber);
+    // ENVIAR A APROBACIÓN: el Pedido de compra se crea en BC ACÁ y queda ABIERTO.
+    // Antes lo creaba la app de Producción al aprobar; ahora ese paso solo LANZA el
+    // pedido que ya existe (y así el aprobador ve en BC exactamente lo que aprueba).
+    let bcNo: string | undefined = bcNumber;
+    if (estado === "pendiente_aprobacion" && crearEnBcAlEnviar()) {
+      const o = await getOrden(id);
+      if (!o) return NextResponse.json({ error: "no encontrada" }, { status: 404 });
+      if (o.bcNumber) {
+        // Reenvío de una orden rechazada/corregida: el pedido ya existe allá. Se le
+        // vuelven a empujar las líneas por si un edit no llegó a BC. Que esto falle
+        // NO frena el envío (el pedido existe y se puede lanzar): va como aviso.
+        try {
+          const r = await bcReplaceOrderLines(o.bcNumber, lineasOrdenParaBc(o.lineas));
+          if (r.omitidas.length) bcAviso = `Enviada a aprobación. OJO: BC no recibió ${r.omitidas.length} línea(s) — ${r.omitidas.join("; ")}.`;
+        } catch (e: any) {
+          bcAviso = `Se envió a aprobación, pero el pedido ${o.bcNumber} en BC quedó con las líneas VIEJAS: ${String(e?.message ?? e)}`;
+        }
+      } else {
+        // Sin pedido en BC no hay nada que aprobar: si la creación falla, la orden se
+        // queda como está y se dice por qué. Mandarla igual dejaría al aprobador con
+        // un botón de lanzar que no tiene qué lanzar.
+        try {
+          const r = await bcCrearPedidoAbierto({
+            vendorNo: o.proveedorNo || o.proveedorId,
+            currencyCode: o.currencyCode,
+            lineas: lineasOrdenParaBc(o.lineas),
+          });
+          bcNo = r.number;
+          if (r.omitidas.length) bcAviso = `El pedido ${r.number} se creó en BC, pero sin ${r.omitidas.length} línea(s) — ${r.omitidas.join("; ")}.`;
+        } catch (e: any) {
+          return NextResponse.json({
+            error: `La orden NO se envió a aprobación porque no se pudo crear el pedido en Business Central — ${String(e?.message ?? e)}`,
+          }, { status: 502 });
+        }
+      }
+    }
+
+    await setOrdenEstado(id, estado, a.usuario, a.rol, motivo, bcNo);
     return NextResponse.json({ ok: true, bcAviso });
   } catch (e: any) {
     return NextResponse.json({ error: String(e?.message ?? e) }, { status: 500 });
@@ -89,14 +126,7 @@ export async function PUT(req: Request, { params }: { params: { id: string } }) 
     const o = await getOrden(id);
     if (o?.bcNumber) {
       try {
-        const r = await bcReplaceOrderLines(o.bcNumber, o.lineas.map((l) => ({
-          tipo: l.tipo === "cargo" ? "cargo" as const : "articulo" as const,
-          itemNo: l.articuloId, variantCode: l.variantCode, locationCode: l.almacen,
-          unidad: l.unidad,
-          cantidad: l.cantidad, precio: l.precioUnitario, descuentoPct: l.descuentoPct,
-          jobNo: l.proyecto, taskNo: l.taskNo,
-          chargeNo: l.chargeNo, chargeMethod: l.chargeMethod, descripcion: l.descripcion,
-        })));
+        const r = await bcReplaceOrderLines(o.bcNumber, lineasOrdenParaBc(o.lineas));
         if (r.omitidas.length) avisos.push(`Guardado. OJO: BC no recibió ${r.omitidas.length} línea(s) — ${r.omitidas.join("; ")}.`);
       } catch (e: any) {
         avisos.push(`Se guardó acá, pero el pedido ${o.bcNumber} en BC quedó con las líneas VIEJAS: ${String(e?.message ?? e)}. Volvé a guardar para reintentar.`);

@@ -359,10 +359,21 @@ export default function ArmarOrdenPage() {
         precioUnitario: Number(c.precio) || 0, ivaPct: 13 });
     }
     const orden = await createOrden({ proveedorId, proveedorNo: provSel?.code, proveedorNombre: provSel?.nombre, currencyCode: currency, almacenRecepcion: almacen, observaciones: observaciones.trim() || undefined, notaInterna: notaInterna.trim() || undefined, lineas: ls });
-    if (aprobar) await setOrdenEstado(orden.id, "pendiente_aprobacion");
+    // La orden YA está creada acá (y ya consumió saldo de las solicitudes). Si el
+    // envío a aprobación falla —hoy eso incluye que BC no pueda crear el pedido— no
+    // se puede quedar en el formulario: volver a darle al botón crearía una orden
+    // nueva. Se va igual al detalle, con el motivo, y desde ahí se reintenta.
+    let aviso = ""; let tono: "error" | "info" = "info";
+    if (aprobar) {
+      try {
+        const r = await setOrdenEstado(orden.id, "pendiente_aprobacion");
+        if (r?.bcAviso) aviso = r.bcAviso;
+      } catch (e: any) { aviso = `La orden quedó guardada como abierta: ${String(e?.message ?? e)}`; tono = "error"; }
+    }
     navegandoRef.current = true; // evita que el redirect de borrador-vacío pise el push al detalle
     setBorrador([]);
-    toast(`Orden ${aprobar ? "enviada a aprobación" : "guardada como abierta"} · ${numeroOrden(orden)}`, "success");
+    if (aviso) toast(aviso, tono);
+    else toast(aprobar ? "Orden enviada a aprobación" : `Orden guardada como abierta · ${numeroOrden(orden)}`, "success");
     router.push(`/proveeduria/ordenes/${orden.id}`);
     } catch (e: any) {
       toast(String(e?.message ?? e), "error");

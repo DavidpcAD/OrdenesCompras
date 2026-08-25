@@ -28,10 +28,13 @@ auditoría.
 
 1. Ingeniería (app de Producción) crea la solicitud y la **envía** a Proveeduría.
 2. **Angie** arma la orden con líneas de esas solicitudes (o una compra directa) y la manda
-   a aprobación. La orden queda `pendiente_aprobacion`; esta app **no** toca BC ahí.
-3. **Aprobación** (app de Producción) aprueba y crea + lanza el pedido en BC → `lanzado`.
-   **Lanzar a BC es solo de esa app**: esta no lo hace ni lo reintenta. Lo que Angie puede
-   es *volver a abrir* una orden lanzada y reenviarla a aprobación.
+   a aprobación. Al enviarla, **esta app crea el Pedido de compra en BC en estado ABIERTO**
+   (encabezado por la API estándar + líneas por `AdelantePO_ReplaceOrderLines`) y guarda su
+   N.º en `bcNo`. Si BC no lo puede crear, la orden **no** se envía y el aviso dice por qué.
+   La orden queda `pendiente_aprobacion` y el pedido, abierto y editable en BC.
+3. **Aprobación** (app de Producción) aprueba y **lanza** el pedido que ya existe → `lanzado`.
+   **Lanzar es solo de esa app**: esta no lo hace ni lo reintenta. Lo que Angie puede es
+   *volver a abrir* una orden lanzada y reenviarla a aprobación.
 4. **Bodega** recibe. Dos modos:
    - **Modo 1** — todo bien: recibir + facturar (va a BC con sus movimientos contables).
    - **Modo 2** — material bien pero factura con problemas: *recibir sin factura*; queda
@@ -104,6 +107,7 @@ Copiá `.env.local.example` a `.env.local`. Lo importante:
 | `NEXT_PUBLIC_USE_API` | El mismo flag pero de *build*. `app/layout.tsx` necesita `export const dynamic = "force-dynamic"` para que gane el valor runtime; si no, el front queda horneado en modo prueba. |
 | `SQL_*` / `SQL_CONNECTION_STRING` | Conexión a SQL Server. |
 | `BC_*` | Credenciales de Business Central (client credentials) + entorno y compañía. |
+| `BC_CREAR_AL_ENVIAR` | Opcional. `0` apaga la creación del pedido en BC al enviar a aprobación (por si la app de Producción vuelve a crearlo ella al aprobar: si crean las dos, en BC quedan dos pedidos por orden). Por defecto está prendida. |
 
 ### Sesión y seguridad
 

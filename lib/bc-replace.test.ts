@@ -6,7 +6,8 @@
 //   npm test
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { payloadReplaceLines, sinObrasInexistentes, avisoDeSaneo, type LineaReplaceBc } from "./bc.ts";
+import { payloadReplaceLines, sinObrasInexistentes, avisoDeSaneo, lineasOrdenParaBc, crearEnBcAlEnviar, type LineaReplaceBc } from "./bc.ts";
+import type { OrdenLinea } from "./types.ts";
 
 const item = (p: Partial<LineaReplaceBc> = {}): LineaReplaceBc => ({
   tipo: "articulo", itemNo: "M01-0147", descripcion: "VARILLA DEFORME #3",
@@ -164,4 +165,55 @@ test("el aviso nombra la obra que se quitó, y avisa cuando no se pudo verificar
   assert.match(avisoDeSaneo({ descartadas: ["ALM-GRAL"], catalogo: "ok" }), /ALM-GRAL/);
   assert.equal(avisoDeSaneo({ descartadas: [], catalogo: "ok" }), "");
   assert.match(avisoDeSaneo({ descartadas: [], catalogo: "sin-leer" }), /no se verificó/);
+});
+
+// ---- app → BC: las líneas de la orden tal como salen de getOrden ----------
+// Es la MISMA traducción para crear el pedido al enviar a aprobación y para
+// reescribirlo al editar. Si los dos caminos dejan de coincidir, guardar una orden
+// le cambia a BC algo que crearla no le había puesto.
+const lineaApp = (p: Partial<OrdenLinea> = {}): OrdenLinea => ({
+  id: "1", tipo: "articulo", articuloId: "M01-0147", descripcion: "VARILLA DEFORME #3",
+  cantidad: 6, unidad: "UND", almacen: "ALM-GRAL", precioUnitario: 1100, ivaPct: 13,
+  cantidadRecibida: 0, cantidadFacturada: 0, ...p,
+});
+
+test("la línea de la orden llega a BC con obra, tarea, unidad y descuento", () => {
+  const [l] = lineasOrdenParaBc([lineaApp({ proyecto: "VB-5.01", taskNo: "1000", descuentoPct: 5, variantCode: "AZUL" })]);
+  assert.equal(l.tipo, "articulo");
+  assert.equal(l.itemNo, "M01-0147");
+  assert.equal(l.jobNo, "VB-5.01");
+  assert.equal(l.taskNo, "1000");
+  assert.equal(l.unidad, "UND");
+  assert.equal(l.descuentoPct, 5);
+  assert.equal(l.variantCode, "AZUL");
+  assert.equal(l.locationCode, "ALM-GRAL");
+});
+
+// Sin locationCode el material no entra a ningún almacén y el stock no sube.
+test("una línea sin almacén cae al almacén de recepción por defecto", () => {
+  process.env.BC_RECEPCION_LOCATION = "ALM-GRAL";
+  assert.equal(lineasOrdenParaBc([lineaApp({ almacen: "" })])[0].locationCode, "ALM-GRAL");
+  delete process.env.BC_RECEPCION_LOCATION;
+  assert.equal(lineasOrdenParaBc([lineaApp({ almacen: "" })])[0].locationCode, "");
+});
+
+test("el flete viaja como cargo, con su tipo y su método", () => {
+  const [l] = lineasOrdenParaBc([lineaApp({ tipo: "cargo", articuloId: undefined, chargeNo: "TRANSPORTE", chargeMethod: "Amount", descripcion: "FLETE" })]);
+  assert.equal(l.tipo, "cargo");
+  assert.equal(l.chargeNo, "TRANSPORTE");
+  assert.equal(l.chargeMethod, "Amount");
+});
+
+// El interruptor existe para apagar la creación en BC desde Azure sin desplegar (si
+// la app de Producción volviera a crear el pedido, quedarían dos por orden).
+test("crear en BC al enviar viene prendido y se apaga con 0/false/no", () => {
+  delete process.env.BC_CREAR_AL_ENVIAR;
+  assert.equal(crearEnBcAlEnviar(), true);
+  for (const v of ["0", "false", "NO", " 0 "]) {
+    process.env.BC_CREAR_AL_ENVIAR = v;
+    assert.equal(crearEnBcAlEnviar(), false, v);
+  }
+  process.env.BC_CREAR_AL_ENVIAR = "1";
+  assert.equal(crearEnBcAlEnviar(), true);
+  delete process.env.BC_CREAR_AL_ENVIAR;
 });

@@ -78,7 +78,7 @@ const ORDENES: HelpEntry = {
   detalle: [
     "Lista de las órdenes que armaste. Quedan abiertas hasta recibir el 100% del material.",
     "Los paneles de arriba cuentan las órdenes por estado.",
-    "El N.º que ves (CP-005…) es el del pedido en Business Central, y aparece cuando Aprobación lanza la orden. Antes de eso la orden todavía no existe en BC y se muestra un rótulo interno (“Interno 37”), que sirve para nombrarla acá pero no se puede buscar en BC.",
+    "El N.º que ves (CP-005…) es el del pedido en Business Central, y aparece en cuanto enviás la orden a aprobación: ahí se crea el pedido en BC, ABIERTO. Aprobación después lo lanza. Mientras la orden esté abierta acá todavía no existe en BC y se muestra un rótulo interno (“Interno 37”), que sirve para nombrarla acá pero no se puede buscar en BC.",
   ],
   pasos: [
     "Tocá un panel de arriba para filtrar por estado (abiertas, pendientes de aprobación, rechazadas, completadas).",
@@ -97,7 +97,7 @@ const ORDEN_DET: HelpEntry = {
   ],
   pasos: [
     "Revisá las líneas y el estado actual (arriba).",
-    "Si está Abierta, usá “Editar” para ajustarla, o enviala a aprobación.",
+    "Si está Abierta, usá “Editar” para ajustarla, o enviala a aprobación: al enviarla se crea el pedido en Business Central (Abierto) y aparece su N.º.",
     "Si Aprobación la rechazó, el aviso rojo de arriba dice el motivo: corregí eso, guardá y reenviala.",
     "Si ya está lanzada/recibida, consultá sus recepciones y facturas asociadas.",
     "Con “Imprimir” generás el PDF de la orden (se habilita cuando ya está aprobada).",
@@ -170,7 +170,7 @@ const NUEVA: HelpEntry = {
     "Corregí los precios unitarios si difieren de lo cotizado.",
     "(Opcional) agregá un cargo de flete/transporte que se reparte entre las líneas.",
     "Hay DOS comentarios y no son lo mismo: “Observaciones para el proveedor” se imprimen en el PDF que él recibe; “Comentario para el aprobador” es interno y no sale en el PDF.",
-    "Guardá como “Abierta” (borrador) o “Enviar a aprobación”.",
+    "Guardá como “Abierta” (borrador) o “Enviar a aprobación”. Al enviarla se crea el pedido en Business Central, todavía sin lanzar: si BC rechaza algo, la orden no se envía y el aviso dice qué corregir.",
   ],
 };
 const DIRECTA: HelpEntry = {
@@ -186,7 +186,7 @@ const DIRECTA: HelpEntry = {
     "Si esa línea va a una obra, elegí la obra y la tarea ANTES de agregarla (quedan puestas para las siguientes). Para corregirlas después, tocá “Cambiar” en la columna Obra / tarea.",
     "Repetí para cada material que necesites.",
     "(Opcional) activá el cargo de flete/transporte.",
-    "Revisá Subtotal / IVA / Total y guardá como abierta o enviá a aprobación.",
+    "Revisá Subtotal / IVA / Total y guardá como abierta o enviá a aprobación. Al enviarla se crea el pedido en Business Central, todavía sin lanzar.",
   ],
   tips: [
     "La tarea es obligatoria cuando ponés obra: sin ella Business Central rechaza la línea.",

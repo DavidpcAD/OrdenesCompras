@@ -5,6 +5,8 @@
 // La compañía sale de BC_COMPANY_ID (GUID). El tenant/environment se deducen
 // de BC_BASE_URL (o de BC_TENANT_ID/BC_ENVIRONMENT).
 
+import type { OrdenLinea } from "./types";
+
 type TokenCache = { token: string; exp: number };
 let tokenCache: TokenCache | null = null;
 
@@ -1164,6 +1166,74 @@ export async function bcReplaceOrderLines(orderNo: string, lineas: LineaReplaceB
   }
   const d: any = await res.json().catch(() => ({}));
   return { resultado: String(d?.value ?? "Líneas reescritas en BC."), omitidas };
+}
+
+// Traduce las líneas de una orden de la app (las que devuelve `getOrden`) a las
+// que entiende el codeunit. Estaba escrito dos veces —al editar y al enviar a
+// aprobación— y los dos caminos TIENEN que mandar exactamente lo mismo: si no,
+// guardar una orden cambiaría en BC algo que crearla no había puesto.
+//
+// El almacén cae al de recepción por defecto cuando la línea no trae uno: sin
+// locationCode el material no entra a ningún lado y el stock no sube.
+export function lineasOrdenParaBc(lineas: OrdenLinea[]): LineaReplaceBc[] {
+  return lineas.map((l) => ({
+    tipo: l.tipo === "cargo" ? ("cargo" as const) : ("articulo" as const),
+    itemNo: l.articuloId, variantCode: l.variantCode,
+    locationCode: l.almacen || process.env.BC_RECEPCION_LOCATION || "",
+    unidad: l.unidad,
+    cantidad: l.cantidad, precio: l.precioUnitario, descuentoPct: l.descuentoPct,
+    jobNo: l.proyecto, taskNo: l.taskNo,
+    chargeNo: l.chargeNo, chargeMethod: l.chargeMethod, descripcion: l.descripcion,
+  }));
+}
+
+// Crea el Pedido de compra en BC en estado ABIERTO (sin lanzar), con todas sus
+// líneas. Se llama al ENVIAR A APROBACIÓN: así el pedido ya existe allá y el
+// aprobador (app de Producción) solo tiene que LANZARLO.
+//
+// El encabezado va por la API estándar y las líneas por el codeunit
+// AdelantePO_ReplaceOrderLines —el mismo camino que el edit— a propósito: la API
+// estándar de purchaseOrderLines no sabe de obra/tarea (jobNo/taskNo), ni de
+// unidad de compra, ni de descuento de línea, y se traga las líneas de Cargo sin
+// avisar. Sobre un pedido recién creado (Abierto y sin recepciones) el codeunit
+// nunca se niega, así que reescribir "todas" las líneas es insertarlas.
+//
+// Si las líneas no entran, el encabezado se BORRA: un pedido vacío en BC no se
+// puede lanzar y nadie sabría de dónde salió.
+export async function bcCrearPedidoAbierto(input: { vendorNo: string; currencyCode?: string; lineas: LineaReplaceBc[] }): Promise<{ number: string; id: string; omitidas: string[] }> {
+  if (!input?.vendorNo) throw new Error("la orden no tiene el código de proveedor de BC (PROV-…)");
+  const { lines, omitidas } = payloadReplaceLines(input.lineas ?? []);
+  if (!lines.length) throw new Error(`ninguna línea de la orden es válida para BC${omitidas.length ? ` — ${omitidas.join("; ")}` : ""}`);
+  const cid = await getStdCompanyId();
+  const headerBody: Record<string, unknown> = { vendorNumber: input.vendorNo };
+  const cur = (input.currencyCode ?? "").toUpperCase();
+  if (cur && cur !== "CRC") headerBody.currencyCode = cur;
+  const resH = await bcFetch(`${stdRoot()}/companies(${cid})/purchaseOrders`, {
+    method: "POST", cache: "no-store",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(headerBody),
+  });
+  if (!resH.ok) throw new Error(`BC ${resH.status} al crear el pedido: ${(await resH.text()).slice(0, 300)}`);
+  const po: any = await resH.json().catch(() => ({}));
+  const number = String(po?.number ?? "");
+  try {
+    if (!number) throw new Error("BC creó el pedido pero no devolvió su N.º");
+    await bcReplaceOrderLines(number, input.lineas);
+  } catch (e) {
+    try { await bcFetch(`${stdRoot()}/companies(${cid})/purchaseOrders(${po?.id})`, { method: "DELETE", cache: "no-store" }); }
+    catch { /* best effort: si tampoco se puede borrar, queda el encabezado vacío */ }
+    throw e;
+  }
+  return { number, id: String(po?.id ?? ""), omitidas };
+}
+
+// ¿Se crea el pedido en BC al enviar a aprobación? Sí, salvo que se apague con
+// BC_CREAR_AL_ENVIAR=0. El interruptor existe por la otra app: si la de
+// Producción también crea el pedido al aprobar, en BC quedan DOS por orden, y
+// eso hay que poder apagarlo desde Azure sin esperar un despliegue.
+export function crearEnBcAlEnviar(): boolean {
+  const v = (process.env.BC_CREAR_AL_ENVIAR ?? "").trim().toLowerCase();
+  return !(v === "0" || v === "false" || v === "no");
 }
 
 // Registra (Recibir + Facturar) una factura parcial del pedido en BC con todos sus

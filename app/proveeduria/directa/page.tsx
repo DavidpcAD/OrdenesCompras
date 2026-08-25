@@ -285,8 +285,18 @@ export default function OrdenDirectaPage() {
           cantidad: Number(c.cantidad) || 1, unidad: "UND", almacen, precioUnitario: Number(c.precio) || 0, ivaPct: 13 });
       }
       const orden = await createOrden({ proveedorId, proveedorNo: provSel?.code, proveedorNombre: provSel?.nombre, currencyCode: currency, almacenRecepcion: almacen, observaciones: observaciones.trim() || undefined, notaInterna: notaInterna.trim() || undefined, lineas: ls });
-      if (aprobar) await setOrdenEstado(orden.id, "pendiente_aprobacion");
-      toast(`Orden directa ${aprobar ? "enviada a aprobación" : "guardada como abierta"} · ${numeroOrden(orden)}`, "success");
+      // La orden YA está creada acá. Si el envío a aprobación falla —hoy eso incluye
+      // que BC no pueda crear el pedido— igual se va al detalle con el motivo: quedarse
+      // en el formulario invita a apretar el botón otra vez y crear una orden repetida.
+      let aviso = ""; let tono: "error" | "info" = "info";
+      if (aprobar) {
+        try {
+          const r = await setOrdenEstado(orden.id, "pendiente_aprobacion");
+          if (r?.bcAviso) aviso = r.bcAviso;
+        } catch (e: any) { aviso = `La orden quedó guardada como abierta: ${String(e?.message ?? e)}`; tono = "error"; }
+      }
+      if (aviso) toast(aviso, tono);
+      else toast(aprobar ? "Orden directa enviada a aprobación" : `Orden directa guardada como abierta · ${numeroOrden(orden)}`, "success");
       router.push(`/proveeduria/ordenes/${orden.id}`);
     } catch (e: any) { toast(String(e?.message ?? e), "error"); setGuardando(false); }
   }
