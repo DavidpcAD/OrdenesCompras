@@ -261,18 +261,20 @@ export default function RegistrarFacturaPage() {
     setNcModal(null);
   };
 
-  // Obra de una línea = su Job No. (es lo que viaja a BC y hace que el material se
-  // cargue como CONSUMO de la obra en vez de entrar a inventario). Si la orden no lo
-  // trae, se cae al destino de la solicitud que la originó — solo si es MATERIAL:
-  // un repuesto va a una máquina y ese sí entra a inventario. Mismo criterio que los
-  // reportes de compras.
+  // Obra de una línea = su Job No., y NADA MÁS. Es lo único que hace que BC cargue el
+  // material como CONSUMO de la obra en lugar de meterlo al inventario.
+  //
+  // Antes, si la línea no traía Job No. se caía al destino de la solicitud. Pero ese
+  // destino es el ALMACÉN / centro de costo (INF-HDAII, F-MAD-NUE): con eso, una
+  // compra para stock salía en el resumen como "consumido en obra" y encima se
+  // saltaba la verificación de existencias, que es justo la línea que hay que
+  // verificar. Desde que la orden distingue almacén de obra, no hay nada que adivinar.
   const obraDeLinea = (l: OrdenLinea): { codigo: string; nombre?: string } | null => {
+    const codigo = (l.proyecto ?? "").trim();
+    if (!codigo) return null;
     const ped = pedidos.find((p) =>
       (l.pedidoLineaId && p.lineas.some((pl) => pl.id === l.pedidoLineaId)) ||
       (!!l.pedidoNumero && p.numero === l.pedidoNumero));
-    const codigo = (l.proyecto ?? "").trim()
-      || (ped?.tipoSolicitud === "material" ? (ped.obraCodigo ?? "").trim() : "");
-    if (!codigo) return null;
     // El nombre de obra suele venir "POR DEFINIR" de BC: en ese caso no se muestra.
     const nombre = ped && (ped.obraCodigo ?? "").trim() === codigo && !esNombreObraVacio(ped.obraNombre)
       ? ped.obraNombre?.trim() : undefined;

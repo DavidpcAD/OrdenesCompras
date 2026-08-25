@@ -33,7 +33,12 @@ export interface CompraFila {
   descuentoPct: number;
   importe: number;               // cantidad × precio − descuento (sin IVA)
   moneda: string;                // "" = CRC
-  obra: string;                  // Job No. de la línea, o la obra de la solicitud
+  // CENTRO DE COSTO de la compra, para agrupar el gasto: el Job No. de la línea o,
+  // si no lleva, el destino de la solicitud (obra si es material, máquina si es
+  // repuesto). OJO: NO es lo mismo que "la línea es consumo de obra en BC" — eso lo
+  // dice solo `OrdenLinea.proyecto`. Acá el destino se usa a propósito: una compra
+  // para stock igual se le atribuye al área que la pidió.
+  obra: string;
   almacen: string;
   pedidoNumero: string;          // solicitud de origen ("" si es compra directa)
   solicitante: string;           // quién pidió el material
@@ -86,9 +91,13 @@ export function filasDeCompra(ordenes: Orden[], pedidos: Pedido[], filtro: Filtr
     for (const l of o.lineas) {
       if (l.tipo === "cargo") continue;
       const ped = (l.pedidoLineaId && porLinea.get(l.pedidoLineaId)) || (l.pedidoNumero ? porNumero.get(l.pedidoNumero) : undefined);
-      // La obra sale de la línea (Job No.); si la orden no la trae, se cae al destino
-      // de la solicitud de origen, que es donde Ingeniería lo puso: la obra si es
-      // material, la máquina si es un repuesto (las dos son centro de costo).
+      // Centro de costo del reporte (la pestaña se llama "Obra / centro de costo"):
+      // el Job No. de la línea y, si no lleva, el destino de la solicitud — la obra
+      // si es material, la máquina si es un repuesto. Las dos son centro de costo.
+      // Este fallback NO es el mismo que se quitó en Bodega: allá decidía si el
+      // material entró al inventario o se consumió en la obra, y eso en BC depende
+      // SOLO del Job No. de la línea. Acá es atribución de gasto: sacarlo dejaría
+      // toda la compra para stock en "(sin asignar)".
       const destinoPedido = ped ? (ped.tipoSolicitud === "repuesto" ? ped.maquinaNo : ped.obraCodigo) : undefined;
       const obra = l.proyecto || destinoPedido || "";
       if (filtro.obra && obra !== filtro.obra) continue;
