@@ -15,6 +15,7 @@ import {
   ordenPendienteResumen, devolverPendienteAPedidos, proveedorLabel,
   numeroOrden, etiquetaInterna, tieneBc, esConsumoDirecto, obraParaOrden, destinoDeRecepcion,
   puedeDevolverLinea, motivoNoDevolver, ordenesDeLineaPedido, ordenEsBorradorDescartable,
+  lineasACotizar, observacionesParaProveedor,
 } from "./helpers.ts";
 import type { Orden, OrdenLinea, Pedido, PedidoLinea } from "./types.ts";
 
@@ -523,4 +524,33 @@ test("motivoNoDevolver: una orden cerrada no tapa el consejo del borrador", () =
 
 test("motivoNoDevolver: sin la lista de órdenes sigue dando el motivo corto", () => {
   assert.equal(motivoNoDevolver(lineaPed({ cantidadOrdenada: 3 })), "ya tiene orden de compra");
+});
+
+// ---- el motivo de la devolución NO puede salir en el PDF del proveedor ----------
+// `notaCreador` hace doble oficio (comentario del ingeniero + motivo de la
+// devolución, que es como lo ven las dos apps). El PDF de cotización imprime ese
+// campo como "Observaciones": sin recortar, el proveedor recibía el motivo interno.
+test("observacionesParaProveedor: recorta el prefijo de la devolución", () => {
+  assert.equal(
+    observacionesParaProveedor("↩ Devuelta(s): CEMENTO 50KG — pidió de más · Tapia prefabricada Central AD"),
+    "Tapia prefabricada Central AD",
+  );
+  assert.equal(observacionesParaProveedor("↩ Devuelto: no hay presupuesto"), "");
+  assert.equal(observacionesParaProveedor("Tapia prefabricada Central AD"), "Tapia prefabricada Central AD");
+  assert.equal(observacionesParaProveedor(undefined), "");
+});
+
+// El fallback "si no hay pendiente, cotizá todo" no puede resucitar lo devuelto.
+test("lineasACotizar: sin pendiente cotiza el resto, nunca lo devuelto", () => {
+  const ped = {
+    id: "p1", numero: "PED-000123", tipoSolicitud: "material" as const, solicitante: "Laura",
+    fecha: "2026-08-25", estado: "aprobado" as const, prioridad: "normal" as const,
+    lineas: [
+      lineaPed({ id: "a", cantidad: 5, cantidadOrdenada: 5 }),
+      lineaPed({ id: "b", cantidad: 7, cantidadOrdenada: 0, devuelta: true }),
+    ],
+  };
+  const r = lineasACotizar(ped);
+  assert.equal(r.length, 1);
+  assert.equal(r[0].linea.id, "a");
 });

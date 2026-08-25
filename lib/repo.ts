@@ -364,7 +364,14 @@ export async function devolverLineasPedido(
     if (l.idEstado === idDevuelto) continue;   // ya devuelta: no se repite ni se duplica el movimiento
     aDevolver.push(l);
   }
-  if (!aDevolver.length) return { devueltas: 0, pedidoDevuelto: false, nombres: [] };
+  if (!aDevolver.length) {
+    // Reintento sobre líneas que ya estaban devueltas (doble clic, pestaña vieja).
+    // Hay que mirar igual si el pedido quedó entero devuelto: contestar `false` a
+    // ciegas hacía que la pantalla dijera "sigue abierta con el resto" sobre una
+    // solicitud que ya está Devuelta y desapareció de la lista.
+    const yaTodo = det.recordset.every((l: any) => l.idEstado === idDevuelto);
+    return { devueltas: 0, pedidoDevuelto: yaTodo, nombres: [] };
+  }
 
   // Con TODAS las líneas devueltas, el pedido entero se va de vuelta: así aparece en
   // la bandeja de Devoluciones del ingeniero, igual que la devolución de siempre.
@@ -612,8 +619,29 @@ function validarLineasOrden(lineas: NewOrdenDB["lineas"]) {
   }
 }
 
+// Ninguna orden puede consumir una línea DEVUELTA al ingeniero. El filtro de la
+// pantalla (pendiente = 0) no alcanza: el borrador de la orden vive en memoria, así
+// que se puede armar antes de la devolución y guardarse después, o llegar por una
+// pestaña vieja. Sin este corte, la línea quedaba devuelta Y ordenada a la vez.
+async function cortarLineasDevueltas(lineas: { idPedidoCompraDet?: number }[]) {
+  const ids = [...new Set(lineas.map((l) => Math.trunc(Number(l.idPedidoCompraDet)))
+    .filter((n) => Number.isSafeInteger(n) && n > 0))];
+  if (!ids.length || !(await ensureLineaEstado())) return;
+  await ensureEstados();
+  const idDevuelto = await idDeEstado("devuelto");
+  const pool = await getPool();
+  const r = await pool.request().input("e", sql.Int, idDevuelto)
+    .query(`SELECT descripcion, itemNo FROM dbo.PedidoCompraDet
+             WHERE idEstado=@e AND idPedidoCompraDet IN (${ids.join(",")})`);
+  if (r.recordset.length) {
+    const nombres = r.recordset.map((l: any) => l.descripcion || l.itemNo).join("; ");
+    throw new Error(`No se puede ordenar material que se devolvió al ingeniero: ${nombres}. Quitá esa(s) línea(s) de la orden.`);
+  }
+}
+
 export async function createOrden(input: NewOrdenDB): Promise<number> {
   validarLineasOrden(input.lineas);
+  await cortarLineasDevueltas(input.lineas);
   const pool = await getPool();
   const idAbierto = await idDeEstado("abierto");
   const conCargo = await ensureCargoCols();
@@ -734,6 +762,7 @@ export async function updateOrden(id: number, input: UpdateOrdenDB) {
   const ordenNo = head.recordset[0].ordenNo ?? "";
   const lineas = (input.lineas ?? []).filter((l) => l.tipoLinea !== "articulo" || (l.itemNo && l.cantidad > 0) || l.cantidad > 0);
   validarLineasOrden(lineas);   // mismas reglas que al crear (cantidad/precio/IVA/descuento)
+  await cortarLineasDevueltas(lineas);
   const tx = new sql.Transaction(pool); await tx.begin();
   try {
     // 1) revertir el saldo consumido por las líneas ACTUALES.

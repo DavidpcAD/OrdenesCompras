@@ -1,5 +1,5 @@
 import type { Pedido, PedidoLinea } from "./types";
-import { pedidoLineaPendiente, destinoCodigo, destinoLabel } from "./helpers";
+import { lineasACotizar, observacionesParaProveedor, destinoCodigo, destinoLabel } from "./helpers";
 import { etiquetaUnidad, fmtDoc } from "./orden-doc";
 import {
   nuevoDocumento, dibujante, encabezadoMarca, bloqueEmpresa, numerarPaginas, formatearFecha,
@@ -27,16 +27,6 @@ const COLS = {
   precio: { x: MARGEN + 384, w: 60 },
   importe: { x: MARGEN + 448, w: 67 },
 };
-
-// Qué se cotiza: lo que falta por ordenar. Si ya se ordenó todo (o la solicitud es
-// vieja y se quiere volver a cotizar), se manda la solicitud completa.
-export function lineasACotizar(pedido: Pedido): { linea: PedidoLinea; cantidad: number }[] {
-  const pendientes = pedido.lineas
-    .map((l) => ({ linea: l, cantidad: pedidoLineaPendiente(l) }))
-    .filter((x) => x.cantidad > 0);
-  if (pendientes.length) return pendientes;
-  return pedido.lineas.map((l) => ({ linea: l, cantidad: l.cantidad }));
-}
 
 export function nombreArchivoPedido(pedido: Pedido): string {
   const num = (pedido.numero || "solicitud").replace(/[^\w.-]+/g, "-");
@@ -154,7 +144,7 @@ export function pedidoAPdf(pedido: Pedido, unidades: Record<string, string> = {}
   y += 30;
 
   // ─────────────────────────────────────────── comentario de la solicitud
-  const notas = pedido.notas?.trim();
+  const notas = observacionesParaProveedor(pedido.notas);
   if (notas) {
     const alto = doc.font("Helvetica").fontSize(8).heightOfString(notas, { width: ANCHO_UTIL });
     if (y + alto + 30 > A4.alto - MARGEN) { doc.addPage(); y = Y_CONTINUACION; }

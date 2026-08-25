@@ -234,6 +234,32 @@ export function motivoNoDevolver(l: PedidoLinea, ordenes?: Orden[]): string {
   return `ya tiene orden de compra (${nombres})`;
 }
 
+// Qué se cotiza: lo que falta por ordenar. Si ya se ordenó todo (o la solicitud es
+// vieja y se quiere volver a cotizar), se manda la solicitud completa — pero NUNCA
+// lo devuelto al ingeniero: ese material no se va a comprar, y el fallback lo
+// mandaba a cotizar con su cantidad completa (se escribió cuando "sin pendiente"
+// solo podía significar "ya se ordenó todo").
+export function lineasACotizar(pedido: Pedido): { linea: PedidoLinea; cantidad: number }[] {
+  const pendientes = pedido.lineas
+    .map((l) => ({ linea: l, cantidad: pedidoLineaPendiente(l) }))
+    .filter((x) => x.cantidad > 0);
+  if (pendientes.length) return pendientes;
+  return pedido.lineas.filter((l) => !l.devuelta).map((l) => ({ linea: l, cantidad: l.cantidad }));
+}
+
+// El comentario que SÍ se le imprime al proveedor. `notaCreador` hace doble oficio:
+// es el comentario del ingeniero y también donde queda escrito el motivo de una
+// devolución (para que lo vean las dos apps). Ese motivo es INTERNO — "el ingeniero
+// pidió de más, no hay presupuesto" no puede salir en el papel que recibe el
+// proveedor —, así que acá se recorta el prefijo de la devolución y queda solo el
+// comentario original.
+export function observacionesParaProveedor(notas?: string): string {
+  const t = (notas ?? "").trim();
+  if (!t.startsWith("↩")) return t;
+  const corte = t.indexOf(" · ");        // "↩ Devuelta(s): … — motivo · <comentario original>"
+  return corte >= 0 ? t.slice(corte + 3).trim() : "";
+}
+
 export function pedidoTieneSaldo(p: Pedido): boolean {
   return p.lineas.some((l) => pedidoLineaPendiente(l) > 0);
 }
