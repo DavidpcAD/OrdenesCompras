@@ -160,7 +160,13 @@ function mapPedido(p: any, lineas: any[], unidades: Record<string, UnidadCompraI
       id: String(l.idPedidoCompraDet), articuloId: l.itemNo ?? "", descripcion: l.descripcion ?? "",
       cantidad: Number(l.quantitySolicitado ?? 0),
       ...unidadLinea(l.itemNo ?? "", l.unitOfMeasureCode ?? "", unidades),
-      almacen: l.locationCode ?? "", variantCode: l.variantCode ?? undefined, cantidadOrdenada: Number(l.quantityOrdenado ?? 0), notas: l.notaCreador ?? undefined,
+      almacen: l.locationCode ?? "", variantCode: l.variantCode ?? undefined,
+      // Obra y tarea de la SOLICITUD (consumo directo). Las escribe Ingeniería desde
+      // la app de Producción; acá solo se leen y se arrastran a la orden. Si esas
+      // columnas todavía no existen en PedidoCompraDet, el SELECT es `det.*` y esto
+      // queda en undefined: la línea es para stock y va sin obra, que es lo correcto.
+      proyecto: l.jobNo ?? undefined, taskNo: l.taskNo ?? undefined,
+      cantidadOrdenada: Number(l.quantityOrdenado ?? 0), notas: l.notaCreador ?? undefined,
     })),
   };
 }

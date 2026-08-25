@@ -86,8 +86,14 @@ export interface PedidoLinea {
   unidad: string;           // la de COMPRA de BC (EST), no la de inventario
   unidadBase?: string;      // la de inventario/consumo (GR), para la equivalencia
   factorCompra?: number;    // cuántas unidades base trae la de compra (255000)
-  almacen: string;
+  almacen: string;          // centro de costo / almacén: DÓNDE entra el material
   variantCode?: string;     // variante del item (si aplica)
+  // Consumo directo de obra: lo pone QUIEN PIDE el material (Ingeniería), no
+  // Proveeduría. Es la única fuente de la obra en una orden armada de solicitudes:
+  // el almacén NO es una obra (INF-HDAII, F-MAD-NUE son centros de costo) y
+  // tomarlo como Job No. hacía que BC pidiera una tarea que nadie tenía por qué dar.
+  proyecto?: string;        // obra / Job No. de BC
+  taskNo?: string;          // tarea de la obra (Job Task No.)
   cantidadOrdenada: number; // cuánto de esta línea ya pasó a una orden
   notas?: string;
 }

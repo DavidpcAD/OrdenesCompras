@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Badge, Button, Card, EmptyState, Field, Input, Modal, Select, Textarea, useToast } from "@/components/ui";
 import { Combobox } from "@/components/combobox";
 import { IconWarning } from "@/components/icons";
@@ -28,9 +28,16 @@ interface Row {
   tarea: string;
 }
 
-// Tarea de obra (Job Task de BC). La obra la trae la solicitud; la tarea es lo
-// único que se elige acá, porque Ingeniería pide el material para una obra pero no
-// dice contra qué línea del presupuesto va.
+// Obra (Job) y tarea (Job Task) de BC. OJO con los dos campos de destino, que NO
+// son lo mismo:
+//   almacen  -> locationCode: el centro de costo DONDE entra el material.
+//   proyecto -> Project No.: a qué OBRA se carga como consumo (y entonces NO entra
+//               al inventario). Solo lo lleva la línea que es consumo directo.
+// El almacén NO es una obra: INF-HDAII o F-MAD-NUE son centros de costo. Copiarlo
+// al campo obra hacía que la orden pidiera una tarea que la compra para stock no
+// tiene por qué dar. La obra la trae la SOLICITUD (la pone quien pide el material)
+// o se la asigna Proveeduría acá, línea por línea.
+type Obra = { codigo: string; nombre: string };
 type Tarea = { jobTaskNo: string; descripcion: string; tipo: string };
 
 // Cargo de producto (Item Charge) a agregar a la orden: tipo (chargeNo del catálogo
@@ -65,6 +72,16 @@ export default function ArmarOrdenPage() {
   const [tareasPorObra, setTareasPorObra] = useState<Record<string, Tarea[]>>({});
   // Obras ya pedidas, para no repetir el fetch cada vez que cambian las líneas.
   const tareasPedidasRef = useRef<Set<string>>(new Set());
+  // Catálogo de obras de BC y línea cuyo destino se está cambiando (null = cerrado).
+  // Proveeduría puede marcar una línea como consumo de obra aunque la solicitud
+  // haya venido para stock: es la única persona que ve la compra completa.
+  const [obras, setObras] = useState<Obra[]>([]);
+  const [editObra, setEditObra] = useState<Row | null>(null);
+  useEffect(() => {
+    fetch("/api/bc/obras").then((r) => (r.ok ? r.json() : { obras: [] }))
+      .then((d) => { if (Array.isArray(d.obras)) setObras(d.obras.map((o: any) => ({ codigo: o.codigo, nombre: o.nombre }))); })
+      .catch(() => { /* sin catálogo, la línea se queda con la obra que traiga */ });
+  }, []);
 
   // Proveedores en vivo desde Business Central (fallback al catálogo si BC falla).
   // Si el fallback se activa hay que DECIRLO: armar la orden contra el catálogo de
@@ -121,14 +138,14 @@ export default function ArmarOrdenPage() {
 
   const [rows, setRows] = useState<Row[]>(() =>
     borrador.map((b) => {
-      let info: Partial<Row> = { pedidoNumero: "", articuloId: "", variantCode: "", descripcion: "", unidad: "", almacen: "", proyecto: "" };
+      let info: Partial<Row> = { pedidoNumero: "", articuloId: "", variantCode: "", descripcion: "", unidad: "", almacen: "", proyecto: "", tarea: "" };
       for (const p of pedidos) {
         const l = p.lineas.find((x) => x.id === b.pedidoLineaId);
-        if (l) { info = { pedidoNumero: p.numero, articuloId: l.articuloId, variantCode: l.variantCode ?? "", descripcion: l.descripcion, unidad: l.unidad, unidadBase: l.unidadBase, factorCompra: l.factorCompra, almacen: l.almacen, proyecto: p.tipoSolicitud === "material" ? (l.almacen || p.obraCodigo || "") : "" }; break; }
+        if (l) { info = { pedidoNumero: p.numero, articuloId: l.articuloId, variantCode: l.variantCode ?? "", descripcion: l.descripcion, unidad: l.unidad, unidadBase: l.unidadBase, factorCompra: l.factorCompra, almacen: l.almacen, proyecto: l.proyecto ?? "", tarea: l.taskNo ?? "" }; break; }
       }
       return {
         pedidoLineaId: b.pedidoLineaId, ...info,
-        cantidad: String(b.cantidad), precio: String(b.precio), iva: String(b.iva), descuento: "0", tarea: "",
+        cantidad: String(b.cantidad), precio: String(b.precio), iva: String(b.iva), descuento: "0",
       } as Row;
     })
   );
@@ -174,22 +191,29 @@ export default function ArmarOrdenPage() {
   // algo para recién ir a buscarla haría que el selector se vea vacío.
   // Solo las de tipo "Posting" admiten movimientos; las Heading/Total son rótulos
   // del presupuesto. Si BC no manda el tipo, se dejan todas.
+  const cargarTareas = (jobNo: string) => {
+    const j = (jobNo ?? "").trim();
+    if (!j || tareasPedidasRef.current.has(j)) return;
+    tareasPedidasRef.current.add(j);
+    fetch(`/api/bc/jobtasks?jobNo=${encodeURIComponent(j)}`)
+      .then((r) => (r.ok ? r.json() : { jobTasks: [] }))
+      .then((d) => {
+        const todas: Tarea[] = Array.isArray(d.jobTasks) ? d.jobTasks : [];
+        const posting = todas.filter((t) => (t.tipo ?? "").toLowerCase() === "posting");
+        setTareasPorObra((m) => ({ ...m, [j]: posting.length ? posting : todas }));
+      })
+      .catch(() => setTareasPorObra((m) => ({ ...m, [j]: [] })));
+  };
   useEffect(() => {
-    const obras = [...new Set(rows.map((r) => r.proyecto).filter(Boolean))];
-    for (const jobNo of obras) {
-      if (tareasPedidasRef.current.has(jobNo)) continue;
-      tareasPedidasRef.current.add(jobNo);
-      fetch(`/api/bc/jobtasks?jobNo=${encodeURIComponent(jobNo)}`)
-        .then((r) => (r.ok ? r.json() : { jobTasks: [] }))
-        .then((d) => {
-          const todas: Tarea[] = Array.isArray(d.jobTasks) ? d.jobTasks : [];
-          const posting = todas.filter((t) => (t.tipo ?? "").toLowerCase() === "posting");
-          setTareasPorObra((m) => ({ ...m, [jobNo]: posting.length ? posting : todas }));
-        })
-        .catch(() => setTareasPorObra((m) => ({ ...m, [jobNo]: [] })));
-    }
+    for (const jobNo of new Set(rows.map((r) => r.proyecto).filter(Boolean))) cargarTareas(jobNo);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rows]);
   const tareasDe = (jobNo: string) => tareasPorObra[(jobNo ?? "").trim()];
+  // El Combobox no se puede vaciar solo: "Sin obra" es una opción más (código "").
+  const obrasConVacio = useMemo(() => [{ codigo: "", nombre: "Sin obra — entra al almacén" }, ...obras], [obras]);
+  const etiquetaObra = (o: Obra) => (o.codigo ? `${o.codigo} — ${o.nombre}` : o.nombre);
+  const etiquetaTarea = (t: Tarea) => `${t.jobTaskNo} — ${t.descripcion}`;
+  const nombreTarea = (jobNo: string, taskNo: string) => (tareasDe(jobNo) ?? []).find((t) => t.jobTaskNo === taskNo)?.descripcion ?? "";
 
   // Unidades de los materiales de las líneas, una sola vez por material. Si BC no
   // las da, queda [] y la línea se queda con su unidad de siempre.
@@ -227,8 +251,9 @@ export default function ArmarOrdenPage() {
       ...(q > 0 && nuevaQ != null ? { cantidad: String(Number(nuevaQ.toFixed(8))) } : {}),
     });
   }
-  // Líneas que van a una obra y todavía no tienen tarea: se avisa arriba de la
-  // tabla. No bloquea guardar — hasta hoy las órdenes salían así.
+  // Líneas de CONSUMO DE OBRA a las que todavía les falta la tarea. Se avisa arriba
+  // de la tabla y frena el envío a aprobación (BC no acepta un Job No. sin tarea),
+  // pero no impide guardar el borrador.
   const sinTarea = rows.filter((r) => r.proyecto && !r.tarea).length;
 
   // Agregar líneas de OTRAS solicitudes ya hechas (pendientes por ordenar) a la
@@ -252,7 +277,7 @@ export default function ArmarOrdenPage() {
       pedidoNumero: p.numero, pedidoLineaId: l.id, articuloId: l.articuloId, variantCode: l.variantCode ?? "",
       descripcion: l.descripcion, unidad: l.unidad, unidadBase: l.unidadBase, factorCompra: l.factorCompra, almacen: l.almacen,
       cantidad: String(pend), precio: String(hist || 0), iva: "13", descuento: "0",
-      proyecto: p.tipoSolicitud === "material" ? (l.almacen || p.obraCodigo || "") : "", tarea: "",
+      proyecto: l.proyecto ?? "", tarea: l.taskNo ?? "",
     }]);
   }
 
@@ -343,6 +368,11 @@ export default function ArmarOrdenPage() {
     if (aprobar) {
       const sinPrecio = rows.filter((r) => !(Number(r.precio) > 0)).length;
       if (sinPrecio) { toast(`${sinPrecio} línea(s) sin precio. Poné el precio acordado antes de enviar a aprobación.`, "error"); return; }
+      // Obra sin tarea: BC rechaza el pedido ENTERO, y ahora el pedido se crea al
+      // enviar. Solo se exige si las tareas de esa obra ya cargaron: si BC no
+      // contestó, no se bloquea el envío por algo que no se pudo verificar.
+      const faltaTarea = rows.find((r) => r.proyecto && (tareasDe(r.proyecto) ?? []).length > 0 && !r.tarea);
+      if (faltaTarea) { toast(`Elegí la tarea de la obra ${faltaTarea.proyecto} en "${faltaTarea.descripcion}": sin ella Business Central no acepta la línea.`, "error"); return; }
     }
     setGuardando(true);
     try {
@@ -507,7 +537,7 @@ export default function ArmarOrdenPage() {
               <span className="ds-muted ds-body-sm">Solo materiales de solicitudes ya hechas. ¿Material sin solicitud? Usá <span className="ds-strong">Compra directa</span>.</span>
               {sinTarea > 0 && (
                 <span className="ds-muted ds-body-sm">
-                  {sinTarea} línea(s) con obra y <span className="ds-strong">sin tarea</span>: el costo llega a la obra, pero no queda ubicado en su presupuesto.
+                  {sinTarea} línea(s) de consumo de obra <span className="ds-strong">sin tarea</span>: elegila en “Cambiar obra/tarea”. Business Central no acepta una obra sin tarea.
                 </span>
               )}
             </div>
@@ -527,25 +557,25 @@ export default function ArmarOrdenPage() {
                   <tr key={r.pedidoLineaId}>
                     <td className="ds-body-sm ds-strong">{r.pedidoNumero}</td>
                     <td><div style={{ maxWidth: 400, minWidth: 240 }} title={`${r.articuloId} — ${r.descripcion}`}><div className="ds-strong ds-body-sm">{r.articuloId}</div><div className="ds-clamp-2">{r.descripcion}</div></div></td>
-                    {/* La obra viene de la solicitud y no se toca acá. La TAREA sí:
-                        Ingeniería pide el material para una obra, pero contra qué
-                        línea del presupuesto va lo decide Proveeduría al comprar.
-                        El menú del Combobox va en un portal, así que la tabla no lo
-                        recorta aunque la celda sea angosta. */}
+                    {/* Destino de ESTA línea: el almacén (centro de costo) donde
+                        entra el material y, SOLO si es consumo directo, la obra y su
+                        tarea. La compra para stock se queda con el almacén y ya. La
+                        obra la trae la solicitud (la pone quien pide el material) y
+                        acá se puede corregir o asignar en un diálogo. */}
                     <td className="ds-body-sm">
                       <div className="ds-muted">{r.almacen || "—"}</div>
-                      {r.proyecto && (() => {
-                        const ts = tareasDe(r.proyecto);
-                        if (!ts) return <div className="ds-muted" style={{ marginTop: 4 }}>tareas…</div>;
-                        if (!ts.length) return <div className="ds-muted" style={{ marginTop: 4 }}>sin tareas en BC</div>;
-                        return (
-                          <div style={{ minWidth: 150, marginTop: 4 }}>
-                            <Combobox items={ts} value={r.tarea} onChange={(k) => setRow(r.pedidoLineaId, { tarea: k })}
-                              getKey={(t) => t.jobTaskNo} getLabel={(t) => `${t.jobTaskNo} — ${t.descripcion}`}
-                              getSearch={(t) => `${t.jobTaskNo} ${t.descripcion}`} placeholder="Elegí tarea…" />
-                          </div>
-                        );
-                      })()}
+                      {r.proyecto ? (
+                        <div className="ds-muted" title={nombreTarea(r.proyecto, r.tarea) || undefined}>
+                          Obra {r.proyecto} · {r.tarea
+                            ? <span className="ds-strong">tarea {r.tarea}</span>
+                            : <span className="ds-pending-text">sin tarea</span>}
+                        </div>
+                      ) : (
+                        <div className="ds-muted">Sin obra · entra al almacén</div>
+                      )}
+                      <button type="button" className="link-btn" onClick={() => { setEditObra(r); if (r.proyecto) cargarTareas(r.proyecto); }}>
+                        {r.proyecto ? "Cambiar obra/tarea" : "Asignar obra"}
+                      </button>
                     </td>
                     <td className="ds-num">
                       {/* La unidad al lado de la cantidad: "40" solo no dice nada
@@ -660,6 +690,44 @@ export default function ArmarOrdenPage() {
         </div>
       </div>
 
+      {editObra && (
+        <Modal title="Obra y tarea de la línea" onClose={() => setEditObra(null)}
+          footer={<>
+            <Button variant="outline" onClick={() => setEditObra(null)}>Cancelar</Button>
+            <Button
+              disabled={!!editObra.proyecto && (tareasDe(editObra.proyecto) ?? []).length > 0 && !editObra.tarea}
+              onClick={() => {
+                setRow(editObra.pedidoLineaId, { proyecto: editObra.proyecto || "", tarea: editObra.proyecto ? editObra.tarea : "" });
+                setEditObra(null);
+              }}>Guardar</Button>
+          </>}>
+          <p className="ds-body-sm ds-muted" style={{ marginBottom: 16 }}>{[editObra.articuloId, editObra.descripcion].filter(Boolean).join(" — ")}</p>
+          <Field label="Obra" help="Con obra, el material se carga como CONSUMO de esa obra y no suma inventario. Sin obra, entra al almacén / centro de costo de la línea.">
+            <Combobox items={obrasConVacio} value={editObra.proyecto}
+              onChange={(k) => { setEditObra({ ...editObra, proyecto: k, tarea: "" }); if (k) cargarTareas(k); }}
+              getKey={(o) => o.codigo} getLabel={etiquetaObra} getSearch={(o) => `${o.codigo} ${o.nombre}`} placeholder="Sin obra…" />
+          </Field>
+          {/* Si la línea arrastra un código que BC no conoce como obra (el almacén
+              copiado al campo obra, que es como se hacía antes), el Combobox de
+              arriba sale vacío: hay que decir por qué o parece que no tiene obra. */}
+          {!!editObra.proyecto && obras.length > 0 && !obras.some((o) => o.codigo === editObra.proyecto) && (
+            <p className="ds-body-sm" style={{ color: "var(--ds-color-red-200)", margin: "8px 0 0" }}>
+              La línea trae <span className="ds-strong">{editObra.proyecto}</span>, que no está en el catálogo de obras de
+              Business Central (por eso el campo de arriba sale vacío). Elegí la obra real o dejala sin obra: BC rechaza
+              el pedido completo si el Project No. no existe.
+            </p>
+          )}
+          {!!editObra.proyecto && (
+            <Field label="Tarea" help="Obligatoria cuando la línea va a una obra: BC no acepta un Job No. sin tarea." className="mt-4">
+              <Combobox items={tareasDe(editObra.proyecto) ?? []} value={editObra.tarea}
+                onChange={(k) => setEditObra({ ...editObra, tarea: k })}
+                getKey={(t) => t.jobTaskNo} getLabel={etiquetaTarea} getSearch={(t) => `${t.jobTaskNo} ${t.descripcion}`}
+                placeholder={(tareasDe(editObra.proyecto) ?? []).length ? "Elegí tarea…" : "Sin tareas en BC"} />
+            </Field>
+          )}
+        </Modal>
+      )}
+
       {addOpen && (
         <Modal wide title="Agregar de solicitudes pendientes" onClose={() => setAddOpen(false)}
           footer={<Button variant="outline" onClick={() => setAddOpen(false)}>Cerrar</Button>}>
@@ -684,7 +752,10 @@ export default function ArmarOrdenPage() {
                     <tr key={l.id}>
                       <td className="ds-body-sm ds-strong">{p.numero}</td>
                       <td><div style={{ maxWidth: 380, minWidth: 220 }} title={`${l.articuloId} — ${l.descripcion}`}><div className="ds-strong ds-body-sm">{l.articuloId}</div><div className="ds-clamp-2">{l.descripcion}</div></div></td>
-                      <td className="ds-muted ds-body-sm">{l.almacen || p.obraCodigo || "—"}</td>
+                      <td className="ds-muted ds-body-sm">
+                        {l.almacen || p.obraCodigo || "—"}
+                        {l.proyecto && <div>Obra {l.proyecto}{l.taskNo ? ` · tarea ${l.taskNo}` : ""}</div>}
+                      </td>
                       <td className="ds-num">{pend} {l.unidad}</td>
                       <td className="ds-num"><Button variant="outline" size="sm" onClick={() => agregarDeSolicitud(p, l, pend)}>Agregar</Button></td>
                     </tr>

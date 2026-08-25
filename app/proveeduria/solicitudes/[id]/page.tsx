@@ -101,12 +101,17 @@ export default function ProveeduriaPedidoDetallePage() {
         <Card className="mt-4" style={{ padding: 0, overflow: "hidden" }}>
           <div className="ds-table-wrap" style={{ boxShadow: "none" }}>
             <table className="ds-table">
-              <thead><tr><th>Artículo</th><th>Obra</th><th className="ds-num">Solicitado</th><th className="ds-num">Ordenado</th><th className="ds-num">Pendiente</th></tr></thead>
+              <thead><tr><th>Artículo</th><th>Destino</th><th className="ds-num">Solicitado</th><th className="ds-num">Ordenado</th><th className="ds-num">Pendiente</th></tr></thead>
               <tbody>
                 {pedido.lineas.map((l) => (
                   <tr key={l.id}>
                     <td><div className="ds-clamp-2" title={l.descripcion} style={{ maxWidth: 420, minWidth: 240 }}>{l.descripcion}</div></td>
-                    <td className="ds-muted ds-body-sm">{l.almacen || "—"}</td>
+                    <td className="ds-muted ds-body-sm">
+                      {l.almacen || "—"}
+                      {/* Consumo directo: lo marca quien pide el material. Se muestra
+                          acá porque es lo que decide si la orden lleva obra o no. */}
+                      {l.proyecto && <div>Obra {l.proyecto}{l.taskNo ? ` · tarea ${l.taskNo}` : " · sin tarea"}</div>}
+                    </td>
                     <td className="ds-num">{num.format(l.cantidad)} {l.unidad}</td>
                     <td className="ds-num">{num.format(l.cantidadOrdenada)}</td>
                     <td className="ds-num">{pedidoLineaPendiente(l) > 0 ? <span className="ds-pending-text">{num.format(pedidoLineaPendiente(l))}</span> : "0"}</td>

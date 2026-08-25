@@ -170,7 +170,7 @@ export default function ProveeduriaMaterialesPage() {
       // metidos en la misma fila, el código se comía ~90px y la medida del material
       // ("… 3/4") quedaba siempre cortada.
       cell: (c) => { const r = c.row.original; return <div style={{ maxWidth: 380, minWidth: 200 }} title={`${r.articuloId} — ${r.descripcion}`}><div className="ds-strong ds-body-sm">{r.articuloId}</div><div className="ds-clamp-2">{r.descripcion}</div></div>; } },
-    { id: "obra", header: "Obra", accessorFn: (r) => r.almacen || "—", meta: { label: "Obra" },
+    { id: "obra", header: "Destino", accessorFn: (r) => r.almacen || "—", meta: { label: "Destino" },
       cell: (c) => <span className="ds-muted ds-body-sm">{c.getValue()}</span> },
     { id: "pend", header: "Pend.", accessorFn: (r) => r.pendiente, meta: { label: "Pend.", num: true }, enableColumnFilter: false,
       cell: (c) => { const r = c.row.original; return <span className="ds-body-sm">{num.format(r.pendiente)} {r.unidad}</span>; } },
@@ -291,7 +291,7 @@ export default function ProveeduriaMaterialesPage() {
           </div>
           <div className="ds-table-wrap" style={{ boxShadow: "none", border: "1.5px solid var(--ds-color-gray-100)" }}>
             <table className="ds-table">
-              <thead><tr><th>Artículo</th><th>Obra</th><th className="ds-num">Solicitado</th><th className="ds-num">Pendiente</th></tr></thead>
+              <thead><tr><th>Artículo</th><th>Destino</th><th className="ds-num">Solicitado</th><th className="ds-num">Pendiente</th></tr></thead>
               <tbody>
                 {preview.lineas.map((l) => (
                   <tr key={l.id}>
