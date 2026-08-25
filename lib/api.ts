@@ -75,6 +75,9 @@ export const api = {
     fetch(`/api/ordenes/${id}/cerrar`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }).then(jsonOrThrow),
   nuevaOrdenConPendiente: (id: string, body: unknown) =>
     fetch(`/api/ordenes/${id}/nueva-con-pendiente`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }).then(jsonOrThrow),
+  // Descartar un borrador de orden (vuelve el saldo a la solicitud).
+  descartarOrden: (id: string, body: unknown): Promise<{ numero: string; saldoDevuelto: number }> =>
+    fetch(`/api/ordenes/${id}`, { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }).then(jsonOrThrow),
   updateOrden: (id: string, body: unknown) =>
     fetch(`/api/ordenes/${id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }).then(jsonOrThrow),
 

@@ -189,12 +189,49 @@ export function puedeDevolverLinea(l: PedidoLinea): boolean {
   return !l.devuelta && (l.cantidadOrdenada ?? 0) <= 0;
 }
 
+// Órdenes que se llevaron ESTA línea de solicitud, con su estado. Sirve para
+// explicar por qué la línea no se puede devolver: "no se puede" a secas manda a
+// alguien a revisar orden por orden cuál se la llevó.
+export type OrdenDeLinea = { id: string; etiqueta: string; estado: Orden["estado"]; cantidad: number; enBc: boolean };
+export function ordenesDeLineaPedido(ordenes: Orden[], pedidoLineaId: string): OrdenDeLinea[] {
+  const out: OrdenDeLinea[] = [];
+  for (const o of ordenes) {
+    const cantidad = o.lineas
+      .filter((l) => l.tipo === "articulo" && l.pedidoLineaId === pedidoLineaId)
+      .reduce((s, l) => s + (Number(l.cantidad) || 0), 0);
+    if (cantidad > 0) out.push({ id: o.id, etiqueta: numeroOrden(o), estado: o.estado, cantidad, enBc: !!o.bcNumber });
+  }
+  return out;
+}
+
+// ¿Es un BORRADOR que se puede descartar? Abierta o rechazada y sin N.º de BC: no
+// existe en Business Central, así que descartarla no deja nada colgando allá.
+export function ordenEsBorradorDescartable(o: Pick<Orden, "estado" | "bcNumber">): boolean {
+  return (o.estado === "abierto" || o.estado === "rechazado") && !o.bcNumber;
+}
+
 // Motivo por el que una línea NO se puede devolver (para decirlo en la pantalla en
-// vez de dejar la casilla apagada sin explicación).
-export function motivoNoDevolver(l: PedidoLinea): string {
+// vez de dejar la casilla apagada sin explicación). Con las órdenes a mano, nombra
+// la que se la llevó y —si todavía es un borrador— dice cómo soltarla.
+export function motivoNoDevolver(l: PedidoLinea, ordenes?: Orden[]): string {
   if (l.devuelta) return "ya está devuelta";
-  if ((l.cantidadOrdenada ?? 0) > 0) return "ya tiene orden de compra";
-  return "";
+  if ((l.cantidadOrdenada ?? 0) <= 0) return "";
+  const suyas = ordenes ? ordenesDeLineaPedido(ordenes, l.id) : [];
+  if (!suyas.length) return "ya tiene orden de compra";
+  // Una orden CERRADA sigue apuntando a la línea aunque ya le haya devuelto el saldo
+  // (al cerrar no se borran sus líneas). Si hay órdenes vivas, el saldo lo retienen
+  // esas: mirar solo esas es lo que hace que el consejo del borrador salga cuando
+  // corresponde en vez de quedar tapado por una orden vieja.
+  const vivas = suyas.filter((o) => o.estado !== "completado");
+  const base = vivas.length ? vivas : suyas;
+  const nombres = base.map((o) => o.etiqueta).join(", ");
+  const borradores = base.filter((o) => ordenEsBorradorDescartable(o));
+  if (borradores.length === base.length) {
+    // Todavía no se le pidió nada a nadie: el material se suelta descartando ese
+    // borrador (o quitando la línea de él) y ahí sí se puede devolver.
+    return `está en ${nombres} (todavía sin enviar a Business Central) — descartá ese borrador y esta línea se libera`;
+  }
+  return `ya tiene orden de compra (${nombres})`;
 }
 
 export function pedidoTieneSaldo(p: Pedido): boolean {

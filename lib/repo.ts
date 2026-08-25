@@ -946,6 +946,68 @@ export async function ordenTieneRecepciones(id: number): Promise<boolean> {
 
 export const MSG_NO_REABRIR = "La orden ya tiene facturas/recepciones registradas: no se puede volver a abrir.";
 
+// Descartar una orden que quedó en BORRADOR (Abierta y sin N.º de BC).
+//
+// Por qué hacía falta: al crear la orden, sus líneas CONSUMEN el saldo de la
+// solicitud (quantityOrdenado). Si esa orden se armó por error, hasta hoy no había
+// forma de deshacerla: no se puede borrar, no se puede dejar sin líneas
+// ("La orden no tiene líneas") y "Cerrar orden" es solo para las LANZADAS. El
+// material quedaba secuestrado: la solicitud lo daba por ordenado para siempre y
+// Proveeduría tampoco podía devolvérselo al ingeniero. Solo se salía por SQL.
+//
+// Condiciones (estrictas a propósito): sin N.º de BC —o sea, el pedido nunca se
+// creó allá— y sin recepciones. Lo que ya existe en Business Central no se descarta
+// desde acá: eso se reabre o se cierra, que es lo que deja rastro en los dos lados.
+export async function descartarOrden(
+  id: number, motivo: string, usuario: string, rol: Role,
+): Promise<{ numero: string; saldoDevuelto: number }> {
+  await ensureEstados();
+  const pool = await getPool();
+  const head = await pool.request().input("id", sql.Int, id)
+    .query("SELECT ordenNo, idEstado, bcNo FROM dbo.OrdenCompra WHERE idOrdenCompra=@id AND esEliminada=0");
+  if (!head.recordset.length) throw new Error("Orden no encontrada.");
+  const estado = codigoDeId(head.recordset[0].idEstado);
+  const bcNo = String(head.recordset[0].bcNo ?? "").trim();
+  if (estado !== "abierto" && estado !== "rechazado") {
+    throw new Error(`Solo se descarta una orden Abierta o Rechazada; esta está ${estado === "pendiente_aprobacion" ? "esperando aprobación (cancelá el envío primero)" : estado}.`);
+  }
+  if (bcNo) throw new Error(`Esta orden ya existe en Business Central como ${bcNo}: no se descarta desde acá. Reabrila o cerrala para que quede el rastro en los dos lados.`);
+  if (await ordenTieneRecepciones(id)) throw new Error("La orden ya tiene recepciones registradas: no se puede descartar.");
+
+  const tx = new sql.Transaction(pool); await tx.begin();
+  try {
+    // Cuánto se va a devolver (solo para el mensaje). Va en un SELECT aparte y no en
+    // un OUTPUT del UPDATE: en un UPDATE...FROM, el OUTPUT no puede leer columnas de
+    // la tabla derivada, y si el motor lo rechaza se cae justo la vía de escape.
+    const prev = await new sql.Request(tx).input("id", sql.Int, id).query(`
+      SELECT ISNULL(SUM(od.quantity), 0) AS q
+        FROM dbo.OrdenCompraDet od
+        JOIN dbo.PedidoCompraDet pcd ON pcd.idPedidoCompraDet = od.idPedidoCompraDet
+       WHERE od.idOrdenCompra = @id AND od.idPedidoCompraDet IS NOT NULL`);
+    const saldoDevuelto = Number(prev.recordset[0]?.q ?? 0);
+    // Devolver el saldo a las líneas de solicitud. Es EXACTAMENTE el mismo UPDATE que
+    // usa updateOrden (probado en producción): agrupado por línea de pedido, porque
+    // dos líneas de la orden pueden colgar de la misma.
+    await new sql.Request(tx).input("id", sql.Int, id).query(`
+      UPDATE pcd SET pcd.quantityOrdenado = ISNULL(pcd.quantityOrdenado,0) - x.q
+      FROM dbo.PedidoCompraDet pcd
+      JOIN (SELECT idPedidoCompraDet, SUM(quantity) AS q
+              FROM dbo.OrdenCompraDet
+             WHERE idOrdenCompra = @id AND idPedidoCompraDet IS NOT NULL
+             GROUP BY idPedidoCompraDet) x ON x.idPedidoCompraDet = pcd.idPedidoCompraDet`);
+    await new sql.Request(tx).input("id", sql.Int, id).input("u", sql.NVarChar(100), usuario)
+      .query("UPDATE dbo.OrdenCompra SET esEliminada=1, fechaModificacion=getdate(), modificadoPor=@u WHERE idOrdenCompra=@id");
+    await logMov(tx, {
+      entidad: "orden", idEntidad: id, documentoNo: head.recordset[0].ordenNo ?? "",
+      tipoMovimiento: "eliminado", estadoAnterior: estado,
+      detalle: `Borrador descartado${motivo ? ` · Motivo: ${motivo}` : ""}${saldoDevuelto > 0 ? ` · ${saldoDevuelto} u. volvieron a la solicitud` : ""}`,
+      usuario, rol,
+    });
+    await tx.commit();
+    return { numero: head.recordset[0].ordenNo ?? "", saldoDevuelto };
+  } catch (e) { await tx.rollback(); throw e; }
+}
+
 export async function setOrdenEstado(id: number, estado: string, usuario: string, rol: Role, motivo?: string, bcNumber?: string) {
   const pool = await getPool();
   // Con material ya recibido/facturado, reabrir es corregir una orden que en BC ya

@@ -14,7 +14,7 @@ import {
   destinoLabel, destinoCodigo, ordenLineaPendiente, ordenLineaCompleta, ultimoPrecioProveedor,
   ordenPendienteResumen, devolverPendienteAPedidos, proveedorLabel,
   numeroOrden, etiquetaInterna, tieneBc, esConsumoDirecto, obraParaOrden, destinoDeRecepcion,
-  puedeDevolverLinea, motivoNoDevolver,
+  puedeDevolverLinea, motivoNoDevolver, ordenesDeLineaPedido, ordenEsBorradorDescartable,
 } from "./helpers.ts";
 import type { Orden, OrdenLinea, Pedido, PedidoLinea } from "./types.ts";
 
@@ -467,4 +467,60 @@ test("motivoNoDevolver: dice por qué la casilla está apagada", () => {
 test("una línea devuelta no tiene pendiente aunque le sobre cantidad", () => {
   assert.equal(pedidoLineaPendiente(lineaPed({ cantidad: 10, cantidadOrdenada: 0 })), 10);
   assert.equal(pedidoLineaPendiente(lineaPed({ cantidad: 10, cantidadOrdenada: 0, devuelta: true })), 0);
+});
+
+// ---- qué orden se llevó una línea de la solicitud -------------------------------
+// "No se puede devolver" a secas manda a Proveeduría a abrir orden por orden. El
+// mensaje tiene que nombrar la orden y, si todavía es un borrador, decir cómo
+// soltar el material.
+const ordenConLinea = (p: Partial<Orden> & { id: string }, pedidoLineaId: string, cantidad = 5): Orden => ({
+  id: p.id, numero: p.numero ?? `CP-00000${p.id}`, proveedorId: "PROV-1", fecha: "2026-08-25",
+  currencyCode: "", estado: p.estado ?? "abierto", versionesArchivadas: 0, bcNumber: p.bcNumber,
+  lineas: [{
+    id: `ol-${p.id}`, tipo: "articulo", articuloId: "M01", descripcion: "PERLING", cantidad,
+    unidad: "UND", almacen: "ALM-GRAL", precioUnitario: 100, ivaPct: 13,
+    cantidadRecibida: 0, cantidadFacturada: 0, pedidoLineaId,
+  }],
+});
+
+test("ordenesDeLineaPedido: encuentra las órdenes por pedidoLineaId y suma la cantidad", () => {
+  const ords = [ordenConLinea({ id: "1" }, "pl9", 5), ordenConLinea({ id: "2" }, "otra", 3), ordenConLinea({ id: "3", bcNumber: "CP-005192", estado: "pendiente_aprobacion" }, "pl9", 2)];
+  const r = ordenesDeLineaPedido(ords, "pl9");
+  assert.equal(r.length, 2);
+  assert.equal(r[0].cantidad, 5);
+  assert.equal(r[0].enBc, false);
+  assert.equal(r[1].etiqueta, "CP-005192");   // con N.º de BC se muestra ese, no el interno
+  assert.equal(r[1].enBc, true);
+});
+
+test("ordenEsBorradorDescartable: solo abierta/rechazada y sin N.º de BC", () => {
+  assert.equal(ordenEsBorradorDescartable({ estado: "abierto" }), true);
+  assert.equal(ordenEsBorradorDescartable({ estado: "rechazado" }), true);
+  assert.equal(ordenEsBorradorDescartable({ estado: "abierto", bcNumber: "CP-005192" }), false);
+  assert.equal(ordenEsBorradorDescartable({ estado: "lanzado" }), false);
+});
+
+test("motivoNoDevolver: si la retiene un borrador, dice cómo liberarla", () => {
+  const l = lineaPed({ id: "pl9", cantidadOrdenada: 5 });
+  const soloBorrador = motivoNoDevolver(l, [ordenConLinea({ id: "1", numero: "CP-000070" }, "pl9")]);
+  assert.match(soloBorrador, /Interno 70/);
+  assert.match(soloBorrador, /descartá/i);
+  // Con una orden que YA está en BC no hay atajo: se nombra y punto.
+  const enBc = motivoNoDevolver(l, [ordenConLinea({ id: "2", bcNumber: "CP-005192", estado: "lanzado" }, "pl9")]);
+  assert.match(enBc, /CP-005192/);
+  assert.doesNotMatch(enBc, /descartá/i);
+});
+
+test("motivoNoDevolver: una orden cerrada no tapa el consejo del borrador", () => {
+  const l = lineaPed({ id: "pl9", cantidadOrdenada: 5 });
+  const m = motivoNoDevolver(l, [
+    ordenConLinea({ id: "9", numero: "CP-000009", estado: "completado" }, "pl9"),
+    ordenConLinea({ id: "1", numero: "CP-000070" }, "pl9"),
+  ]);
+  assert.match(m, /descartá/i);
+  assert.match(m, /Interno 70/);
+});
+
+test("motivoNoDevolver: sin la lista de órdenes sigue dando el motivo corto", () => {
+  assert.equal(motivoNoDevolver(lineaPed({ cantidadOrdenada: 3 })), "ya tiene orden de compra");
 });

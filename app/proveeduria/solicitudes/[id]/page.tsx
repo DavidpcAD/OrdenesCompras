@@ -7,7 +7,7 @@ import { IconWarning } from "@/components/icons";
 import { Timeline } from "@/components/timeline";
 import { useStore } from "@/lib/store";
 import { useVolver } from "@/lib/use-volver";
-import { formatDate, num, pedidoBadge, pedidoLineaPendiente, recibidoDeLineaPedido, destinoCodigo, destinoLabel, tipoSolicitudBadge, esConsumoDirecto, puedeDevolverLinea, motivoNoDevolver } from "@/lib/helpers";
+import { formatDate, num, pedidoBadge, pedidoLineaPendiente, recibidoDeLineaPedido, destinoCodigo, destinoLabel, tipoSolicitudBadge, esConsumoDirecto, puedeDevolverLinea, motivoNoDevolver, ordenesDeLineaPedido } from "@/lib/helpers";
 
 export default function ProveeduriaPedidoDetallePage() {
   const { id } = useParams<{ id: string }>();
@@ -107,10 +107,11 @@ export default function ProveeduriaPedidoDetallePage() {
             <a className="ds-btn ds-btn--white" href={`/api/pedidos/${pedido.id}/pdf`}
               title="Baja la solicitud en PDF con las columnas de precio en blanco, para mandarla a cotizar"
               style={{ textDecoration: "none" }}>⬇ PDF para cotizar</a>
-            <Button variant="red" disabled={!devolvibles.length} onClick={abrirDevolver}
-              title={devolvibles.length
-                ? "Devolver al ingeniero las líneas que todavía no tienen orden de compra"
-                : "No queda nada por devolver: todas las líneas ya tienen orden de compra o ya se devolvieron"}>
+            {/* El botón SIEMPRE abre el diálogo, aunque no haya nada devolvible: es ahí
+                donde se explica, línea por línea, cuál orden se llevó el material.
+                Deshabilitado no explicaba nada y dejaba a Proveeduría adivinando. */}
+            <Button variant="red" onClick={abrirDevolver}
+              title="Devolver al ingeniero las líneas que todavía no tienen orden de compra">
               Devolver al ingeniero{devolvibles.length && devolvibles.length < pedido.lineas.length ? ` (${devolvibles.length})` : ""}
             </Button>
             <Button onClick={crearOC} disabled={!hayPendiente}>Crear orden de compra →</Button>
@@ -150,7 +151,20 @@ export default function ProveeduriaPedidoDetallePage() {
                         : l.proyecto && <div>Para obra {l.proyecto} · entra al almacén</div>}
                     </td>
                     <td className="ds-num">{num.format(l.cantidad)} {l.unidad}</td>
-                    <td className="ds-num">{num.format(l.cantidadOrdenada)}</td>
+                    <td className="ds-num">
+                      {num.format(l.cantidadOrdenada)}
+                      {/* De qué orden se trata: "Ordenado: 25" sin decir dónde obliga a
+                          abrir orden por orden para saber quién se llevó el material. */}
+                      {ordenesDeLineaPedido(ordenes, l.id).map((o) => (
+                        <div key={o.id} style={{ marginTop: 4 }}>
+                          <button type="button" className="chip-link"
+                            title={o.enBc ? `Abrir la orden ${o.etiqueta}` : `${o.etiqueta}: borrador, todavía no está en Business Central`}
+                            onClick={() => router.push(`/proveeduria/ordenes/${o.id}`)}>
+                            {o.etiqueta}<span className="chip-link__ir" aria-hidden>↗</span>
+                          </button>
+                        </div>
+                      ))}
+                    </td>
                     <td className="ds-num">{pedidoLineaPendiente(l) > 0 ? <span className="ds-pending-text">{num.format(pedidoLineaPendiente(l))}</span> : "0"}</td>
                   </tr>
                 ))}
@@ -171,6 +185,19 @@ export default function ProveeduriaPedidoDetallePage() {
               {devolviendo ? "Devolviendo…" : `Devolver ${elegidas.length} línea(s)`}
             </Button>
           </>}>
+          {!devolvibles.length && (
+            <div className="ds-callout ds-callout--yellow mb-4" role="status">
+              <span className="ds-callout__icon"><IconWarning size={18} /></span>
+              <div>
+                <div className="ds-callout__title">No hay nada que devolver</div>
+                <div className="ds-callout__body">
+                  Cada línea de esta solicitud ya está en una orden de compra (abajo se ve en cuál). Si alguna de esas órdenes
+                  es un <span className="ds-strong">borrador</span> —todavía sin enviar a Business Central— descartala desde su
+                  pantalla: el material vuelve a quedar pendiente acá y entonces sí se puede devolver.
+                </div>
+              </div>
+            </div>
+          )}
           <p className="ds-muted ds-body-sm" style={{ marginTop: 0 }}>
             Marcá qué materiales vuelven al ingeniero. Los que <span className="ds-strong">ya tienen orden de compra</span> no se
             pueden devolver: ese material ya se le pidió al proveedor. Si vuelve TODO el pedido, queda en estado “Devuelto”;
@@ -181,7 +208,8 @@ export default function ProveeduriaPedidoDetallePage() {
               <thead><tr><th style={{ width: 40 }}></th><th>Artículo</th><th className="ds-num">Cantidad</th><th>Estado</th></tr></thead>
               <tbody>
                 {pedido.lineas.map((l) => {
-                  const bloqueo = motivoNoDevolver(l);
+                  const bloqueo = motivoNoDevolver(l, ordenes);
+                  const suyas = ordenesDeLineaPedido(ordenes, l.id);
                   return (
                     <tr key={l.id} style={bloqueo ? { opacity: 0.6 } : undefined}>
                       <td>
@@ -191,7 +219,22 @@ export default function ProveeduriaPedidoDetallePage() {
                       </td>
                       <td><div className="ds-clamp-2" style={{ maxWidth: 360, minWidth: 200 }}>{l.descripcion}</div></td>
                       <td className="ds-num">{num.format(l.cantidad)} {l.unidad}</td>
-                      <td className="ds-body-sm ds-muted">{bloqueo || "se puede devolver"}</td>
+                      <td className="ds-body-sm ds-muted">
+                        {bloqueo || "se puede devolver"}
+                        {/* Link directo a la orden que la tiene: si es un borrador, de
+                            ahí se descarta y la línea queda libre para devolver. */}
+                        {!!suyas.length && (
+                          <div className="row gap-2 wrap" style={{ marginTop: 4 }}>
+                            {suyas.map((o) => (
+                              <button key={o.id} type="button" className="chip-link"
+                                title={`Abrir la orden ${o.etiqueta}`}
+                                onClick={() => router.push(`/proveeduria/ordenes/${o.id}`)}>
+                                {o.etiqueta}<span className="chip-link__ir" aria-hidden>↗</span>
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </td>
                     </tr>
                   );
                 })}

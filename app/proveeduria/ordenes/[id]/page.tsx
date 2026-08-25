@@ -12,7 +12,7 @@ export default function ProvOrdenDetallePage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
   const toast = useToast();
-  const { ordenes, pedidos, recepciones, setOrdenEstado, cerrarOrden, nuevaOrdenConPendiente, cargando } = useStore();
+  const { ordenes, pedidos, recepciones, setOrdenEstado, cerrarOrden, descartarOrden, nuevaOrdenConPendiente, cargando } = useStore();
   const [procesando, setProcesando] = useState(false);
   // Aviso de BC que NO se puede perder (el toast se desvanece y el usuario se queda
   // creyendo que el pedido en BC también se reabrió).
@@ -20,6 +20,11 @@ export default function ProvOrdenDetallePage() {
   // Modal de cierre. `crearNueva` convierte el cierre en "pasar el pendiente a una
   // orden nueva": por eso obliga a devolver el saldo (la nueva lo vuelve a tomar).
   const [cerrando, setCerrando] = useState(false);
+  // Descartar el borrador: la orden desaparece y su material vuelve a quedar
+  // pendiente en la solicitud (es la única forma de soltar lo que una orden armada
+  // por error dejó "ordenado").
+  const [descartando, setDescartando] = useState(false);
+  const [motivoDescarte, setMotivoDescarte] = useState("");
   const [motivo, setMotivo] = useState("");
   const [nota, setNota] = useState("");
   const [devolver, setDevolver] = useState(true);
@@ -80,6 +85,21 @@ export default function ProvOrdenDetallePage() {
   ];
   const pendiente = ordenPendienteResumen(orden);
 
+  async function confirmarDescarte() {
+    if (procesando) return;
+    setProcesando(true);
+    try {
+      const r = await descartarOrden(orden!.id, motivoDescarte.trim());
+      setDescartando(false);
+      toast(`${numeroOrden(orden!)} descartada${r.saldoDevuelto > 0 ? ` · ${num.format(r.saldoDevuelto)} u. volvieron a la solicitud` : ""}`, "success");
+      router.push("/proveeduria/ordenes");
+    } catch (e: any) {
+      toast(`No se pudo descartar: ${String(e?.message ?? e)}`, "error");
+    } finally {
+      setProcesando(false);
+    }
+  }
+
   async function confirmarCierre() {
     if (!motivo) { toast("Elegí el motivo del cierre.", "error"); return; }
     if (procesando) return;
@@ -117,6 +137,15 @@ export default function ProvOrdenDetallePage() {
             {procesando ? "Enviando…" : "Enviar a aprobación"}
           </Button>
         </>
+      )}
+      {/* Descartar: solo lo que NO existe en BC. Lo que ya está allá se reabre o se
+          cierra, para que el rastro quede en los dos lados. */}
+      {(orden.estado === "abierto" || orden.estado === "rechazado") && !orden.bcNumber && (
+        <Button variant="outline" disabled={procesando}
+          title="Descarta este borrador y devuelve el material a la solicitud, para poder ordenarlo distinto o devolvérselo al ingeniero"
+          onClick={() => { setMotivoDescarte(""); setDescartando(true); }}>
+          Descartar borrador
+        </Button>
       )}
       {orden.estado === "pendiente_aprobacion" && (
         <>
@@ -170,6 +199,31 @@ export default function ProvOrdenDetallePage() {
             <Button variant="outline" size="sm" onClick={() => setAvisoBc(null)}>Entendido</Button>
           </div>
         ) : null} />
+
+      {descartando && (
+        <Modal title={`Descartar ${numeroOrden(orden)}`} onClose={() => setDescartando(false)} footer={
+          <>
+            <Button variant="outline" onClick={() => setDescartando(false)} disabled={procesando}>Cancelar</Button>
+            <Button variant="red" onClick={() => void confirmarDescarte()} disabled={procesando}>
+              {procesando ? "Descartando…" : "Descartar borrador"}
+            </Button>
+          </>
+        }>
+          <p className="ds-body-sm" style={{ marginTop: 0 }}>
+            Esta orden se arma sobre material de una solicitud, y mientras exista ese material figura como
+            <span className="ds-strong"> ya ordenado</span>. Al descartarla vuelve a quedar
+            <span className="ds-strong"> pendiente en la solicitud</span>: se puede volver a ordenar (a otro proveedor, por ejemplo)
+            o devolvérselo al ingeniero.
+          </p>
+          <p className="ds-body-sm ds-muted">
+            La orden desaparece del listado y queda el registro en el historial. No existe en Business Central, así que allá no hay nada que deshacer.
+          </p>
+          <Field label="Motivo (opcional)" help="Queda en el historial: dentro de un mes explica por qué se descartó.">
+            <Textarea rows={2} value={motivoDescarte} maxLength={200}
+              onChange={(e) => setMotivoDescarte(e.target.value)} placeholder="Ej. se armó con el proveedor equivocado" />
+          </Field>
+        </Modal>
+      )}
 
       {cerrando && (
         <Modal title={`Cerrar ${numeroOrden(orden)}`} onClose={() => setCerrando(false)} footer={

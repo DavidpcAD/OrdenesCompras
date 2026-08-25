@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getOrden, setOrdenEstado, updateOrden, ordenTieneRecepciones, MSG_NO_REABRIR } from "@/lib/repo";
+import { getOrden, setOrdenEstado, updateOrden, descartarOrden, ordenTieneRecepciones, MSG_NO_REABRIR } from "@/lib/repo";
 import { bcReopenPedido, bcReplaceOrderLines, bcCrearPedidoAbierto, crearEnBcAlEnviar, lineasOrdenParaBc, obrasSinTarea, sanearObrasDeLineas, avisoDeSaneo } from "@/lib/bc";
 import { actor } from "@/lib/actor";
 
@@ -146,5 +146,23 @@ export async function PUT(req: Request, { params }: { params: { id: string } }) 
     return NextResponse.json({ ok: true, bcAviso });
   } catch (e: any) {
     return NextResponse.json({ error: String(e?.message ?? e) }, { status: 500 });
+  }
+}
+
+// DESCARTAR un borrador de orden: la orden se elimina (lógico) y el material vuelve
+// a quedar pendiente en la solicitud. Solo Abierta/Rechazada y SIN N.º de BC — las
+// condiciones las revalida el repo, que es el que sabe.
+export async function DELETE(req: Request, { params }: { params: { id: string } }) {
+  try {
+    const body = await req.json().catch(() => ({}));
+    const a = await actor(body);
+    const r = await descartarOrden(Number(params.id), String(body?.motivo ?? "").trim(), a.usuario, a.rol);
+    return NextResponse.json({ ok: true, ...r });
+  } catch (e: any) {
+    // Regla de negocio (estado que no corresponde, ya está en BC, tiene recepciones)
+    // → 409: la pantalla lo muestra tal cual y no parece que se cayó el servidor.
+    const msg = String(e?.message ?? e);
+    const negocio = /Business Central|recepciones|Solo se descarta|no encontrada/i.test(msg);
+    return NextResponse.json({ error: msg }, { status: negocio ? 409 : 500 });
   }
 }

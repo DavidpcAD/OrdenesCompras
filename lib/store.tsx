@@ -111,6 +111,9 @@ interface StoreShape {
   // `devolverSaldo` (default true) lo no recibido vuelve a las solicitudes para
   // poder comprarlo de nuevo; si no, esas unidades quedan consumidas para siempre.
   cerrarOrden: (id: string, motivo: string, devolverSaldo?: boolean) => Promise<{ pendienteDevuelto: number }>;
+  // Descartar un borrador de orden (Abierta y sin N.º de BC): la orden desaparece y
+  // su material vuelve a quedar pendiente en la solicitud.
+  descartarOrden: (id: string, motivo: string) => Promise<{ numero: string; saldoDevuelto: number }>;
   // Cierra la orden y arma una nueva (abierta) con lo que quedó pendiente.
   nuevaOrdenConPendiente: (id: string, motivo: string) => Promise<{ id: string; numero: string }>;
 
@@ -576,6 +579,37 @@ export function StoreProvider({ children, useApi }: { children: React.ReactNode;
     };
 
     // ---------------- CERRAR ORDEN / PASAR EL PENDIENTE ----------------
+    // Descartar el BORRADOR de una orden. Existe porque crear la orden ya consume el
+    // saldo de la solicitud: sin esto, una orden armada por error dejaba ese material
+    // "ordenado" para siempre (no se puede borrar, ni dejar sin líneas, y "Cerrar
+    // orden" es solo para las lanzadas) y tampoco se podía devolver al ingeniero.
+    const descartarOrden: StoreShape["descartarOrden"] = async (id, motivo) => {
+      if (USE_API) {
+        const r = await api.descartarOrden(id, { motivo, usuario: persona, rol: rolActual });
+        await refreshFromApi();
+        return { numero: String(r?.numero ?? ""), saldoDevuelto: Number(r?.saldoDevuelto ?? 0) };
+      }
+      let out = { numero: "", saldoDevuelto: 0 };
+      setData((d) => {
+        const o = d.ordenes.find((x) => x.id === id);
+        if (!o) return d;
+        out = {
+          numero: o.numero,
+          saldoDevuelto: o.lineas.filter((l) => l.tipo === "articulo").reduce((s, l) => s + l.cantidad, 0),
+        };
+        const mov = mkMov({ entidad: "orden", idEntidad: id, documentoNo: o.numero, tipoMovimiento: "eliminado",
+          estadoAnterior: o.estado, detalle: `Borrador descartado${motivo ? ` · Motivo: ${motivo}` : ""}` });
+        return {
+          ...d,
+          ordenes: d.ordenes.filter((x) => x.id !== id),
+          // El saldo vuelve a la solicitud: es la razón de ser de descartar.
+          pedidos: devolverPendienteAPedidos(d.pedidos, { ...o, lineas: o.lineas.map((l) => ({ ...l, cantidadRecibida: 0 })) }),
+          movimientos: [mov, ...d.movimientos],
+        };
+      });
+      return out;
+    };
+
     const cerrarOrden: StoreShape["cerrarOrden"] = async (id, motivo, devolverSaldo = true) => {
       if (USE_API) {
         const r = await api.cerrarOrden(id, { motivo, devolverSaldo, usuario: persona, rol: rolActual }) as { pendienteDevuelto?: number };
@@ -865,7 +899,7 @@ export function StoreProvider({ children, useApi }: { children: React.ReactNode;
       maquinas: seed.maquinas, almacenes: seed.almacenes,
       pedidos: data.pedidos, ordenes: data.ordenes, recepciones: data.recepciones, movimientos: data.movimientos,
       addPedido, editPedido, setPedidoEstado, deletePedido,
-      createOrden, updateOrden, setOrdenEstado, cerrarOrden, nuevaOrdenConPendiente, registrarRecepcion, guardarFotosRecepcion, facturarRecepcion, devolverPedido, devolverOrden, reset,
+      createOrden, updateOrden, setOrdenEstado, cerrarOrden, descartarOrden, nuevaOrdenConPendiente, registrarRecepcion, guardarFotosRecepcion, facturarRecepcion, devolverPedido, devolverOrden, reset,
       notasCredito, marcarNotasCredito, cargarNotasCredito, resolverNotaCredito,
       notificaciones: data.notificaciones, marcarNotifsLeidas, marcarNotifLeida,
       borrador, setBorrador,
