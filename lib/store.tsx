@@ -121,7 +121,9 @@ interface StoreShape {
   // MODO 2: registrar la factura de una recepción que quedó EN REVISIÓN (Kattya).
   facturarRecepcion: (recepcionId: string, numeroFactura: string) => Promise<void>;
 
-  devolverPedido: (id: string, motivo: string) => Promise<void>;
+  // Devuelve al ingeniero las LÍNEAS elegidas de una solicitud. El pedido entero
+  // pasa a "Devuelto" solo si no le queda ninguna línea viva (lo decide el server).
+  devolverPedido: (id: string, motivo: string, lineaIds: string[]) => Promise<{ devueltas: number; pedidoDevuelto: boolean }>;
   devolverOrden: (id: string, motivo: string) => Promise<void>;
 
   // Notas de crédito (Bodega): líneas de factura con problema para emitir NC.
@@ -761,25 +763,40 @@ export function StoreProvider({ children, useApi }: { children: React.ReactNode;
     };
 
     // ---------------- DEVOLVER PEDIDO AL INGENIERO ----------------
-    const devolverPedido: StoreShape["devolverPedido"] = async (id, motivo) => {
+    const devolverPedido: StoreShape["devolverPedido"] = async (id, motivo, lineaIds) => {
       if (USE_API) {
-        // Persistir el "devuelto" en el SQL compartido (antes solo cambiaba el
-        // estado local y el ingeniero en Producción nunca lo veía).
-        await api.patchPedidoEstado(id, { estado: "devuelto", usuario: persona, rol: rolActual, motivo });
+        // Persistir en el SQL compartido (antes solo cambiaba el estado local y el
+        // ingeniero en Producción nunca lo veía).
+        const r = await api.devolverLineasPedido(id, { lineaIds, motivo, usuario: persona, rol: rolActual });
         await refreshFromApi();
-        return;
+        return { devueltas: Number(r?.devueltas ?? 0), pedidoDevuelto: !!r?.pedidoDevuelto };
       }
+      const ids = new Set(lineaIds);
+      let resultado = { devueltas: 0, pedidoDevuelto: false };
       setData((d) => {
         const prev = d.pedidos.find((p) => p.id === id);
-        const mov = mkMov({ entidad: "pedido", idEntidad: id, documentoNo: prev?.numero ?? "", tipoMovimiento: "devuelto", estadoAnterior: prev?.estado, estadoNuevo: "devuelto", detalle: motivo ? `Motivo: ${motivo}` : "Devuelto a Ingeniería" });
-        const notif = mkNotif("devuelto", `Tu solicitud ${prev?.numero ?? ""} fue devuelta${motivo ? `: ${motivo}` : ""}`, `/ingenieria/${id}`, "ingenieria");
+        if (!prev) return d;
+        // Misma regla que el server: con orden de compra hecha la línea no se devuelve.
+        const lineas = prev.lineas.map((l) => (ids.has(l.id) && l.cantidadOrdenada <= 0 ? { ...l, devuelta: true } : l));
+        const devueltas = lineas.filter((l, i) => l.devuelta && !prev.lineas[i].devuelta).length;
+        const todo = lineas.every((l) => l.devuelta);
+        resultado = { devueltas, pedidoDevuelto: todo };
+        const nombres = lineas.filter((l, i) => l.devuelta && !prev.lineas[i].devuelta).map((l) => l.descripcion);
+        const mov = mkMov({ entidad: "pedido", idEntidad: id, documentoNo: prev.numero, tipoMovimiento: "devuelto",
+          estadoAnterior: prev.estado, estadoNuevo: todo ? "devuelto" : prev.estado,
+          detalle: `${todo ? "Solicitud devuelta" : `Devuelta(s) ${nombres.length} línea(s): ${nombres.join("; ")}`}${motivo ? ` · Motivo: ${motivo}` : ""}` });
+        const notif = mkNotif("devuelto", `${todo ? "Tu solicitud" : `${nombres.length} línea(s) de tu solicitud`} ${prev.numero} volvió a Ingeniería${motivo ? `: ${motivo}` : ""}`, `/ingenieria/${id}`, "ingenieria");
         return {
           ...d,
-          pedidos: d.pedidos.map((p) => (p.id === id ? { ...p, estado: "devuelto" as Pedido["estado"], notas: motivo ? `↩ Devuelto: ${motivo}${p.notas ? ` · ${p.notas}` : ""}` : p.notas } : p)),
+          pedidos: d.pedidos.map((p) => (p.id === id ? {
+            ...p, lineas,
+            ...(todo ? { estado: "devuelto" as Pedido["estado"], notas: motivo ? `↩ Devuelto: ${motivo}${p.notas ? ` · ${p.notas}` : ""}` : p.notas } : {}),
+          } : p)),
           movimientos: [mov, ...d.movimientos],
           notificaciones: [notif, ...d.notificaciones],
         };
       });
+      return resultado;
     };
 
     // ---------------- DEVOLVER / DENEGAR ORDEN A PROVEEDURÍA ----------------

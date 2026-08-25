@@ -175,7 +175,26 @@ export function destinoDeRecepcion(
 }
 
 export function pedidoLineaPendiente(l: PedidoLinea): number {
+  // Una línea devuelta al ingeniero está BLOQUEADA: aunque le quede cantidad sin
+  // ordenar, ya no se compra. Cortarlo acá la saca de una sola vez de todos lados
+  // (materiales por línea, "+ De solicitudes", crear OC, saldo del pedido).
+  if (l.devuelta) return 0;
   return Math.max(0, l.cantidad - l.cantidadOrdenada);
+}
+
+// ¿Se puede devolver esta línea al ingeniero? Solo lo que Proveeduría todavía no
+// comprometió: con orden de compra hecha, el material ya está pedido al proveedor
+// y devolver la línea dejaría a Ingeniería creyendo que no se compró.
+export function puedeDevolverLinea(l: PedidoLinea): boolean {
+  return !l.devuelta && (l.cantidadOrdenada ?? 0) <= 0;
+}
+
+// Motivo por el que una línea NO se puede devolver (para decirlo en la pantalla en
+// vez de dejar la casilla apagada sin explicación).
+export function motivoNoDevolver(l: PedidoLinea): string {
+  if (l.devuelta) return "ya está devuelta";
+  if ((l.cantidadOrdenada ?? 0) > 0) return "ya tiene orden de compra";
+  return "";
 }
 
 export function pedidoTieneSaldo(p: Pedido): boolean {

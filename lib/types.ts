@@ -102,6 +102,10 @@ export interface PedidoLinea {
   taskNo?: string;          // tarea de la obra (Job Task No.) — solo consumo directo
   taskDescr?: string;       // descripción de la tarea ("2.2 — Enchapes"), para mostrar
   cantidadOrdenada: number; // cuánto de esta línea ya pasó a una orden
+  // Proveeduría devolvió ESTA línea al ingeniero (dbo.PedidoCompraDet.idEstado =
+  // Devuelto). Queda bloqueada: no se puede ordenar ni volver a devolver, y su
+  // pendiente cuenta como 0. Una línea que ya tiene orden de compra NO se devuelve.
+  devuelta?: boolean;
   notas?: string;
 }
 

@@ -14,6 +14,7 @@ import {
   destinoLabel, destinoCodigo, ordenLineaPendiente, ordenLineaCompleta, ultimoPrecioProveedor,
   ordenPendienteResumen, devolverPendienteAPedidos, proveedorLabel,
   numeroOrden, etiquetaInterna, tieneBc, esConsumoDirecto, obraParaOrden, destinoDeRecepcion,
+  puedeDevolverLinea, motivoNoDevolver,
 } from "./helpers.ts";
 import type { Orden, OrdenLinea, Pedido, PedidoLinea } from "./types.ts";
 
@@ -439,4 +440,31 @@ test("destinoDeRecepcion: una línea sin recibir no cuenta", () => {
   const orden = { lineas: [{ id: "l1", tipo: "articulo", almacen: "ALM-GRAL" }] as any };
   assert.deepEqual(destinoDeRecepcion({ lineas: [{ ordenLineaId: "l1", cantidadRecibida: 0 }] }, orden),
     { obras: [], almacenes: [] });
+});
+
+// ---- devolución POR LÍNEA al ingeniero ------------------------------------------
+// Lo que Proveeduría ya convirtió en orden de compra NO se devuelve: ese material
+// ya se le pidió al proveedor y devolverlo dejaría a Ingeniería creyendo que no.
+const lineaPed = (p: Partial<PedidoLinea> = {}): PedidoLinea => ({
+  id: "pl1", articuloId: "M01-0001", descripcion: "CEMENTO", cantidad: 10, unidad: "UND",
+  almacen: "ALM-GRAL", cantidadOrdenada: 0, ...p,
+});
+
+test("puedeDevolverLinea: solo lo que no tiene orden y no está devuelto", () => {
+  assert.equal(puedeDevolverLinea(lineaPed()), true);
+  assert.equal(puedeDevolverLinea(lineaPed({ cantidadOrdenada: 4 })), false);
+  assert.equal(puedeDevolverLinea(lineaPed({ devuelta: true })), false);
+});
+
+test("motivoNoDevolver: dice por qué la casilla está apagada", () => {
+  assert.equal(motivoNoDevolver(lineaPed()), "");
+  assert.match(motivoNoDevolver(lineaPed({ cantidadOrdenada: 1 })), /orden de compra/);
+  assert.match(motivoNoDevolver(lineaPed({ devuelta: true })), /devuelta/);
+});
+
+// La línea devuelta queda BLOQUEADA: sin pendiente, desaparece de "materiales por
+// línea", de "+ De solicitudes" y del saldo del pedido.
+test("una línea devuelta no tiene pendiente aunque le sobre cantidad", () => {
+  assert.equal(pedidoLineaPendiente(lineaPed({ cantidad: 10, cantidadOrdenada: 0 })), 10);
+  assert.equal(pedidoLineaPendiente(lineaPed({ cantidad: 10, cantidadOrdenada: 0, devuelta: true })), 0);
 });

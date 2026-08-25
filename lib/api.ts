@@ -57,6 +57,10 @@ export const api = {
   getPedido: (id: string): Promise<Pedido> => fetch(`/api/pedidos/${id}`).then(jsonOrThrow),
   patchPedidoEstado: (id: string, body: unknown) =>
     fetch(`/api/pedidos/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }).then(jsonOrThrow),
+  // Devolver LÍNEAS de una solicitud al ingeniero (o todas: el server decide si el
+  // pedido entero queda "Devuelto").
+  devolverLineasPedido: (id: string, body: unknown): Promise<{ devueltas: number; pedidoDevuelto: boolean; nombres: string[] }> =>
+    fetch(`/api/pedidos/${id}/devolver`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }).then(jsonOrThrow),
   putPedido: (id: string, body: unknown) =>
     fetch(`/api/pedidos/${id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }).then(jsonOrThrow),
   deletePedido: (id: string, body: unknown) =>

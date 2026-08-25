@@ -2,12 +2,12 @@
 
 import { useParams, useRouter } from "next/navigation";
 import { useState } from "react";
-import { Badge, Button, Card, EmptyState, Modal, Textarea, useToast, QtyRing, Skeleton } from "@/components/ui";
+import { Badge, Button, Card, Checkbox, EmptyState, Modal, Textarea, useToast, QtyRing, Skeleton } from "@/components/ui";
 import { IconWarning } from "@/components/icons";
 import { Timeline } from "@/components/timeline";
 import { useStore } from "@/lib/store";
 import { useVolver } from "@/lib/use-volver";
-import { formatDate, num, pedidoBadge, pedidoLineaPendiente, recibidoDeLineaPedido, destinoCodigo, destinoLabel, tipoSolicitudBadge, esConsumoDirecto } from "@/lib/helpers";
+import { formatDate, num, pedidoBadge, pedidoLineaPendiente, recibidoDeLineaPedido, destinoCodigo, destinoLabel, tipoSolicitudBadge, esConsumoDirecto, puedeDevolverLinea, motivoNoDevolver } from "@/lib/helpers";
 
 export default function ProveeduriaPedidoDetallePage() {
   const { id } = useParams<{ id: string }>();
@@ -19,6 +19,9 @@ export default function ProveeduriaPedidoDetallePage() {
   const [devolverOpen, setDevolverOpen] = useState(false);
   const [motivo, setMotivo] = useState("");
   const [devolviendo, setDevolviendo] = useState(false);
+  // Líneas marcadas para devolver. La devolución es POR LÍNEA: lo que ya tiene orden
+  // de compra no se puede devolver (el material ya se le pidió al proveedor).
+  const [sel, setSel] = useState<Record<string, boolean>>({});
 
   const pedido = pedidos.find((p) => p.id === id);
   if (!pedido) {
@@ -38,6 +41,8 @@ export default function ProveeduriaPedidoDetallePage() {
   const rec = pedido.lineas.reduce((s, l) => s + recibidoDeLineaPedido(ordenes, l.id), 0);
   const pct = total > 0 ? Math.round(Math.min(100, (rec / total) * 100)) : 0;
   const hayPendiente = pedido.lineas.some((l) => pedidoLineaPendiente(l) > 0);
+  // Lo que se puede mandar de vuelta: solo líneas sin orden de compra y sin devolver.
+  const devolvibles = pedido.lineas.filter(puedeDevolverLinea);
 
   function crearOC() {
     const lineas = pedido!.lineas
@@ -47,19 +52,35 @@ export default function ProveeduriaPedidoDetallePage() {
     setBorrador(lineas);
     router.push("/proveeduria/nueva");
   }
+  // Abrir el diálogo con TODO lo devolvible ya marcado: el caso normal sigue siendo
+  // "devolver el pedido entero", y quien quiera devolver una sola línea desmarca.
+  function abrirDevolver() {
+    setSel(Object.fromEntries(devolvibles.map((l) => [l.id, true])));
+    setMotivo("");
+    setDevolverOpen(true);
+  }
+  const elegidas = devolvibles.filter((l) => sel[l.id]);
+
   // Si el servidor falla, avisarlo y dejar el modal abierto con el motivo escrito
   // (antes la promesa se rechazaba sin manejar: no pasaba nada visible).
   async function confirmarDevolver() {
+    if (!elegidas.length) { toast("Marcá al menos una línea para devolver.", "error"); return; }
     if (!motivo.trim()) { toast("Escribí el motivo de la devolución.", "error"); return; }
     if (devolviendo) return;
     setDevolviendo(true);
     try {
-      await devolverPedido(pedido!.id, motivo.trim());
-      toast(`${pedido!.numero} devuelto a Ingeniería.`, "info");
+      const r = await devolverPedido(pedido!.id, motivo.trim(), elegidas.map((l) => l.id));
       setDevolverOpen(false);
-      router.push("/proveeduria/solicitudes");
+      if (r.pedidoDevuelto) {
+        toast(`${pedido!.numero} devuelto a Ingeniería.`, "info");
+        router.push("/proveeduria/solicitudes");
+      } else {
+        // El pedido sigue vivo con el resto de las líneas: no se sale de la pantalla,
+        // así se ve cómo quedaron marcadas.
+        toast(`${r.devueltas} línea(s) devuelta(s) al ingeniero · ${pedido!.numero} sigue abierta con el resto.`, "info");
+      }
     } catch (e: any) {
-      toast(`No se pudo devolver la solicitud: ${String(e?.message ?? e)}`, "error");
+      toast(`No se pudo devolver: ${String(e?.message ?? e)}`, "error");
     } finally {
       setDevolviendo(false);
     }
@@ -86,7 +107,12 @@ export default function ProveeduriaPedidoDetallePage() {
             <a className="ds-btn ds-btn--white" href={`/api/pedidos/${pedido.id}/pdf`}
               title="Baja la solicitud en PDF con las columnas de precio en blanco, para mandarla a cotizar"
               style={{ textDecoration: "none" }}>⬇ PDF para cotizar</a>
-            <Button variant="red" onClick={() => setDevolverOpen(true)}>Devolver al ingeniero</Button>
+            <Button variant="red" disabled={!devolvibles.length} onClick={abrirDevolver}
+              title={devolvibles.length
+                ? "Devolver al ingeniero las líneas que todavía no tienen orden de compra"
+                : "No queda nada por devolver: todas las líneas ya tienen orden de compra o ya se devolvieron"}>
+              Devolver al ingeniero{devolvibles.length && devolvibles.length < pedido.lineas.length ? ` (${devolvibles.length})` : ""}
+            </Button>
             <Button onClick={crearOC} disabled={!hayPendiente}>Crear orden de compra →</Button>
           </div>
         </div>
@@ -104,8 +130,13 @@ export default function ProveeduriaPedidoDetallePage() {
               <thead><tr><th>Artículo</th><th>Destino</th><th className="ds-num">Solicitado</th><th className="ds-num">Ordenado</th><th className="ds-num">Pendiente</th></tr></thead>
               <tbody>
                 {pedido.lineas.map((l) => (
-                  <tr key={l.id}>
-                    <td><div className="ds-clamp-2" title={l.descripcion} style={{ maxWidth: 420, minWidth: 240 }}>{l.descripcion}</div></td>
+                  <tr key={l.id} style={l.devuelta ? { opacity: 0.6 } : undefined}>
+                    <td>
+                      <div className="ds-clamp-2" title={l.descripcion} style={{ maxWidth: 420, minWidth: 240 }}>{l.descripcion}</div>
+                      {/* Devuelta = bloqueada: no se puede ordenar ni volver a
+                          devolver. El motivo queda en el historial de abajo. */}
+                      {l.devuelta && <Badge tone="yellow">↩ Devuelta al ingeniero</Badge>}
+                    </td>
                     <td className="ds-muted ds-body-sm">
                       {l.almacen || "—"}
                       {/* La TAREA es lo que marca el consumo directo (así lo etiqueta
@@ -133,10 +164,41 @@ export default function ProveeduriaPedidoDetallePage() {
       </main>
 
       {devolverOpen && (
-        <Modal title={`Devolver ${pedido.numero} a Ingeniería`} onClose={() => setDevolverOpen(false)}
-          footer={<><Button variant="outline" disabled={devolviendo} onClick={() => setDevolverOpen(false)}>Cancelar</Button><Button variant="red" disabled={devolviendo} onClick={confirmarDevolver}>{devolviendo ? "Devolviendo…" : "Devolver"}</Button></>}>
-          <p className="ds-muted ds-body-sm" style={{ marginTop: 0 }}>Indicá qué debe corregir el ingeniero. Le llega una notificación y el pedido queda en estado “Devuelto”.</p>
-          <Textarea value={motivo} onChange={(e) => setMotivo(e.target.value)} placeholder="Motivo de la devolución…" rows={4} style={{ width: "100%" }} />
+        <Modal wide title={`Devolver material de ${pedido.numero} a Ingeniería`} onClose={() => setDevolverOpen(false)}
+          footer={<>
+            <Button variant="outline" disabled={devolviendo} onClick={() => setDevolverOpen(false)}>Cancelar</Button>
+            <Button variant="red" disabled={devolviendo || !elegidas.length} onClick={confirmarDevolver}>
+              {devolviendo ? "Devolviendo…" : `Devolver ${elegidas.length} línea(s)`}
+            </Button>
+          </>}>
+          <p className="ds-muted ds-body-sm" style={{ marginTop: 0 }}>
+            Marcá qué materiales vuelven al ingeniero. Los que <span className="ds-strong">ya tienen orden de compra</span> no se
+            pueden devolver: ese material ya se le pidió al proveedor. Si vuelve TODO el pedido, queda en estado “Devuelto”;
+            si vuelve solo una parte, la solicitud sigue viva con el resto y esas líneas quedan bloqueadas.
+          </p>
+          <div className="ds-table-wrap" style={{ boxShadow: "none", marginBottom: 16 }}>
+            <table className="ds-table">
+              <thead><tr><th style={{ width: 40 }}></th><th>Artículo</th><th className="ds-num">Cantidad</th><th>Estado</th></tr></thead>
+              <tbody>
+                {pedido.lineas.map((l) => {
+                  const bloqueo = motivoNoDevolver(l);
+                  return (
+                    <tr key={l.id} style={bloqueo ? { opacity: 0.6 } : undefined}>
+                      <td>
+                        <Checkbox checked={!!sel[l.id]} disabled={!!bloqueo}
+                          aria-label={`Devolver ${l.descripcion}`}
+                          onChange={(e) => setSel((m) => ({ ...m, [l.id]: e.target.checked }))} />
+                      </td>
+                      <td><div className="ds-clamp-2" style={{ maxWidth: 360, minWidth: 200 }}>{l.descripcion}</div></td>
+                      <td className="ds-num">{num.format(l.cantidad)} {l.unidad}</td>
+                      <td className="ds-body-sm ds-muted">{bloqueo || "se puede devolver"}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+          <Textarea value={motivo} onChange={(e) => setMotivo(e.target.value)} placeholder="Motivo de la devolución…" rows={3} style={{ width: "100%" }} />
         </Modal>
       )}
     </>

@@ -167,6 +167,10 @@ function mapPedido(p: any, lineas: any[], unidades: Record<string, UnidadCompraI
       // La tarea es la que marca el CONSUMO DIRECTO (ver esConsumoDirecto).
       proyecto: l.obra ?? undefined, taskNo: l.taskNo ?? undefined, taskDescr: l.taskDescr ?? undefined,
       cantidadOrdenada: Number(l.quantityOrdenado ?? 0), notas: l.notaCreador ?? undefined,
+      // Devolución POR LÍNEA: vive en dbo.PedidoCompraDet.idEstado (la columna ya
+      // existía sin usarse). Así Proveeduría devuelve una línea suelta sin tumbar
+      // el pedido entero, que es lo único que se podía hacer antes.
+      devuelta: codigoDeId(l.idEstado) === "devuelto" || undefined,
     })),
   };
 }
@@ -305,6 +309,102 @@ export async function setPedidoEstado(id: number, estado: string, usuario: strin
   const tx = new sql.Transaction(pool); await tx.begin();
   await logMov(tx, { entidad: "pedido", idEntidad: id, documentoNo: prev.recordset[0]?.pedidoNo ?? "", tipoMovimiento: estado, estadoAnterior: codigoDeId(prev.recordset[0]?.idEstado), estadoNuevo: estado, detalle: motivo ? `Motivo: ${motivo}` : undefined, usuario, rol });
   await tx.commit();
+}
+
+// ¿La línea de pedido puede llevar estado propio? La columna `idEstado` de
+// dbo.PedidoCompraDet ya existe (la tabla la comparte la app de Producción y la
+// trae desde su creación), pero se comprueba igual: si algún día no está, la
+// devolución por línea avisa en vez de fallar con un error de SQL ilegible.
+let lineaEstadoLista: boolean | null = null;
+async function ensureLineaEstado(): Promise<boolean> {
+  if (lineaEstadoLista !== null) return lineaEstadoLista;
+  try {
+    const pool = await getPool();
+    const r = await pool.request().query("SELECT COL_LENGTH('dbo.PedidoCompraDet','idEstado') AS a");
+    lineaEstadoLista = r.recordset[0]?.a != null;
+  } catch { lineaEstadoLista = false; }
+  return lineaEstadoLista;
+}
+
+export const MSG_LINEA_ORDENADA = "Esa línea ya tiene orden de compra: no se puede devolver.";
+
+// Devuelve al ingeniero las LÍNEAS elegidas de una solicitud (no el pedido entero).
+//
+// Reglas, y el porqué:
+//  · Solo se devuelve lo que Proveeduría todavía no comprometió. Con orden de compra
+//    hecha el material ya se le pidió al proveedor; devolver esa línea dejaría a
+//    Ingeniería creyendo que no se compró.
+//  · La línea devuelta queda BLOQUEADA (idEstado = Devuelto): no se puede ordenar ni
+//    devolver otra vez.
+//  · El pedido ENTERO pasa a "Devuelto" solo si TODAS sus líneas quedaron devueltas.
+//    Si alguna ya tiene orden, el pedido sigue su curso con las demás.
+export async function devolverLineasPedido(
+  idPedido: number, lineaIds: number[], motivo: string, usuario: string, rol: Role,
+): Promise<{ devueltas: number; pedidoDevuelto: boolean; nombres: string[] }> {
+  if (!lineaIds?.length) throw new Error("No se eligió ninguna línea para devolver.");
+  if (!(await ensureLineaEstado())) throw new Error("La base todavía no tiene la columna dbo.PedidoCompraDet.idEstado, que es donde se marca la línea devuelta.");
+  await ensureEstados();
+  const pool = await getPool();
+  const idDevuelto = await idDeEstado("devuelto");
+
+  const cab = await pool.request().input("id", sql.Int, idPedido)
+    .query("SELECT pedidoNo, idEstado, notaCreador FROM dbo.PedidoCompra WHERE idPedidoCompra=@id AND esEliminada=0");
+  if (!cab.recordset.length) throw new Error("La solicitud no existe.");
+  const pedidoNo = cab.recordset[0].pedidoNo ?? "";
+
+  const det = await pool.request().input("id", sql.Int, idPedido)
+    .query("SELECT idPedidoCompraDet, descripcion, itemNo, idEstado, quantitySolicitado, quantityOrdenado FROM dbo.PedidoCompraDet WHERE idPedidoCompra=@id");
+  const porId = new Map<number, any>(det.recordset.map((l: any) => [l.idPedidoCompraDet as number, l]));
+
+  const aDevolver: any[] = [];
+  for (const lid of lineaIds) {
+    const l = porId.get(Number(lid));
+    if (!l) throw new Error(`La línea ${lid} no es de esta solicitud.`);
+    if (Number(l.quantityOrdenado ?? 0) > 0) throw new Error(`${l.descripcion || l.itemNo || `Línea ${lid}`}: ${MSG_LINEA_ORDENADA}`);
+    if (l.idEstado === idDevuelto) continue;   // ya devuelta: no se repite ni se duplica el movimiento
+    aDevolver.push(l);
+  }
+  if (!aDevolver.length) return { devueltas: 0, pedidoDevuelto: false, nombres: [] };
+
+  // Con TODAS las líneas devueltas, el pedido entero se va de vuelta: así aparece en
+  // la bandeja de Devoluciones del ingeniero, igual que la devolución de siempre.
+  const devueltasIds = new Set<number>([...det.recordset.filter((l: any) => l.idEstado === idDevuelto).map((l: any) => l.idPedidoCompraDet), ...aDevolver.map((l) => l.idPedidoCompraDet)]);
+  const pedidoDevuelto = det.recordset.every((l: any) => devueltasIds.has(l.idPedidoCompraDet));
+  const nombres = aDevolver.map((l) => String(l.descripcion || l.itemNo || `Línea ${l.idPedidoCompraDet}`));
+
+  const tx = new sql.Transaction(pool); await tx.begin();
+  try {
+    for (const l of aDevolver) {
+      await new sql.Request(tx)
+        .input("id", sql.Int, l.idPedidoCompraDet).input("e", sql.Int, idDevuelto).input("u", sql.NVarChar(100), usuario)
+        .query("UPDATE dbo.PedidoCompraDet SET idEstado=@e, fechaModificacion=getdate(), modificadoPor=@u WHERE idPedidoCompraDet=@id");
+    }
+    // La nota del pedido se toca SIEMPRE, no solo cuando vuelve entero: es el único
+    // canal que la app de Producción ya muestra hoy (la bandeja de Devoluciones y el
+    // detalle del ingeniero la leen de ahí). Sin esto, una devolución parcial no la
+    // ve nadie del otro lado hasta que esa app lea el estado por línea.
+    const prevNota = cab.recordset[0]?.notaCreador ?? "";
+    const encabezado = pedidoDevuelto ? `↩ Devuelto: ${motivo}` : `↩ Devuelta(s): ${nombres.join("; ")} — ${motivo}`;
+    const nota = `${encabezado}${prevNota ? ` · ${prevNota}` : ""}`.slice(0, 500);
+    const reqCab = new sql.Request(tx)
+      .input("id", sql.Int, idPedido).input("u", sql.NVarChar(100), usuario)
+      .input("nota", sql.NVarChar(500), nota);
+    let setEstado = "";
+    if (pedidoDevuelto) { reqCab.input("e", sql.Int, idDevuelto); setEstado = "idEstado=@e, "; }
+    await reqCab.query(`UPDATE dbo.PedidoCompra SET ${setEstado}notaCreador=@nota, fechaModificacion=getdate(), modificadoPor=@u WHERE idPedidoCompra=@id`);
+    // Un solo movimiento con los nombres: el historial tiene que decir QUÉ se
+    // devolvió, no solo que hubo una devolución.
+    await logMov(tx, {
+      entidad: "pedido", idEntidad: idPedido, documentoNo: pedidoNo,
+      tipoMovimiento: "devuelto",
+      estadoAnterior: codigoDeId(cab.recordset[0]?.idEstado),
+      estadoNuevo: pedidoDevuelto ? "devuelto" : codigoDeId(cab.recordset[0]?.idEstado),
+      detalle: `${pedidoDevuelto ? "Solicitud devuelta" : `Devuelta(s) ${nombres.length} línea(s): ${nombres.join("; ")}`}${motivo ? ` · Motivo: ${motivo}` : ""}`,
+      usuario, rol,
+    });
+    await tx.commit();
+  } catch (e) { await tx.rollback(); throw e; }
+  return { devueltas: aDevolver.length, pedidoDevuelto, nombres };
 }
 
 export async function softDeletePedido(id: number, usuario: string, rol: Role) {

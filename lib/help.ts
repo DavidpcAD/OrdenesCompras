@@ -70,6 +70,11 @@ const SOLICITUD_DET: HelpEntry = {
     "Revisá las líneas y cantidades solicitadas.",
     "¿Necesitás precios antes de comprar? \"⬇ PDF para cotizar\" baja la lista de materiales con las columnas de precio en blanco: se la mandás al proveedor y él la llena.",
     "Si vas a comprar, avanzá la solicitud a una orden de compra desde acá.",
+    "¿Hay material que el ingeniero tiene que corregir? “Devolver al ingeniero” abre la lista y devolvés SOLO las líneas que marques (o todas). Lo que ya tiene orden de compra no se puede devolver: ese material ya se le pidió al proveedor.",
+  ],
+  tips: [
+    "Una línea devuelta queda bloqueada: no aparece más en materiales por ordenar ni se le puede hacer orden de compra. El motivo queda en el historial.",
+    "Si devolvés TODAS las líneas, la solicitud entera pasa a “Devuelta”; si devolvés solo una parte, la solicitud sigue viva con el resto.",
   ],
 };
 const ORDENES: HelpEntry = {
