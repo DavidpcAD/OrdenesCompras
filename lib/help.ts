@@ -240,14 +240,16 @@ const RECIBIR: HelpEntry = {
   ],
   pasos: [
     "Contá el material y anotá la cantidad que entró en cada línea (en el celular, el campo de cada tarjeta; en la computadora, la columna “A recibir”). Si llegó todo, usá “Recibir todo”.",
-    "Si una línea llegó dañada, con menos cantidad o a otro precio, marcala para nota de crédito (en el celular por el menú ⋮ de la tarjeta; en la computadora por el ⚠ de la fila) y elegí el motivo: eso le queda a Contabilidad.",
+    "Si una línea llegó dañada, con menos cantidad, a otro precio o llegó otro material, marcala para nota de crédito (en el celular por el menú ⋮ de la tarjeta; en la computadora por el ⚠ de la fila) y elegí el motivo: eso le queda a Contabilidad.",
     "Si la factura trae un flete o cargo extra, marcá “Esta factura trae un cargo de producto adicional” y describilo: le avisamos a Contabilidad para que lo agregue. Vos recibís y registrás igual.",
-    "Revisá el Subtotal / IVA / Total de abajo.",
+    "Revisá el Subtotal / IVA / Total de abajo. Cada línea muestra su importe según la cantidad que anotaste.",
+    "Antes de registrar, en “Foto de la factura” podés adjuntar la foto de la factura física: se guarda con la recepción y después la ves en Recibidas.",
     "Si la factura está bien → “Registrar factura” y escribí el N.º de factura del proveedor.",
     "Si el material está bien pero la factura tiene un problema → “Recibir sin factura (a revisión)”: Contabilidad la registra después.",
   ],
   tips: [
     "Podés recibir parcial: registrás lo que llegó y la orden queda abierta para el resto.",
+    "La foto se comprime en el teléfono antes de subirla: no consume datos ni llena la base.",
     "Usá “Vista previa” para revisar antes de registrar en BC (en la computadora).",
   ],
 };
@@ -260,14 +262,18 @@ const RECIBIDAS: HelpEntry = {
   ],
   pasos: [
     "Mirá la tarjeta: N.º de orden, proveedor, fecha, quién recibió, total y estado.",
-    "Tocá “Ver líneas” para el detalle tal cual viaja a BC: artículo, cantidad, precio unitario, IVA e importe.",
+    "Tocá “Ver factura y líneas” para el detalle tal cual viaja a BC: artículo, cantidad, precio unitario, IVA e importe.",
+    "Si la recepción trae foto de la factura (etiqueta “Con foto”), tocá la miniatura para verla grande; “Abrir imagen” la deja en otra pestaña para hacer zoom.",
     "Al final de las líneas ves el Subtotal, IVA y Total de la factura.",
   ],
 };
 const RECEPCION_DET: HelpEntry = {
   titulo: "Detalle de la recepción",
   resumen: "Las líneas recibidas en una factura puntual.",
-  detalle: ["Ves qué artículos y cantidades entraron en esta factura/recepción específica."],
+  detalle: [
+    "Ves qué artículos y cantidades entraron en esta factura/recepción específica.",
+    "Si Bodega adjuntó la foto de la factura física, aparece abajo de las líneas.",
+  ],
 };
 const ORDEN_VER: HelpEntry = {
   titulo: "Ver orden",
@@ -280,7 +286,7 @@ const NOTAS_CREDITO: HelpEntry = {
   titulo: "Notas de crédito",
   resumen: "Líneas de facturas con problema para cobrar al proveedor.",
   detalle: [
-    "Acá llegan las líneas que Bodega marcó al recibir por dañado, menos cantidad o precio distinto.",
+    "Acá llegan las líneas que Bodega marcó al recibir por dañado, menos cantidad, precio distinto o material distinto (llegó otro artículo).",
     "Cada una indica el motivo, la cantidad y el monto.",
   ],
   pasos: [

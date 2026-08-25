@@ -77,6 +77,12 @@ export const api = {
   createRecepcion: (body: unknown): Promise<{ idRecepcionCompra: number }> =>
     fetch("/api/recepciones", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }).then(jsonOrThrow),
 
+  // Foto(s) de la factura física de una recepción ya registrada. Van aparte del
+  // POST de la recepción a propósito: ese request ya carga con BC + SQL y una
+  // foto que falle no debe tumbar el registro del material.
+  addFotosRecepcion: (id: string, body: unknown): Promise<{ guardadas: number }> =>
+    fetch(`/api/recepciones/${id}/foto`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }).then(jsonOrThrow),
+
   // MODO 2: registrar la factura de una recepción que estaba en revisión.
   setRecepcionFactura: (id: string, body: unknown): Promise<{ ok: true }> =>
     fetch(`/api/recepciones/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }).then(jsonOrThrow),

@@ -1636,6 +1636,11 @@ button.ana-kpi:active { transform: translateY(1px); }
 .recv-card__row2 { display: flex; align-items: center; justify-content: space-between; gap: var(--ds-space-3); }
 .recv-card__price { min-width: 0; font-size: var(--ds-font-size-body-sm); color: var(--ds-color-gray-400); }
 .recv-card__price b { color: var(--ds-text); font-weight: var(--ds-font-weight-semibold); }
+/* Importe de la línea (cantidad × precio, sin IVA) sobre el desglose de la
+   cuenta: el monto manda y el "3 UND × ₡8 380,00 c/u" queda de apoyo. */
+.recv-card__money { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.recv-card__linetot { font-size: var(--ds-font-size-subtitle); font-weight: var(--ds-font-weight-semibold); color: var(--ds-text); line-height: 1.2; }
+.recv-card__linetot.is-zero { color: var(--ds-color-gray-400); }
 
 /* Campo de cantidad (pastilla): el usuario escribe cuánto recibe. Por defecto
    trae lo pendiente y nunca deja poner más que la orden. Sin botones − / +. */
@@ -1667,6 +1672,39 @@ button.ana-kpi:active { transform: translateY(1px); }
 }
 .recv-nc-chip::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--ds-color-red-200); }
 .recv-nc-chip:hover { background: color-mix(in srgb, var(--ds-color-red-100) 20%, var(--ds-tint-base)); }
+
+/* Bloque de fotos dentro de la tarjeta desplegada de "Recibidas". */
+.rec-fotos { display: flex; flex-direction: column; gap: 6px; margin-bottom: var(--ds-space-3); }
+
+/* ── Foto de la factura (Bodega la saca con el celular al recibir) ─────────
+   Tira de miniaturas + imagen grande en modal. La miniatura es cuadrada y
+   recorta (object-fit: cover) para que N fotos se vean parejas. */
+.foto-strip { display: flex; flex-wrap: wrap; gap: var(--ds-space-2); }
+.foto-thumb {
+  width: 84px; height: 84px; padding: 0; overflow: hidden; flex-shrink: 0;
+  border: 1.5px solid var(--ds-color-gray-200); border-radius: var(--ds-radius-md);
+  background: var(--ds-tint-base); cursor: pointer;
+  transition: border-color .12s ease, transform .12s ease;
+}
+.foto-strip--compacto .foto-thumb { width: 64px; height: 64px; }
+.foto-thumb:hover { border-color: var(--ds-color-green-100); transform: translateY(-1px); }
+.foto-thumb:focus-visible { outline: 2px solid var(--ds-color-green-100); outline-offset: 2px; }
+.foto-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.foto-view__img { display: block; width: 100%; max-height: 68vh; object-fit: contain; border-radius: var(--ds-radius-md); background: var(--ds-tint-base); }
+/* Ficha de una foto elegida y todavía sin subir (pantalla de recibir): la
+   miniatura con su botón de quitar encima. */
+.foto-pick { position: relative; }
+/* El botón de quitar va DENTRO de la miniatura (esquina): afuera se montaba
+   sobre el botón "Agregar otra" cuando la fila se parte en dos en el celular. */
+.foto-pick__del {
+  position: absolute; top: 4px; right: 4px; width: 26px; height: 26px;
+  display: grid; place-items: center; border: 0; border-radius: 50%;
+  background: var(--ds-color-red-200); color: var(--ds-color-white);
+  font: inherit; font-size: 15px; line-height: 1; cursor: pointer;
+  box-shadow: var(--ds-shadow-02-soft);
+}
+.foto-pick__del:hover { filter: brightness(1.08); }
+@media (prefers-reduced-motion: reduce) { .foto-thumb:hover { transform: none; } }
 
 /* Progreso de recepción por línea (entregas parciales): barra apilada
    (verde = ya recibido antes · ámbar = lo que estás recibiendo ahora · gris =

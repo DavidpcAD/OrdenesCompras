@@ -12,10 +12,12 @@ const MOTIVO: Record<MotivoNC, { label: string; tone: string }> = {
   precio_distinto: { label: "Precio distinto", tone: "yellow" },
   menos_cantidad: { label: "Menos cantidad", tone: "yellow" },
   danado: { label: "Material dañado", tone: "red" },
+  material_distinto: { label: "Material distinto", tone: "red" },
 };
 
 // Notas de crédito (Bodega · Kattya): líneas de facturas recibidas marcadas con
-// problema (dañado / menos cantidad / precio distinto) para emitir una NC.
+// problema (dañado / menos cantidad / precio distinto / llegó otro material)
+// para emitir una NC.
 // Distinto de Devoluciones (que devuelve toda la OC/pedido).
 export default function NotasCreditoPage() {
   const { notasCredito, cargarNotasCredito, recepciones, resolverNotaCredito } = useStore();

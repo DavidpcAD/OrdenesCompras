@@ -1,13 +1,15 @@
 "use client";
 
 import { useParams, useRouter } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Badge, Button, Card, Checkbox, EmptyState, Field, Input, Modal, Select, Skeleton, Textarea, useToast } from "@/components/ui";
 import { IconWarning } from "@/components/icons";
 import { DateField } from "@/components/date-field";
 import { useStore } from "@/lib/store";
 import { useVolver } from "@/lib/use-volver";
 import { esNombreObraVacio, money, distribuirCargo, num, ordenBadge, ordenLineaPendiente, ordenRecibidoPct, todayISO, numeroOrden } from "@/lib/helpers";
+import { comprimirFoto, pesoLegible } from "@/lib/foto";
+import type { FotoComprimida } from "@/lib/foto";
 import type { MotivoNC, OrdenLinea } from "@/lib/types";
 
 // Resumen que se muestra al terminar de registrar ("cómo quedó en BC").
@@ -26,7 +28,12 @@ const MOTIVO_NC: { v: MotivoNC; label: string }[] = [
   { v: "precio_distinto", label: "Precio distinto" },
   { v: "menos_cantidad", label: "Menos cantidad" },
   { v: "danado", label: "Material dañado" },
+  // Llegó OTRO artículo (no el de la orden): se recibe y se marca para NC.
+  { v: "material_distinto", label: "Material distinto" },
 ];
+
+// Cuántas fotos de la factura se pueden adjuntar (igual que el límite de la API).
+const MAX_FOTOS = 4;
 
 export default function RegistrarFacturaPage() {
   const { id } = useParams<{ id: string }>();
@@ -34,7 +41,7 @@ export default function RegistrarFacturaPage() {
   // volver = pantalla anterior, con su filtro (el rótulo se ajusta solo)
   const { volver, etiqueta: volverTexto } = useVolver("/facturacion", "Volver a órdenes por recibir");
   const toast = useToast();
-  const { ordenes, pedidos, proveedores, recepciones, registrarRecepcion, marcarNotasCredito, role, cargando } = useStore();
+  const { ordenes, pedidos, proveedores, recepciones, registrarRecepcion, guardarFotosRecepcion, marcarNotasCredito, role, cargando } = useStore();
   // La vista se elige por ROL, no por ancho de pantalla: Contabilidad usa la TABLA
   // (escritorio); Bodega (Pedro) usa siempre las TARJETAS, porque todo lo de Bodega
   // es en tablet/celular.
@@ -114,6 +121,38 @@ export default function RegistrarFacturaPage() {
   const cargoAvisoPayload = () => avisarCargo && cargoAvisoDesc.trim()
     ? { nota: cargoAvisoDesc.trim(), monto: Number(cargoAvisoMonto) || undefined }
     : undefined;
+  // Foto de la factura física: se comprime en el navegador (lib/foto.ts) y se
+  // guarda con la recepción. Es respaldo para Contabilidad, no bloquea nada.
+  const [fotos, setFotos] = useState<FotoComprimida[]>([]);
+  const [fotoOcupado, setFotoOcupado] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
+  async function elegirFotos(files: FileList | null) {
+    if (!files?.length) return;
+    const libres = MAX_FOTOS - fotos.length;
+    if (libres <= 0) { toast(`Ya adjuntaste el máximo de ${MAX_FOTOS} fotos.`, "error"); return; }
+    setFotoOcupado(true);
+    try {
+      const nuevas: FotoComprimida[] = [];
+      for (const f of Array.from(files).slice(0, libres)) nuevas.push(await comprimirFoto(f));
+      setFotos((p) => [...p, ...nuevas]);
+    } catch (e: any) {
+      toast(String(e?.message ?? e), "error");
+    } finally {
+      setFotoOcupado(false);
+      if (fileRef.current) fileRef.current.value = "";   // permite volver a elegir el mismo archivo
+    }
+  }
+  // Sube las fotos de una recepción ya registrada. Nunca lanza: devuelve el
+  // texto que se le agrega al toast (la recepción ya quedó hecha).
+  async function subirFotos(recepcionId: string): Promise<string> {
+    if (!fotos.length) return "";
+    try {
+      const n = await guardarFotosRecepcion(recepcionId, fotos);
+      return n ? ` · ${n} foto(s) de la factura guardada(s)` : "";
+    } catch (e: any) {
+      return ` · OJO: la foto de la factura NO se guardó (${String(e?.message ?? e)})`;
+    }
+  }
 
   // ¿esta recepción completa toda la orden?
   const completaOrden = useMemo(() => {
@@ -310,11 +349,13 @@ export default function RegistrarFacturaPage() {
         setGuardando(false);
         return;
       }
-      await registrarRecepcion({
+      const rec = await registrarRecepcion({
         ordenId: orden!.id, numeroFactura: numeroFactura.trim(),
         fechaFactura, fechaRecepcion, fechaRegistro, total: totalFactura, lineas,
         cargoAviso: cargoAvisoPayload(),
       });
+      // Foto de la factura: va aparte y después (la recepción ya está hecha).
+      const avisoFoto = await subirFotos(rec.id);
       // Líneas marcadas → notas de crédito (no bloquea el registro).
       const nc = articulo.filter((l) => marcadas[l.id]).map((l) => ({ ordenLineaId: l.id, articuloNo: l.articuloId, descripcion: l.descripcion, motivo: marcadas[l.id].motivo, cantidad: Number(marcadas[l.id].cantidad) || 0, precioUnitario: Number(marcadas[l.id].precio) || 0, nota: marcadas[l.id].nota || undefined }));
       // No debe tumbar el registro (la factura ya viajó a BC), pero SÍ hay que
@@ -326,7 +367,7 @@ export default function RegistrarFacturaPage() {
         catch (e: any) { avisoNc = ` · OJO: no se pudieron guardar las ${nc.length} línea(s) marcadas para nota de crédito (${String(e?.message ?? e)}). Avisale a Contabilidad.`; }
       }
       const falloBc = aviso.includes("NO se pudo") || aviso.includes("no disponible");
-      toast(`Factura ${numeroFactura} registrada${completaOrden ? " — orden completada" : " (parcial)"}${aviso}${cargoAvisoPayload() ? " · se avisó a Contabilidad del cargo adicional" : ""}${avisoNc}`, falloBc || avisoNc ? "info" : "success");
+      toast(`Factura ${numeroFactura} registrada${completaOrden ? " — orden completada" : " (parcial)"}${aviso}${cargoAvisoPayload() ? " · se avisó a Contabilidad del cargo adicional" : ""}${avisoNc}${avisoFoto}`, falloBc || avisoNc || avisoFoto.includes("OJO") ? "info" : "success");
       if (bcOk) {
         // Mostramos el modal de inmediato (antes + facturado) y desbloqueamos; la
         // verificación del stock "después" en BC se consulta en segundo plano (no
@@ -400,11 +441,12 @@ export default function RegistrarFacturaPage() {
         setGuardando(false);
         return;
       }
-      await registrarRecepcion({
+      const rec = await registrarRecepcion({
         ordenId: orden!.id, numeroFactura: "", fechaFactura, fechaRecepcion, fechaRegistro,
         total: subtotalRecibido, lineas, facturaEnRevision: true,
         cargoAviso: cargoAvisoPayload(),
       });
+      const avisoFoto = await subirFotos(rec.id);
       const nc = articulo.filter((l) => marcadas[l.id]).map((l) => ({ ordenLineaId: l.id, articuloNo: l.articuloId, descripcion: l.descripcion, motivo: marcadas[l.id].motivo, cantidad: Number(marcadas[l.id].cantidad) || 0, precioUnitario: Number(marcadas[l.id].precio) || 0, nota: marcadas[l.id].nota || undefined }));
       // No debe tumbar el registro (la factura ya viajó a BC), pero SÍ hay que
       // avisar: si esto falla en silencio, Bodega marcó líneas para nota de crédito
@@ -415,7 +457,7 @@ export default function RegistrarFacturaPage() {
         catch (e: any) { avisoNc = ` · OJO: no se pudieron guardar las ${nc.length} línea(s) marcadas para nota de crédito (${String(e?.message ?? e)}). Avisale a Contabilidad.`; }
       }
       const falloBc = aviso.includes("NO se pudo") || aviso.includes("no disponible");
-      toast(`Material recibido — factura EN REVISIÓN${aviso}${cargoAvisoPayload() ? " · se avisó a Contabilidad del cargo adicional" : ""}${avisoNc}`, falloBc || avisoNc ? "info" : "success");
+      toast(`Material recibido — factura EN REVISIÓN${aviso}${cargoAvisoPayload() ? " · se avisó a Contabilidad del cargo adicional" : ""}${avisoNc}${avisoFoto}`, falloBc || avisoNc || avisoFoto.includes("OJO") ? "info" : "success");
       router.push(`/facturacion`);
     } catch (e: any) {
       toast(String(e?.message ?? e), "error");
@@ -576,6 +618,7 @@ export default function RegistrarFacturaPage() {
               const pctDone = total > 0 ? (recibidoAntes / total) * 100 : 0;
               const pctNow = total > 0 ? (Math.min(val, pend) / total) * 100 : 0;
               const faltanDespues = Math.max(0, pend - val);
+              const importeLinea = importeRecibir(l);
               return (
                 <div key={l.id} className={`recv-card ${marcada ? "is-nc" : full ? "is-full" : zero ? "is-zero" : ""}`}>
                   <div className="recv-card__row">
@@ -611,9 +654,21 @@ export default function RegistrarFacturaPage() {
                     </button>
                   )}
                   <div className="recv-card__row2">
-                    <span className="recv-card__price">
-                      <b>{money(l.precioUnitario, orden.currencyCode)}</b> c/u
-                    </span>
+                    {/* Importe de la línea: se recalcula con la cantidad que
+                        escribe Bodega (cantidad × precio, menos el descuento de
+                        la línea) — la misma cuenta que arma el subtotal de abajo.
+                        Antes solo se veía el precio unitario y había que hacer la
+                        multiplicación a mano contra la factura del proveedor. */}
+                    <div className="recv-card__money">
+                      <span className={`recv-card__linetot ${val > 0 ? "" : "is-zero"}`}
+                        title="Cantidad a recibir × precio (sin IVA)">
+                        {money(importeLinea, orden.currencyCode)}
+                      </span>
+                      <span className="recv-card__price">
+                        {num.format(val)}{l.unidad ? ` ${l.unidad}` : ""} × <b>{money(l.precioUnitario, orden.currencyCode)}</b> c/u
+                        {l.descuentoPct ? ` · −${l.descuentoPct}%` : ""}
+                      </span>
+                    </div>
                     <div className="qty-field">
                       <input className={`qty-input ${val > 0 && pend > 0 ? "is-active" : ""}`} type="number" inputMode="numeric" min={0} max={pend} value={recibir[l.id] ?? ""} disabled={pend <= 0}
                         aria-label={`Cantidad a recibir de ${l.descripcion}`}
@@ -694,6 +749,48 @@ export default function RegistrarFacturaPage() {
         </Card>
         )}
 
+        {/* Foto de la factura física. Va al final, antes de registrar: Bodega
+            recibe, le saca la foto a la factura y queda pegada a la recepción
+            (se ve después en "Recibidas" junto con las líneas). Sin `capture`
+            a propósito: así el celular ofrece cámara O galería, porque muchas
+            veces la foto ya se tomó antes de llegar a la pantalla. */}
+        <Card className="mt-4">
+          <div className="row row--between wrap gap-3" style={{ alignItems: "flex-start" }}>
+            <div style={{ minWidth: 0 }}>
+              <div className="ds-strong">Foto de la factura <span className="ds-muted ds-body-sm">(opcional)</span></div>
+              <p className="ds-label ds-muted" style={{ margin: "4px 0 0", maxWidth: 480 }}>
+                Sacale una foto a la factura del proveedor: queda guardada con esta recepción y la ves después en <strong>Recibidas</strong>.
+                Se comprime antes de subirla, así que no pesa.
+              </p>
+            </div>
+            <Button variant="outline" size="sm" disabled={fotoOcupado || fotos.length >= MAX_FOTOS}
+              onClick={() => fileRef.current?.click()}>
+              {fotoOcupado ? "Procesando…" : fotos.length ? "Agregar otra" : "Agregar foto"}
+            </Button>
+          </div>
+          <input ref={fileRef} type="file" accept="image/*" multiple hidden
+            aria-label="Foto de la factura" onChange={(e) => elegirFotos(e.target.files)} />
+          {fotos.length > 0 && (
+            <>
+              <div className="foto-strip mt-3">
+                {fotos.map((f, i) => (
+                  <div className="foto-pick" key={`${f.nombre}-${i}`}>
+                    <div className="foto-thumb" style={{ cursor: "default" }}>
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={f.dataUrl} alt={`Foto ${i + 1} de la factura`} />
+                    </div>
+                    <button type="button" className="foto-pick__del" onClick={() => setFotos((p) => p.filter((_, j) => j !== i))}
+                      aria-label={`Quitar la foto ${i + 1}`} title="Quitar esta foto">×</button>
+                  </div>
+                ))}
+              </div>
+              <p className="ds-body-sm ds-muted" style={{ margin: "8px 0 0" }}>
+                {fotos.length} foto(s) · {pesoLegible(fotos.reduce((s2, f) => s2 + f.tamano, 0))} en total
+              </p>
+            </>
+          )}
+        </Card>
+
         <div className="row row--between wrap gap-4 mt-6" style={{ alignItems: "flex-end" }}>
           <div className="totals" style={{ minWidth: 320 }}>
             <div className="totals__row"><span>Subtotal recibido</span><span>{money(subtotalRecibido, orden.currencyCode)}</span></div>
@@ -748,8 +845,18 @@ export default function RegistrarFacturaPage() {
                   onChange={(e) => setNcModal((m) => m && { ...m, cantidad: e.target.value })} />
               </Field>
             )}
-            <Field label="Comentario (opcional)">
-              <Textarea rows={3} value={ncModal.nota} placeholder="Qué pasó con esta línea…"
+            {/* Llegó otro artículo: a Contabilidad le sirve saber CUÁNTO vino
+                mal y QUÉ vino en su lugar (eso va en el comentario). */}
+            {ncModal.motivo === "material_distinto" && (
+              <Field label="Cantidad que llegó equivocada"
+                help="Anotá en el comentario qué material llegó en su lugar.">
+                <Input type="number" inputMode="numeric" min={0} value={ncModal.cantidad} placeholder="0"
+                  onChange={(e) => setNcModal((m) => m && { ...m, cantidad: e.target.value })} />
+              </Field>
+            )}
+            <Field label={ncModal.motivo === "material_distinto" ? "¿Qué llegó en su lugar?" : "Comentario (opcional)"}>
+              <Textarea rows={3} value={ncModal.nota}
+                placeholder={ncModal.motivo === "material_distinto" ? "Ej. llegó disco de 7\" en vez de 9\"…" : "Qué pasó con esta línea…"}
                 onChange={(e) => setNcModal((m) => m && { ...m, nota: e.target.value })} />
             </Field>
           </Modal>

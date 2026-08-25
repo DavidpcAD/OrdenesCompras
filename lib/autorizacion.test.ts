@@ -56,6 +56,17 @@ test("una ruta no listada no se bloquea (fail-open a propósito)", () => {
   assert.equal(rolPuede("/api/algo-nuevo", "POST", "facturacion"), true);
 });
 
+// La foto de la factura cuelga de /api/recepciones/{id}/foto, y la regla del
+// PATCH ("solo Contabilidad") está ANTES en la lista: si alguien la volviera a
+// una regla sin `metodos`, taparía este POST y Bodega no podría subir la foto.
+test("la foto de la recepción la sube Bodega (y Contabilidad)", () => {
+  const ruta = "/api/recepciones/123/foto";
+  assert.equal(rolPuede(ruta, "POST", "facturacion"), true);
+  assert.equal(rolPuede(ruta, "POST", "contabilidad"), true);
+  assert.equal(rolPuede(ruta, "POST", "proveeduria"), false);
+  assert.equal(rolPuede(ruta, "GET", "proveeduria"), true);   // verla es lectura
+});
+
 test("sin rol no se escribe nada de lo listado", () => {
   assert.equal(rolPuede("/api/ordenes", "POST", undefined), false);
   assert.equal(rolPuede("/api/recepciones", "POST", undefined), false);

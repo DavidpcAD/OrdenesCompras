@@ -3,7 +3,7 @@ import { bcDeepLinkPedido, bcDeepLinkFacturaRegistrada, bcUnidadesDeCompra } fro
 import { unidadCorregida } from "./unidad";
 import { etiquetaInterna } from "./helpers";
 import type { UnidadCompraItem } from "./bc";
-import type { Orden, OrdenLinea, Pedido, PedidoLinea, Recepcion, RecepcionLinea, Role, NotaCreditoLinea } from "./types";
+import type { Orden, OrdenLinea, Pedido, PedidoLinea, Recepcion, RecepcionFoto, RecepcionLinea, Role, NotaCreditoLinea } from "./types";
 
 /* ============================================================================
    Capa de acceso a datos (SQL Server) para Compras Adelante.
@@ -1012,18 +1012,95 @@ export async function setRecepcionFactura(idRec: number, numeroFactura: string, 
   }
 }
 
+// ------------------------------------------------- FOTOS DE LA FACTURA (Bodega)
+// La imagen vive en dbo.RecepcionCompraFoto (ver sql/recepcion_foto.sql). Todo
+// lo de acá tolera que la tabla NO exista todavía: la app no se puede caer por
+// una migración pendiente, así que sin tabla simplemente "no hay fotos".
+let hayTablaFoto: boolean | null = null;
+async function tablaFotoExiste(): Promise<boolean> {
+  if (hayTablaFoto !== null) return hayTablaFoto;
+  const pool = await getPool();
+  const r = await pool.request().query("SELECT OBJECT_ID('dbo.RecepcionCompraFoto') AS id");
+  hayTablaFoto = r.recordset[0]?.id != null;
+  return hayTablaFoto;
+}
+
+export interface NuevaFotoDB { mime: string; base64: string; ancho?: number; alto?: number }
+
+// Guarda las fotos de una recepción ya registrada. Devuelve cuántas entraron.
+// Lanza solo si la tabla no existe (para poder avisar "corré la migración").
+export async function addRecepcionFotos(idRec: number, fotos: NuevaFotoDB[], usuario: string): Promise<number> {
+  if (!fotos.length) return 0;
+  if (!(await tablaFotoExiste())) {
+    throw new Error("Falta la tabla dbo.RecepcionCompraFoto: hay que correr sql/recepcion_foto.sql en la base de la app.");
+  }
+  const pool = await getPool();
+  let n = 0;
+  for (const f of fotos) {
+    const buf = Buffer.from(f.base64, "base64");
+    if (!buf.length) continue;
+    await pool.request()
+      .input("idRec", sql.Int, idRec)
+      .input("mime", sql.NVarChar(40), f.mime || "image/jpeg")
+      .input("imagen", sql.VarBinary(sql.MAX), buf)
+      .input("tamano", sql.Int, buf.length)
+      .input("ancho", sql.Int, f.ancho ?? null)
+      .input("alto", sql.Int, f.alto ?? null)
+      .input("creadoPor", sql.NVarChar(100), usuario)
+      .query(`INSERT dbo.RecepcionCompraFoto (idRecepcionCompra,mime,imagen,tamano,ancho,alto,esEliminada,fechaCreacion,creadoPor)
+              VALUES (@idRec,@mime,@imagen,@tamano,@ancho,@alto,0,getdate(),@creadoPor)`);
+    n++;
+  }
+  return n;
+}
+
+// La imagen misma (la sirve /api/recepciones/[id]/foto). Se valida que la foto
+// pertenezca a esa recepción para que un id ajeno no devuelva otra factura.
+export async function getRecepcionFoto(idRec: number, idFoto: number): Promise<{ mime: string; imagen: Buffer } | null> {
+  if (!(await tablaFotoExiste())) return null;
+  const pool = await getPool();
+  const r = await pool.request().input("id", sql.Int, idFoto).input("rec", sql.Int, idRec)
+    .query(`SELECT mime, imagen FROM dbo.RecepcionCompraFoto
+             WHERE idRecepcionCompraFoto=@id AND idRecepcionCompra=@rec AND esEliminada=0`);
+  const row = r.recordset[0];
+  return row ? { mime: row.mime ?? "image/jpeg", imagen: row.imagen as Buffer } : null;
+}
+
+// Metadatos (sin el blob) de todas las fotos, agrupados por recepción.
+async function fotosPorRecepcion(): Promise<Map<number, RecepcionFoto[]>> {
+  const mapa = new Map<number, RecepcionFoto[]>();
+  if (!(await tablaFotoExiste())) return mapa;
+  const pool = await getPool();
+  const r = await pool.request().query(
+    `SELECT idRecepcionCompraFoto, idRecepcionCompra, mime, tamano, ancho, alto
+       FROM dbo.RecepcionCompraFoto WHERE esEliminada=0 ORDER BY idRecepcionCompraFoto`
+  );
+  for (const f of r.recordset) {
+    const arr = mapa.get(f.idRecepcionCompra) ?? [];
+    arr.push({ id: String(f.idRecepcionCompraFoto), mime: f.mime ?? "image/jpeg",
+      tamano: f.tamano != null ? Number(f.tamano) : undefined,
+      ancho: f.ancho != null ? Number(f.ancho) : undefined,
+      alto: f.alto != null ? Number(f.alto) : undefined });
+    mapa.set(f.idRecepcionCompra, arr);
+  }
+  return mapa;
+}
+
 // ----------------------------------------------------------------- listas extra
 export async function listRecepciones(): Promise<Recepcion[]> {
   const pool = await getPool();
   const h = await pool.request().query("SELECT * FROM dbo.RecepcionCompra WHERE esEliminada = 0 ORDER BY idRecepcionCompra DESC");
   const d = await pool.request().query("SELECT * FROM dbo.RecepcionCompraDet ORDER BY idRecepcionCompraDet");
   const porRecepcion = porCabecera(d.recordset, "idRecepcionCompra");
+  // Si la migración de fotos no está corrida, esto devuelve un mapa vacío.
+  const fotos = await fotosPorRecepcion().catch(() => new Map<number, RecepcionFoto[]>());
   return h.recordset.map((r): Recepcion => ({
     id: String(r.idRecepcionCompra), ordenId: String(r.idOrdenCompra), numeroFactura: r.numeroFactura ?? "",
     fechaFactura: (r.fechaFactura?.toISOString?.() ?? "").slice(0, 10),
     fechaRecepcion: (r.fechaRecepcion?.toISOString?.() ?? "").slice(0, 10),
     fechaRegistro: (r.fechaRegistro?.toISOString?.() ?? "").slice(0, 10),
     total: Number(r.total ?? 0), parcial: !!r.esParcial, recibidoPor: r.creadoPor ?? undefined,
+    fotos: fotos.get(r.idRecepcionCompra),
     lineas: (porRecepcion.get(r.idRecepcionCompra) ?? [])
       .map((l): RecepcionLinea => ({
         ordenLineaId: String(l.idOrdenCompraDet),

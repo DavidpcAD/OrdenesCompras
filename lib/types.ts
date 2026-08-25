@@ -174,6 +174,20 @@ export interface RecepcionLinea {
   precioFactura?: number;   // precio facturado de la línea (puede diferir del de la orden)
 }
 
+// Foto de la factura del proveedor (la que Bodega saca con el celular al recibir).
+// Se guarda comprimida en la BD (dbo.RecepcionCompraFoto); acá viaja solo el
+// METADATO — la imagen se pide aparte a /api/recepciones/{id}/foto?foto={id}
+// para que el bootstrap no arrastre megas en cada refresco.
+export interface RecepcionFoto {
+  id: string;
+  mime: string;
+  tamano?: number;          // bytes ya comprimidos
+  ancho?: number;
+  alto?: number;
+  // Solo en modo demo (sin API): la imagen vive en memoria como dataURL.
+  url?: string;
+}
+
 export interface Recepcion {
   id: string;
   ordenId: string;
@@ -189,13 +203,16 @@ export interface Recepcion {
   // MODO 2: material recibido pero la factura quedó EN REVISIÓN (aún sin registrar).
   // Se deriva de numeroFactura vacío; Kattya la registra después (bcFacturarRecibido).
   facturaEnRevision?: boolean;
+  // Fotos de la factura física (0..n). Metadato solamente: ver RecepcionFoto.
+  fotos?: RecepcionFoto[];
 }
 
 // ============================ NOTAS DE CRÉDITO (Bodega · Kattya) ============
 // Líneas de una factura recibida que vienen MAL (dañado / menos cantidad / precio
 // distinto). El material se recibe igual, pero esas líneas se marcan para emitir
 // una NOTA DE CRÉDITO. Es DISTINTO de Devoluciones (que devuelve toda la OC/pedido).
-export type MotivoNC = "danado" | "menos_cantidad" | "precio_distinto";
+// material_distinto = llegó OTRO artículo (no el que pide la orden).
+export type MotivoNC = "danado" | "menos_cantidad" | "precio_distinto" | "material_distinto";
 export interface NotaCreditoLinea {
   id: string;
   ordenId: string;

@@ -40,6 +40,11 @@ interface NewOrdenInput {
   lineas: Omit<OrdenLinea, "id" | "cantidadRecibida" | "cantidadFacturada">[];
 }
 
+// Foto ya comprimida por el navegador (ver lib/foto.ts) lista para subir.
+export interface FotoParaSubir {
+  mime: string; base64: string; dataUrl: string; ancho: number; alto: number; tamano: number;
+}
+
 interface RegistrarRecepcionInput {
   ordenId: string;
   numeroFactura: string;
@@ -110,6 +115,9 @@ interface StoreShape {
   nuevaOrdenConPendiente: (id: string, motivo: string) => Promise<{ id: string; numero: string }>;
 
   registrarRecepcion: (input: RegistrarRecepcionInput) => Promise<Recepcion>;
+  // Foto(s) de la factura física de una recepción ya registrada. Devuelve
+  // cuántas quedaron guardadas (0 = no se pudo, la pantalla avisa).
+  guardarFotosRecepcion: (recepcionId: string, fotos: FotoParaSubir[]) => Promise<number>;
   // MODO 2: registrar la factura de una recepción que quedó EN REVISIÓN (Kattya).
   facturarRecepcion: (recepcionId: string, numeroFactura: string) => Promise<void>;
 
@@ -307,7 +315,12 @@ export function StoreProvider({ children, useApi }: { children: React.ReactNode;
   // persistencia local solo en modo mock
   useEffect(() => {
     if (!hydrated || USE_API) return;
-    localStorage.setItem(LS_KEY, JSON.stringify(data));
+    // Las fotos de factura NO se guardan acá: un dataURL de 300 KB por foto
+    // revienta la cuota de localStorage (~5 MB) y dejaría la app sin poder
+    // guardar nada más. En modo demo viven solo en memoria; en producción
+    // (USE_API) están en la BD y se piden por su ruta.
+    const sinFotos = { ...data, recepciones: data.recepciones.map((r) => (r.fotos ? { ...r, fotos: undefined } : r)) };
+    localStorage.setItem(LS_KEY, JSON.stringify(sinFotos));
   }, [data, hydrated]);
 
   useEffect(() => {
@@ -691,6 +704,34 @@ export function StoreProvider({ children, useApi }: { children: React.ReactNode;
       return created;
     };
 
+    // ---------------- FOTO DE LA FACTURA ----------------
+    // Se llama DESPUÉS de registrar la recepción (ya hay id). Si falla, la
+    // pantalla avisa pero la recepción queda igual: la foto es respaldo, no
+    // parte del asiento.
+    const guardarFotosRecepcion: StoreShape["guardarFotosRecepcion"] = async (recepcionId, fotos) => {
+      if (!fotos.length) return 0;
+      if (USE_API) {
+        const { guardadas } = await api.addFotosRecepcion(recepcionId, {
+          fotos: fotos.map((f) => ({ mime: f.mime, base64: f.base64, ancho: f.ancho, alto: f.alto })),
+          usuario: persona, rol: rolActual,
+        });
+        await refreshFromApi();
+        return guardadas ?? 0;
+      }
+      // Modo demo: la imagen se queda en memoria (el dataURL NO se persiste en
+      // localStorage — ver el efecto de persistencia: reventaría la cuota).
+      setData((d) => ({
+        ...d,
+        recepciones: d.recepciones.map((r) => (r.id !== recepcionId ? r : {
+          ...r,
+          fotos: [...(r.fotos ?? []), ...fotos.map((f) => ({
+            id: uid(), mime: f.mime, tamano: f.tamano, ancho: f.ancho, alto: f.alto, url: f.dataUrl,
+          }))],
+        })),
+      }));
+      return fotos.length;
+    };
+
     // MODO 2 — Kattya registra la factura de una recepción que estaba EN REVISIÓN.
     // Marca la factura, sube lo FACTURADO de la orden y cierra la revisión.
     const facturarRecepcion: StoreShape["facturarRecepcion"] = async (recepcionId, numeroFactura) => {
@@ -807,7 +848,7 @@ export function StoreProvider({ children, useApi }: { children: React.ReactNode;
       maquinas: seed.maquinas, almacenes: seed.almacenes,
       pedidos: data.pedidos, ordenes: data.ordenes, recepciones: data.recepciones, movimientos: data.movimientos,
       addPedido, editPedido, setPedidoEstado, deletePedido,
-      createOrden, updateOrden, setOrdenEstado, cerrarOrden, nuevaOrdenConPendiente, registrarRecepcion, facturarRecepcion, devolverPedido, devolverOrden, reset,
+      createOrden, updateOrden, setOrdenEstado, cerrarOrden, nuevaOrdenConPendiente, registrarRecepcion, guardarFotosRecepcion, facturarRecepcion, devolverPedido, devolverOrden, reset,
       notasCredito, marcarNotasCredito, cargarNotasCredito, resolverNotaCredito,
       notificaciones: data.notificaciones, marcarNotifsLeidas, marcarNotifLeida,
       borrador, setBorrador,

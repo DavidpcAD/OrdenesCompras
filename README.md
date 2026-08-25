@@ -169,6 +169,7 @@ lib/
 | GET / PATCH / PUT | `/api/ordenes/[id]` | Detalle / estado / reescribir líneas |
 | POST | `/api/recepciones` | Registrar recepción (con o sin factura) |
 | PATCH | `/api/recepciones/[id]` | Modo 2: registrar el N.º de factura después |
+| GET / POST | `/api/recepciones/[id]/foto` | Foto de la factura física (la imagen / adjuntarla) |
 | GET / POST | `/api/notas-credito` | Listar / marcar líneas para NC |
 | PATCH | `/api/notas-credito/[id]` | Marcar acreditada / reabrir |
 | GET | `/api/movimientos?entidad=&id=` | Bitácora de un documento |
@@ -182,6 +183,13 @@ lib/
 Cada escritura deja un `Movimiento` (bitácora). Los estados de la app se mapean al catálogo
 `dbo.Estado` (se crean los nombres que falten y se leen los de **todos** los módulos, para
 que un estado escrito por la app de Producción no se lea como "borrador").
+
+La **foto de la factura** que Bodega adjunta al recibir vive en `dbo.RecepcionCompraFoto`
+(tabla aparte para que el bootstrap no arrastre imágenes: ahí solo viajan id/mime/tamaño y
+la imagen se pide por `/api/recepciones/[id]/foto`). Hay que crearla una vez con
+`sql/recepcion_foto.sql`; mientras no exista, la recepción se registra igual y la pantalla
+avisa que la foto no se guardó. La compresión es del lado del navegador (`lib/foto.ts`):
+lado largo ≤ 1600 px y JPEG, ~150–350 KB por factura.
 
 `dbo.OrdenCompraDet` necesita dos columnas nullable (`chargeNo`, `chargeMethod`) para no
 perder el tipo de Cargo de producto de BC. Como esa tabla la comparte la app de Producción,

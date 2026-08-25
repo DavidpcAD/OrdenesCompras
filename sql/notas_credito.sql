@@ -1,8 +1,9 @@
 -- ============================================================================
 -- Notas de crédito (Bodega · Compras Adelante)
 -- Líneas de una factura recibida que vienen MAL (dañado / menos cantidad /
--- precio distinto). El material se recibe igual, pero estas líneas se marcan
--- para emitir una NOTA DE CRÉDITO al proveedor. Es DISTINTO de Devoluciones.
+-- precio distinto / llegó otro material). El material se recibe igual, pero
+-- estas líneas se marcan para emitir una NOTA DE CRÉDITO al proveedor.
+-- Es DISTINTO de Devoluciones.
 --
 -- Ejecutar una sola vez en la base de la app (AdelanteSBX / Sandbox).
 -- Convenciones iguales al resto: esEliminada / fechaCreacion / creadoPor.
@@ -15,7 +16,7 @@ BEGIN
     idOrdenCompraDet  INT            NULL,       -- línea de la orden (si aplica)
     articuloNo        NVARCHAR(40)   NULL,
     descripcion       NVARCHAR(200)  NULL,
-    motivo            NVARCHAR(30)   NOT NULL,   -- danado | menos_cantidad | precio_distinto
+    motivo            NVARCHAR(30)   NOT NULL,   -- danado | menos_cantidad | precio_distinto | material_distinto
     cantidad          DECIMAL(18,4)  NOT NULL,
     precioUnitario    DECIMAL(18,4)  NULL,
     nota              NVARCHAR(300)  NULL,

@@ -3,6 +3,7 @@
 import { useParams, useRouter } from "next/navigation";
 import { Badge, Card, EmptyState, Skeleton } from "@/components/ui";
 import { IconWarning } from "@/components/icons";
+import { FotosFactura } from "@/components/fotos-factura";
 import { useStore } from "@/lib/store";
 import { useVolver } from "@/lib/use-volver";
 import { money, formatDate, num, numeroOrden } from "@/lib/helpers";
@@ -105,6 +106,14 @@ export default function RecepcionDetallePage() {
             </table>
           </div>
         </Card>
+
+        {/* Foto de la factura física (la adjunta Bodega al recibir). */}
+        {!!rec.fotos?.length && (
+          <Card className="mt-4">
+            <h3 className="ds-subtitle" style={{ marginBottom: 12 }}>Foto de la factura</h3>
+            <FotosFactura recepcionId={rec.id} fotos={rec.fotos} />
+          </Card>
+        )}
 
         <div className="row mt-6" style={{ justifyContent: "flex-end" }}>
           <div className="totals" style={{ minWidth: 320 }}>

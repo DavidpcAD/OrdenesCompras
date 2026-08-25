@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Badge, Card, EmptyState, Input, Tile } from "@/components/ui";
 import { IconCheck, IconChevronDown } from "@/components/icons";
+import { FotosFactura } from "@/components/fotos-factura";
 import { useStore } from "@/lib/store";
 import { money, formatDate, todayISO, numeroOrden } from "@/lib/helpers";
 
@@ -113,6 +114,7 @@ export default function RecibidasPage() {
                     <div className="row gap-2 wrap" style={{ justifyContent: "flex-end" }}>
                       {r.parcial ? <Badge tone="yellow">Parcial</Badge> : <Badge tone="green">Completa</Badge>}
                       {enRevision ? <Badge tone="gray">Factura en revisión</Badge> : tieneNC ? <Badge tone="red">Nota de crédito</Badge> : <Badge tone="green">Factura OK</Badge>}
+                      {!!r.fotos?.length && <Badge tone="gray">Con foto</Badge>}
                     </div>
                   </div>
                   <div className="row wrap gap-4 mt-3" style={{ alignItems: "center" }}>
@@ -143,10 +145,18 @@ export default function RecibidasPage() {
                       <>
                         <button type="button" className="rec-card__toggle" onClick={() => toggleLineas(r.id)} aria-expanded={open}>
                           <IconChevronDown size={16} className={`rec-card__chev${open ? " is-open" : ""}`} />
-                          {open ? "Ocultar líneas" : `Ver líneas (${r.lineas.length})`}
+                          {open ? "Ocultar detalle" : r.fotos?.length ? `Ver factura y líneas (${r.lineas.length})` : `Ver líneas (${r.lineas.length})`}
                         </button>
                         {open && (
                           <div className="rec-lines">
+                            {/* La foto de la factura física, si Bodega la adjuntó al
+                                recibir: se abre grande al tocarla. */}
+                            {!!r.fotos?.length && (
+                              <div className="rec-fotos">
+                                <span className="ds-label ds-muted">Foto de la factura {r.numeroFactura ? `${r.numeroFactura}` : ""}</span>
+                                <FotosFactura recepcionId={r.id} fotos={r.fotos} compacto />
+                              </div>
+                            )}
                             <div className="rec-lines__scroll">
                               <div className="rec-line rec-line--head">
                                 <span>Artículo</span>
