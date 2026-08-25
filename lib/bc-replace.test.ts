@@ -6,7 +6,7 @@
 //   npm test
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { payloadReplaceLines, sinObrasInexistentes, avisoDeSaneo, lineasOrdenParaBc, obrasSinTarea, crearEnBcAlEnviar, type LineaReplaceBc } from "./bc.ts";
+import { payloadReplaceLines, sinObrasInexistentes, avisoDeSaneo, lineasOrdenParaBc, obrasSinTarea, crearEnBcAlEnviar, bcPideAbierto, type LineaReplaceBc } from "./bc.ts";
 import type { OrdenLinea } from "./types.ts";
 
 const item = (p: Partial<LineaReplaceBc> = {}): LineaReplaceBc => ({
@@ -233,4 +233,19 @@ test("una línea con obra y sin tarea se detecta antes de mandar nada a BC", () 
 
 test("el cargo no cuenta: el flete nunca lleva obra", () => {
   assert.deepEqual(obrasSinTarea([{ tipo: "cargo", chargeNo: "TRANSPORTE", cantidad: 1, precio: 5000, jobNo: "VN-L.20" }]), []);
+});
+
+// ---- "el pedido tiene que estar Abierto" ---------------------------------------
+// Registrar una factura empieza tocando el encabezado del pedido. En moneda
+// extranjera, validar la fecha recalcula el tipo de cambio del día y BC reescribe
+// los importes de las líneas — y eso exige el documento abierto. Este es el texto
+// EXACTO con el que se cayó CP-005156 (USD) el 25 ago 2026; la app lo reconoce
+// para reabrir y reintentar sola.
+test("se reconoce el error de BC que pide el pedido abierto", () => {
+  const real = `{"error":{"code":"Application_FieldValidationException","message":"Status must be equal to 'Open' in Purchase Header: Document Type=Order, No.=CP-005156. Current value is 'Released'. CorrelationId: 2c862382-d441-49d4-8fd0-b2450762c96e."}}`;
+  assert.equal(bcPideAbierto(real), true);
+  assert.equal(bcPideAbierto("El estado debe ser igual a 'Abierto' en Cabecera compra"), true);
+  // Un error cualquiera NO puede disparar la reapertura del pedido.
+  assert.equal(bcPideAbierto(`{"error":{"message":"The field Vendor Invoice No. of table Purchase Header contains a value that cannot be found"}}`), false);
+  assert.equal(bcPideAbierto(""), false);
 });

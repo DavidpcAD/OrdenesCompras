@@ -1248,6 +1248,51 @@ export function crearEnBcAlEnviar(): boolean {
   return !(v === "0" || v === "false" || v === "no");
 }
 
+// BC se niega a TOCAR EL ENCABEZADO de un pedido lanzado, y los tres registros
+// (recibir, recibir+facturar, facturar lo recibido) empiezan justo por ahí: N.º de
+// factura del proveedor, fecha de registro y fecha del documento.
+//
+// Con el pedido en MONEDA EXTRANJERA eso revienta: al validar la fecha de registro,
+// BC busca el tipo de cambio DE ESE DÍA y, si cambió respecto al del pedido,
+// reescribe los importes de todas las líneas — y reescribir líneas sí exige el
+// documento abierto:
+//   "Status must be equal to 'Open' in Purchase Header … Current value is 'Released'"
+// Un pedido en colones nunca lo pega (no hay tipo de cambio que recalcular), por eso
+// apareció recién con la primera factura en dólares.
+//
+// El registro SÍ se puede hacer: lo que falta es reabrir el pedido. Se hace acá, se
+// reintenta UNA vez, y `Purch.-Post` lo vuelve a lanzar al registrar. Si el reintento
+// también falla, el mensaje avisa que el pedido quedó abierto en BC.
+const BC_PIDE_ABIERTO = /Status must be equal to 'Open'|El estado debe ser igual a 'Abierto'/i;
+
+/** ¿El error de BC es "este pedido tiene que estar Abierto"? (cubierto por tests) */
+export function bcPideAbierto(textoDelError: string): boolean {
+  return BC_PIDE_ABIERTO.test(textoDelError ?? "");
+}
+
+async function bcPostear(procedimiento: string, etiqueta: string, orderNo: string, body: Record<string, unknown>): Promise<string> {
+  const cid = await getStdCompanyId();
+  const url = `${odataRoot()}/${procedimiento}?company=${encodeURIComponent(cid)}`;
+  const llamar = () => bcFetch(url, {
+    method: "POST", cache: "no-store",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  let res = await llamar();
+  if (!res.ok) {
+    const txt = (await res.text()).slice(0, 400);
+    if (!BC_PIDE_ABIERTO.test(txt)) throw new Error(`BC ${etiqueta} ${res.status}: ${txt.slice(0, 250)}`);
+    await bcReopenPedido(orderNo);   // si esto falla, sube su propio error (dice qué pasó)
+    res = await llamar();
+    if (!res.ok) {
+      const txt2 = (await res.text()).slice(0, 250);
+      throw new Error(`BC ${etiqueta} ${res.status}: ${txt2} · OJO: el pedido ${orderNo} quedó ABIERTO en Business Central (se reabrió para reintentar).`);
+    }
+  }
+  const d: any = await res.json().catch(() => ({}));
+  return String(d?.value ?? "");
+}
+
 // Registra (Recibir + Facturar) una factura parcial del pedido en BC con todos sus
 // movimientos contables, vía el web service custom AdelantePO_PostInvoice.
 // lines = cantidades recibidas en ESTA factura por item ({itemNo, qty}).
@@ -1262,7 +1307,6 @@ export async function bcRegistrarFactura(
 ): Promise<string> {
   if (!orderNo) throw new Error("Falta el número de pedido de BC.");
   if (!vendorInvoiceNo) throw new Error("Falta el N.º de factura del proveedor.");
-  const cid = await getStdCompanyId();
   // Cargo de transporte por viaje: se agrega la línea de Cargo (Prod.) a la OC y se
   // asigna con el método elegido ANTES de registrar (para que quede repartido en
   // esta factura sobre lo recibido). Debe ir antes del PostInvoice.
@@ -1271,15 +1315,8 @@ export async function bcRegistrarFactura(
     try { await bcAssignItemCharges(orderNo, (cargo.metodo || "Amount").trim() || "Amount"); }
     catch (e) { console.warn(`BC asignar cargo de transporte en ${orderNo} falló:`, e); }
   }
-  const url = `${odataRoot()}/AdelantePO_PostInvoice?company=${encodeURIComponent(cid)}`;
-  const res = await bcFetch(url, {
-    method: "POST", cache: "no-store",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ orderNo, vendorInvoiceNo, linesJson: JSON.stringify(lines), postingDate }),
-  });
-  if (!res.ok) throw new Error(`BC registrar ${res.status}: ${(await res.text()).slice(0, 250)}`);
-  const d: any = await res.json().catch(() => ({}));
-  return d?.value ?? "Registrado";
+  return (await bcPostear("AdelantePO_PostInvoice", "registrar", orderNo,
+    { orderNo, vendorInvoiceNo, linesJson: JSON.stringify(lines), postingDate })) || "Registrado";
 }
 
 // MODO 2 — Solo RECEPCIÓN (material llega bien, la factura queda en revisión).
@@ -1287,16 +1324,8 @@ export async function bcRegistrarFactura(
 // Mueve inventario/cantidad recibida sin tocar la factura ni el ledger del proveedor.
 export async function bcRecibir(orderNo: string, lines: { itemNo: string; qty: number; variantCode?: string }[], postingDate = ""): Promise<string> {
   if (!orderNo) throw new Error("Falta el número de pedido de BC.");
-  const cid = await getStdCompanyId();
-  const url = `${odataRoot()}/AdelantePO_PostReceipt?company=${encodeURIComponent(cid)}`;
-  const res = await bcFetch(url, {
-    method: "POST", cache: "no-store",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ orderNo, linesJson: JSON.stringify(lines), postingDate }),
-  });
-  if (!res.ok) throw new Error(`BC recibir ${res.status}: ${(await res.text()).slice(0, 250)}`);
-  const d: any = await res.json().catch(() => ({}));
-  return d?.value ?? "Recibido";
+  return (await bcPostear("AdelantePO_PostReceipt", "recibir", orderNo,
+    { orderNo, linesJson: JSON.stringify(lines), postingDate })) || "Recibido";
 }
 
 // MODO 2 — Solo FACTURA de lo ya recibido (Kattya revisa y registra después).
@@ -1305,16 +1334,8 @@ export async function bcRecibir(orderNo: string, lines: { itemNo: string; qty: n
 export async function bcFacturarRecibido(orderNo: string, vendorInvoiceNo: string, lines: { itemNo: string; qty: number; variantCode?: string }[], postingDate = ""): Promise<string> {
   if (!orderNo) throw new Error("Falta el número de pedido de BC.");
   if (!vendorInvoiceNo) throw new Error("Falta el N.º de factura del proveedor.");
-  const cid = await getStdCompanyId();
-  const url = `${odataRoot()}/AdelantePO_PostInvoiceOfReceived?company=${encodeURIComponent(cid)}`;
-  const res = await bcFetch(url, {
-    method: "POST", cache: "no-store",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ orderNo, vendorInvoiceNo, linesJson: JSON.stringify(lines), postingDate }),
-  });
-  if (!res.ok) throw new Error(`BC facturar ${res.status}: ${(await res.text()).slice(0, 250)}`);
-  const d: any = await res.json().catch(() => ({}));
-  return d?.value ?? "Facturado";
+  return (await bcPostear("AdelantePO_PostInvoiceOfReceived", "facturar", orderNo,
+    { orderNo, vendorInvoiceNo, linesJson: JSON.stringify(lines), postingDate })) || "Facturado";
 }
 
 // Crea una línea de Cargo de producto (Item Charge) en un pedido, vía el codeunit
@@ -1324,16 +1345,9 @@ export async function bcFacturarRecibido(orderNo: string, vendorInvoiceNo: strin
 export async function bcAddChargeLine(orderNo: string, itemChargeNo: string, description: string, quantity: number, directUnitCost: number): Promise<string> {
   if (!orderNo) throw new Error("Falta el número de pedido para el cargo.");
   if (!itemChargeNo) throw new Error("Falta el tipo de cargo (itemChargeNo).");
-  const cid = await getStdCompanyId();
-  const url = `${odataRoot()}/AdelantePO_AddChargeLine?company=${encodeURIComponent(cid)}`;
-  const res = await bcFetch(url, {
-    method: "POST", cache: "no-store",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ orderNo, itemChargeNo, description, quantity: quantity > 0 ? quantity : 1, directUnitCost }),
-  });
-  if (!res.ok) throw new Error(`BC add cargo ${res.status}: ${(await res.text()).slice(0, 300)}`);
-  const d: any = await res.json().catch(() => ({}));
-  return d?.value ?? "Agregado";
+  // Agregar una línea a un pedido LANZADO también exige reabrirlo: mismo camino.
+  return (await bcPostear("AdelantePO_AddChargeLine", "add cargo", orderNo,
+    { orderNo, itemChargeNo, description, quantity: quantity > 0 ? quantity : 1, directUnitCost })) || "Agregado";
 }
 
 // Sugerir/aplicar la asignación de los Cargos de producto de un pedido con un
