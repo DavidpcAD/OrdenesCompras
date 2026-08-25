@@ -7,7 +7,7 @@ import { IconChevronDown, IconWarning } from "@/components/icons";
 import { OrderLinesTable } from "@/components/order-lines";
 import { Timeline } from "@/components/timeline";
 import { useStore } from "@/lib/store";
-import { money, num, formatDate, ordenBadge, proveedorLabel, ordenLineaImporte, ordenRecibidoPct, ordenPedidos, ordenEsDirecta, numeroOrden, tieneBc } from "@/lib/helpers";
+import { money, num, formatDate, ordenBadge, proveedorLabel, ordenLineaImporte, ordenRecibidoPct, ordenPedidos, ordenEsDirecta, numeroOrden, tieneBc, destinoDeRecepcion } from "@/lib/helpers";
 import { ChipPedido } from "@/components/ordenes-lista";
 import { useVolver } from "@/lib/use-volver";
 import type { Orden } from "@/lib/types";
@@ -175,7 +175,7 @@ export function OrdenDetalle({
         <Card style={{ padding: 0, overflow: "hidden" }}>
           <div className="ds-table-wrap" style={{ boxShadow: "none" }}>
             <table className="ds-table">
-              <thead><tr><th>Factura</th><th>Fecha factura</th><th>Fecha registro</th><th className="ds-num">Total</th><th>Tipo</th><th></th></tr></thead>
+              <thead><tr><th>Factura</th><th>Fecha factura</th><th>Fecha registro</th><th>Destino</th><th className="ds-num">Total</th><th>Tipo</th><th></th></tr></thead>
               <tbody>
                 {recs.map((r) => {
                   const abierto = verFactura === r.id;
@@ -185,6 +185,27 @@ export function OrdenDetalle({
                         <td className="ds-strong">{r.numeroFactura}</td>
                         <td>{formatDate(r.fechaFactura)}</td>
                         <td>{formatDate(r.fechaRegistro)}</td>
+                        {/* A dónde fue el material de ESTA factura: consumo de obra
+                            (no sube el stock) o entrada al almacén. Una factura puede
+                            traer las dos cosas; el detalle de abajo lo abre por línea. */}
+                        <td className="ds-body-sm">{(() => {
+                          const d = destinoDeRecepcion(r, orden);
+                          if (!d.obras.length && !d.almacenes.length) return <span className="ds-muted">—</span>;
+                          return (
+                            <span className="row gap-2 wrap">
+                              {d.obras.length > 0 && (
+                                <Badge tone="blueish">
+                                  {d.obras.length === 1 ? `Consumo · obra ${d.obras[0]}` : `Consumo · ${d.obras.length} obras`}
+                                </Badge>
+                              )}
+                              {d.almacenes.length > 0 && (
+                                <Badge tone="gray">
+                                  {d.almacenes.length === 1 ? `Almacén ${d.almacenes[0]}` : `${d.almacenes.length} almacenes`}
+                                </Badge>
+                              )}
+                            </span>
+                          );
+                        })()}</td>
                         <td className="ds-num">{money(r.total, orden.currencyCode)}</td>
                         <td>{r.parcial ? <Badge tone="yellow">Parcial</Badge> : <Badge tone="green">Completa</Badge>}</td>
                         <td className="ds-num ds-muted">
@@ -198,7 +219,7 @@ export function OrdenDetalle({
                       </tr>
                       {abierto && (
                         <tr>
-                          <td colSpan={6} style={{ background: "var(--ds-color-surface)", padding: "6px 12px 14px" }}>
+                          <td colSpan={7} style={{ background: "var(--ds-color-surface)", padding: "6px 12px 14px" }}>
                             <div className="fac-det">
                               <div className="fac-det__head">
                                 <span className="ds-strong">Factura {r.numeroFactura}</span>
@@ -219,6 +240,11 @@ export function OrdenDetalle({
                                     <div>
                                       <div className="ds-strong">{ol?.descripcion ?? `Línea ${rl.ordenLineaId}`}</div>
                                       {ol?.articuloId && <div className="ds-body-sm ds-muted">{ol.articuloId}</div>}
+                                      {/* Acá se resuelve la factura mixta: qué línea se
+                                          consumió en la obra y cuál entró al almacén. */}
+                                      {ol && (ol.proyecto
+                                        ? <div className="ds-body-sm ds-muted">Consumo de la obra <span className="ds-strong">{ol.proyecto}</span>{ol.taskNo ? ` · tarea ${ol.taskNo}` : ""} — no suma inventario</div>
+                                        : <div className="ds-body-sm ds-muted">Entró al almacén <span className="ds-strong">{ol.almacen || "—"}</span></div>)}
                                     </div>
                                     <div className="fac-det__num">{num.format(rl.cantidadRecibida)} {ol?.unidad ?? ""}</div>
                                     <div className="fac-det__num">

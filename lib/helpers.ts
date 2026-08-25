@@ -1,4 +1,4 @@
-import type { Orden, OrdenLinea, Pedido, PedidoLinea, Role, TipoSolicitud } from "./types";
+import type { Orden, OrdenLinea, Pedido, PedidoLinea, Recepcion, Role, TipoSolicitud } from "./types";
 
 // Badge del tipo de solicitud (Material / Repuesto / Stock).
 export function tipoSolicitudBadge(t: TipoSolicitud): { label: string; tone: string } {
@@ -148,6 +148,30 @@ export function esConsumoDirecto(l: Pick<PedidoLinea, "taskNo">): boolean {
 // almacén. Proveeduría siempre puede asignar obra+tarea a mano en la orden.
 export function obraParaOrden(l: Pick<PedidoLinea, "proyecto" | "taskNo">): string {
   return esConsumoDirecto(l) ? (l.proyecto ?? "").trim() : "";
+}
+
+// A dónde fue lo que entró con una factura: CONSUMO DIRECTO de una obra —la línea
+// de la orden lleva Job No., BC la carga contra el presupuesto y el stock NO sube—
+// o entrada al ALMACÉN. Una misma factura puede traer las dos cosas, así que se
+// devuelven las dos listas y no una etiqueta sola.
+//
+// Se mira la línea de la ORDEN (que es lo que viajó a BC), no la solicitud: es la
+// única fuente de verdad de lo que BC hizo con el material.
+export function destinoDeRecepcion(
+  r: Pick<Recepcion, "lineas">,
+  orden: Pick<Orden, "lineas">,
+): { obras: string[]; almacenes: string[] } {
+  const obras = new Set<string>();
+  const almacenes = new Set<string>();
+  for (const rl of r.lineas ?? []) {
+    const ol = orden.lineas.find((x) => x.id === rl.ordenLineaId);
+    if (!ol || ol.tipo === "cargo") continue;        // el flete no es material
+    if ((rl.cantidadRecibida ?? 0) <= 0) continue;
+    const obra = (ol.proyecto ?? "").trim();
+    if (obra) obras.add(obra);
+    else almacenes.add((ol.almacen ?? "").trim() || "—");
+  }
+  return { obras: [...obras], almacenes: [...almacenes] };
 }
 
 export function pedidoLineaPendiente(l: PedidoLinea): number {

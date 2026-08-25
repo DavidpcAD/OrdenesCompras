@@ -13,7 +13,7 @@ import {
   ordenPedidos, ordenEsDirecta, money, pedidoOrdenadoPct, pedidoCompraBadge, pedidoTieneSaldo, ordenesPorPedido,
   destinoLabel, destinoCodigo, ordenLineaPendiente, ordenLineaCompleta, ultimoPrecioProveedor,
   ordenPendienteResumen, devolverPendienteAPedidos, proveedorLabel,
-  numeroOrden, etiquetaInterna, tieneBc, esConsumoDirecto, obraParaOrden,
+  numeroOrden, etiquetaInterna, tieneBc, esConsumoDirecto, obraParaOrden, destinoDeRecepcion,
 } from "./helpers.ts";
 import type { Orden, OrdenLinea, Pedido, PedidoLinea } from "./types.ts";
 
@@ -412,4 +412,31 @@ test("obraParaOrden: sin tarea la obra NO viaja a la orden", () => {
   assert.equal(obraParaOrden({ proyecto: "VN-L.20", taskNo: "2.2" }), "VN-L.20");
   assert.equal(obraParaOrden({ proyecto: "F-MAD-NUE" }), "");
   assert.equal(obraParaOrden({}), "");
+});
+
+// ---- a dónde fue el material de una factura ------------------------------------
+// El stock sube solo con lo que entró al almacén: lo que va contra una obra BC lo
+// consume en el mismo movimiento. La factura puede traer las dos cosas.
+test("destinoDeRecepcion: separa el consumo de obra de lo que entra al almacén", () => {
+  const orden = {
+    lineas: [
+      { id: "l1", tipo: "articulo", proyecto: "VN-L.20", almacen: "VN-L.20" },
+      { id: "l2", tipo: "articulo", almacen: "ALM-GRAL" },
+      { id: "l3", tipo: "cargo", almacen: "ALM-GRAL" },      // el flete no es material
+      { id: "l4", tipo: "articulo", proyecto: "VN-L.20", almacen: "VN-L.20" },
+    ] as any,
+  };
+  const d = destinoDeRecepcion({ lineas: [
+    { ordenLineaId: "l1", cantidadRecibida: 5 },
+    { ordenLineaId: "l2", cantidadRecibida: 3 },
+    { ordenLineaId: "l3", cantidadRecibida: 1 },
+    { ordenLineaId: "l4", cantidadRecibida: 2 },
+  ] }, orden);
+  assert.deepEqual(d, { obras: ["VN-L.20"], almacenes: ["ALM-GRAL"] });
+});
+
+test("destinoDeRecepcion: una línea sin recibir no cuenta", () => {
+  const orden = { lineas: [{ id: "l1", tipo: "articulo", almacen: "ALM-GRAL" }] as any };
+  assert.deepEqual(destinoDeRecepcion({ lineas: [{ ordenLineaId: "l1", cantidadRecibida: 0 }] }, orden),
+    { obras: [], almacenes: [] });
 });
