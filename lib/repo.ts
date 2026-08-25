@@ -1,5 +1,5 @@
 import { getAuthPool, getPool, sql } from "./db";
-import { bcDeepLinkPedido, bcDeepLinkFacturaRegistrada, bcUnidadesDeCompra } from "./bc";
+import { bcDeepLinkPedido, bcDeepLinkFacturaRegistrada, bcUnidadesDeCompra, sanearObrasDeLineas } from "./bc";
 import { unidadCorregida } from "./unidad";
 import { etiquetaInterna } from "./helpers";
 import type { UnidadCompraItem } from "./bc";
@@ -785,10 +785,11 @@ export async function nuevaOrdenDesdePendiente(
 
   await cerrarOrden(id, motivo, usuario, rol, true);
 
-  const idOrden = await createOrden({
-    proveedorNo: h.proveedorNo, proveedorNombre: h.proveedorNombre ?? undefined,
-    currencyCode: h.currencyCode ?? "", usuario, rol,
-    lineas: det.recordset.map((l: any) => ({
+  // Las líneas se copian tal cual de la orden vieja, así que arrastran su jobNo. Si
+  // esa orden es de las viejas (con un almacén metido en el campo obra), la orden
+  // nueva nacería envenenada igual que ella: acá no pasa por las rutas HTTP, así que
+  // el saneo se hace en este punto.
+  const lineasPendientes = await sanearObrasDeLineas(det.recordset.map((l: any) => ({
       tipoLinea: "articulo",
       itemNo: l.itemNo ?? undefined, variantCode: l.variantCode ?? undefined,
       idPedidoCompraDet: l.idPedidoCompraDet ?? undefined,
@@ -798,7 +799,11 @@ export async function nuevaOrdenDesdePendiente(
       precioUnitario: Number(l.directUnitCost ?? 0), ivaPct: Number(l.vatPct ?? 0),
       descuentoPct: Number(l.lineDiscountPct ?? 0) || undefined,
       jobNo: l.jobNo ?? undefined, taskNo: l.taskNo ?? undefined,
-    })),
+    })));
+  const idOrden = await createOrden({
+    proveedorNo: h.proveedorNo, proveedorNombre: h.proveedorNombre ?? undefined,
+    currencyCode: h.currencyCode ?? "", usuario, rol,
+    lineas: lineasPendientes.lineas,
   });
 
   const nueva = await pool.request().input("id", sql.Int, idOrden)

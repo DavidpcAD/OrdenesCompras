@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getOrden, setOrdenEstado, updateOrden, ordenTieneRecepciones, MSG_NO_REABRIR } from "@/lib/repo";
-import { bcReopenPedido, bcReplaceOrderLines } from "@/lib/bc";
+import { bcReopenPedido, bcReplaceOrderLines, sanearObrasDeLineas, avisoDeSaneo } from "@/lib/bc";
 import { actor } from "@/lib/actor";
 
 export const runtime = "nodejs";
@@ -64,6 +64,15 @@ export async function PUT(req: Request, { params }: { params: { id: string } }) 
   try {
     const body = await req.json();
     const id = Number(params.id);
+    // La obra de una línea es un Project No. de BC. Como se venía llenando con el
+    // almacén/centro de costo de la solicitud, podía traer un código que en BC NO es
+    // obra (ALM-GRAL, centros de costo sin proyecto) y entonces BC rechaza la
+    // reescritura ENTERA del pedido: el edit quedaba acá y allá con las líneas
+    // viejas, sin forma de reintentar. Se limpia ANTES de guardar para que el código
+    // malo tampoco se quede en el SQL (así una orden ya guardada así se cura sola al
+    // volver a guardarla).
+    const saneo = Array.isArray(body?.lineas) ? await sanearObrasDeLineas(body.lineas) : null;
+    if (saneo) body.lineas = saneo.lineas;
     await updateOrden(id, { ...body, ...(await actor(body)) });
 
     // El edit ya quedó en SQL. Si la orden VIVE EN BC hay que empujarle las líneas
@@ -72,6 +81,10 @@ export async function PUT(req: Request, { params }: { params: { id: string } }) 
     // relanza). Se lee la orden ya guardada para mandar exactamente lo que quedó.
     // Si BC falla NO se revienta el guardado (el SQL ya está): se devuelve el aviso
     // para que la pantalla lo diga y se pueda reintentar volviendo a guardar.
+    // Lo que hizo el saneo NO puede quedar mudo: quitarle la obra a una línea cambia
+    // a qué se costea el material, y no haber podido verificarla explica de antemano
+    // el rechazo de BC que si no llega pelado ("volvé a guardar" a ciegas).
+    const avisos: string[] = [];
     let bcAviso: string | undefined;
     const o = await getOrden(id);
     if (o?.bcNumber) {
@@ -84,11 +97,13 @@ export async function PUT(req: Request, { params }: { params: { id: string } }) 
           jobNo: l.proyecto, taskNo: l.taskNo,
           chargeNo: l.chargeNo, chargeMethod: l.chargeMethod, descripcion: l.descripcion,
         })));
-        if (r.omitidas.length) bcAviso = `Guardado. OJO: BC no recibió ${r.omitidas.length} línea(s) — ${r.omitidas.join("; ")}.`;
+        if (r.omitidas.length) avisos.push(`Guardado. OJO: BC no recibió ${r.omitidas.length} línea(s) — ${r.omitidas.join("; ")}.`);
       } catch (e: any) {
-        bcAviso = `Se guardó acá, pero el pedido ${o.bcNumber} en BC quedó con las líneas VIEJAS: ${String(e?.message ?? e)}. Volvé a guardar para reintentar.`;
+        avisos.push(`Se guardó acá, pero el pedido ${o.bcNumber} en BC quedó con las líneas VIEJAS: ${String(e?.message ?? e)}. Volvé a guardar para reintentar.`);
       }
     }
+    if (saneo) { const a = avisoDeSaneo(saneo); if (a) avisos.push(a); }
+    bcAviso = avisos.join(" · ") || undefined;
     return NextResponse.json({ ok: true, bcAviso });
   } catch (e: any) {
     return NextResponse.json({ error: String(e?.message ?? e) }, { status: 500 });

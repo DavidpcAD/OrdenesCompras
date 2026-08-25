@@ -471,6 +471,103 @@ export async function bcObras(): Promise<BcObra[]> {
   }));
 }
 
+// Corre `p`, pero se rinde a los `ms`. El catálogo de obras se lee ANTES de guardar
+// la orden, y bcFetch no lleva timeout: si el tenant de BC deja de contestar (sin
+// error, colgado), sin esto el guardado se quedaría esperando el timeout de undici
+// (~300 s) y la orden no se guardaría en ningún lado. Rendirse = "no pude leer el
+// catálogo", que es un estado que el saneo ya sabe manejar.
+async function conTiempoLimite<T>(p: Promise<T>, ms: number, que: string): Promise<T> {
+  let t: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      p,
+      new Promise<never>((_, rechazar) => { t = setTimeout(() => rechazar(new Error(`${que}: BC no contestó en ${ms} ms`)), ms); }),
+    ]);
+  } finally { if (t) clearTimeout(t); }
+}
+
+// Códigos de obra que EXISTEN en BC (tabla Project/Job), en mayúscula. `null` = el
+// catálogo NO se pudo leer, que no es lo mismo que "no hay obras": se avisa en el log
+// y el llamador lo distingue, porque con `null` el saneo no opina y deja pasar lo que
+// venga (incluido el ALM-GRAL que hace que BC rechace el pedido entero).
+//
+// OJO con la lista vacía: se trata como "no pude leer". Un 200 con `value: []` puede
+// ser un permission set mal puesto, y creerle sería sacarle la obra a TODAS las líneas
+// de TODAS las órdenes — mucho peor que el bug que esto arregla.
+async function codigosDeObra(): Promise<Set<string> | null> {
+  try {
+    const codigos = new Set((await conTiempoLimite(bcObras(), 8000, "catálogo de obras"))
+      .map((o) => (o.codigo ?? "").trim().toUpperCase()).filter(Boolean));
+    if (!codigos.size) {
+      console.warn("BC: el catálogo de obras vino VACÍO; no se verifica el Project No. de las líneas.");
+      return null;
+    }
+    return codigos;
+  } catch (e) {
+    console.warn("BC: no se pudo leer el catálogo de obras; no se verifica el Project No. de las líneas —", e);
+    return null;
+  }
+}
+
+// Deja SIN OBRA a las líneas cuyo jobNo no es una obra real de BC.
+//
+// La obra de una línea es un Project No. de BC, pero en la app se venía llenando con
+// el almacén/centro de costo de la solicitud, y ahí caben códigos que no son obras
+// (ALM-GRAL y cualquier centro de costo sin proyecto). Al reescribir las líneas de un
+// pedido, BC rechaza TODO el documento por una sola de esas:
+//   "The field Project No. of table Purchase Line contains a value (ALM-GRAL) that
+//    cannot be found in the related table (Project)"
+// El pedido en BC se quedaba con las líneas VIEJAS y el edit no había forma de
+// completarlo — reintentar daba siempre el mismo error, porque el código malo ya
+// estaba guardado en el SQL.
+//
+// Es la parte pura (testeable sin BC): decide contra el catálogo que se le pase.
+// Con `obras === null` no toca nada — un bache de red no debe borrarle la obra a una
+// línea que sí la tiene, que es lo que hace que el material se cargue como consumo.
+//
+// `catalogo` es parte del contrato a propósito: "no se descartó nada" significa cosas
+// MUY distintas según se haya podido leer el catálogo o no, y el llamador tiene que
+// poder decírselo a quien está guardando.
+export type SaneoObras<T> = { lineas: T[]; descartadas: string[]; catalogo: "ok" | "sin-leer" };
+
+export function sinObrasInexistentes<T extends { jobNo?: string | null; taskNo?: string | null }>(
+  lineas: T[], obras: Set<string> | null,
+): SaneoObras<T> {
+  const ls = lineas ?? [];
+  if (!obras) return { lineas: ls, descartadas: [], catalogo: "sin-leer" };
+  const fuera = new Set(ls.map((l) => (l.jobNo ?? "").trim().toUpperCase()).filter((c) => c && !obras.has(c)));
+  if (!fuera.size) return { lineas: ls, descartadas: [], catalogo: "ok" };
+  return {
+    // La tarea se va con la obra: una Job Task sin Job No. tampoco existe en BC.
+    lineas: ls.map((l) => (fuera.has((l.jobNo ?? "").trim().toUpperCase()) ? { ...l, jobNo: undefined, taskNo: undefined } : l)),
+    descartadas: [...fuera].sort(),
+    catalogo: "ok",
+  };
+}
+
+// Íd., pero leyendo el catálogo de obras de BC (cache de 5 min). Se usa al guardar
+// una orden, ANTES de tocar el SQL, para que el código malo no llegue a quedar
+// guardado y el pedido de BC se pueda reescribir siempre.
+export async function sanearObrasDeLineas<T extends { jobNo?: string | null; taskNo?: string | null }>(
+  lineas: T[],
+): Promise<SaneoObras<T>> {
+  const ls = lineas ?? [];
+  // Sin ninguna obra que verificar no se molesta a BC: no hay nada que pueda fallar,
+  // así que el catálogo cuenta como "ok" (no queda nada sin verificar).
+  if (!ls.some((l) => (l.jobNo ?? "").trim())) return { lineas: ls, descartadas: [], catalogo: "ok" };
+  return sinObrasInexistentes(ls, await codigosDeObra());
+}
+
+// Texto para la persona que está guardando. "" = no hay nada que contarle.
+// El saneo cambia a qué se costea el material, así que NO puede ser mudo.
+export function avisoDeSaneo(saneo: { descartadas: string[]; catalogo: "ok" | "sin-leer" }): string {
+  if (saneo.catalogo === "sin-leer") {
+    return "No se pudo leer el catálogo de obras de BC, así que la obra de las líneas no se verificó. Si BC rechaza el pedido por el Project No., es por esto.";
+  }
+  if (!saneo.descartadas.length) return "";
+  return `Se quitó la obra ${saneo.descartadas.join(", ")} de las líneas que la tenían: en BC no existe como obra (es un almacén o centro de costo). El material entra a inventario, no se costea a una obra.`;
+}
+
 // Lista paginada de una API custom con path+query ya armados (incluye $filter).
 // A diferencia de listAll (datos maestros, cache 5 min), aquí el caller decide
 // el cache vía `opts` (p.ej. no-store para stock, que cambia con cada recepción).

@@ -10,17 +10,30 @@ import { money, ordenEsDirecta, ordenPedidos, almacenesParaRecepcion, esAlmacenF
 import { precioEnUnidad, precioEntreUnidades, cantidadEntreUnidades, equivalencia, equivalenciaDeUnidad, mismaMoneda, codigoDeItem, opcionesDeUnidad, type UnidadDeItem } from "@/lib/unidad";
 import type { OrdenLinea } from "@/lib/types";
 
-interface Row { key: string; articuloId: string; descripcion: string; unidad: string; unidadBase?: string; factorCompra?: number; obra: string; cantidad: string; precio: string; iva: string; descuento: string; proyecto?: string; taskNo?: string; pedidoLineaId?: string; pedidoNumero?: string; }
+// OJO con los dos campos de destino, que NO son lo mismo (y estaban pegados en uno):
+//   almacen  -> locationCode: DÓNDE entra el material en BC.
+//   proyecto -> Project No. (Job): a qué OBRA se carga como consumo. Opcional, y
+//               tiene que existir en BC.
+interface Row { key: string; articuloId: string; variantCode?: string; descripcion: string; unidad: string; unidadBase?: string; factorCompra?: number; almacen: string; cantidad: string; precio: string; iva: string; descuento: string; proyecto?: string; taskNo?: string; pedidoLineaId?: string; pedidoNumero?: string; }
 const uid = () => Math.random().toString(36).slice(2, 9);
 
 // Líneas de la orden -> filas editables. Se usa en el estado inicial y al hidratar.
 const filasDeOrden = (lineas: OrdenLinea[]): Row[] =>
   lineas.filter((l) => l.tipo === "articulo").map((l) => ({
-    key: l.id, articuloId: l.articuloId ?? "", descripcion: l.descripcion, unidad: l.unidad,
-    unidadBase: l.unidadBase, factorCompra: l.factorCompra, obra: l.proyecto ?? l.almacen ?? "",
+    key: l.id, articuloId: l.articuloId ?? "", variantCode: l.variantCode, descripcion: l.descripcion, unidad: l.unidad,
+    unidadBase: l.unidadBase, factorCompra: l.factorCompra, almacen: l.almacen ?? "",
     cantidad: String(l.cantidad), precio: String(l.precioUnitario), iva: String(l.ivaPct ?? 13), descuento: String(l.descuentoPct ?? 0),
     proyecto: l.proyecto, taskNo: l.taskNo, pedidoLineaId: l.pedidoLineaId, pedidoNumero: l.pedidoNumero,
   }));
+
+// El almacén/centro de costo que comparten las líneas de artículo, o "" si tienen
+// varios. Es la única verdad: `almacenRecepcion` del encabezado no se guarda en el
+// SQL, así que el selector arrancaba SIEMPRE en ALM-GRAL, y como además no se
+// mandaba a ninguna parte, cambiarlo no movía nada ni acá ni en BC.
+function almacenComun(lineas: OrdenLinea[]): string {
+  const codigos = [...new Set(lineas.filter((l) => l.tipo === "articulo").map((l) => (l.almacen ?? "").trim()))];
+  return codigos.length === 1 ? codigos[0] : "";
+}
 
 export default function EditarOrdenPage() {
   const { id } = useParams<{ id: string }>();
@@ -54,7 +67,7 @@ export default function EditarOrdenPage() {
   const [proveedorId, setProveedorId] = useState(orden?.proveedorId ?? "");
   const [currency, setCurrency] = useState(monedaApp(orden?.currencyCode));
   const [flete, setFlete] = useState(cargo ? String(cargo.precioUnitario) : "");
-  const [almacen, setAlmacen] = useState(orden?.almacenRecepcion ?? "ALM-GRAL");
+  const [almacen, setAlmacen] = useState(almacenComun(orden?.lineas ?? []));
   const [observaciones, setObservaciones] = useState(orden?.observaciones ?? "");
   const [notaInterna, setNotaInterna] = useState(orden?.notaInterna ?? "");
   const [rows, setRows] = useState<Row[]>(filasDeOrden(orden?.lineas ?? []));
@@ -70,7 +83,7 @@ export default function EditarOrdenPage() {
     hidratado.current = true;
     setProveedorId(orden.proveedorId ?? "");
     setCurrency(monedaApp(orden.currencyCode));
-    setAlmacen(orden.almacenRecepcion ?? "ALM-GRAL");
+    setAlmacen(almacenComun(orden.lineas));
     setObservaciones(orden.observaciones ?? "");
     setNotaInterna(orden.notaInterna ?? "");
     const cg = orden.lineas.find((l) => l.tipo === "cargo");
@@ -90,7 +103,7 @@ export default function EditarOrdenPage() {
   function agregarLinea() {
     const it = itemsBc.find((x) => x.code === qaCode);
     if (!it || !(Number(qaQty) > 0)) { toast("Elegí un artículo y una cantidad.", "error"); return; }
-    setRows((rs) => [...rs, { key: `m-${uid()}`, articuloId: it.code, descripcion: it.descripcion, unidad: it.unidad, unidadBase: it.unidadBase, factorCompra: it.factorCompra, obra: "", cantidad: String(Number(qaQty)), precio: String(Number(qaPrecio) || 0), iva: "13", descuento: "0", pedidoNumero: "Manual" }]);
+    setRows((rs) => [...rs, { key: `m-${uid()}`, articuloId: it.code, descripcion: it.descripcion, unidad: it.unidad, unidadBase: it.unidadBase, factorCompra: it.factorCompra, almacen, cantidad: String(Number(qaQty)), precio: String(Number(qaPrecio) || 0), iva: "13", descuento: "0", pedidoNumero: "Manual" }]);
     setQaCode(""); setQaQty(""); setQaPrecio("");
   }
 
@@ -187,10 +200,20 @@ export default function EditarOrdenPage() {
     setGuardando(true);
     try {
       const ls: Omit<OrdenLinea, "id" | "cantidadRecibida" | "cantidadFacturada">[] = rows.map((r) => ({
-        tipo: "articulo", articuloId: r.articuloId, pedidoLineaId: r.pedidoLineaId, pedidoNumero: r.pedidoNumero,
-        descripcion: r.descripcion, cantidad: Number(r.cantidad), unidad: r.unidad, almacen: r.obra,
+        // La variante viaja SIEMPRE: sin esto, editar una orden le borraba el color/
+        // medida a la línea en el SQL y la reescribía en BC con la variante vacía.
+        tipo: "articulo", articuloId: r.articuloId, variantCode: r.variantCode || undefined,
+        pedidoLineaId: r.pedidoLineaId, pedidoNumero: r.pedidoNumero,
+        descripcion: r.descripcion, cantidad: Number(r.cantidad), unidad: r.unidad,
+        // El almacén de arriba manda sobre todas las líneas (es el punto de
+        // "cambiarle el centro de costo a la orden"). Vacío = cada línea se queda
+        // con el suyo, que es lo que pasa cuando la orden tiene varios.
+        almacen: almacen || r.almacen,
         precioUnitario: Number(r.precio), ivaPct: Number(r.iva) || 0, descuentoPct: Number(r.descuento) || 0,
-        proyecto: r.proyecto || r.obra || undefined, taskNo: r.taskNo,
+        // La obra viaja a BC como Project No. y SOLO si la línea de verdad tiene una:
+        // antes se caía al almacén, y un "ALM-GRAL" en Project No. hace que BC rechace
+        // la reescritura completa del pedido (se quedaba con las líneas viejas).
+        proyecto: r.proyecto || undefined, taskNo: r.proyecto ? r.taskNo : undefined,
       }));
       // El cargo se rearma conservando lo que ya tenía la orden (tipo de Item Charge
       // de BC, método de reparto, descripción y cantidad). Antes se reescribía como
@@ -204,12 +227,12 @@ export default function EditarOrdenPage() {
           descripcion: cargo?.descripcion || "FLETE / TRANSPORTE",
           cantidad: cargo?.cantidad && cargo.cantidad > 0 ? cargo.cantidad : 1,
           unidad: cargo?.unidad || "UND",
-          almacen: cargo?.almacen || rows[0]?.obra || "",
+          almacen: almacen || cargo?.almacen || rows[0]?.almacen || "",
           precioUnitario: fleteNum,
           ivaPct: cargo?.ivaPct ?? 13,
         });
       }
-      const r = await updateOrden(orden!.id, { proveedorId, proveedorNo: provSel?.code, proveedorNombre: provSel?.nombre, currencyCode: currency, almacenRecepcion: almacen, observaciones: observaciones.trim() || undefined, notaInterna: notaInterna.trim() || undefined, lineas: ls });
+      const r = await updateOrden(orden!.id, { proveedorId, proveedorNo: provSel?.code, proveedorNombre: provSel?.nombre, currencyCode: currency, almacenRecepcion: almacen || undefined, observaciones: observaciones.trim() || undefined, notaInterna: notaInterna.trim() || undefined, lineas: ls });
       // Si BC no quedó sincronizado, ese aviso manda: el pedido allá tendría las
       // líneas viejas y Bodega recibiría contra ellas.
       if (r?.bcAviso) toast(r.bcAviso, "info");
@@ -242,7 +265,10 @@ export default function EditarOrdenPage() {
             <Field label="Flete / transporte" help="Opcional, se distribuye al facturar">
               <Input type="number" min={0} value={flete} onChange={(e) => setFlete(e.target.value)} placeholder="0" />
             </Field>
-            <Field label="Almacén / centro de costo de recepción" help="Dónde entra el material en BC. Por defecto el Almacén General, pero podés elegir cualquier centro de costo.">
+            <Field label="Almacén / centro de costo de recepción"
+              help={almacen
+                ? "Dónde entra el material en BC. Al guardar se aplica a TODAS las líneas de la orden."
+                : "Las líneas tienen almacenes distintos. Elegí uno solo si querés moverlas todas al mismo; si lo dejás en blanco, cada una se queda con el suyo."}>
               <Combobox items={catAlm} value={almacen} onChange={(k) => setAlmacen(k)}
                 getKey={(a) => a.codigo} getLabel={(a) => `${a.codigo} — ${a.nombre}`}
                 getSearch={(a) => `${a.codigo} ${a.nombre}`}
@@ -318,7 +344,7 @@ export default function EditarOrdenPage() {
           )}
           <div className="ds-table-wrap" style={{ boxShadow: "none" }}>
             <table className="ds-table">
-              <thead><tr><th>Artículo</th><th>Solicitud</th><th>Obra</th><th className="ds-num">Cantidad</th><th className="ds-num">Precio</th><th className="ds-num">Desc%</th><th className="ds-num">IVA%</th><th className="ds-num">Importe</th><th></th></tr></thead>
+              <thead><tr><th>Artículo</th><th>Solicitud</th><th>Destino</th><th className="ds-num">Cantidad</th><th className="ds-num">Precio</th><th className="ds-num">Desc%</th><th className="ds-num">IVA%</th><th className="ds-num">Importe</th><th></th></tr></thead>
               <tbody>
                 {rows.length === 0 && <tr><td colSpan={9}><div className="empty">Sin líneas. Agregá al menos una.</div></td></tr>}
                 {rows.map((r) => (
@@ -329,7 +355,10 @@ export default function EditarOrdenPage() {
                       if (r.pedidoNumero && pid) return <button type="button" className="linklike" title="Ver la solicitud (quién la pidió)" onClick={() => router.push(`/proveeduria/solicitudes/${pid}`)}>{r.pedidoNumero}</button>;
                       return <span className="ds-muted">{r.pedidoNumero || "—"}</span>;
                     })()}</td>
-                    <td className="ds-muted ds-body-sm">{r.obra || "—"}</td>
+                    <td className="ds-muted ds-body-sm">
+                      <div>{almacen || r.almacen || "—"}</div>
+                      {r.proyecto && <div className="ds-body-sm">Obra {r.proyecto}</div>}
+                    </td>
                     <td className="ds-num">
                       {/* La unidad al lado de la cantidad: "40" solo no dice nada
                           cuando el material se compra por M3, KG o SACO. */}

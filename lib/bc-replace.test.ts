@@ -6,7 +6,7 @@
 //   npm test
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { payloadReplaceLines, type LineaReplaceBc } from "./bc.ts";
+import { payloadReplaceLines, sinObrasInexistentes, avisoDeSaneo, type LineaReplaceBc } from "./bc.ts";
 
 const item = (p: Partial<LineaReplaceBc> = {}): LineaReplaceBc => ({
   tipo: "articulo", itemNo: "M01-0147", descripcion: "VARILLA DEFORME #3",
@@ -116,4 +116,52 @@ test("los campos opcionales viajan vacíos, no como undefined", () => {
 
 test("sin líneas devuelve vacío sin reventar", () => {
   assert.deepEqual(payloadReplaceLines([]), { lines: [], omitidas: [] });
+});
+
+// --- La obra (Project No.) que viaja a BC ---------------------------------
+// Una obra que no existe en BC no tumba SU línea: tumba el pedido ENTERO. BC
+// contesta "The field Project No. of table Purchase Line contains a value
+// (ALM-GRAL) that cannot be found in the related table (Project)" y se queda con las
+// líneas viejas — contra ésas recibe Bodega y factura Contabilidad.
+const obrasBc = new Set(["VB-5.01", "VN-M.28"]);
+
+test("un almacén metido de obra se descarta (y se lleva la tarea)", () => {
+  const { lineas, descartadas } = sinObrasInexistentes(
+    [{ jobNo: "ALM-GRAL", taskNo: "1000" }, { jobNo: "VB-5.01", taskNo: "2000" }], obrasBc);
+  assert.deepEqual(lineas[0], { jobNo: undefined, taskNo: undefined });
+  assert.deepEqual(lineas[1], { jobNo: "VB-5.01", taskNo: "2000" });   // la obra real no se toca
+  assert.deepEqual(descartadas, ["ALM-GRAL"]);
+});
+
+test("la obra se reconoce con espacios o en minúscula", () => {
+  const { lineas, descartadas } = sinObrasInexistentes([{ jobNo: " vb-5.01 " }], obrasBc);
+  assert.equal(lineas[0].jobNo, " vb-5.01 ");   // se deja tal cual: BC la valida igual
+  assert.deepEqual(descartadas, []);
+});
+
+// Sin catálogo (BC caído, extensión sin publicar) NO se borra nada: quitarle la obra
+// a una línea que sí la tiene cambia dónde se costea el material.
+test("sin catálogo de obras no se toca ninguna línea", () => {
+  const ls = [{ jobNo: "ALM-GRAL", taskNo: "1000" }];
+  const { lineas, descartadas } = sinObrasInexistentes(ls, null);
+  assert.equal(lineas[0].jobNo, "ALM-GRAL");
+  assert.deepEqual(descartadas, []);
+});
+
+test("líneas sin obra pasan intactas", () => {
+  const ls = [{ jobNo: undefined }, { jobNo: "" }];
+  assert.deepEqual(sinObrasInexistentes(ls, obrasBc), { lineas: ls, descartadas: [], catalogo: "ok" });
+});
+
+// "No se descartó nada" significa cosas MUY distintas según se haya podido leer el
+// catálogo: sin esto, el llamador no puede avisarle a nadie que no verificó nada.
+test("el saneo dice si pudo leer el catálogo o no", () => {
+  assert.equal(sinObrasInexistentes([{ jobNo: "VB-5.01" }], obrasBc).catalogo, "ok");
+  assert.equal(sinObrasInexistentes([{ jobNo: "VB-5.01" }], null).catalogo, "sin-leer");
+});
+
+test("el aviso nombra la obra que se quitó, y avisa cuando no se pudo verificar", () => {
+  assert.match(avisoDeSaneo({ descartadas: ["ALM-GRAL"], catalogo: "ok" }), /ALM-GRAL/);
+  assert.equal(avisoDeSaneo({ descartadas: [], catalogo: "ok" }), "");
+  assert.match(avisoDeSaneo({ descartadas: [], catalogo: "sin-leer" }), /no se verificó/);
 });
