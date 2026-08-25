@@ -82,7 +82,8 @@ const ORDENES: HelpEntry = {
   ],
   pasos: [
     "Tocá un panel de arriba para filtrar por estado (abiertas, pendientes de aprobación, rechazadas, completadas).",
-    "Buscá por N.º de orden o proveedor. También encontrás una orden escribiendo su N.º interno viejo (CP-000037).",
+    "Buscá por N.º de orden, proveedor o almacén. También encontrás una orden escribiendo su N.º interno viejo (CP-000037).",
+    "La columna Almacén dice a dónde entra el material y, si la compra es consumo de una obra, muestra la obra debajo.",
     "Clic en una orden para ver su detalle, estados e historial y las facturas asociadas.",
     "Desde el detalle podés editar (si está Abierta), enviar a aprobación, imprimir o revisar recepciones.",
     "Con el toggle ves por orden o por línea, y podés agrupar por proveedor.",
@@ -118,8 +119,12 @@ const ORDEN_EDITAR: HelpEntry = {
   pasos: [
     "Cambiá el proveedor y/o el almacén de recepción si hace falta.",
     "Agregá o quitá líneas y corregí cantidades y precios.",
+    "En la columna Destino, tocá “Cambiar obra/tarea” (o “Asignar obra”) para corregir a qué obra se carga la línea y con qué tarea. Con obra, el material se consume en la obra; sin obra entra al almacén.",
     "Revisá el total; guardá los cambios.",
     "Cuando esté lista, enviala a aprobación.",
+  ],
+  tips: [
+    "Si la línea va a una obra, la tarea es obligatoria: Business Central no acepta un Job No. sin Job Task No.",
   ],
 };
 const ORDEN_IMPRIMIR: HelpEntry = {

@@ -2,7 +2,7 @@
 
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Badge, Button, Card, EmptyState, Field, Input, Select, Textarea, useToast, Skeleton } from "@/components/ui";
+import { Badge, Button, Card, EmptyState, Field, Input, Modal, Select, Textarea, useToast, Skeleton } from "@/components/ui";
 import { IconWarning } from "@/components/icons";
 import { Combobox } from "@/components/combobox";
 import { useStore } from "@/lib/store";
@@ -15,6 +15,8 @@ import type { OrdenLinea } from "@/lib/types";
 //   proyecto -> Project No. (Job): a qué OBRA se carga como consumo. Opcional, y
 //               tiene que existir en BC.
 interface Row { key: string; articuloId: string; variantCode?: string; descripcion: string; unidad: string; unidadBase?: string; factorCompra?: number; almacen: string; cantidad: string; precio: string; iva: string; descuento: string; proyecto?: string; taskNo?: string; pedidoLineaId?: string; pedidoNumero?: string; }
+type Obra = { codigo: string; nombre: string };
+type Tarea = { jobTaskNo: string; descripcion: string; tipo: string };
 const uid = () => Math.random().toString(36).slice(2, 9);
 
 // Líneas de la orden -> filas editables. Se usa en el estado inicial y al hidratar.
@@ -54,11 +56,21 @@ export default function EditarOrdenPage() {
   const [unidadesPorItem, setUnidadesPorItem] = useState<Record<string, UnidadDeItem[]>>({});
   const unidadesPedidasRef = useRef<Set<string>>(new Set());
   const [bcAlm, setBcAlm] = useState<typeof almacenes | null>(null);
+  // Obras y sus tareas (Job No. / Job Task No. de BC), para el diálogo de destino.
+  const [obras, setObras] = useState<Obra[]>([]);
+  const [tareasPorObra, setTareasPorObra] = useState<Record<string, Tarea[]>>({});
+  // Línea cuyo destino (obra + tarea) se está corrigiendo (null = cerrado).
+  const [editObra, setEditObra] = useState<Row | null>(null);
   useEffect(() => {
     fetch("/api/bc/vendors").then((r) => (r.ok ? r.json() : { proveedores: [] })).then((d) => { if (Array.isArray(d.proveedores) && d.proveedores.length) setBcProv(d.proveedores); }).catch(() => {});
     // Igual que en compra directa: la unidad que manda es la de COMPRA de BC.
     fetch("/api/bc/items").then((r) => (r.ok ? r.json() : { items: [] })).then((d) => { if (Array.isArray(d.items)) setItemsBc(d.items.map((i: any) => ({ code: i.code, descripcion: i.descripcion, unidad: (i.unidadCompra || i.unidad || "UND"), unidadBase: i.unidad || undefined, factorCompra: i.factorCompra }))); }).catch(() => {});
     fetch("/api/bc/almacenes").then((r) => (r.ok ? r.json() : { almacenes: [] })).then((d) => { if (Array.isArray(d.almacenes) && d.almacenes.length) setBcAlm(d.almacenes); }).catch(() => {});
+    // Obras (Job No.) para poder CORREGIR el destino de una línea: una orden que se
+    // mandó con la obra o la tarea equivocada se arreglaba borrándola y armándola
+    // de nuevo, porque acá el destino era solo texto.
+    fetch("/api/bc/obras").then((r) => (r.ok ? r.json() : { obras: [] }))
+      .then((d) => { if (Array.isArray(d.obras)) setObras(d.obras.map((o: any) => ({ codigo: o.codigo, nombre: o.nombre }))); }).catch(() => {});
   }, []);
   const catProv = bcProv ?? proveedores;
   const catAlm = almacenesParaRecepcion(bcAlm ?? almacenes);
@@ -123,6 +135,34 @@ export default function EditarOrdenPage() {
         .catch(() => setUnidadesPorItem((m) => ({ ...m, [itemNo]: [] })));
     }
   }, [rows]);
+  // Tareas de una obra, una sola vez por obra. Solo las de tipo "Posting": las de
+  // tipo Heading/Total son rótulos del presupuesto y BC rechaza la línea de compra
+  // que apunte a una de ellas. Si la API no manda el tipo, se dejan todas.
+  const cargarTareas = (jobNo: string) => {
+    const j = (jobNo ?? "").trim();
+    if (!j || tareasPorObra[j]) return;
+    fetch(`/api/bc/jobtasks?jobNo=${encodeURIComponent(j)}`)
+      .then((r) => (r.ok ? r.json() : { jobTasks: [] }))
+      .then((d) => {
+        const todas: Tarea[] = Array.isArray(d.jobTasks) ? d.jobTasks : [];
+        const posting = todas.filter((t) => (t.tipo ?? "").toLowerCase() === "posting");
+        setTareasPorObra((m) => ({ ...m, [j]: posting.length ? posting : todas }));
+      })
+      .catch(() => setTareasPorObra((m) => ({ ...m, [j]: [] })));
+  };
+  // Las tareas de las obras que las líneas YA traen: así el diálogo abre con la
+  // lista puesta y se puede mostrar el nombre de la tarea en la tabla.
+  useEffect(() => {
+    for (const j of new Set(rows.map((r) => (r.proyecto ?? "").trim()).filter(Boolean))) cargarTareas(j);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rows]);
+  const tareasDe = (jobNo: string) => tareasPorObra[(jobNo ?? "").trim()] ?? [];
+  // El Combobox no se puede vaciar solo: "Sin obra" es una opción más (código "").
+  const obrasConVacio = useMemo(() => [{ codigo: "", nombre: "Sin obra — entra al almacén" }, ...obras], [obras]);
+  const etiquetaObra = (o: Obra) => (o.codigo ? `${o.codigo} — ${o.nombre}` : o.nombre);
+  const etiquetaTarea = (t: Tarea) => `${t.jobTaskNo} — ${t.descripcion}`;
+  const nombreTarea = (jobNo: string, taskNo: string) => tareasDe(jobNo).find((t) => t.jobTaskNo === taskNo)?.descripcion ?? "";
+
   const unidadesDe = (itemNo: string) => unidadesPorItem[codigoDeItem(itemNo)] ?? [];
   // Lo que se ofrece en la celda: las de BC + la que la línea ya tiene.
   const opcionesFila = (itemNo: string, actual: string) => opcionesDeUnidad(unidadesDe(itemNo), actual);
@@ -197,6 +237,10 @@ export default function EditarOrdenPage() {
     if (malaCant) { toast(`Poné una cantidad mayor que 0 en "${malaCant.descripcion}".`, "error"); return; }
     const malPrecio = rows.find((r) => !Number.isFinite(Number(r.precio)) || Number(r.precio) < 0);
     if (malPrecio) { toast(`El precio de "${malPrecio.descripcion}" no es un número válido.`, "error"); return; }
+    // Obra sin tarea: BC no acepta un Job No. sin Job Task No. Solo se exige si las
+    // tareas de esa obra ya cargaron (si BC no contesta, no se bloquea el guardado).
+    const sinTarea = rows.find((r) => r.proyecto && tareasDe(r.proyecto).length > 0 && !r.taskNo);
+    if (sinTarea) { toast(`Elegí la tarea de la obra ${sinTarea.proyecto} en "${sinTarea.descripcion}": sin ella Business Central no acepta la línea.`, "error"); return; }
     setGuardando(true);
     try {
       const ls: Omit<OrdenLinea, "id" | "cantidadRecibida" | "cantidadFacturada">[] = rows.map((r) => ({
@@ -355,9 +399,23 @@ export default function EditarOrdenPage() {
                       if (r.pedidoNumero && pid) return <button type="button" className="linklike" title="Ver la solicitud (quién la pidió)" onClick={() => router.push(`/proveeduria/solicitudes/${pid}`)}>{r.pedidoNumero}</button>;
                       return <span className="ds-muted">{r.pedidoNumero || "—"}</span>;
                     })()}</td>
-                    <td className="ds-muted ds-body-sm">
-                      <div>{almacen || r.almacen || "—"}</div>
-                      {r.proyecto && <div className="ds-body-sm">Obra {r.proyecto}</div>}
+                    {/* Destino de ESTA línea: almacén (lo manda el de arriba) y la
+                        obra + tarea, que se corrigen en un diálogo. Dos buscadores
+                        no caben en la celda: la fila ya tiene seis campos. */}
+                    <td className="ds-body-sm">
+                      <div className="ds-muted">{almacen || r.almacen || "—"}</div>
+                      {r.proyecto ? (
+                        <div className="ds-muted" title={nombreTarea(r.proyecto, r.taskNo ?? "") || undefined}>
+                          Obra {r.proyecto} · {r.taskNo
+                            ? <span className="ds-strong">tarea {r.taskNo}</span>
+                            : <span className="ds-pending-text">sin tarea</span>}
+                        </div>
+                      ) : (
+                        <div className="ds-muted">Sin obra</div>
+                      )}
+                      <button type="button" className="link-btn" onClick={() => { setEditObra(r); if (r.proyecto) cargarTareas(r.proyecto); }}>
+                        {r.proyecto ? "Cambiar obra/tarea" : "Asignar obra"}
+                      </button>
                     </td>
                     <td className="ds-num">
                       {/* La unidad al lado de la cantidad: "40" solo no dice nada
@@ -398,6 +456,45 @@ export default function EditarOrdenPage() {
           </div>
         </div>
       </main>
+
+      {editObra && (
+        <Modal title="Obra y tarea de la línea" onClose={() => setEditObra(null)}
+          footer={<>
+            <Button variant="outline" onClick={() => setEditObra(null)}>Cancelar</Button>
+            <Button
+              disabled={!!editObra.proyecto && tareasDe(editObra.proyecto).length > 0 && !editObra.taskNo}
+              onClick={() => {
+                setRow(editObra.key, { proyecto: editObra.proyecto || undefined, taskNo: editObra.proyecto ? (editObra.taskNo || undefined) : undefined });
+                setEditObra(null);
+              }}>Guardar</Button>
+          </>}>
+          <p className="ds-body-sm ds-muted" style={{ marginBottom: 16 }}>{[editObra.articuloId, editObra.descripcion].filter(Boolean).join(" — ")}</p>
+          <Field label="Obra" help="Con obra, el material se carga como CONSUMO de esa obra y no suma inventario. Sin obra, entra al almacén de recepción.">
+            <Combobox items={obrasConVacio} value={editObra.proyecto ?? ""}
+              onChange={(k) => { setEditObra({ ...editObra, proyecto: k, taskNo: "" }); if (k) cargarTareas(k); }}
+              getKey={(o) => o.codigo} getLabel={etiquetaObra} getSearch={(o) => `${o.codigo} ${o.nombre}`} placeholder="Sin obra…" />
+          </Field>
+          {/* Casi todas las órdenes viejas traen el código del ALMACÉN copiado en el
+              campo Obra (el bug que se arregló en el servidor). Si ese código no
+              es una obra de BC, el Combobox de arriba no lo encuentra y sale
+              vacío: hay que decir por qué, o parece que la línea no tiene obra. */}
+          {!!editObra.proyecto && obras.length > 0 && !obras.some((o) => o.codigo === editObra.proyecto) && (
+            <p className="ds-body-sm" style={{ color: "var(--ds-color-red-200)", margin: "8px 0 0" }}>
+              La línea trae <span className="ds-strong">{editObra.proyecto}</span>, que no está en el catálogo de obras de
+              Business Central (por eso el campo de arriba sale vacío). Elegí la obra real o dejala sin obra: BC rechaza
+              el pedido completo si el Project No. no existe.
+            </p>
+          )}
+          {!!editObra.proyecto && (
+            <Field label="Tarea" help="Obligatoria cuando la línea va a una obra: BC no acepta un Job No. sin tarea." className="mt-4">
+              <Combobox items={tareasDe(editObra.proyecto)} value={editObra.taskNo ?? ""}
+                onChange={(k) => setEditObra({ ...editObra, taskNo: k })}
+                getKey={(t) => t.jobTaskNo} getLabel={etiquetaTarea} getSearch={(t) => `${t.jobTaskNo} ${t.descripcion}`}
+                placeholder={tareasDe(editObra.proyecto).length ? "Elegí tarea…" : "Sin tareas en BC"} />
+            </Field>
+          )}
+        </Modal>
+      )}
 
       <div className="action-bar">
         <div className="action-bar__inner">

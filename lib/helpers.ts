@@ -326,6 +326,20 @@ export function ordenPedidos(o: Orden): string[] {
   return [...new Set(o.lineas.filter((l) => l.pedidoNumero && l.pedidoNumero !== "Manual").map((l) => l.pedidoNumero!))];
 }
 
+// Almacén(es)/centro(s) de costo a donde entra el material de la orden
+// (locationCode de las líneas de artículo). Casi siempre es uno solo: es el dato
+// que Proveeduría necesita ver en la lista para saber a dónde va la compra sin
+// abrir la orden. Las líneas de cargo (flete) no cuentan: heredan el almacén.
+export function ordenAlmacenes(o: Orden): string[] {
+  return [...new Set(soloArticulos(o).map((l) => (l.almacen ?? "").trim()).filter(Boolean))];
+}
+
+// Obra(s) a las que se carga la orden como consumo (Job No. de las líneas). Vacío
+// = la compra entra a inventario, no a una obra.
+export function ordenObras(o: Orden): string[] {
+  return [...new Set(soloArticulos(o).map((l) => (l.proyecto ?? "").trim()).filter(Boolean))];
+}
+
 // Orden "directa" = compra armada sin partir de una solicitud (ninguna línea
 // proviene de un pedido real). Las órdenes que nacen de solicitudes tienen al
 // menos una línea con su PED-… de origen.

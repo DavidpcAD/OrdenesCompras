@@ -7,7 +7,7 @@ import { Badge, ProgressBar, EmptyState } from "@/components/ui";
 import { DataTable } from "@/components/data-table";
 import { IconChevronDown } from "@/components/icons";
 import { useStore } from "@/lib/store";
-import { money, formatDate, ordenAvance, ordenBadge, ordenRecibidoPct, ordenSubtotal, ordenPedidos, ordenEsDirecta, ordenLineaImporte, proveedorLabel, num, numeroOrden } from "@/lib/helpers";
+import { money, formatDate, ordenAlmacenes, ordenAvance, ordenBadge, ordenObras, ordenRecibidoPct, ordenSubtotal, ordenPedidos, ordenEsDirecta, ordenLineaImporte, proveedorLabel, num, numeroOrden } from "@/lib/helpers";
 import type { Orden } from "@/lib/types";
 
 // N.º de solicitud de origen. Con link es un botón que abre esa solicitud (y no
@@ -20,6 +20,25 @@ export function ChipPedido({ numero, href }: { numero: string; href: string | nu
       onClick={(e) => { e.stopPropagation(); router.push(href); }}>
       {numero}<span className="chip-link__ir" aria-hidden>↗</span>
     </button>
+  );
+}
+
+// A dónde va la compra: almacén/centro de costo de las líneas y, si va a una obra
+// (consumo directo), la obra. Casi siempre hay uno solo; con varios se muestra el
+// primero y "+N" para no romper la fila.
+function CeldaDestino({ orden }: { orden: Orden }) {
+  const alms = ordenAlmacenes(orden);
+  const obras = ordenObras(orden);
+  if (!alms.length && !obras.length) return <span className="ds-muted">—</span>;
+  return (
+    <div className="col" style={{ gap: 1 }}>
+      <span title={alms.join(" · ")}>{alms[0] ?? "—"}{alms.length > 1 ? ` +${alms.length - 1}` : ""}</span>
+      {obras.length > 0 && (
+        <span className="ds-body-sm ds-muted" title={`Se carga como consumo de ${obras.join(" · ")}`}>
+          Obra {obras[0]}{obras.length > 1 ? ` +${obras.length - 1}` : ""}
+        </span>
+      )}
+    </div>
   );
 }
 
@@ -65,6 +84,13 @@ export function OrdenesLista({
         const o = c.row.original; const peds = ordenPedidos(o); const dir = ordenEsDirecta(o);
         return <div className="row gap-2 wrap">{dir && <Badge tone="yellow">Directa</Badge>}{peds.slice(0, 2).map((n) => <ChipPedido key={n} numero={n} href={pedidoHref?.(n) ?? null} />)}{peds.length > 2 && <span className="ds-muted ds-body-sm">+{peds.length - 2}</span>}</div>;
       },
+    },
+    // A dónde entra el material (locationCode) + la obra si es consumo de obra.
+    // Se busca y se filtra por los dos códigos.
+    {
+      id: "almacen", header: "Almacén", meta: { label: "Almacén" },
+      accessorFn: (o) => [...ordenAlmacenes(o), ...ordenObras(o)].join(" "),
+      cell: (c) => <CeldaDestino orden={c.row.original} />,
     },
     { id: "fecha", header: "Fecha", accessorFn: (o) => o.fecha, meta: { label: "Fecha", date: true }, cell: (c) => formatDate(c.getValue()) },
     // "Total" a secas se confundía con el "Total orden" del detalle, que SÍ lleva
@@ -136,7 +162,7 @@ export function OrdenesLista({
           columns={columns}
           tablaKey="ordenes"
           columnVisibilityInicial={{ interno: false }}
-          buscarPlaceholder="Buscar por N.º de orden o proveedor…"
+          buscarPlaceholder="Buscar por N.º de orden, proveedor o almacén…"
           getRowId={(o) => o.id}
           onRowClick={(o) => router.push(hrefDetalle(o.id))}
           vacio={vacio}
@@ -165,7 +191,7 @@ export function OrdenesLista({
                   <div className="ds-table-wrap" style={{ boxShadow: "none", borderRadius: 0 }}>
                     <table className="ds-table">
                       <thead>
-                        <tr><th>N.º</th><th>Solicitudes</th><th>Fecha</th><th className="ds-num">Total sin IVA</th><th>Recibido</th><th>Estado</th></tr>
+                        <tr><th>N.º</th><th>Solicitudes</th><th>Almacén</th><th>Fecha</th><th className="ds-num">Total sin IVA</th><th>Recibido</th><th>Estado</th></tr>
                       </thead>
                       <tbody>
                         {g.ords.map((o) => {
@@ -175,6 +201,7 @@ export function OrdenesLista({
                               tabIndex={0} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); router.push(hrefDetalle(o.id)); } }}>
                               <td className="ds-strong">{numeroOrden(o)}</td>
                               <td><div className="row gap-2 wrap">{dir && <Badge tone="yellow">Directa</Badge>}{peds.slice(0, 2).map((n) => <ChipPedido key={n} numero={n} href={pedidoHref?.(n) ?? null} />)}{peds.length > 2 && <span className="ds-muted ds-body-sm">+{peds.length - 2}</span>}</div></td>
+                              <td className="ds-body-sm"><CeldaDestino orden={o} /></td>
                               <td className="ds-body-sm">{formatDate(o.fecha)}</td>
                               <td className="ds-num ds-strong">{money(ordenSubtotal(o), o.currencyCode)}</td>
                               <td><ProgressBar compact value={ordenAvance(o).recibida} total={ordenAvance(o).total} /></td>
