@@ -161,11 +161,11 @@ function mapPedido(p: any, lineas: any[], unidades: Record<string, UnidadCompraI
       cantidad: Number(l.quantitySolicitado ?? 0),
       ...unidadLinea(l.itemNo ?? "", l.unitOfMeasureCode ?? "", unidades),
       almacen: l.locationCode ?? "", variantCode: l.variantCode ?? undefined,
-      // Obra y tarea de la SOLICITUD (consumo directo). Las escribe Ingeniería desde
-      // la app de Producción; acá solo se leen y se arrastran a la orden. Si esas
-      // columnas todavía no existen en PedidoCompraDet, el SELECT es `det.*` y esto
-      // queda en undefined: la línea es para stock y va sin obra, que es lo correcto.
-      proyecto: l.jobNo ?? undefined, taskNo: l.taskNo ?? undefined,
+      // Obra y tarea de la SOLICITUD. Las escribe Ingeniería desde la app de
+      // Producción y acá solo se leen para arrastrarlas a la orden. Los nombres de
+      // columna son los de ESA app (verificados en su repo): `obra`, no `jobNo`.
+      // La tarea es la que marca el CONSUMO DIRECTO (ver esConsumoDirecto).
+      proyecto: l.obra ?? undefined, taskNo: l.taskNo ?? undefined, taskDescr: l.taskDescr ?? undefined,
       cantidadOrdenada: Number(l.quantityOrdenado ?? 0), notas: l.notaCreador ?? undefined,
     })),
   };

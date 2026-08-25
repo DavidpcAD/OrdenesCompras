@@ -7,7 +7,7 @@ import { IconWarning } from "@/components/icons";
 import { Timeline } from "@/components/timeline";
 import { useStore } from "@/lib/store";
 import { useVolver } from "@/lib/use-volver";
-import { formatDate, num, pedidoBadge, pedidoLineaPendiente, recibidoDeLineaPedido, destinoCodigo, destinoLabel, tipoSolicitudBadge } from "@/lib/helpers";
+import { formatDate, num, pedidoBadge, pedidoLineaPendiente, recibidoDeLineaPedido, destinoCodigo, destinoLabel, tipoSolicitudBadge, esConsumoDirecto } from "@/lib/helpers";
 
 export default function ProveeduriaPedidoDetallePage() {
   const { id } = useParams<{ id: string }>();
@@ -108,9 +108,15 @@ export default function ProveeduriaPedidoDetallePage() {
                     <td><div className="ds-clamp-2" title={l.descripcion} style={{ maxWidth: 420, minWidth: 240 }}>{l.descripcion}</div></td>
                     <td className="ds-muted ds-body-sm">
                       {l.almacen || "—"}
-                      {/* Consumo directo: lo marca quien pide el material. Se muestra
-                          acá porque es lo que decide si la orden lleva obra o no. */}
-                      {l.proyecto && <div>Obra {l.proyecto}{l.taskNo ? ` · tarea ${l.taskNo}` : " · sin tarea"}</div>}
+                      {/* La TAREA es lo que marca el consumo directo (así lo etiqueta
+                          Ingeniería): con tarea, la orden se arma con obra + tarea y BC
+                          consume el material contra el presupuesto de la obra; sin
+                          tarea, la obra es solo el para-quién y el material entra al
+                          almacén. Se muestra acá porque es lo que Angie necesita saber
+                          antes de armar la orden. */}
+                      {esConsumoDirecto(l)
+                        ? <div title={l.taskDescr}>Obra {l.proyecto} · <span className="ds-strong">tarea {l.taskNo}</span>{l.taskDescr ? ` — ${l.taskDescr}` : ""}</div>
+                        : l.proyecto && <div>Para obra {l.proyecto} · entra al almacén</div>}
                     </td>
                     <td className="ds-num">{num.format(l.cantidad)} {l.unidad}</td>
                     <td className="ds-num">{num.format(l.cantidadOrdenada)}</td>

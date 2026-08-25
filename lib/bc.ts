@@ -1187,6 +1187,18 @@ export function lineasOrdenParaBc(lineas: OrdenLinea[]): LineaReplaceBc[] {
   }));
 }
 
+// Líneas que llevan obra pero NO tarea, descritas para el usuario. Es el chequeo
+// que faltaba y por el que se trabaron las primeras órdenes creadas desde acá:
+// el codeunit NO se niega —crea la línea con Job No. y sin Job Task No., y solo
+// devuelve un aviso—, así que el pedido queda en BC y el error aparece mucho
+// después, cuando el aprobador le da lanzar ("Job Task No. must have a value") y
+// no tiene cómo arreglarlo. Se corta antes de tocar BC.
+export function obrasSinTarea(lineas: LineaReplaceBc[]): string[] {
+  return (lineas ?? [])
+    .filter((l) => l.tipo !== "cargo" && (l.jobNo ?? "").trim() && !(l.taskNo ?? "").trim())
+    .map((l) => `${l.descripcion || l.itemNo || "línea"} (obra ${(l.jobNo ?? "").trim()})`);
+}
+
 // Crea el Pedido de compra en BC en estado ABIERTO (sin lanzar), con todas sus
 // líneas. Se llama al ENVIAR A APROBACIÓN: así el pedido ya existe allá y el
 // aprobador (app de Producción) solo tiene que LANZARLO.

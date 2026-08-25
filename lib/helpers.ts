@@ -129,6 +129,27 @@ export const ROL_LABEL: Record<string, string> = {
 };
 
 // ---- líneas de pedido ----
+
+// ¿La línea de la solicitud es CONSUMO DIRECTO de una obra? Lo dice la TAREA, no la
+// obra: Ingeniería marca cada pedido de material con destino ALM (entra al almacén)
+// o CD (se consume contra la obra), y solo el CD obliga a elegir la actividad. Un
+// pedido de material para stock igual dice para qué obra es, así que mirar la obra
+// sola metía en la orden un Job No. sin tarea — y BC rechaza el pedido entero al
+// lanzarlo ("Job Task No. must have a value"), que es como se trabaron las primeras
+// órdenes creadas desde acá.
+//
+// Mismo criterio que usa la app de Producción para su etiqueta "CD · consumo directo".
+export function esConsumoDirecto(l: Pick<PedidoLinea, "taskNo">): boolean {
+  return !!(l.taskNo ?? "").trim();
+}
+
+// La obra que la línea le pasa a la ORDEN (Job No. de BC): solo la del consumo
+// directo. Sin tarea, la obra de la solicitud es informativa y el material entra al
+// almacén. Proveeduría siempre puede asignar obra+tarea a mano en la orden.
+export function obraParaOrden(l: Pick<PedidoLinea, "proyecto" | "taskNo">): string {
+  return esConsumoDirecto(l) ? (l.proyecto ?? "").trim() : "";
+}
+
 export function pedidoLineaPendiente(l: PedidoLinea): number {
   return Math.max(0, l.cantidad - l.cantidadOrdenada);
 }

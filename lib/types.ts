@@ -88,12 +88,19 @@ export interface PedidoLinea {
   factorCompra?: number;    // cuántas unidades base trae la de compra (255000)
   almacen: string;          // centro de costo / almacén: DÓNDE entra el material
   variantCode?: string;     // variante del item (si aplica)
-  // Consumo directo de obra: lo pone QUIEN PIDE el material (Ingeniería), no
-  // Proveeduría. Es la única fuente de la obra en una orden armada de solicitudes:
-  // el almacén NO es una obra (INF-HDAII, F-MAD-NUE son centros de costo) y
-  // tomarlo como Job No. hacía que BC pidiera una tarea que nadie tenía por qué dar.
-  proyecto?: string;        // obra / Job No. de BC
-  taskNo?: string;          // tarea de la obra (Job Task No.)
+  // Obra y tarea que puso QUIEN PIDE el material (Ingeniería), no Proveeduría.
+  // Salen de `dbo.PedidoCompraDet.obra` / `.taskNo` / `.taskDescr`.
+  //
+  // OJO con la diferencia, que es la que decide si BC consume el material contra la
+  // obra o lo mete al inventario: un pedido de material SIEMPRE dice para qué obra
+  // es (`proyecto`), pero solo el de CONSUMO DIRECTO trae TAREA. Con tarea, la línea
+  // de la orden lleva Job No. + Job Task No. y BC la consume contra el presupuesto;
+  // sin tarea, el material es para stock y entra al almacén — ahí la obra es apenas
+  // informativa y NO puede viajar como Job No. (BC rechaza una obra sin tarea).
+  // Ver `esConsumoDirecto` en lib/helpers.ts.
+  proyecto?: string;        // obra / Job No. de BC (informativa si no hay tarea)
+  taskNo?: string;          // tarea de la obra (Job Task No.) — solo consumo directo
+  taskDescr?: string;       // descripción de la tarea ("2.2 — Enchapes"), para mostrar
   cantidadOrdenada: number; // cuánto de esta línea ya pasó a una orden
   notas?: string;
 }

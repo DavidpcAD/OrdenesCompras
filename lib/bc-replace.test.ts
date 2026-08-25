@@ -6,7 +6,7 @@
 //   npm test
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { payloadReplaceLines, sinObrasInexistentes, avisoDeSaneo, lineasOrdenParaBc, crearEnBcAlEnviar, type LineaReplaceBc } from "./bc.ts";
+import { payloadReplaceLines, sinObrasInexistentes, avisoDeSaneo, lineasOrdenParaBc, obrasSinTarea, crearEnBcAlEnviar, type LineaReplaceBc } from "./bc.ts";
 import type { OrdenLinea } from "./types.ts";
 
 const item = (p: Partial<LineaReplaceBc> = {}): LineaReplaceBc => ({
@@ -216,4 +216,21 @@ test("crear en BC al enviar viene prendido y se apaga con 0/false/no", () => {
   process.env.BC_CREAR_AL_ENVIAR = "1";
   assert.equal(crearEnBcAlEnviar(), true);
   delete process.env.BC_CREAR_AL_ENVIAR;
+});
+
+// ---- obra sin tarea: el pedido se crea en BC pero NO se puede lanzar -----------
+// El codeunit no se niega: deja la línea con Job No. y sin Job Task No. y solo
+// avisa. El error sale mucho después, cuando el aprobador le da lanzar. Por eso
+// se corta antes de tocar BC.
+test("una línea con obra y sin tarea se detecta antes de mandar nada a BC", () => {
+  const malas = obrasSinTarea([
+    item({ jobNo: "INF-HDAII", descripcion: "REMACHADORA" }),
+    item({ jobNo: "VN-L.20", taskNo: "2.2" }),
+    item({}),
+  ]);
+  assert.deepEqual(malas, ["REMACHADORA (obra INF-HDAII)"]);
+});
+
+test("el cargo no cuenta: el flete nunca lleva obra", () => {
+  assert.deepEqual(obrasSinTarea([{ tipo: "cargo", chargeNo: "TRANSPORTE", cantidad: 1, precio: 5000, jobNo: "VN-L.20" }]), []);
 });

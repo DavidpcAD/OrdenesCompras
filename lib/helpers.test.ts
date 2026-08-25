@@ -13,7 +13,7 @@ import {
   ordenPedidos, ordenEsDirecta, money, pedidoOrdenadoPct, pedidoCompraBadge, pedidoTieneSaldo, ordenesPorPedido,
   destinoLabel, destinoCodigo, ordenLineaPendiente, ordenLineaCompleta, ultimoPrecioProveedor,
   ordenPendienteResumen, devolverPendienteAPedidos, proveedorLabel,
-  numeroOrden, etiquetaInterna, tieneBc,
+  numeroOrden, etiquetaInterna, tieneBc, esConsumoDirecto, obraParaOrden,
 } from "./helpers.ts";
 import type { Orden, OrdenLinea, Pedido, PedidoLinea } from "./types.ts";
 
@@ -395,4 +395,21 @@ test("tieneBc: distingue la orden que ya existe en BC", () => {
   assert.equal(tieneBc({ bcNumber: "CP-005156" }), true);
   assert.equal(tieneBc({ bcNumber: "  " }), false);
   assert.equal(tieneBc({}), false);
+});
+
+// ---- consumo directo: lo marca la TAREA, no la obra ---------------------------
+// Un pedido de material SIEMPRE dice para qué obra es; solo el de consumo directo
+// (CD) trae actividad. Mirar la obra sola metía en la orden un Job No. sin tarea y
+// BC no podía lanzar el pedido.
+test("esConsumoDirecto: la tarea es la que manda", () => {
+  assert.equal(esConsumoDirecto({ taskNo: "2.2" }), true);
+  assert.equal(esConsumoDirecto({ taskNo: "" }), false);
+  assert.equal(esConsumoDirecto({ taskNo: "  " }), false);
+  assert.equal(esConsumoDirecto({}), false);
+});
+
+test("obraParaOrden: sin tarea la obra NO viaja a la orden", () => {
+  assert.equal(obraParaOrden({ proyecto: "VN-L.20", taskNo: "2.2" }), "VN-L.20");
+  assert.equal(obraParaOrden({ proyecto: "F-MAD-NUE" }), "");
+  assert.equal(obraParaOrden({}), "");
 });

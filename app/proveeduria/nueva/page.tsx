@@ -6,7 +6,7 @@ import { Badge, Button, Card, EmptyState, Field, Input, Modal, Select, Textarea,
 import { Combobox } from "@/components/combobox";
 import { IconWarning } from "@/components/icons";
 import { useStore } from "@/lib/store";
-import { money, ultimoPrecioProveedor, almacenesParaRecepcion, esAlmacenFisico, pedidoLineaPendiente, monedaApp, numeroOrden } from "@/lib/helpers";
+import { money, ultimoPrecioProveedor, almacenesParaRecepcion, esAlmacenFisico, pedidoLineaPendiente, obraParaOrden, esConsumoDirecto, monedaApp, numeroOrden } from "@/lib/helpers";
 import { precioEnUnidad, precioEntreUnidades, cantidadEntreUnidades, equivalencia, equivalenciaDeUnidad, mismaMoneda, codigoDeItem, opcionesDeUnidad, type PrecioRef, type UnidadDeItem } from "@/lib/unidad";
 import type { OrdenLinea } from "@/lib/types";
 
@@ -141,7 +141,7 @@ export default function ArmarOrdenPage() {
       let info: Partial<Row> = { pedidoNumero: "", articuloId: "", variantCode: "", descripcion: "", unidad: "", almacen: "", proyecto: "", tarea: "" };
       for (const p of pedidos) {
         const l = p.lineas.find((x) => x.id === b.pedidoLineaId);
-        if (l) { info = { pedidoNumero: p.numero, articuloId: l.articuloId, variantCode: l.variantCode ?? "", descripcion: l.descripcion, unidad: l.unidad, unidadBase: l.unidadBase, factorCompra: l.factorCompra, almacen: l.almacen, proyecto: l.proyecto ?? "", tarea: l.taskNo ?? "" }; break; }
+        if (l) { info = { pedidoNumero: p.numero, articuloId: l.articuloId, variantCode: l.variantCode ?? "", descripcion: l.descripcion, unidad: l.unidad, unidadBase: l.unidadBase, factorCompra: l.factorCompra, almacen: l.almacen, proyecto: obraParaOrden(l), tarea: l.taskNo ?? "" }; break; }
       }
       return {
         pedidoLineaId: b.pedidoLineaId, ...info,
@@ -277,7 +277,7 @@ export default function ArmarOrdenPage() {
       pedidoNumero: p.numero, pedidoLineaId: l.id, articuloId: l.articuloId, variantCode: l.variantCode ?? "",
       descripcion: l.descripcion, unidad: l.unidad, unidadBase: l.unidadBase, factorCompra: l.factorCompra, almacen: l.almacen,
       cantidad: String(pend), precio: String(hist || 0), iva: "13", descuento: "0",
-      proyecto: l.proyecto ?? "", tarea: l.taskNo ?? "",
+      proyecto: obraParaOrden(l), tarea: l.taskNo ?? "",
     }]);
   }
 
@@ -754,7 +754,11 @@ export default function ArmarOrdenPage() {
                       <td><div style={{ maxWidth: 380, minWidth: 220 }} title={`${l.articuloId} — ${l.descripcion}`}><div className="ds-strong ds-body-sm">{l.articuloId}</div><div className="ds-clamp-2">{l.descripcion}</div></div></td>
                       <td className="ds-muted ds-body-sm">
                         {l.almacen || p.obraCodigo || "—"}
-                        {l.proyecto && <div>Obra {l.proyecto}{l.taskNo ? ` · tarea ${l.taskNo}` : ""}</div>}
+                        {/* La tarea es lo que hace que la línea sea consumo de obra:
+                            sin ella el material entra al almacén y la obra es un dato. */}
+                        {esConsumoDirecto(l)
+                          ? <div>Obra {l.proyecto} · tarea {l.taskNo}</div>
+                          : l.proyecto && <div>Para obra {l.proyecto} (a almacén)</div>}
                       </td>
                       <td className="ds-num">{pend} {l.unidad}</td>
                       <td className="ds-num"><Button variant="outline" size="sm" onClick={() => agregarDeSolicitud(p, l, pend)}>Agregar</Button></td>

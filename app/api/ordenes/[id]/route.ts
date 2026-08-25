@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getOrden, setOrdenEstado, updateOrden, ordenTieneRecepciones, MSG_NO_REABRIR } from "@/lib/repo";
-import { bcReopenPedido, bcReplaceOrderLines, bcCrearPedidoAbierto, crearEnBcAlEnviar, lineasOrdenParaBc, sanearObrasDeLineas, avisoDeSaneo } from "@/lib/bc";
+import { bcReopenPedido, bcReplaceOrderLines, bcCrearPedidoAbierto, crearEnBcAlEnviar, lineasOrdenParaBc, obrasSinTarea, sanearObrasDeLineas, avisoDeSaneo } from "@/lib/bc";
 import { actor } from "@/lib/actor";
 
 export const runtime = "nodejs";
@@ -60,12 +60,21 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     if (estado === "pendiente_aprobacion" && crearEnBcAlEnviar()) {
       const o = await getOrden(id);
       if (!o) return NextResponse.json({ error: "no encontrada" }, { status: 404 });
+      const lineasBc = lineasOrdenParaBc(o.lineas);
+      // Obra sin tarea = pedido que NO se va a poder lanzar. BC lo acepta al crearlo
+      // y revienta después, en manos del aprobador, así que se corta acá.
+      const sinTarea = obrasSinTarea(lineasBc);
+      if (sinTarea.length) {
+        return NextResponse.json({
+          error: `La orden NO se envió a aprobación: ${sinTarea.length} línea(s) tienen obra sin tarea — ${sinTarea.join("; ")}. Business Central no puede lanzar un pedido con obra sin tarea: elegí la tarea (o quitá la obra) y reintentá.`,
+        }, { status: 409 });
+      }
       if (o.bcNumber) {
         // Reenvío de una orden rechazada/corregida: el pedido ya existe allá. Se le
         // vuelven a empujar las líneas por si un edit no llegó a BC. Que esto falle
         // NO frena el envío (el pedido existe y se puede lanzar): va como aviso.
         try {
-          const r = await bcReplaceOrderLines(o.bcNumber, lineasOrdenParaBc(o.lineas));
+          const r = await bcReplaceOrderLines(o.bcNumber, lineasBc);
           if (r.omitidas.length) bcAviso = `Enviada a aprobación. OJO: BC no recibió ${r.omitidas.length} línea(s) — ${r.omitidas.join("; ")}.`;
         } catch (e: any) {
           bcAviso = `Se envió a aprobación, pero el pedido ${o.bcNumber} en BC quedó con las líneas VIEJAS: ${String(e?.message ?? e)}`;
@@ -78,7 +87,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
           const r = await bcCrearPedidoAbierto({
             vendorNo: o.proveedorNo || o.proveedorId,
             currencyCode: o.currencyCode,
-            lineas: lineasOrdenParaBc(o.lineas),
+            lineas: lineasBc,
           });
           bcNo = r.number;
           if (r.omitidas.length) bcAviso = `El pedido ${r.number} se creó en BC, pero sin ${r.omitidas.length} línea(s) — ${r.omitidas.join("; ")}.`;
