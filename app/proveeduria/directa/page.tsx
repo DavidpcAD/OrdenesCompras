@@ -1,11 +1,12 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect, useId, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { Badge, Button, Card, Field, Input, Modal, Select, Textarea, useToast } from "@/components/ui";
 import { Combobox } from "@/components/combobox";
-import { IconWarning } from "@/components/icons";
+import { IconCheck, IconWarning } from "@/components/icons";
 import { useStore } from "@/lib/store";
+import { leerBorrador, guardarBorrador, borrarBorrador, hace, type BorradorOrden } from "@/lib/borrador-orden";
 import { money, almacenesParaRecepcion, esAlmacenFisico, monedaApp, numeroOrden } from "@/lib/helpers";
 import { precioEnUnidad, precioEntreUnidades, cantidadEntreUnidades, equivalencia, equivalenciaDeUnidad, mismaMoneda, codigoDeItem, opcionesDeUnidad, type UnidadDeItem } from "@/lib/unidad";
 import type { OrdenLinea } from "@/lib/types";
@@ -28,21 +29,31 @@ interface Cargo { key: string; chargeNo: string; descripcion: string; cantidad: 
 const uid = () => Math.random().toString(36).slice(2, 9);
 
 export default function OrdenDirectaPage() {
-  const { proveedores, almacenes, createOrden, setOrdenEstado } = useStore();
+  const { proveedores, almacenes, usuario, createOrden, setOrdenEstado } = useStore();
   const router = useRouter();
   const toast = useToast();
 
+  // Lo que se estaba armando, rescatado del navegador (ver lib/borrador-orden.ts).
+  // Acá duele más que en la otra pantalla: una compra directa se escribe entera a
+  // mano, no hay solicitud de dónde volver a sacar las líneas.
+  const rescateRef = useRef<BorradorOrden<Row> | null | undefined>(undefined);
+  if (rescateRef.current === undefined) rescateRef.current = leerBorrador<Row>("directa", usuario);
+  const rescate = rescateRef.current;
+  const [avisoRescate, setAvisoRescate] = useState<string | null>(
+    rescate ? `Seguimos con la compra directa que estabas armando (${hace(rescate.ts, Date.now())}).` : null,
+  );
+
   const qtyId = useId();
   const priceId = useId();
-  const [proveedorId, setProveedorId] = useState("");
-  const [currency, setCurrency] = useState("");
-  const [almacen, setAlmacen] = useState("ALM-GRAL");
-  const [observaciones, setObservaciones] = useState("");
+  const [proveedorId, setProveedorId] = useState(rescate?.proveedorId ?? "");
+  const [currency, setCurrency] = useState(rescate?.currency ?? "");
+  const [almacen, setAlmacen] = useState(rescate?.almacen ?? "ALM-GRAL");
+  const [observaciones, setObservaciones] = useState(rescate?.observaciones ?? "");
   // Comentario para el APROBADOR: interno, no viaja al proveedor.
-  const [notaInterna, setNotaInterna] = useState("");
+  const [notaInterna, setNotaInterna] = useState(rescate?.notaInterna ?? "");
   // Cargos de producto (Item Charge): igual que al armar una orden desde un pedido.
-  const [cargos, setCargos] = useState<Cargo[]>([]);
-  const [metodoAsig, setMetodoAsig] = useState("Amount"); // Amount|Weight|Volume|Equally
+  const [cargos, setCargos] = useState<Cargo[]>((rescate?.cargos as Cargo[]) ?? []);
+  const [metodoAsig, setMetodoAsig] = useState(rescate?.metodoAsig ?? "Amount"); // Amount|Weight|Volume|Equally
   const [itemCharges, setItemCharges] = useState<{ no: string; descripcion: string }[]>([]);
 
   // Catálogos en vivo desde Business Central (con respaldo al catálogo seed).
@@ -60,7 +71,8 @@ export default function OrdenDirectaPage() {
     // por ESTAÑON aunque el inventario lo lleve en gramos.
     fetch("/api/bc/items").then((r) => (r.ok ? r.json() : { items: [] })).then((d) => { if (Array.isArray(d.items)) setItemsBc(d.items.map((i: any) => ({ code: i.code, descripcion: i.descripcion, unidad: (i.unidadCompra || i.unidad || "UND"), unidadBase: i.unidad || undefined, factorCompra: i.factorCompra }))); }).catch(() => {});
     fetch("/api/bc/almacenes").then((r) => (r.ok ? r.json() : { almacenes: [] })).then((d) => {
-      if (Array.isArray(d.almacenes) && d.almacenes.length) { setBcAlm(d.almacenes); if (!d.almacenes.some((a: any) => a.codigo === "ALM-GRAL")) setAlmacen(d.almacenes[0].codigo); }
+      // El default no puede pisar el almacén que venga del borrador rescatado.
+      if (Array.isArray(d.almacenes) && d.almacenes.length) { setBcAlm(d.almacenes); if (!rescate && !d.almacenes.some((a: any) => a.codigo === "ALM-GRAL")) setAlmacen(d.almacenes[0].codigo); }
     }).catch(() => {});
     // Catálogo de Cargos de producto (Item Charge) de BC para el selector de tipo.
     fetch("/api/bc/itemcharges").then((r) => (r.ok ? r.json() : { itemCharges: [] }))
@@ -74,7 +86,24 @@ export default function OrdenDirectaPage() {
   const catAlm = almacenesParaRecepcion(bcAlm ?? almacenes);
   const provSel = catProv.find((x) => x.id === proveedorId);
 
-  const [rows, setRows] = useState<Row[]>([]);
+  const [rows, setRows] = useState<Row[]>(rescate?.filas ?? []);
+
+  // Guardado automático (con respiro, para no escribir en cada tecla). No toca la
+  // base ni BC: es la libreta de quien arma, en su navegador.
+  useEffect(() => {
+    const t = setTimeout(() => {
+      guardarBorrador<Row>("directa", usuario, {
+        proveedorId, currency, almacen, observaciones, notaInterna, metodoAsig, cargos, filas: rows,
+      });
+    }, 400);
+    return () => clearTimeout(t);
+  }, [usuario, proveedorId, currency, almacen, observaciones, notaInterna, metodoAsig, cargos, rows]);
+
+  function descartarRescate() {
+    borrarBorrador("directa", usuario);
+    setAvisoRescate(null);
+    setRows([]);
+  }
   const [qaCode, setQaCode] = useState(""); const [qaQty, setQaQty] = useState(""); const [qaPrecio, setQaPrecio] = useState("");
   // Último precio de BC del artículo elegido, con la unidad y la moneda a las que
   // corresponde (puede no ser la de esta línea).
@@ -299,6 +328,7 @@ export default function OrdenDirectaPage() {
       }
       if (aviso) toast(aviso, tono);
       else toast(aprobar ? "Orden directa enviada a aprobación" : `Orden directa guardada como abierta · ${numeroOrden(orden)}`, "success");
+      borrarBorrador("directa", usuario);   // ya es una orden de verdad
       router.push(`/proveeduria/ordenes/${orden.id}`);
     } catch (e: any) { toast(String(e?.message ?? e), "error"); setGuardando(false); }
   }
@@ -313,6 +343,20 @@ export default function OrdenDirectaPage() {
             <p className="ds-muted">Compra que no viene de una solicitud de Ingeniería. Agregá los artículos del catálogo directamente.</p>
           </div>
         </div>
+
+        {avisoRescate && (
+          <div className="ds-callout mb-4" role="status">
+            <span className="ds-callout__icon"><IconCheck size={18} /></span>
+            <div>
+              <div className="ds-callout__title">{avisoRescate}</div>
+              <div className="ds-callout__body">
+                Se guarda solo en esta computadora mientras armás: <span className="ds-strong">todavía no es una orden</span>.
+                Lo será cuando la guardes como abierta o la envíes a aprobación.{" "}
+                <button type="button" className="link-btn" onClick={descartarRescate}>Descartar y empezar de cero</button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {bcCaido && (
           <div className="ds-callout ds-callout--yellow mb-4" role="status">

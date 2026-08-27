@@ -179,6 +179,10 @@ const NUEVA: HelpEntry = {
     "Hay DOS comentarios y no son lo mismo: “Observaciones para el proveedor” se imprimen en el PDF que él recibe; “Comentario para el aprobador” es interno y no sale en el PDF.",
     "Guardá como “Abierta” (borrador) o “Enviar a aprobación”. Al enviarla se crea el pedido en Business Central, todavía sin lanzar: si BC rechaza algo, la orden no se envía y el aviso dice qué corregir.",
   ],
+  tips: [
+    "Lo que vas armando se guarda solo: si te salís, recargás o volvés mañana, la pantalla lo recupera y te lo dice arriba. Eso vive en ESTA computadora y todavía no es una orden.",
+    "¿Vas a seguir desde otra computadora o mañana con alguien más? Guardala como “Abierta”: ahí sí queda en el sistema, con su número, y cualquiera de Proveeduría la ve.",
+  ],
 };
 const DIRECTA: HelpEntry = {
   titulo: "Nueva orden directa",
@@ -197,6 +201,7 @@ const DIRECTA: HelpEntry = {
   ],
   tips: [
     "La tarea es obligatoria cuando ponés obra: sin ella Business Central rechaza la línea.",
+    "Lo que vas armando se guarda solo en esta computadora: si te salís o recargás, la pantalla lo recupera. Para que quede en el sistema, guardala como “Abierta”.",
   ],
 };
 const PEDIDAS: HelpEntry = {

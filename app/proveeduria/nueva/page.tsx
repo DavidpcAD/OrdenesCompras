@@ -4,8 +4,9 @@ import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Badge, Button, Card, EmptyState, Field, Input, Modal, Select, Textarea, useToast } from "@/components/ui";
 import { Combobox } from "@/components/combobox";
-import { IconWarning } from "@/components/icons";
+import { IconCheck, IconWarning } from "@/components/icons";
 import { useStore } from "@/lib/store";
+import { leerBorrador, guardarBorrador, borrarBorrador, hace, type BorradorOrden } from "@/lib/borrador-orden";
 import { money, ultimoPrecioProveedor, almacenesParaRecepcion, esAlmacenFisico, pedidoLineaPendiente, obraParaOrden, esConsumoDirecto, monedaApp, numeroOrden } from "@/lib/helpers";
 import { precioEnUnidad, precioEntreUnidades, cantidadEntreUnidades, equivalencia, equivalenciaDeUnidad, mismaMoneda, codigoDeItem, opcionesDeUnidad, type PrecioRef, type UnidadDeItem } from "@/lib/unidad";
 import type { OrdenLinea } from "@/lib/types";
@@ -48,19 +49,32 @@ interface Cargo { key: string; chargeNo: string; descripcion: string; cantidad: 
 const cargoUid = () => Math.random().toString(36).slice(2, 9);
 
 export default function ArmarOrdenPage() {
-  const { pedidos, proveedores, ordenes, almacenes, borrador, createOrden, setOrdenEstado, setBorrador } = useStore();
+  const { pedidos, proveedores, ordenes, almacenes, borrador, usuario, createOrden, setOrdenEstado, setBorrador } = useStore();
   const router = useRouter();
   const toast = useToast();
 
-  const [proveedorId, setProveedorId] = useState("");
-  const [currency, setCurrency] = useState("");
-  const [cargos, setCargos] = useState<Cargo[]>([]);
-  const [metodoAsig, setMetodoAsig] = useState("Amount"); // Amount|Weight|Volume|Equally
+  // RESCATE de lo que se estaba armando. Se lee UNA vez, antes del primer render,
+  // porque de acá salen los valores iniciales de todo el formulario. Solo aplica si
+  // se entró sin selección (refresh, "atrás", o volver mañana): con líneas recién
+  // elegidas en Materiales manda esa selección, no lo guardado.
+  const rescateRef = useRef<BorradorOrden<Row> | null | undefined>(undefined);
+  if (rescateRef.current === undefined) {
+    rescateRef.current = borrador.length === 0 ? leerBorrador<Row>("nueva", usuario) : null;
+  }
+  const rescate = rescateRef.current;
+  const [avisoRescate, setAvisoRescate] = useState<string | null>(
+    rescate ? `Seguimos con lo que estabas armando (${hace(rescate.ts, Date.now())}).` : null,
+  );
+
+  const [proveedorId, setProveedorId] = useState(rescate?.proveedorId ?? "");
+  const [currency, setCurrency] = useState(rescate?.currency ?? "");
+  const [cargos, setCargos] = useState<Cargo[]>((rescate?.cargos as Cargo[]) ?? []);
+  const [metodoAsig, setMetodoAsig] = useState(rescate?.metodoAsig ?? "Amount"); // Amount|Weight|Volume|Equally
   const [itemCharges, setItemCharges] = useState<{ no: string; descripcion: string }[]>([]);
-  const [almacen, setAlmacen] = useState("ALM-GRAL");
-  const [observaciones, setObservaciones] = useState("");
+  const [almacen, setAlmacen] = useState(rescate?.almacen ?? "ALM-GRAL");
+  const [observaciones, setObservaciones] = useState(rescate?.observaciones ?? "");
   // Comentario para el APROBADOR: interno, no viaja al proveedor.
-  const [notaInterna, setNotaInterna] = useState("");
+  const [notaInterna, setNotaInterna] = useState(rescate?.notaInterna ?? "");
 
   // Unidades de cada material tal como están en BC (GR 1, EST 255.000, LT 244,01914…).
   // Con esto Proveeduría elige con qué unidad se le pide al proveedor: la solicitud
@@ -132,7 +146,9 @@ export default function ArmarOrdenPage() {
       .then((d) => {
         if (Array.isArray(d.almacenes) && d.almacenes.length) {
           setBcAlm(d.almacenes);
-          if (!d.almacenes.some((a: any) => a.codigo === "ALM-GRAL")) setAlmacen(d.almacenes[0].codigo);
+          // Default solo cuando el usuario todavía no eligió: si venimos de rescatar
+          // un borrador, su almacén manda (si no, esto se lo pisaba al cargar BC).
+          if (!rescate && !d.almacenes.some((a: any) => a.codigo === "ALM-GRAL")) setAlmacen(d.almacenes[0].codigo);
         }
       })
       .catch(() => { /* sin BC, usa seed */ });
@@ -140,6 +156,7 @@ export default function ArmarOrdenPage() {
   const catAlm = almacenesParaRecepcion(bcAlm ?? almacenes);
 
   const [rows, setRows] = useState<Row[]>(() =>
+    rescate ? rescate.filas :
     borrador.map((b) => {
       let info: Partial<Row> = { pedidoNumero: "", articuloId: "", variantCode: "", descripcion: "", unidad: "", almacen: "", proyecto: "", tarea: "" };
       for (const p of pedidos) {
@@ -158,7 +175,33 @@ export default function ArmarOrdenPage() {
   // vaciamos el borrador a propósito y este redirect pisaba el push al detalle
   // (la orden quedaba creada pero caías en "Materiales" en vez de verla).
   const navegandoRef = useRef(false);
-  useEffect(() => { if (borrador.length === 0 && !navegandoRef.current) router.replace("/proveeduria"); }, [borrador, router]);
+  useEffect(() => {
+    // Con un borrador rescatado NO se rebota: es justo el caso que se vino a salvar
+    // (se entró sin selección porque se recargó o se salió de la pantalla).
+    if (borrador.length === 0 && !rescate && !navegandoRef.current) router.replace("/proveeduria");
+  }, [borrador, rescate, router]);
+
+  // Guardado automático de lo que se está armando. Es lo único que evita perder
+  // media hora de trabajo al salirse: no toca la base ni BC, es la libreta de quien
+  // arma, en su navegador. Se escribe con un respiro para no pegarle al storage en
+  // cada tecla del comentario.
+  useEffect(() => {
+    const t = setTimeout(() => {
+      guardarBorrador<Row>("nueva", usuario, {
+        proveedorId, currency, almacen, observaciones, notaInterna, metodoAsig, cargos, filas: rows,
+      });
+    }, 400);
+    return () => clearTimeout(t);
+  }, [usuario, proveedorId, currency, almacen, observaciones, notaInterna, metodoAsig, cargos, rows]);
+
+  // Tirar lo rescatado y empezar de cero (vuelve a Materiales por el redirect).
+  function descartarRescate() {
+    borrarBorrador("nueva", usuario);
+    setAvisoRescate(null);
+    setRows([]);
+    setBorrador([]);
+    router.replace("/proveeduria");
+  }
 
   // Último precio de compra por BC: con proveedor trae el precio FACTURADO a ese
   // proveedor; SIN proveedor cae al último costo directo del item. Así el precio
@@ -435,6 +478,7 @@ export default function ArmarOrdenPage() {
     }
     navegandoRef.current = true; // evita que el redirect de borrador-vacío pise el push al detalle
     setBorrador([]);
+    borrarBorrador("nueva", usuario);   // ya es una orden de verdad: no hay nada que rescatar
     if (aviso) toast(aviso, tono);
     else toast(aprobar ? "Orden enviada a aprobación" : `Orden guardada como abierta · ${numeroOrden(orden)}`, "success");
     router.push(`/proveeduria/ordenes/${orden.id}`);
@@ -454,6 +498,23 @@ export default function ArmarOrdenPage() {
             <p className="ds-muted">Revisá y ajustá lo que se va a enviar al proveedor.</p>
           </div>
         </div>
+
+        {/* Se recuperó lo que había quedado a medio armar. Se dice SIEMPRE: si no,
+            alguien que entra a hacer una orden nueva se encuentra líneas viejas y no
+            entiende de dónde salieron. */}
+        {avisoRescate && (
+          <div className="ds-callout mb-4" role="status">
+            <span className="ds-callout__icon"><IconCheck size={18} /></span>
+            <div>
+              <div className="ds-callout__title">{avisoRescate}</div>
+              <div className="ds-callout__body">
+                Se guarda solo en esta computadora mientras armás: <span className="ds-strong">todavía no es una orden</span>.
+                Lo será cuando la guardes como abierta o la envíes a aprobación.{" "}
+                <button type="button" className="link-btn" onClick={descartarRescate}>Descartar y empezar de cero</button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {bcCaido && (
           <div className="ds-callout ds-callout--yellow mb-4" role="status">
