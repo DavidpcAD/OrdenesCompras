@@ -329,7 +329,12 @@ export default function OrdenDirectaPage() {
       if (aviso) toast(aviso, tono);
       else toast(aprobar ? "Orden directa enviada a aprobación" : `Orden directa guardada como abierta · ${numeroOrden(orden)}`, "success");
       borrarBorrador("directa", usuario);   // ya es una orden de verdad
-      router.push(`/proveeduria/ordenes/${orden.id}`);
+      // REPLACE, no push: el formulario NO puede quedar en el historial. Con `push`,
+      // el "Volver" del detalle (y el atrás del navegador) devolvían al formulario de
+      // armado — que rebota a materiales, o peor, rescata el borrador y parece que la
+      // orden recién creada sigue a medio hacer. Con `replace` el atrás lleva a la
+      // lista (o a la solicitud) de donde se venía.
+      router.replace(`/proveeduria/ordenes/${orden.id}`);
     } catch (e: any) { toast(String(e?.message ?? e), "error"); setGuardando(false); }
   }
 
