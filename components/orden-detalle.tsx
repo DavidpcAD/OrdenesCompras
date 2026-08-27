@@ -41,15 +41,21 @@ export function OrdenDetalle({
   const [verFactura, setVerFactura] = useState<string | null>(null);
   // Totales calculados por BC (fuente de verdad). Se leen si la orden ya está en BC.
   const [bcTot, setBcTot] = useState<{ subtotal: number; iva: number; total: number; currencyCode: string } | null>(null);
+  // "no-existe" = BC contestó y NO tiene ningún pedido con ese N.º. Es distinto de
+  // que BC esté caído, y hay que decirlo: el N.º guardado apunta a un documento que
+  // ya no está, así que ni se abre en BC ni hay nada que lanzar allá.
+  const [bcMotivo, setBcMotivo] = useState<string | null>(null);
   useEffect(() => {
-    if (!orden.bcNumber) { setBcTot(null); return; }
+    if (!orden.bcNumber) { setBcTot(null); setBcMotivo(null); return; }
     let vivo = true;
     fetch(`/api/bc/orden-totales?orderNo=${encodeURIComponent(orden.bcNumber)}`)
       .then((r) => (r.ok ? r.json() : { totales: null }))
-      .then((d) => { if (vivo && d?.totales) setBcTot(d.totales); })
+      .then((d) => { if (!vivo) return; if (d?.totales) setBcTot(d.totales); setBcMotivo(d?.motivo ?? null); })
       .catch(() => { /* sin BC: se muestran los totales locales */ });
     return () => { vivo = false; };
   }, [orden.bcNumber]);
+  // El pedido que la app tiene apuntado no está en BC.
+  const pedidoFantasma = !!orden.bcNumber && bcMotivo === "no-existe";
 
   const prov = proveedores.find((p) => p.id === orden.proveedorId);
   const b = ordenBadge(orden.estado);
@@ -95,7 +101,9 @@ export function OrdenDetalle({
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: 6 }}><path d="M6 9V3h12v6" /><path d="M6 18H4a2 2 0 0 1-2-2v-4a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2h-2" /><rect x="6" y="14" width="12" height="7" rx="1" /></svg>
             Imprimir
           </Button>
-          {orden.bcDeepLink && (
+          {/* Con el pedido fantasma el botón se esconde: abría BC en una lista vacía
+              y parecía que el link estaba roto. Lo que pasa se explica en el aviso. */}
+          {orden.bcDeepLink && !pedidoFantasma && (
             <button className="link-btn" title="Abrir el Pedido en Business Central (editar · vista previa de registro · registrar)"
               onClick={() => window.open(orden.bcDeepLink!, "_blank")}>↗ Abrir en BC</button>
           )}
@@ -104,6 +112,21 @@ export function OrdenDetalle({
       </div>
 
       {aviso}
+
+      {pedidoFantasma && (
+        <div className="ds-callout ds-callout--red mb-4" role="status">
+          <span className="ds-callout__icon"><IconWarning size={18} /></span>
+          <div>
+            <div className="ds-callout__title">Business Central no tiene el pedido {orden.bcNumber}</div>
+            <div className="ds-callout__body">
+              La app guardó ese número, pero en BC no existe ningún pedido de compra con él: o se borró allá, o no llegó a crearse.
+              Por eso los totales de abajo son el estimado local y no se puede abrir en BC.
+              <span className="ds-strong"> Reenviarla a aprobación NO lo vuelve a crear</span> (la app ve que ya hay número y solo intenta
+              reescribirle las líneas), así que quien aprueba se quedaría sin nada que lanzar. Avisá a quien lleva BC.
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Orden rechazada por Aprobación: el motivo se muestra arriba de las líneas
           para que Proveeduría sepa qué corregir antes de reenviarla. */}
@@ -162,7 +185,11 @@ export function OrdenDetalle({
               <div className="totals__row"><span>Flete</span><span>{money(flete, orden.currencyCode)}</span></div>
               <div className="totals__row"><span>IVA (materiales)</span><span>{money(iva, orden.currencyCode)}</span></div>
               <div className="totals__row totals__row--grand" style={{ gridColumn: "1 / -1" }}><span>Total orden</span><span>{money(subtotal + flete + iva, orden.currencyCode)}</span></div>
-              {orden.bcNumber && <div style={{ gridColumn: "1 / -1" }} className="ds-body-sm ds-muted">Estimado local · los totales definitivos los calcula BC.</div>}
+              {orden.bcNumber && (
+                <div style={{ gridColumn: "1 / -1" }} className="ds-body-sm ds-muted">
+                  {pedidoFantasma ? `Estimado local · BC no tiene el pedido ${orden.bcNumber}.` : "Estimado local · los totales definitivos los calcula BC."}
+                </div>
+              )}
             </>
           )}
         </div>
