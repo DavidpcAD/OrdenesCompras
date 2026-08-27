@@ -6,7 +6,7 @@
 //   npm test
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { payloadReplaceLines, sinObrasInexistentes, avisoDeSaneo, lineasOrdenParaBc, obrasSinTarea, lineasSinUnidad, obraParaCentroCosto, decidirVariantes, crearEnBcAlEnviar, bcPideAbierto, type LineaReplaceBc } from "./bc.ts";
+import { payloadReplaceLines, sinObrasInexistentes, avisoDeSaneo, lineasOrdenParaBc, obrasSinTarea, lineasSinUnidad, centroCostoDeOrden, centroCostoDeLinea, decidirVariantes, crearEnBcAlEnviar, bcPideAbierto, type LineaReplaceBc } from "./bc.ts";
 import type { OrdenLinea } from "./types.ts";
 
 const item = (p: Partial<LineaReplaceBc> = {}): LineaReplaceBc => ({
@@ -275,18 +275,20 @@ test("el cargo no cuenta: un Item Charge no lleva unidad de medida", () => {
 
 // ---- Centro de Costo del encabezado -------------------------------------------
 // El workflow de aprobación de BC (MS-POAPW-01) dispara por la dimensión CC del
-// ENCABEZADO con valor *VN*/*VB*, no por el almacén de las líneas. Sin esto el
-// pedido nunca entra a aprobación: se queda Abierto y se lanza sin pasar por Luis.
-test("el Centro de Costo sale de la primera línea con obra", () => {
-  assert.equal(obraParaCentroCosto([item({}), item({ jobNo: "VN-I.36", taskNo: "1000" }), item({ jobNo: "VB-5.01", taskNo: "2000" })]), "VN-I.36");
+// ENCABEZADO con valor *VN*/*VB*. Con el CC ya puesto en cada línea, el del
+// encabezado es solo eso: el disparador. OJO: sale del `centroCosto`, NO del jobNo —
+// una compra para stock tiene obra (el material queda apartado para ella) y no tiene
+// Job No., y ese era justo el caso que se iba sin centro de costo.
+test("el Centro de Costo del encabezado sale de la primera línea que tenga", () => {
+  assert.equal(centroCostoDeOrden([item({}), item({ centroCosto: "VN-I.36" }), item({ centroCosto: "VB-5.01" })]).cc, "VN-I.36");
 });
 
-test("una compra para almacén (sin obra) no lleva Centro de Costo", () => {
-  assert.equal(obraParaCentroCosto([item({}), item({})]), "");
+test("una compra sin obra en ninguna línea no lleva Centro de Costo", () => {
+  assert.equal(centroCostoDeOrden([item({}), item({})]).cc, "");
 });
 
 test("el cargo no define el Centro de Costo", () => {
-  assert.equal(obraParaCentroCosto([{ tipo: "cargo", chargeNo: "TRANSPORTE", cantidad: 1, precio: 5000, jobNo: "VN-L.20" }]), "");
+  assert.equal(centroCostoDeOrden([{ tipo: "cargo", chargeNo: "TRANSPORTE", cantidad: 1, precio: 5000, centroCosto: "VN-L.20" }]).cc, "");
 });
 
 // ---- variante requerida --------------------------------------------------------
@@ -354,4 +356,65 @@ test("se reconoce el error de BC que pide el pedido abierto", () => {
   // Un error cualquiera NO puede disparar la reapertura del pedido.
   assert.equal(bcPideAbierto(`{"error":{"message":"The field Vendor Invoice No. of table Purchase Header contains a value that cannot be found"}}`), false);
   assert.equal(bcPideAbierto(""), false);
+});
+
+// ---- centro de costo: los DOS tipos de pedido ----------------------------------
+// Consumo inmediato: la obra viaja como Job No. (BC lo carga contra el proyecto).
+// Para stock: el material entra a bodega APARTADO para esa obra, así que no puede
+// llevar Job No. —BC exige tarea con él— pero sí tiene que llevar su centro de costo.
+// Antes se sacaba el CC del Job No., o sea que el segundo caso se iba sin nada.
+const ordLinea = (p: Partial<import("./types.ts").OrdenLinea> = {}): import("./types.ts").OrdenLinea => ({
+  id: p.id ?? "ol1", tipo: p.tipo ?? "articulo", articuloId: p.articuloId ?? "M01-0147",
+  descripcion: p.descripcion ?? "VARILLA", cantidad: p.cantidad ?? 5, unidad: p.unidad ?? "UND",
+  almacen: p.almacen ?? "ALM-GRAL", precioUnitario: p.precioUnitario ?? 100, ivaPct: 13,
+  cantidadRecibida: 0, cantidadFacturada: 0,
+  proyecto: p.proyecto, taskNo: p.taskNo, pedidoLineaId: p.pedidoLineaId,
+});
+
+test("consumo directo: el centro de costo es su propia obra", () => {
+  assert.equal(centroCostoDeLinea(ordLinea({ proyecto: "VN-L.20", taskNo: "2.2" })), "VN-L.20");
+});
+
+test("para stock: el centro de costo sale de la obra de la solicitud", () => {
+  const l = ordLinea({ pedidoLineaId: "77" });          // sin obra propia (va al almacén)
+  assert.equal(centroCostoDeLinea(l, new Map([["77", "VN-K.26"]])), "VN-K.26");
+  assert.equal(centroCostoDeLinea(l), "");              // sin el mapa no se inventa nada
+});
+
+test("compra directa sin obra: no hay centro de costo que mandar", () => {
+  assert.equal(centroCostoDeLinea(ordLinea({ pedidoLineaId: undefined })), "");
+});
+
+test("lineasOrdenParaBc: el CC viaja por línea, junto al jobNo cuando lo hay", () => {
+  const ls = lineasOrdenParaBc(
+    [ordLinea({ id: "a", proyecto: "VN-L.20", taskNo: "2.2" }), ordLinea({ id: "b", pedidoLineaId: "77" })],
+    new Map([["77", "VN-K.26"]]),
+  );
+  assert.equal(ls[0].jobNo, "VN-L.20");
+  assert.equal(ls[0].centroCosto, "VN-L.20");
+  assert.equal(ls[1].jobNo, undefined);                 // stock: NUNCA como Job No.
+  assert.equal(ls[1].centroCosto, "VN-K.26");
+});
+
+test("el payload manda la dimensión por línea (código + valor), y nada si no hay", () => {
+  const { lines } = payloadReplaceLines([
+    item({ centroCosto: "VN-K.26" }),
+    item({ itemNo: "M02" }),
+  ]);
+  assert.equal(lines[0].ccValue, "VN-K.26");
+  assert.equal(lines[0].ccCode, "CC");                  // BC_DIMENSION_CC, default CC
+  // Sin centro de costo NO se manda la clave: mandarla vacía borraría la dimensión
+  // que BC pone sola por el ítem o el almacén.
+  assert.ok(!("ccValue" in lines[1]));
+  assert.ok(!("ccCode" in lines[1]));
+});
+
+test("el encabezado toma un CC y avisa cuando la orden mezcla obras", () => {
+  const uno = centroCostoDeOrden([item({ centroCosto: "VN-K.26" }), item({ centroCosto: "VN-K.26" })]);
+  assert.equal(uno.cc, "VN-K.26");
+  assert.deepEqual(uno.mezcla, []);
+  const varias = centroCostoDeOrden([item({ centroCosto: "VN-K.26" }), item({ centroCosto: "VB-5.01" })]);
+  assert.equal(varias.cc, "VN-K.26");                   // el primero: dispara el workflow
+  assert.deepEqual(varias.mezcla, ["VN-K.26", "VB-5.01"]);
+  assert.equal(centroCostoDeOrden([item({})]).cc, "");
 });

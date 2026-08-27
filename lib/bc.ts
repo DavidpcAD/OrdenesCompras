@@ -1152,6 +1152,16 @@ export type LineaReplaceBc = {
   unidad?: string;   // unidad de COMPRA (EST): en ella están cantidad y precio
   cantidad: number; precio: number | string; descuentoPct?: number;
   jobNo?: string; taskNo?: string;
+  // Centro de costo (dimensión CC) de ESTA línea: para qué obra es el material.
+  // No es lo mismo que `jobNo`, y por eso son dos campos:
+  //   jobNo  → consumo directo: BC lo carga contra el proyecto y NO entra a
+  //            inventario. Exige tarea.
+  //   centroCosto → el material entra a bodega y queda apartado para esa obra
+  //            hasta que campo lo pida. No exige tarea, y es la dimensión que
+  //            dispara el workflow de aprobación de BC.
+  // Un consumo directo lleva los dos (el CC es su misma obra); una compra para
+  // stock lleva solo el CC.
+  centroCosto?: string;
   chargeNo?: string; chargeMethod?: string; descripcion?: string;
 };
 
@@ -1159,6 +1169,17 @@ export type LineaReplaceBc = {
 // Está separado y exportado porque acá se decide QUÉ CANTIDAD y QUÉ PRECIO quedan
 // en BC — o sea, contra qué van a recibir Bodega y facturar Contabilidad. Cubierto
 // por lib/bc-replace.test.ts.
+// El centro de costo de una línea, como lo espera el codeunit: código de la
+// dimensión + valor. Se manda el código (no se asume "CC" del lado de BC) porque
+// cuál es la dimensión de centro de costo es configuración: BC_DIMENSION_CC.
+// Sin valor no se manda nada: mandar la clave vacía BORRARÍA la dimensión que BC
+// pone sola por el ítem o el almacén (mismo error que se pagó con la unidad y la
+// variante en CP-003884).
+function dimensionDeLinea(l: LineaReplaceBc): Record<string, string> {
+  const valor = (l.centroCosto ?? "").trim();
+  return valor ? { ccCode: codigoDimensionCC(), ccValue: valor } : {};
+}
+
 export function payloadReplaceLines(lineas: LineaReplaceBc[]): { lines: Record<string, unknown>[]; omitidas: string[] } {
   const lines: Record<string, unknown>[] = [];
   const omitidas: string[] = [];
@@ -1177,6 +1198,7 @@ export function payloadReplaceLines(lineas: LineaReplaceBc[]): { lines: Record<s
       lines.push({
         type: "Charge", itemChargeNo: chargeNo, description: l.descripcion || chargeNo,
         quantity: cantidad, directUnitCost: precio, chargeMethod: l.chargeMethod || "Amount",
+        ...dimensionDeLinea(l),
       });
       continue;
     }
@@ -1192,6 +1214,7 @@ export function payloadReplaceLines(lineas: LineaReplaceBc[]): { lines: Record<s
       type: "Item", itemNo, locationCode: l.locationCode ?? "",
       quantity: cantidad, directUnitCost: precio, lineDiscountPct: Number(l.descuentoPct) || 0,
       jobNo: l.jobNo ?? "", taskNo: l.taskNo ?? "",
+      ...dimensionDeLinea(l),
     };
     // Unidad y variante EN BLANCO no se mandan: mandarlas vacías no es "que BC
     // ponga la del ítem", es BORRAR la que BC ya había puesto al validar el N.º de
@@ -1243,7 +1266,14 @@ export async function bcReplaceOrderLines(orderNo: string, lineas: LineaReplaceB
 //
 // El almacén cae al de recepción por defecto cuando la línea no trae uno: sin
 // locationCode el material no entra a ningún lado y el stock no sube.
-export function lineasOrdenParaBc(lineas: OrdenLinea[]): LineaReplaceBc[] {
+export function lineasOrdenParaBc(
+  lineas: OrdenLinea[],
+  // Obra de la SOLICITUD por línea (idPedidoCompraDet → obra). Es de dónde sale el
+  // centro de costo de una compra para STOCK: ahí la obra existe —el material queda
+  // apartado en bodega para ella— pero no puede viajar como Job No., porque BC exige
+  // tarea con él y una compra para stock no la tiene.
+  obraDeSolicitud?: Map<string, string>,
+): LineaReplaceBc[] {
   return lineas.map((l) => ({
     tipo: l.tipo === "cargo" ? ("cargo" as const) : ("articulo" as const),
     itemNo: l.articuloId, variantCode: l.variantCode,
@@ -1251,8 +1281,20 @@ export function lineasOrdenParaBc(lineas: OrdenLinea[]): LineaReplaceBc[] {
     unidad: l.unidad,
     cantidad: l.cantidad, precio: l.precioUnitario, descuentoPct: l.descuentoPct,
     jobNo: l.proyecto, taskNo: l.taskNo,
+    centroCosto: centroCostoDeLinea(l, obraDeSolicitud),
     chargeNo: l.chargeNo, chargeMethod: l.chargeMethod, descripcion: l.descripcion,
   }));
+}
+
+// Para qué obra es esta línea, en los DOS tipos de pedido:
+//  · consumo directo → su propia obra (la que ya viaja como Job No.);
+//  · para stock      → la obra de la solicitud que la originó.
+// En una compra directa sin obra no hay centro de costo y no se manda ninguno.
+export function centroCostoDeLinea(l: OrdenLinea, obraDeSolicitud?: Map<string, string>): string {
+  const propia = (l.proyecto ?? "").trim();
+  if (propia) return propia;
+  const dePedido = l.pedidoLineaId ? (obraDeSolicitud?.get(String(l.pedidoLineaId)) ?? "") : "";
+  return dePedido.trim();
 }
 
 // Líneas que llevan obra pero NO tarea, descritas para el usuario. Es el chequeo
@@ -1347,13 +1389,19 @@ export async function resolverVariantesRequeridas(
 // BC guarda UN valor por dimensión en el encabezado. Si el pedido mezcla obras se
 // usa la PRIMERA (las líneas llevan la suya en jobNo, que es lo que costea de
 // verdad); alcanza para que el pedido entre a aprobación, que es de lo que se trata.
-export function obraParaCentroCosto(lineas: LineaReplaceBc[]): string {
-  for (const l of lineas ?? []) {
-    if (l.tipo === "cargo") continue;
-    const obra = (l.jobNo ?? "").trim();
-    if (obra) return obra;
-  }
-  return "";
+// El centro de costo que va al ENCABEZADO. Con el CC ya puesto en cada línea, el del
+// encabezado es solo el disparador del workflow de aprobación de BC (que filtra por
+// *VN*/*VB*), así que alcanza con el de la primera línea que tenga.
+//
+// Devuelve además si la orden mezcla obras: el encabezado no puede representarlas a
+// todas —tiene un solo CC— y eso hay que decirlo en vez de que parezca que toda la
+// compra es de una sola.
+export function centroCostoDeOrden(lineas: LineaReplaceBc[]): { cc: string; mezcla: string[] } {
+  const ccs = [...new Set((lineas ?? [])
+    .filter((l) => l.tipo !== "cargo")
+    .map((l) => (l.centroCosto ?? "").trim())
+    .filter(Boolean))];
+  return { cc: ccs[0] ?? "", mezcla: ccs.length > 1 ? ccs : [] };
 }
 
 // Crea el Pedido de compra en BC en estado ABIERTO (sin lanzar), con todas sus
@@ -1398,10 +1446,20 @@ export async function bcCrearPedidoAbierto(input: { vendorNo: string; currencyCo
   // Abierto) y NO es fatal: si falla, el pedido existe y sirve, pero se va a lanzar
   // sin pasar por el aprobador — eso hay que decirlo, no tragárselo.
   let avisoCC: string | undefined;
-  const obra = obraParaCentroCosto(input.lineas ?? []);
+  const { cc: obra, mezcla } = centroCostoDeOrden(input.lineas ?? []);
   if (obra) {
     const err = await ponerCentroCosto(cid, String(po?.id ?? ""), obra);
     if (err) avisoCC = `El pedido ${number} se creó, pero NO se le pudo poner el Centro de Costo ${obra} (${err}): en BC no va a entrar al circuito de aprobación de Luis y quedaría listo para lanzar directo. Revisalo en BC.`;
+    else if (mezcla.length) {
+      // Cada línea lleva SU centro de costo; el del encabezado es uno solo y por eso
+      // no representa a todas. Decirlo, que si no parece que toda la compra es de una.
+      avisoCC = `El pedido ${number} mezcla ${mezcla.length} centros de costo (${mezcla.join(", ")}). Cada línea lleva el suyo; el encabezado quedó con ${obra}, que es el que dispara la aprobación en BC.`;
+    }
+  } else {
+    // Sin centro de costo el pedido no entra al workflow que filtra por obra (sí al
+    // que filtra por almacén, si el almacén es de los que lo exigen). Se avisa igual:
+    // que se lance sin pasar por nadie no puede ser una sorpresa.
+    avisoCC = `El pedido ${number} se creó SIN centro de costo (ninguna línea trae obra). En BC solo va a requerir aprobación si su almacén la exige.`;
   }
   return { number, id: String(po?.id ?? ""), omitidas, avisoCC };
 }

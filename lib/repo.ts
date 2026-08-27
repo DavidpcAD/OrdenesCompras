@@ -414,6 +414,27 @@ export async function devolverLineasPedido(
   return { devueltas: aDevolver.length, pedidoDevuelto, nombres };
 }
 
+// Obra de cada línea de SOLICITUD (dbo.PedidoCompraDet.obra), por id de línea.
+//
+// Es de dónde sale el centro de costo de una compra para STOCK: ahí la obra existe
+// —el material entra a bodega y queda apartado para ella— pero no viaja como Job No.
+// porque BC exige tarea con él y el pedido para stock no la tiene. La orden guarda el
+// vínculo (`idPedidoCompraDet`), así que la obra se busca en la solicitud de origen y
+// no hay que duplicarla en OrdenCompraDet.
+export async function obrasDeLineasPedido(ids: number[]): Promise<Map<string, string>> {
+  const limpios = [...new Set((ids ?? []).map((n) => Math.trunc(Number(n))).filter((n) => Number.isSafeInteger(n) && n > 0))];
+  const out = new Map<string, string>();
+  if (!limpios.length) return out;
+  const pool = await getPool();
+  const r = await pool.request().query(
+    `SELECT idPedidoCompraDet, obra FROM dbo.PedidoCompraDet WHERE idPedidoCompraDet IN (${limpios.join(",")})`);
+  for (const row of r.recordset) {
+    const obra = String(row.obra ?? "").trim();
+    if (obra) out.set(String(row.idPedidoCompraDet), obra);
+  }
+  return out;
+}
+
 export async function softDeletePedido(id: number, usuario: string, rol: Role) {
   const pool = await getPool();
   const prev = await pool.request().input("id", sql.Int, id).query("SELECT pedidoNo FROM dbo.PedidoCompra WHERE idPedidoCompra=@id");

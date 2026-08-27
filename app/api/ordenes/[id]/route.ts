@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getOrden, setOrdenEstado, updateOrden, descartarOrden, ordenTieneRecepciones, MSG_NO_REABRIR } from "@/lib/repo";
+import { getOrden, setOrdenEstado, updateOrden, descartarOrden, ordenTieneRecepciones, obrasDeLineasPedido, MSG_NO_REABRIR } from "@/lib/repo";
 import { bcReopenPedido, bcReplaceOrderLines, bcCrearPedidoAbierto, crearEnBcAlEnviar, lineasOrdenParaBc, obrasSinTarea, lineasSinUnidad, resolverVariantesRequeridas, sanearObrasDeLineas, avisoDeSaneo } from "@/lib/bc";
 import { actor } from "@/lib/actor";
 
@@ -60,7 +60,11 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     if (estado === "pendiente_aprobacion" && crearEnBcAlEnviar()) {
       const o = await getOrden(id);
       if (!o) return NextResponse.json({ error: "no encontrada" }, { status: 404 });
-      let lineasBc = lineasOrdenParaBc(o.lineas);
+      // La obra de la solicitud de origen: es el centro de costo de las líneas que van
+      // a STOCK. Las de consumo directo ya lo llevan en su propia obra (el Job No.).
+      const obrasSolicitud = await obrasDeLineasPedido(
+        o.lineas.map((l) => Number(l.pedidoLineaId)).filter((n) => Number.isFinite(n)));
+      let lineasBc = lineasOrdenParaBc(o.lineas, obrasSolicitud);
       // Obra sin tarea = pedido que NO se va a poder lanzar. BC lo acepta al crearlo
       // y revienta después, en manos del aprobador, así que se corta acá.
       const sinTarea = obrasSinTarea(lineasBc);
@@ -160,7 +164,11 @@ export async function PUT(req: Request, { params }: { params: { id: string } }) 
     const o = await getOrden(id);
     if (o?.bcNumber) {
       try {
-        const r = await bcReplaceOrderLines(o.bcNumber, lineasOrdenParaBc(o.lineas));
+        // Con el centro de costo por línea, editar también tiene que mandarlo: si no,
+        // el edit le borraría a BC la obra de las líneas que van a stock.
+        const obrasSolicitud = await obrasDeLineasPedido(
+          o.lineas.map((l) => Number(l.pedidoLineaId)).filter((n) => Number.isFinite(n)));
+        const r = await bcReplaceOrderLines(o.bcNumber, lineasOrdenParaBc(o.lineas, obrasSolicitud));
         if (r.omitidas.length) avisos.push(`Guardado. OJO: BC no recibió ${r.omitidas.length} línea(s) — ${r.omitidas.join("; ")}.`);
       } catch (e: any) {
         avisos.push(`Se guardó acá, pero el pedido ${o.bcNumber} en BC quedó con las líneas VIEJAS: ${String(e?.message ?? e)}. Volvé a guardar para reintentar.`);
