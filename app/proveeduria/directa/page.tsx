@@ -23,8 +23,8 @@ type Variante = { code: string; descripcion: string };
 type Obra = { codigo: string; nombre: string };
 type Tarea = { jobTaskNo: string; descripcion: string; tipo: string };
 // Cargo de producto (Item Charge) a agregar a la orden: tipo (chargeNo del catálogo
-// BC), cantidad y precio. chargeNo "" = flete por defecto. Igual que en "nueva".
-interface Cargo { key: string; chargeNo: string; descripcion: string; cantidad: string; precio: string; }
+// BC), cantidad, precio e IVA%. chargeNo "" = flete por defecto. Igual que en "nueva".
+interface Cargo { key: string; chargeNo: string; descripcion: string; cantidad: string; precio: string; iva: string; }
 const uid = () => Math.random().toString(36).slice(2, 9);
 
 export default function OrdenDirectaPage() {
@@ -205,7 +205,7 @@ export default function OrdenDirectaPage() {
   const setRow = (k: string, patch: Partial<Row>) => setRows((rs) => rs.map((r) => (r.key === k ? { ...r, ...patch } : r)));
   const removeRow = (k: string) => setRows((rs) => rs.filter((r) => r.key !== k));
   // Cargos de producto (mismo comportamiento que en "nueva").
-  const addCargo = () => setCargos((cs) => [...cs, { key: uid(), chargeNo: "", descripcion: "FLETE / TRANSPORTE", cantidad: "1", precio: "" }]);
+  const addCargo = () => setCargos((cs) => [...cs, { key: uid(), chargeNo: "", descripcion: "FLETE / TRANSPORTE", cantidad: "1", precio: "", iva: "13" }]);
   const setCargo = (i: number, patch: Partial<Cargo>) => setCargos((cs) => cs.map((c, idx) => (idx === i ? { ...c, ...patch } : c)));
   const removeCargo = (i: number) => setCargos((cs) => cs.filter((_, idx) => idx !== i));
   const onTipoCargo = (i: number, chargeNo: string) => { const ic = itemCharges.find((x) => x.no === chargeNo); setCargo(i, { chargeNo, descripcion: ic ? ic.descripcion : "FLETE / TRANSPORTE" }); };
@@ -235,8 +235,10 @@ export default function OrdenDirectaPage() {
   const calcImporte = (r: Row) => Number(r.cantidad) * Number(r.precio) * (1 - (Number(r.descuento) || 0) / 100);
   const subtotal = useMemo(() => rows.reduce((s, r) => s + calcImporte(r), 0), [rows]);
   const cargosTotal = cargos.reduce((s, c) => s + cargoImporte(c), 0);
-  // El IVA (13%) se aplica a los materiales Y a los cargos, igual que en BC.
-  const ivaCargos = cargosTotal * 0.13;
+  // El IVA se aplica a los materiales Y a los cargos, igual que en BC, pero POR
+  // CARGO: 13% por defecto y editable. Con el 13% fijo, un cargo exento (p. ej.
+  // "Impuestos Exterior") mostraba un IVA que BC no cobra y el total no cuadraba.
+  const ivaCargos = cargos.reduce((s, c) => s + cargoImporte(c) * ((Number(c.iva) || 0) / 100), 0);
   const ivaTotal = useMemo(() => rows.reduce((s, r) => s + calcImporte(r) * ((Number(r.iva) || 0) / 100), 0), [rows]) + ivaCargos;
   const total = subtotal + cargosTotal + ivaTotal;
   const puedeCrear = !!proveedorId && rows.length > 0;
@@ -282,7 +284,7 @@ export default function OrdenDirectaPage() {
       for (const c of cargos) {
         if (cargoImporte(c) <= 0) continue;
         ls.push({ tipo: "cargo", chargeNo: c.chargeNo || undefined, chargeMethod: metodoAsig, descripcion: c.descripcion || "CARGO",
-          cantidad: Number(c.cantidad) || 1, unidad: "UND", almacen, precioUnitario: Number(c.precio) || 0, ivaPct: 13 });
+          cantidad: Number(c.cantidad) || 1, unidad: "UND", almacen, precioUnitario: Number(c.precio) || 0, ivaPct: Number(c.iva) || 0 });
       }
       const orden = await createOrden({ proveedorId, proveedorNo: provSel?.code, proveedorNombre: provSel?.nombre, currencyCode: currency, almacenRecepcion: almacen, observaciones: observaciones.trim() || undefined, notaInterna: notaInterna.trim() || undefined, lineas: ls });
       // La orden YA está creada acá. Si el envío a aprobación falla —hoy eso incluye
@@ -579,6 +581,13 @@ export default function OrdenDirectaPage() {
               <div>
                 <span className="ds-label ds-muted" style={{ display: "block", marginBottom: 4 }}>Precio</span>
                 <Input type="number" min={0} value={c.precio} placeholder="0" style={{ width: 130 }} onChange={(e) => setCargo(i, { precio: e.target.value })} />
+              </div>
+              {/* IVA del cargo: 13% por defecto, pero editable. Hay cargos exentos
+                  (p. ej. "Impuestos Exterior"), y antes el 13% estaba fijo en el
+                  código: el total inventaba un IVA que BC no iba a cobrar. */}
+              <div>
+                <span className="ds-label ds-muted" style={{ display: "block", marginBottom: 4 }}>IVA %</span>
+                <Input type="number" min={0} max={100} value={c.iva} placeholder="0" style={{ width: 96 }} onChange={(e) => setCargo(i, { iva: e.target.value })} />
               </div>
               <div style={{ minWidth: 110, textAlign: "right" }}>
                 <span className="ds-label ds-muted" style={{ display: "block", marginBottom: 4 }}>Importe</span>

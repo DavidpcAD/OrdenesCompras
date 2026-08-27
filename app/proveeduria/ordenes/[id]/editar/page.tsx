@@ -220,8 +220,11 @@ export default function EditarOrdenPage() {
   const [qaRef, setQaRef] = useState<{ precio: number; unidad: string; moneda: string; factor?: number } | null>(null);
   const calcImporte = (r: Row) => Number(r.cantidad) * Number(r.precio) * (1 - (Number(r.descuento) || 0) / 100);
   const subtotal = useMemo(() => rows.reduce((s, r) => s + calcImporte(r), 0), [rows]);
-  const ivaTotal = useMemo(() => rows.reduce((s, r) => s + calcImporte(r) * ((Number(r.iva) || 0) / 100), 0), [rows]);
+  const ivaLineas = useMemo(() => rows.reduce((s, r) => s + calcImporte(r) * ((Number(r.iva) || 0) / 100), 0), [rows]);
   const fleteNum = Number(flete) || 0;
+  // El flete conserva SU IVA (el que ya traía la orden; 13% si no tenía cargo). Acá
+  // el IVA mostrado lo ignoraba y el total quedaba por debajo del de BC.
+  const ivaTotal = ivaLineas + fleteNum * ((cargo?.ivaPct ?? 13) / 100);
   const total = subtotal + fleteNum + ivaTotal;
   const [guardando, setGuardando] = useState(false);
 

@@ -42,9 +42,9 @@ type Tarea = { jobTaskNo: string; descripcion: string; tipo: string };
 type Variante = { code: string; descripcion: string };
 
 // Cargo de producto (Item Charge) a agregar a la orden: tipo (chargeNo del catálogo
-// BC), cantidad y precio. chargeNo "" = flete por defecto. `key` = id estable para
-// React (no usar el índice: al quitar un cargo se corrían los valores).
-interface Cargo { key: string; chargeNo: string; descripcion: string; cantidad: string; precio: string; }
+// BC), cantidad, precio e IVA%. chargeNo "" = flete por defecto. `key` = id estable
+// para React (no usar el índice: al quitar un cargo se corrían los valores).
+interface Cargo { key: string; chargeNo: string; descripcion: string; cantidad: string; precio: string; iva: string; }
 const cargoUid = () => Math.random().toString(36).slice(2, 9);
 
 export default function ArmarOrdenPage() {
@@ -111,7 +111,7 @@ export default function ArmarOrdenPage() {
       .then((d) => { if (Array.isArray(d.itemCharges)) setItemCharges(d.itemCharges); })
       .catch(() => { /* sin BC: el selector cae a "Flete / transporte" */ });
   }, []);
-  const addCargo = () => setCargos((cs) => [...cs, { key: cargoUid(), chargeNo: "", descripcion: "FLETE / TRANSPORTE", cantidad: "1", precio: "" }]);
+  const addCargo = () => setCargos((cs) => [...cs, { key: cargoUid(), chargeNo: "", descripcion: "FLETE / TRANSPORTE", cantidad: "1", precio: "", iva: "13" }]);
   const setCargo = (i: number, patch: Partial<Cargo>) => setCargos((cs) => cs.map((c, idx) => (idx === i ? { ...c, ...patch } : c)));
   const removeCargo = (i: number) => setCargos((cs) => cs.filter((_, idx) => idx !== i));
   const onTipoCargo = (i: number, chargeNo: string) => {
@@ -358,9 +358,10 @@ export default function ArmarOrdenPage() {
     }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [bcPrices, proveedorId, ordenes, currency]);
-  // El IVA se aplica a los materiales Y al flete/cargo (13%), igual que en BC. Antes
-  // el cargo quedaba sin IVA y el total no cuadraba con BC (faltaba el 13% del flete).
-  const ivaCargos = cargosTotal * 0.13;
+  // El IVA se aplica a los materiales Y al flete/cargo, igual que en BC, pero POR
+  // CARGO: 13% por defecto y editable. Primero el cargo iba sin IVA (faltaba el 13%
+  // del flete); después con el 13% fijo, que le inventaba IVA a los cargos exentos.
+  const ivaCargos = cargos.reduce((s, c) => s + cargoImporte(c) * ((Number(c.iva) || 0) / 100), 0);
   const ivaTotal = rows.reduce((s, r) => s + calcImporte(r) * ((Number(r.iva) || 0) / 100), 0) + ivaCargos;
   const total = subtotal + cargosTotal + ivaTotal;
   const pedidosDistintos = [...new Set(rows.map((r) => r.pedidoNumero))];
@@ -418,7 +419,7 @@ export default function ArmarOrdenPage() {
       if (cargoImporte(c) <= 0) continue;
       ls.push({ tipo: "cargo", chargeNo: c.chargeNo || undefined, chargeMethod: metodoAsig, descripcion: c.descripcion || "CARGO",
         cantidad: Number(c.cantidad) || 1, unidad: "UND", almacen: rows[0].almacen,
-        precioUnitario: Number(c.precio) || 0, ivaPct: 13 });
+        precioUnitario: Number(c.precio) || 0, ivaPct: Number(c.iva) || 0 });
     }
     const orden = await createOrden({ proveedorId, proveedorNo: provSel?.code, proveedorNombre: provSel?.nombre, currencyCode: currency, almacenRecepcion: almacen, observaciones: observaciones.trim() || undefined, notaInterna: notaInterna.trim() || undefined, lineas: ls });
     // La orden YA está creada acá (y ya consumió saldo de las solicitudes). Si el
@@ -550,6 +551,13 @@ export default function ArmarOrdenPage() {
               <div>
                 <span className="ds-label ds-muted" style={{ display: "block", marginBottom: 4 }}>Precio</span>
                 <Input type="number" min={0} value={c.precio} placeholder="0" style={{ width: 130 }} onChange={(e) => setCargo(i, { precio: e.target.value })} />
+              </div>
+              {/* IVA del cargo: 13% por defecto, pero editable. Hay cargos exentos
+                  (p. ej. "Impuestos Exterior"), y antes el 13% estaba fijo en el
+                  código: el total inventaba un IVA que BC no iba a cobrar. */}
+              <div>
+                <span className="ds-label ds-muted" style={{ display: "block", marginBottom: 4 }}>IVA %</span>
+                <Input type="number" min={0} max={100} value={c.iva} placeholder="0" style={{ width: 96 }} onChange={(e) => setCargo(i, { iva: e.target.value })} />
               </div>
               <div style={{ minWidth: 110, textAlign: "right" }}>
                 <span className="ds-label ds-muted" style={{ display: "block", marginBottom: 4 }}>Importe</span>
@@ -695,7 +703,7 @@ export default function ArmarOrdenPage() {
                     <td className="ds-num ds-body-sm">{c.cantidad}</td>
                     <td className="ds-num ds-body-sm">{money(Number(c.precio) || 0, currency)}</td>
                     <td className="ds-num ds-muted">—</td>
-                    <td className="ds-num ds-body-sm">13</td>
+                    <td className="ds-num ds-body-sm">{Number(c.iva) || 0}</td>
                     <td className="ds-num ds-strong">{money(cargoImporte(c) || 0, currency)}</td>
                     <td className="ds-num"><button type="button" className="icon-btn" title="Quitar cargo" aria-label="Quitar cargo" onClick={() => removeCargo(i)}>×</button></td>
                   </tr>
