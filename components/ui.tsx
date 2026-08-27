@@ -365,6 +365,14 @@ export function Modal({ title, onClose, children, footer, wide }: {
   const titleId = useId();
   const modalRef = useRef<HTMLDivElement>(null);
   const prevFocus = useRef<HTMLElement | null>(null);
+  // El diálogo se monta en <body> por PORTAL, no donde lo escribió la pantalla.
+  // Un overlay `position: fixed` se posiciona contra el viewport SOLO si ningún
+  // ancestro tiene transform/filter; con uno, se posiciona contra ese ancestro y el
+  // diálogo deja de cubrir la pantalla (aparece arriba del todo y sale cortado). Eso
+  // pasaba con los diálogos escritos dentro de <main class="page">, que arrastra un
+  // transform de su animación de entrada. En el body no hay de qué depender.
+  const [montado, setMontado] = useState(false);
+  useEffect(() => setMontado(true), []);
   // onClose vía ref para que el efecto corra UNA sola vez (montar/desmontar) y no
   // se re-ejecute robando el foco cuando el padre re-renderiza (p.ej. al tipear).
   const onCloseRef = useRef(onClose);
@@ -372,6 +380,7 @@ export function Modal({ title, onClose, children, footer, wide }: {
   // Diálogo accesible: cerrar con Escape, llevar el foco adentro al abrir,
   // atraparlo (Tab cicla dentro) y restaurarlo al disparador al cerrar.
   useEffect(() => {
+    if (!montado) return;
     prevFocus.current = document.activeElement as HTMLElement | null;
     // Bloquear el scroll del fondo mientras el diálogo está abierto (evita el
     // "scroll detrás" del overlay). Se restaura al cerrar.
@@ -394,8 +403,9 @@ export function Modal({ title, onClose, children, footer, wide }: {
     };
     window.addEventListener("keydown", onKey);
     return () => { window.removeEventListener("keydown", onKey); document.body.style.overflow = prevOverflow; prevFocus.current?.focus?.(); };
-  }, []);
-  return (
+  }, [montado]);
+  if (!montado) return null;   // en el servidor no hay <body> al que portar
+  return createPortal(
     <div className="modal-overlay" onClick={onClose}>
       <div ref={modalRef} tabIndex={-1} className={`modal ${wide ? "modal--wide" : ""}`} role="dialog" aria-modal="true" aria-labelledby={titleId} onClick={(e) => e.stopPropagation()}>
         <div className="row row--between" style={{ marginBottom: 16 }}>
@@ -405,7 +415,8 @@ export function Modal({ title, onClose, children, footer, wide }: {
         {children}
         {footer && <div className="row gap-3 mt-6" style={{ justifyContent: "flex-end" }}>{footer}</div>}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 

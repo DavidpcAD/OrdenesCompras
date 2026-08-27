@@ -3,10 +3,11 @@
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { ColumnDef } from "@tanstack/react-table";
-import { Badge, ProgressBar, EmptyState } from "@/components/ui";
+import { Badge, Checkbox, ProgressBar, EmptyState } from "@/components/ui";
 import { DataTable } from "@/components/data-table";
 import { IconChevronDown } from "@/components/icons";
 import { useStore } from "@/lib/store";
+import { useSoloMias } from "@/lib/use-solo-mias";
 import { money, formatDate, ordenAlmacenes, ordenAvance, ordenBadge, ordenObras, ordenRecibidoPct, ordenSubtotal, ordenPedidos, ordenEsDirecta, ordenLineaImporte, proveedorLabel, num, numeroOrden } from "@/lib/helpers";
 import type { Orden } from "@/lib/types";
 
@@ -50,6 +51,7 @@ export function OrdenesLista({
   hrefDetalle,
   pedidoHref,
   vacio = "No hay órdenes.",
+  filtroMias = false,
 }: {
   ordenes: Orden[];
   hrefDetalle: (id: string) => string;
@@ -58,13 +60,25 @@ export function OrdenesLista({
   // Sin esta prop los N.º de solicitud se muestran como hasta ahora, sin link.
   pedidoHref?: (numeroPedido: string) => string | null;
   vacio?: string;
+  // Muestra el atajo "Solo mis órdenes" (compara creadoPor con la sesión). Solo
+  // tiene sentido donde quien mira también crea órdenes (Proveeduría).
+  filtroMias?: boolean;
 }) {
-  const { proveedores } = useStore();
+  const { proveedores, usuario } = useStore();
   const router = useRouter();
   const prov = (id: string) => proveedores.find((p) => p.id === id);
   const nombreProv = (o: Orden) => proveedorLabel(o, proveedores);
 
   const [agrupar, setAgrupar] = useState(false);
+  // "Solo mis órdenes" se recuerda por sesión (la página remonta la lista al cambiar
+  // de panel KPI con key={filtro}, y sin esto el check se perdía en cada clic).
+  const [soloMias, elegirMias] = useSoloMias();
+  // creadoPor guarda el nombre según la cookie firmada, el mismo que `usuario` en el
+  // store — por eso la comparación es directa. Órdenes viejas sin creadoPor quedan fuera.
+  const lista = useMemo(
+    () => (filtroMias && soloMias && usuario ? ordenes.filter((o) => o.creadoPor === usuario) : ordenes),
+    [ordenes, filtroMias, soloMias, usuario],
+  );
   // Proveedores colapsados por defecto: se abre uno para ver sus OC.
   const [abiertos, setAbiertos] = useState<Set<string>>(new Set());
   const toggleGrupo = (k: string) => setAbiertos((s) => { const n = new Set(s); n.has(k) ? n.delete(k) : n.add(k); return n; });
@@ -104,6 +118,9 @@ export function OrdenesLista({
       },
     },
     { id: "estado", header: "Estado", accessorFn: (o) => ordenBadge(o.estado).label, meta: { label: "Estado" }, cell: (c) => { const b = ordenBadge(c.row.original.estado); return <Badge tone={b.tone}>{b.label}</Badge>; } },
+    // Quién generó la OC (creadoPor). Además de leerse, da el filtro por persona del
+    // encabezado: cada quien puede quedarse con las suyas o ver las de un compañero.
+    { id: "creadaPor", header: "Creada por", accessorFn: (o) => o.creadoPor ?? "", meta: { label: "Creada por" }, cell: (c) => c.getValue() || <span className="ds-muted">—</span> },
   ], [proveedores, pedidoHref]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const renderLineas = (o: Orden) => (
@@ -127,7 +144,7 @@ export function OrdenesLista({
   // Agrupación por proveedor (nombre), con total por moneda y % recibido.
   const grupos = useMemo(() => {
     const map = new Map<string, Orden[]>();
-    for (const o of ordenes) {
+    for (const o of lista) {
       const k = nombreProv(o);
       if (!map.has(k)) map.set(k, []);
       map.get(k)!.push(o);
@@ -147,29 +164,35 @@ export function OrdenesLista({
         return { nombre, ords: ordsSort, totales: [...totales.entries()], rec, tot, completas };
       })
       .sort((a, b) => a.nombre.localeCompare(b.nombre));
-  }, [ordenes, proveedores]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [lista, proveedores]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div>
-      <div className="segmented" role="tablist" aria-label="Ver órdenes" style={{ marginBottom: 12 }}>
-        <button type="button" role="tab" aria-selected={!agrupar} className={`segmented__btn ${!agrupar ? "is-active" : ""}`} onClick={() => setAgrupar(false)}>Lista</button>
-        <button type="button" role="tab" aria-selected={agrupar} className={`segmented__btn ${agrupar ? "is-active" : ""}`} onClick={() => setAgrupar(true)}>Por proveedor</button>
+      <div className="row row--between wrap gap-3" style={{ marginBottom: 12, alignItems: "center" }}>
+        <div className="segmented" role="tablist" aria-label="Ver órdenes">
+          <button type="button" role="tab" aria-selected={!agrupar} className={`segmented__btn ${!agrupar ? "is-active" : ""}`} onClick={() => setAgrupar(false)}>Lista</button>
+          <button type="button" role="tab" aria-selected={agrupar} className={`segmented__btn ${agrupar ? "is-active" : ""}`} onClick={() => setAgrupar(true)}>Por proveedor</button>
+        </div>
+        {filtroMias && usuario && (
+          <Checkbox checked={soloMias} onChange={(e) => elegirMias(e.target.checked)}
+            label={<>Solo mis órdenes <span className="ds-muted ds-body-sm">({usuario})</span></>} />
+        )}
       </div>
 
       {!agrupar ? (
         <DataTable
-          data={ordenes}
+          data={lista}
           columns={columns}
           tablaKey="ordenes"
           columnVisibilityInicial={{ interno: false }}
           buscarPlaceholder="Buscar por N.º de orden, proveedor o almacén…"
           getRowId={(o) => o.id}
           onRowClick={(o) => router.push(hrefDetalle(o.id))}
-          vacio={vacio}
+          vacio={filtroMias && soloMias ? "No hay órdenes creadas por vos en esta categoría." : vacio}
           renderExpanded={renderLineas}
         />
       ) : grupos.length === 0 ? (
-        <EmptyState title={vacio} />
+        <EmptyState title={filtroMias && soloMias ? "No hay órdenes creadas por vos en esta categoría." : vacio} />
       ) : (
         <div className="col gap-3">
           {grupos.map((g) => {

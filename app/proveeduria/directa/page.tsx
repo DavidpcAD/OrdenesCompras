@@ -391,7 +391,15 @@ export default function OrdenDirectaPage() {
                     // Variantes del item: si tiene, se exige elegir una antes de agregar.
                     fetch(`/api/bc/variants?item=${encodeURIComponent(k)}`)
                       .then((r) => (r.ok ? r.json() : { variantes: [], disponible: false }))
-                      .then((d) => { setQaVariantes(d.variantes ?? []); setQaVariantesError(d.disponible === false); })
+                      .then((d) => {
+                        const vs = d.variantes ?? [];
+                        setQaVariantes(vs);
+                        setQaVariantesError(d.disponible === false);
+                        // Con UNA sola variante no hay nada que elegir: BC la exige y
+                        // esa es la única válida. Se preselecciona para no hacer
+                        // clickear una opción obvia (con varias sí hay que elegir).
+                        if (vs.length === 1) setQaVariante(vs[0].code);
+                      })
                       .catch(() => { setQaVariantes([]); setQaVariantesError(true); });
                   }
                 }} getKey={(i) => i.code} getLabel={(i) => `${i.code} — ${i.descripcion}`}

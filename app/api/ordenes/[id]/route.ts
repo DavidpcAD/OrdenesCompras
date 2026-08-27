@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getOrden, setOrdenEstado, updateOrden, descartarOrden, ordenTieneRecepciones, MSG_NO_REABRIR } from "@/lib/repo";
-import { bcReopenPedido, bcReplaceOrderLines, bcCrearPedidoAbierto, crearEnBcAlEnviar, lineasOrdenParaBc, obrasSinTarea, sanearObrasDeLineas, avisoDeSaneo } from "@/lib/bc";
+import { bcReopenPedido, bcReplaceOrderLines, bcCrearPedidoAbierto, crearEnBcAlEnviar, lineasOrdenParaBc, obrasSinTarea, lineasSinUnidad, resolverVariantesRequeridas, sanearObrasDeLineas, avisoDeSaneo } from "@/lib/bc";
 import { actor } from "@/lib/actor";
 
 export const runtime = "nodejs";
@@ -60,7 +60,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     if (estado === "pendiente_aprobacion" && crearEnBcAlEnviar()) {
       const o = await getOrden(id);
       if (!o) return NextResponse.json({ error: "no encontrada" }, { status: 404 });
-      const lineasBc = lineasOrdenParaBc(o.lineas);
+      let lineasBc = lineasOrdenParaBc(o.lineas);
       // Obra sin tarea = pedido que NO se va a poder lanzar. BC lo acepta al crearlo
       // y revienta después, en manos del aprobador, así que se corta acá.
       const sinTarea = obrasSinTarea(lineasBc);
@@ -69,6 +69,27 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
           error: `La orden NO se envió a aprobación: ${sinTarea.length} línea(s) tienen obra sin tarea — ${sinTarea.join("; ")}. Business Central no puede lanzar un pedido con obra sin tarea: elegí la tarea (o quitá la obra) y reintentá.`,
         }, { status: 409 });
       }
+      // Mismo criterio que la tarea: unidad y variante faltantes NO frenan la
+      // creación del pedido en BC, frenan el LANZAMIENTO — o sea que el error le
+      // aparece al aprobador, que no tiene cómo arreglarlo. Se corta acá.
+      const sinUnidad = lineasSinUnidad(lineasBc);
+      if (sinUnidad.length) {
+        return NextResponse.json({
+          error: `La orden NO se envió a aprobación: ${sinUnidad.length} línea(s) no tienen unidad de compra — ${sinUnidad.join("; ")}. Business Central no puede lanzar un pedido con una línea sin unidad: editá la orden, elegí la unidad y reintentá.`,
+        }, { status: 409 });
+      }
+      // Variante: la que se puede deducir (el ítem tiene una sola) se pone acá; la
+      // que hay que ELEGIR frena el envío, porque el color o la medida del material
+      // no los decide el servidor. Ojo: las pantallas de nueva/editar orden todavía
+      // no tienen selector de variante, así que hoy la salida es Compra directa (sí
+      // lo tiene) o corregir la solicitud en Ingeniería.
+      const varRes = await resolverVariantesRequeridas(lineasBc);
+      if (varRes.ambiguas.length) {
+        return NextResponse.json({
+          error: `La orden NO se envió a aprobación: ${varRes.ambiguas.length} artículo(s) exigen variante y la línea no la trae — ${varRes.ambiguas.join("; ")}. Business Central no puede lanzar un pedido con una línea así.`,
+        }, { status: 409 });
+      }
+      lineasBc = varRes.lineas;
       if (o.bcNumber) {
         // Reenvío de una orden rechazada/corregida: el pedido ya existe allá. Se le
         // vuelven a empujar las líneas por si un edit no llegó a BC. Que esto falle
@@ -90,7 +111,11 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
             lineas: lineasBc,
           });
           bcNo = r.number;
-          if (r.omitidas.length) bcAviso = `El pedido ${r.number} se creó en BC, pero sin ${r.omitidas.length} línea(s) — ${r.omitidas.join("; ")}.`;
+          const avisos = [
+            r.omitidas.length ? `El pedido ${r.number} se creó en BC, pero sin ${r.omitidas.length} línea(s) — ${r.omitidas.join("; ")}.` : "",
+            r.avisoCC ?? "",
+          ].filter(Boolean);
+          if (avisos.length) bcAviso = avisos.join(" · ");
         } catch (e: any) {
           return NextResponse.json({
             error: `La orden NO se envió a aprobación porque no se pudo crear el pedido en Business Central — ${String(e?.message ?? e)}`,

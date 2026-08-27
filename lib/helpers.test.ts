@@ -15,7 +15,7 @@ import {
   ordenPendienteResumen, devolverPendienteAPedidos, proveedorLabel,
   numeroOrden, etiquetaInterna, tieneBc, esConsumoDirecto, obraParaOrden, destinoDeRecepcion,
   puedeDevolverLinea, motivoNoDevolver, ordenesDeLineaPedido, ordenEsBorradorDescartable,
-  lineasACotizar, observacionesParaProveedor,
+  lineasACotizar, observacionesParaProveedor, motivoDevolucion, devolucionesDeRol,
 } from "./helpers.ts";
 import type { Orden, OrdenLinea, Pedido, PedidoLinea } from "./types.ts";
 
@@ -538,6 +538,30 @@ test("observacionesParaProveedor: recorta el prefijo de la devolución", () => {
   assert.equal(observacionesParaProveedor("↩ Devuelto: no hay presupuesto"), "");
   assert.equal(observacionesParaProveedor("Tapia prefabricada Central AD"), "Tapia prefabricada Central AD");
   assert.equal(observacionesParaProveedor(undefined), "");
+});
+
+// La bandeja de Devoluciones muestra el motivo, ya sea el pedido entero o solo
+// algunas líneas (mismo `notaCreador`, dos formatos distintos escritos por repo.ts).
+test("motivoDevolucion: entiende el pedido entero y la devolución por línea", () => {
+  assert.equal(motivoDevolucion("↩ Devuelto: no hay presupuesto"), "no hay presupuesto");
+  assert.equal(
+    motivoDevolucion("↩ Devuelta(s): PERLING 2X4X1.8MM H.G — cambiar código de material · nota vieja"),
+    "cambiar código de material",
+  );
+  assert.equal(motivoDevolucion("Tapia prefabricada Central AD"), "Tapia prefabricada Central AD");
+  assert.equal(motivoDevolucion(undefined), "—");
+});
+
+// El bug real: una solicitud con SOLO algunas líneas devueltas (las otras ya
+// tenían orden) se quedaba afuera de Devoluciones porque solo se miraba
+// `pedido.estado`. Tiene que aparecer igual que si se hubiera devuelto entera.
+test("devolucionesDeRol: una solicitud con una línea devuelta aparece aunque el pedido siga su curso", () => {
+  const conLineaDevuelta = pedido([{ ...pLinea({ id: "l1" }), devuelta: true }, pLinea({ id: "l2", cantidadOrdenada: 10 })], { estado: "aprobado" });
+  const sinDevolver = pedido([pLinea({ id: "l1" })], { estado: "aprobado", id: "p2" });
+  const { solicitudes } = devolucionesDeRol("proveeduria", [conLineaDevuelta, sinDevolver], []);
+  assert.deepEqual(solicitudes.map((p) => p.id), ["p1"]);
+  // Otro rol (facturación, aprobación) no gestiona devoluciones de solicitudes.
+  assert.deepEqual(devolucionesDeRol("facturacion", [conLineaDevuelta], []).solicitudes, []);
 });
 
 // El fallback "si no hay pendiente, cotizá todo" no puede resucitar lo devuelto.

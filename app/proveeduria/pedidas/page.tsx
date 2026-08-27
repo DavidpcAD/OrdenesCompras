@@ -2,24 +2,25 @@
 
 import { useMemo, useState } from "react";
 import type { ColumnDef } from "@tanstack/react-table";
-import { Badge } from "@/components/ui";
+import { Badge, Checkbox } from "@/components/ui";
 import { DataTable } from "@/components/data-table";
 import { VistaToggle } from "@/components/vista-toggle";
 import { IconReceipt, IconList } from "@/components/icons";
 import { useStore } from "@/lib/store";
 import { num, formatDate, numeroOrden } from "@/lib/helpers";
+import { useSoloMias } from "@/lib/use-solo-mias";
 
 type Estado = "pendiente" | "parcial" | "llego";
 interface Row {
   ordenId: string; ordenNumero: string; itemNo: string; descripcion: string; proveedor: string;
-  pedido: string; solicitante: string; unidad: string; ordenado: number; recibido: number; estado: Estado;
+  pedido: string; solicitante: string; creadaPor: string; unidad: string; ordenado: number; recibido: number; estado: Estado;
 }
 const estadoLabel = (e: Estado) => (e === "llego" ? "Llegó" : e === "parcial" ? "Parcial" : "Pendiente");
 const estadoTone = (e: Estado) => (e === "llego" ? "green" : e === "parcial" ? "yellow" : "gray");
 const EMPRESA_NOMBRE = "Adelante Desarrollos S.A.";
 
 export default function ProveeduriaLineasPedidasPage() {
-  const { ordenes, proveedores, pedidos, articulos } = useStore();
+  const { ordenes, proveedores, pedidos, articulos, usuario } = useStore();
 
   // Índices armados una sola vez: si no, cada línea de cada orden recorría el
   // catálogo de artículos y TODOS los pedidos con TODAS sus líneas.
@@ -49,7 +50,7 @@ export default function ProveeduriaLineasPedidasPage() {
         rows.push({
           ordenId: o.id, ordenNumero: numeroOrden(o), itemNo: art?.code ?? l.articuloId ?? "—", descripcion: l.descripcion,
           proveedor: o.proveedorNombre ? `${o.proveedorNo ?? prov?.code ?? ""} · ${o.proveedorNombre}`.trim().replace(/^· /, "") : prov ? `${prov.code} · ${prov.nombre}` : "—",
-          pedido: l.pedidoNumero ?? "—", solicitante: ped?.solicitante ?? "—", unidad: l.unidad, ordenado: l.cantidad, recibido, estado,
+          pedido: l.pedidoNumero ?? "—", solicitante: ped?.solicitante ?? "—", creadaPor: o.creadoPor ?? "", unidad: l.unidad, ordenado: l.cantidad, recibido, estado,
         });
       });
     });
@@ -57,11 +58,19 @@ export default function ProveeduriaLineasPedidasPage() {
   }, [ordenes, proveedores, artPorClave, pedidoPorLinea, pedidoPorNumero]);
 
   const [estadoF, setEstadoF] = useState<"all" | "pendiente" | "llego">("all");
+  // "Solo mis órdenes" se aplica ANTES de los chips: así los conteos son los de la
+  // persona (mismo toggle y misma clave de sesión que la vista Por orden).
+  const [soloMias, setSoloMias] = useSoloMias();
+  const misRows = useMemo(
+    () => (soloMias && usuario ? baseRows.filter((r) => r.creadaPor === usuario) : baseRows),
+    [baseRows, soloMias, usuario],
+  );
   const matchEstado = (r: Row) => estadoF === "all" ? true : estadoF === "llego" ? r.estado === "llego" : r.estado !== "llego";
-  const base = useMemo(() => baseRows.filter(matchEstado), [baseRows, estadoF]); // eslint-disable-line react-hooks/exhaustive-deps
-  const totPend = baseRows.filter((r) => r.estado !== "llego").length;
-  const totLlego = baseRows.filter((r) => r.estado === "llego").length;
-  const estadoFLabel = estadoF === "all" ? "Todas" : estadoF === "llego" ? "Ya llegó / facturado" : "Pendiente de llegar";
+  const base = useMemo(() => misRows.filter(matchEstado), [misRows, estadoF]); // eslint-disable-line react-hooks/exhaustive-deps
+  const totPend = misRows.filter((r) => r.estado !== "llego").length;
+  const totLlego = misRows.filter((r) => r.estado === "llego").length;
+  const estadoFLabel = (estadoF === "all" ? "Todas" : estadoF === "llego" ? "Ya llegó / facturado" : "Pendiente de llegar")
+    + (soloMias && usuario ? ` · Solo mis órdenes (${usuario})` : "");
 
   const columns = useMemo<ColumnDef<Row, any>[]>(() => [
     { id: "orden", header: "Orden", accessorFn: (r) => r.ordenNumero, meta: { label: "Orden" }, cell: (c) => <span className="ds-strong ds-body-sm">{c.getValue()}</span> },
@@ -70,6 +79,9 @@ export default function ProveeduriaLineasPedidasPage() {
     { id: "proveedor", header: "Proveedor", accessorFn: (r) => r.proveedor, meta: { label: "Proveedor" }, cell: (c) => <span className="ds-body-sm">{c.getValue()}</span> },
     { id: "pedido", header: "Pedido", accessorFn: (r) => r.pedido, meta: { label: "Pedido" }, cell: (c) => <span className="ds-body-sm">{c.getValue()}</span> },
     { id: "solicitante", header: "Solicitó", accessorFn: (r) => r.solicitante, meta: { label: "Solicitó" }, cell: (c) => <span className="ds-body-sm">{c.getValue()}</span> },
+    // Quién generó la orden (no confundir con "Solicitó", que es el ingeniero del
+    // pedido). Con el embudo se filtra por compañero de Proveeduría.
+    { id: "creadaPor", header: "Creada por", accessorFn: (r) => r.creadaPor, meta: { label: "Creada por" }, cell: (c) => c.getValue() ? <span className="ds-body-sm">{c.getValue()}</span> : <span className="ds-muted">—</span> },
     { id: "ordenado", header: "Ordenado", accessorFn: (r) => r.ordenado, meta: { label: "Ordenado", num: true }, enableColumnFilter: false, cell: (c) => <span className="ds-body-sm">{num.format(c.getValue())} {c.row.original.unidad}</span> },
     { id: "recibido", header: "Recibido", accessorFn: (r) => r.recibido, meta: { label: "Recibido", num: true }, enableColumnFilter: false, cell: (c) => <span className="ds-body-sm">{num.format(c.getValue())} {c.row.original.unidad}</span> },
     { id: "estado", header: "Estado", accessorFn: (r) => estadoLabel(r.estado), meta: { label: "Estado" }, cell: (c) => <Badge tone={estadoTone(c.row.original.estado)}>{estadoLabel(c.row.original.estado)}</Badge> },
@@ -98,13 +110,20 @@ export default function ProveeduriaLineasPedidasPage() {
 
         <div className="filterbar">
           <span className="filterbar__label">Estado</span>
-          <button type="button" className={`filter-chip ${estadoF === "all" ? "is-active" : ""}`} onClick={() => setEstadoF("all")}>Todas <span className="filter-chip__count">{baseRows.length}</span></button>
+          <button type="button" className={`filter-chip ${estadoF === "all" ? "is-active" : ""}`} onClick={() => setEstadoF("all")}>Todas <span className="filter-chip__count">{misRows.length}</span></button>
           <button type="button" className={`filter-chip ${estadoF === "pendiente" ? "is-active" : ""}`} onClick={() => setEstadoF("pendiente")}>Pendiente de llegar <span className="filter-chip__count">{totPend}</span></button>
           <button type="button" className={`filter-chip ${estadoF === "llego" ? "is-active" : ""}`} onClick={() => setEstadoF("llego")}>Ya llegó <span className="filter-chip__count">{totLlego}</span></button>
+          {usuario && (
+            <span style={{ marginLeft: "auto" }}>
+              <Checkbox checked={soloMias} onChange={(e) => setSoloMias(e.target.checked)}
+                label={<>Solo mis órdenes <span className="ds-muted ds-body-sm">({usuario})</span></>} />
+            </span>
+          )}
         </div>
 
         <div className="mt-2">
-          <DataTable data={base} columns={columns} tablaKey="lineas-pedidas" titulo="Líneas pedidas" buscarPlaceholder="Buscar por material, pedido o proveedor…" vacio="No hay líneas que coincidan con el filtro." />
+          <DataTable data={base} columns={columns} tablaKey="lineas-pedidas" titulo="Líneas pedidas" buscarPlaceholder="Buscar por material, pedido o proveedor…"
+            vacio={soloMias ? "No hay líneas de órdenes creadas por vos que coincidan." : "No hay líneas que coincidan con el filtro."} />
         </div>
       </main>
 

@@ -896,7 +896,7 @@ async function getStdVariantId(itemNo: string, code: string): Promise<string | n
 }
 
 // ---- Escritura: crear Pedido de compra (Purchase Order) por la API ESTÁNDAR ----
-export type NuevaLineaBc = { itemNo: string; cantidad: number; precio?: number; descripcion?: string; variantCode?: string };
+export type NuevaLineaBc = { itemNo: string; cantidad: number; precio?: number; descripcion?: string; variantCode?: string; unidad?: string; jobNo?: string };
 
 // La API estándar de purchaseOrderLine NO acepta `locationCode`; requiere
 // `locationId` (el systemId GUID del almacén). Lo resolvemos por código contra
@@ -916,6 +916,52 @@ async function getStdLocationId(cid: string, code: string): Promise<string | nul
     }
   } catch { /* sin ubicación resoluble */ }
   stdLocationIdCache[code] = null;
+  return null;
+}
+
+// systemId (GUID) de una DIMENSIÓN por su código (p.ej. "CC" = Centro de Costo).
+// Se consulta en vez de hardcodearse porque el GUID es distinto en cada entorno de
+// BC (Sandbox y Production tienen dimensiones con el mismo código y otro id).
+const stdDimensionIdCache: Record<string, string | null> = {};
+async function getStdDimensionId(cid: string, code: string): Promise<string | null> {
+  if (!code) return null;
+  if (code in stdDimensionIdCache) return stdDimensionIdCache[code];
+  try {
+    const filtro = `$filter=${encodeURIComponent(`code eq '${code}'`)}&$select=id,code`;
+    const res = await bcFetch(`${stdRoot()}/companies(${cid})/dimensions?${filtro}`, { cache: "no-store" });
+    if (res.ok) {
+      const id = ((await res.json()).value ?? [])[0]?.id ?? null;
+      stdDimensionIdCache[code] = id;
+      return id;
+    }
+  } catch { /* sin dimensión resoluble */ }
+  stdDimensionIdCache[code] = null;
+  return null;
+}
+
+// Código de la dimensión Centro de Costo en BC. Configurable por si cambia el
+// nombre de la dimensión; el GUID NO se configura, se consulta (ver arriba).
+function codigoDimensionCC(): string {
+  return (process.env.BC_DIMENSION_CC ?? "CC").trim();
+}
+
+// Estampa la dimensión Centro de Costo = obra en el ENCABEZADO de un pedido recién
+// creado (tiene que estar Abierto). Es lo que hace que el pedido entre al workflow
+// de aprobación de BC. Devuelve null si quedó puesta, o el motivo si no se pudo.
+async function ponerCentroCosto(cid: string, poId: string, obra: string): Promise<string | null> {
+  const code = codigoDimensionCC();
+  const dimId = await getStdDimensionId(cid, code);
+  if (!dimId) return `la dimensión ${code} no existe en Business Central (o no se pudo consultar)`;
+  try {
+    const res = await bcFetch(`${stdRoot()}/companies(${cid})/purchaseOrders(${poId})/dimensionSetLines`, {
+      method: "POST", cache: "no-store",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: dimId, valueCode: obra }),
+    });
+    if (!res.ok) return `BC ${res.status}: ${(await res.text()).slice(0, 200)}`;
+  } catch (e: any) {
+    return String(e?.message ?? e);
+  }
   return null;
 }
 
@@ -953,7 +999,7 @@ export function toBcAmount(v: unknown): number {
   return 0;
 }
 
-export async function bcCrearPedido(input: { vendorNo: string; currencyCode?: string; locationCode?: string; lineas: NuevaLineaBc[]; cargos?: CargoBc[]; flete?: { monto: number; descripcion?: string } }): Promise<{ number: string; id: string; omitidas: string[]; creadas: number; lineError?: string; cargoError?: string; cargosCreados: number }> {
+export async function bcCrearPedido(input: { vendorNo: string; currencyCode?: string; locationCode?: string; lineas: NuevaLineaBc[]; cargos?: CargoBc[]; flete?: { monto: number; descripcion?: string } }): Promise<{ number: string; id: string; omitidas: string[]; creadas: number; lineError?: string; cargoError?: string; cargosCreados: number; avisoCC?: string }> {
   if (!input?.vendorNo) throw new Error("Falta el proveedor (vendorNo).");
   const lineas = (input.lineas ?? []).filter((l) => l.itemNo && l.cantidad > 0);
   if (!lineas.length) throw new Error("No hay líneas de material válidas para el pedido.");
@@ -986,6 +1032,11 @@ export async function bcCrearPedido(input: { vendorNo: string; currencyCode?: st
     const precioItem = toBcAmount(l.precio);
     if (precioItem > 0) lineBody.directUnitCost = precioItem;
     if (locId) lineBody.locationId = locId;
+    // La unidad en la que están la cantidad y el precio. Sin ella BC deja la base
+    // del ítem, y comprar por estañón a precio de estañón anotado en gramos es un
+    // error de 255.000× — así que si viene, viaja.
+    const unidadItem = (l.unidad ?? "").trim().toUpperCase();
+    if (unidadItem) lineBody.unitOfMeasureCode = unidadItem;
     // Variante: si el item la exige, BC pide itemVariantId (GUID), no el código.
     if (l.variantCode) {
       const vId = await getStdVariantId(l.itemNo, l.variantCode);
@@ -1031,7 +1082,15 @@ export async function bcCrearPedido(input: { vendorNo: string; currencyCode?: st
     try { await bcFetch(`${stdRoot()}/companies(${cid})/purchaseOrders(${po.id})`, { method: "DELETE", cache: "no-store" }); } catch { /* best effort */ }
     throw new Error(`BC rechazó todas las líneas del pedido — ${lineError ?? "sin detalle"}`);
   }
-  return { number: po.number ?? "", id: po.id ?? "", omitidas, creadas, lineError, cargoError, cargosCreados };
+  // Centro de Costo en el encabezado (ver ponerCentroCosto): sin esta dimensión el
+  // pedido no entra al workflow de aprobación de BC. No es fatal.
+  let avisoCC: string | undefined;
+  const obraCC = (lineas.find((l) => (l.jobNo ?? "").trim())?.jobNo ?? "").trim();
+  if (obraCC) {
+    const err = await ponerCentroCosto(cid, String(po.id ?? ""), obraCC);
+    if (err) avisoCC = `No se le pudo poner el Centro de Costo ${obraCC} al pedido ${po.number ?? ""} (${err}): en BC no va a entrar al circuito de aprobación.`;
+  }
+  return { number: po.number ?? "", id: po.id ?? "", omitidas, creadas, lineError, cargoError, cargosCreados, avisoCC };
 }
 
 // Raíz OData V4 (para los web services de codeunit custom, p.ej. AdelantePO).
@@ -1127,12 +1186,21 @@ export function payloadReplaceLines(lineas: LineaReplaceBc[]): { lines: Record<s
     // compra del ítem al validar el N.º, pero mandarla explícita deja constancia de
     // en qué unidad están estos números: si algún día no coinciden, BC se queda con
     // la del ítem en vez de facturar 1 gramo al precio de un estañón.
-    lines.push({
-      type: "Item", itemNo, variantCode: l.variantCode ?? "", locationCode: l.locationCode ?? "",
-      unitOfMeasureCode: (l.unidad ?? "").trim().toUpperCase(),
+    const unidad = (l.unidad ?? "").trim().toUpperCase();
+    const variante = (l.variantCode ?? "").trim();
+    const linea: Record<string, unknown> = {
+      type: "Item", itemNo, locationCode: l.locationCode ?? "",
       quantity: cantidad, directUnitCost: precio, lineDiscountPct: Number(l.descuentoPct) || 0,
       jobNo: l.jobNo ?? "", taskNo: l.taskNo ?? "",
-    });
+    };
+    // Unidad y variante EN BLANCO no se mandan: mandarlas vacías no es "que BC
+    // ponga la del ítem", es BORRAR la que BC ya había puesto al validar el N.º de
+    // artículo. Así se cayó CP-003884 al lanzarlo ("Unit of Measure Code must have
+    // a value" / "Variant Code must have a value"): el pedido se creaba bien y
+    // reventaba después, en manos del aprobador. Omitido, sobrevive el default de BC.
+    if (unidad) linea.unitOfMeasureCode = unidad;
+    if (variante) linea.variantCode = variante;
+    lines.push(linea);
   }
   return { lines, omitidas };
 }
@@ -1199,6 +1267,95 @@ export function obrasSinTarea(lineas: LineaReplaceBc[]): string[] {
     .map((l) => `${l.descripcion || l.itemNo || "línea"} (obra ${(l.jobNo ?? "").trim()})`);
 }
 
+// Líneas de artículo SIN unidad de compra. Mismo criterio que obrasSinTarea: se
+// corta antes de tocar BC porque el pedido se crearía igual y reventaría al
+// lanzarlo, ya en manos del aprobador ("Unit of Measure Code must have a value").
+//
+// Acá NO se adivina la unidad. La cantidad y el precio de la línea están expresados
+// EN la unidad de compra, así que dejar que BC ponga la unidad BASE del ítem no
+// arregla nada: convierte el número en otro. Un estañón son 255.000 gramos, o sea
+// un error de 255.000× facturado. Sin unidad, la línea no viaja.
+export function lineasSinUnidad(lineas: LineaReplaceBc[]): string[] {
+  return (lineas ?? [])
+    .filter((l) => l.tipo !== "cargo" && (l.itemNo ?? "").trim() && !(l.unidad ?? "").trim())
+    .map((l) => `${l.descripcion || l.itemNo || "línea"}`);
+}
+
+// Ítems que EXIGEN variante y cuya línea viene sin ella. BC solo lo dice al LANZAR
+// ("Variant Code must have a value"), igual que la unidad y la tarea, así que el
+// error le cae al aprobador y no a quien puede arreglarlo.
+//
+// Devuelve las líneas con la variante RESUELTA y las que no se pudieron resolver:
+//   · el ítem no tiene variantes, o el catálogo de BC no contesta → la línea pasa
+//     tal cual (un endpoint caído no puede volverse un pedido que no se deja enviar);
+//   · tiene UNA sola → se pone, porque no hay nada que elegir: BC exige variante y
+//     esa es la única válida. No es adivinar, es la única opción posible;
+//   · tiene VARIAS → `ambiguas`, con los códigos, porque elegir el color o la medida
+//     del material no es una decisión que pueda tomar el servidor.
+//
+// Lo pide la app y no el codeunit porque las pantallas de nueva/editar orden todavía
+// no tienen selector de variante: las líneas que vienen de una solicitud llegan con
+// la que puso Ingeniería, o sin ninguna.
+// La DECISIÓN, separada de la consulta a BC para poder probarla: `catalogo` es
+// itemNo → códigos de variante que existen en BC. Un ítem AUSENTE del mapa es "no
+// sabemos" (no tiene variantes, o el catálogo no contestó) y su línea pasa igual.
+export function decidirVariantes(
+  lineas: LineaReplaceBc[],
+  catalogo: Map<string, string[]>,
+): { lineas: LineaReplaceBc[]; ambiguas: string[] } {
+  const ambiguas: string[] = [];
+  const out = (lineas ?? []).map((l) => {
+    if (l.tipo === "cargo") return l;
+    const itemNo = (l.itemNo ?? "").trim();
+    if (!itemNo || (l.variantCode ?? "").trim()) return l;
+    const cods = (catalogo.get(itemNo) ?? []).filter(Boolean);
+    if (cods.length === 1) return { ...l, variantCode: cods[0] };
+    if (cods.length > 1) {
+      ambiguas.push(`${l.descripcion || itemNo} (elegí una: ${cods.slice(0, 6).join(", ")}${cods.length > 6 ? "…" : ""})`);
+    }
+    return l;
+  });
+  return { lineas: out, ambiguas };
+}
+
+export async function resolverVariantesRequeridas(
+  lineas: LineaReplaceBc[],
+): Promise<{ lineas: LineaReplaceBc[]; ambiguas: string[] }> {
+  const items = [...new Set((lineas ?? [])
+    .filter((l) => l.tipo !== "cargo" && (l.itemNo ?? "").trim() && !(l.variantCode ?? "").trim())
+    .map((l) => l.itemNo!.trim()))];
+  if (!items.length) return { lineas: lineas ?? [], ambiguas: [] };
+
+  // Un solo chequeo por ítem, aunque el pedido repita el mismo material. Si el
+  // catálogo no contesta, el ítem NO entra al mapa y su línea pasa.
+  const catalogo = new Map<string, string[]>();
+  await Promise.all(items.map(async (itemNo) => {
+    try {
+      const r = await bcVariantsEx(itemNo);
+      if (r.disponible) catalogo.set(itemNo, r.variantes.map((v) => v.code).filter(Boolean));
+    } catch { /* sin catálogo: la línea pasa */ }
+  }));
+  return decidirVariantes(lineas, catalogo);
+}
+
+// Obra que se le estampa al ENCABEZADO como dimensión Centro de Costo. El workflow
+// de aprobación de BC (MS-POAPW-01) dispara por esa dimensión del encabezado con
+// valor *VN*/*VB* — NO por el almacén de las líneas—, así que sin esto el pedido
+// nunca entra a aprobación: `SendForApproval` contesta 200, el pedido se queda
+// Abierto (no le aplica workflow) y `ReleaseOrder` lo lanza sin pasar por Luis.
+//
+// BC guarda UN valor por dimensión en el encabezado. Si el pedido mezcla obras se
+// usa la PRIMERA (las líneas llevan la suya en jobNo, que es lo que costea de
+// verdad); alcanza para que el pedido entre a aprobación, que es de lo que se trata.
+export function obraParaCentroCosto(lineas: LineaReplaceBc[]): string {
+  for (const l of lineas ?? []) {
+    if (l.tipo === "cargo") continue;
+    const obra = (l.jobNo ?? "").trim();
+    if (obra) return obra;
+  }
+  return "";
+}
+
 // Crea el Pedido de compra en BC en estado ABIERTO (sin lanzar), con todas sus
 // líneas. Se llama al ENVIAR A APROBACIÓN: así el pedido ya existe allá y el
 // aprobador (app de Producción) solo tiene que LANZARLO.
@@ -1212,7 +1369,7 @@ export function obrasSinTarea(lineas: LineaReplaceBc[]): string[] {
 //
 // Si las líneas no entran, el encabezado se BORRA: un pedido vacío en BC no se
 // puede lanzar y nadie sabría de dónde salió.
-export async function bcCrearPedidoAbierto(input: { vendorNo: string; currencyCode?: string; lineas: LineaReplaceBc[] }): Promise<{ number: string; id: string; omitidas: string[] }> {
+export async function bcCrearPedidoAbierto(input: { vendorNo: string; currencyCode?: string; lineas: LineaReplaceBc[] }): Promise<{ number: string; id: string; omitidas: string[]; avisoCC?: string }> {
   if (!input?.vendorNo) throw new Error("la orden no tiene el código de proveedor de BC (PROV-…)");
   const { lines, omitidas } = payloadReplaceLines(input.lineas ?? []);
   if (!lines.length) throw new Error(`ninguna línea de la orden es válida para BC${omitidas.length ? ` — ${omitidas.join("; ")}` : ""}`);
@@ -1236,7 +1393,17 @@ export async function bcCrearPedidoAbierto(input: { vendorNo: string; currencyCo
     catch { /* best effort: si tampoco se puede borrar, queda el encabezado vacío */ }
     throw e;
   }
-  return { number, id: String(po?.id ?? ""), omitidas };
+  // Dimensión Centro de Costo = obra, en el encabezado: es la que mete el pedido al
+  // workflow de aprobación de BC. Se pone DESPUÉS de las líneas (el pedido sigue
+  // Abierto) y NO es fatal: si falla, el pedido existe y sirve, pero se va a lanzar
+  // sin pasar por el aprobador — eso hay que decirlo, no tragárselo.
+  let avisoCC: string | undefined;
+  const obra = obraParaCentroCosto(input.lineas ?? []);
+  if (obra) {
+    const err = await ponerCentroCosto(cid, String(po?.id ?? ""), obra);
+    if (err) avisoCC = `El pedido ${number} se creó, pero NO se le pudo poner el Centro de Costo ${obra} (${err}): en BC no va a entrar al circuito de aprobación de Luis y quedaría listo para lanzar directo. Revisalo en BC.`;
+  }
+  return { number, id: String(po?.id ?? ""), omitidas, avisoCC };
 }
 
 // ¿Se crea el pedido en BC al enviar a aprobación? Sí, salvo que se apague con

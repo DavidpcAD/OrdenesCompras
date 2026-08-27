@@ -496,6 +496,7 @@ export function StoreProvider({ children, useApi }: { children: React.ReactNode;
           id: uid(), numero, proveedorId: input.proveedorId, fecha: todayISO(),
           fechaRecepEsperada: input.fechaRecepEsperada, currencyCode: input.currencyCode,
           estado: "abierto", versionesArchivadas: 0, lineas,
+          creadoPor: persona,   // en modo API lo pone el SQL (creadoPor)
           proveedorNo: input.proveedorNo, proveedorNombre: input.proveedorNombre,
           almacenRecepcion: input.almacenRecepcion, observaciones: input.observaciones, notaInterna: input.notaInterna,
           bcNumber: input.bcNumber, bcDeepLink: input.bcDeepLink,

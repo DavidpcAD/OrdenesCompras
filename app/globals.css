@@ -702,7 +702,7 @@ h1, h2, h3, h4, p { margin: 0; }
 
 /* padding-bottom deja aire para el FAB de acción (abajo-der): el contenido al
    final del scroll no queda tapado por él. */
-.page { width: 100%; max-width: 1480px; margin: 0 auto; padding: var(--ds-space-10) var(--ds-space-6) calc(var(--ds-space-10) * 2 + var(--ds-space-4)); flex: 1; animation: ds-reveal-in .32s cubic-bezier(.22, .61, .36, 1) both; }
+.page { width: 100%; max-width: 1480px; margin: 0 auto; padding: var(--ds-space-10) var(--ds-space-6) calc(var(--ds-space-10) * 2 + var(--ds-space-4)); flex: 1; animation: ds-reveal-in .32s cubic-bezier(.22, .61, .36, 1) backwards; }
 .page--wide { max-width: 1480px; }
 .page__head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--ds-space-4); margin-bottom: var(--ds-space-6); flex-wrap: wrap; }
 .page__title { display: flex; flex-direction: column; gap: 4px; }
@@ -1271,9 +1271,15 @@ h1, h2, h3, h4, p { margin: 0; }
 .toast--success { background: var(--ds-color-green-200); color: var(--ds-color-white); }
 @keyframes toastIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
 
-/* modal */
-.modal-overlay { position: fixed; inset: 0; background: #0006; display: grid; place-items: center; z-index: 80; padding: var(--ds-space-6); animation: fade .15s ease; }
-.modal { width: 100%; max-width: 560px; background: var(--ds-surface); border-radius: var(--ds-radius-2xl); box-shadow: var(--ds-shadow-03-big); padding: var(--ds-space-6); max-height: 88vh; overflow: auto; }
+/* modal
+   OJO con `min-width: 0` en .modal: el diálogo es un item de grid centrado, y un
+   item de grid tiene `min-width: auto`, o sea que su contenido puede estirarlo por
+   encima del `max-width`. Con una tabla adentro (la vista previa del registro) el
+   diálogo se salía por los DOS lados —el derecho cortado, el izquierdo inalcanzable—
+   apenas la ventana se angostaba o se subía el zoom del navegador. Con min-width: 0
+   el diálogo se achica y la tabla scrollea sola dentro de su .ds-table-wrap. */
+.modal-overlay { position: fixed; inset: 0; background: #0006; display: grid; place-items: center; z-index: 80; padding: var(--ds-space-6); animation: fade .15s ease; overflow: auto; }
+.modal { width: 100%; max-width: 560px; min-width: 0; background: var(--ds-surface); border-radius: var(--ds-radius-2xl); box-shadow: var(--ds-shadow-03-big); padding: var(--ds-space-6); max-height: 88vh; overflow: auto; }
 .modal--wide { max-width: 920px; }
 @keyframes fade { from { opacity: 0; } to { opacity: 1; } }
 
@@ -1499,9 +1505,17 @@ button.ana-kpi:active { transform: translateY(1px); }
 
 /* Aparición suave (fade + leve subida). Escaloná con --ds-reveal-i (índice). */
 .ds-reveal {
-  animation: ds-reveal-in .34s cubic-bezier(.22, .61, .36, 1) both;
+  animation: ds-reveal-in .34s cubic-bezier(.22, .61, .36, 1) backwards;
   animation-delay: calc(var(--ds-reveal-i, 0) * 55ms);
 }
+/* OJO con el fill-mode: tiene que ser `backwards`, NO `both`.
+   Con `both` el navegador deja aplicado el valor final de la animación, y como el
+   transform se interpola a matrices, el elemento queda con transform: matrix(1,0,0,1,0,0)
+   PARA SIEMPRE. Una matriz identidad igual convierte al elemento en bloque contenedor
+   de sus descendientes `position: fixed`: cualquier diálogo renderizado dentro de
+   <main class="page"> dejaba de cubrir la pantalla y se posicionaba contra la página
+   entera (aparecía arriba del todo y salía cortado). Con `backwards` el arranque
+   sigue sin parpadeo y al terminar el elemento vuelve a su transform natural (none). */
 @keyframes ds-reveal-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
 
 @media (prefers-reduced-motion: reduce) {

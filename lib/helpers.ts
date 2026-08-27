@@ -8,12 +8,15 @@ export function tipoSolicitudBadge(t: TipoSolicitud): { label: string; tone: str
 }
 
 // Devoluciones que le competen a un rol: solicitudes que Proveeduría devolvió a
-// Ingeniería (pedido "devuelto") y órdenes que Aprobación rechazó (orden
+// Ingeniería (pedido "devuelto", o alguna línea suya "devuelta" aunque el pedido
+// siga su curso con el resto) y órdenes que Aprobación rechazó (orden
 // "rechazado"). Una sola regla para la bandeja de Devoluciones Y para el punto rojo
 // del menú: si se escriben aparte, tarde o temprano dicen cosas distintas.
 export function devolucionesDeRol(role: Role, pedidos: Pedido[], ordenes: Orden[]): { solicitudes: Pedido[]; ordenes: Orden[] } {
   return {
-    solicitudes: role === "proveeduria" ? pedidos.filter((p) => p.estado === "devuelto") : [],
+    solicitudes: role === "proveeduria"
+      ? pedidos.filter((p) => p.estado === "devuelto" || p.lineas.some((l) => l.devuelta))
+      : [],
     ordenes: role === "proveeduria" || role === "facturacion" ? ordenes.filter((o) => o.estado === "rechazado") : [],
   };
 }
@@ -258,6 +261,18 @@ export function observacionesParaProveedor(notas?: string): string {
   if (!t.startsWith("↩")) return t;
   const corte = t.indexOf(" · ");        // "↩ Devuelta(s): … — motivo · <comentario original>"
   return corte >= 0 ? t.slice(corte + 3).trim() : "";
+}
+
+// El motivo de la devolución para la bandeja de Devoluciones: soporta el pedido
+// entero ("↩ Devuelto: <motivo>") y la devolución por línea
+// ("↩ Devuelta(s): <líneas> — <motivo>"), donde el motivo va después del em-dash.
+export function motivoDevolucion(notas?: string): string {
+  const encabezado = (notas ?? "").trim().split(" · ")[0];
+  const porLineas = encabezado.match(/^↩\s*Devuelta\(s\):.*—\s*(.*)$/i);
+  if (porLineas) return porLineas[1].trim() || "—";
+  const entero = encabezado.match(/^↩\s*Devuelto:\s*(.*)$/i);
+  if (entero) return entero[1].trim() || "—";
+  return encabezado || "—";
 }
 
 export function pedidoTieneSaldo(p: Pedido): boolean {

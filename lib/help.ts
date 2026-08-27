@@ -234,14 +234,18 @@ const ORDENES_POR_RECIBIR: HelpEntry = {
   resumen: "Registrá la recepción y la factura cuando llega el material.",
   detalle: [
     "Lista de las órdenes lanzadas que esperan material en bodega. Soporta entregas parciales.",
-    "Los paneles resumen: por recibir, con recepción parcial, completadas y total en sistema.",
+    "Los cuatro paneles de arriba FILTRAN la lista: por recibir, sin recibir todavía, con recepción parcial y completadas.",
   ],
   pasos: [
+    "Tocá un panel para ver solo esas órdenes: “Con recepción parcial” son las que vinieron a medias y hay que completar; “Sin recibir todavía” son las que no han llegado.",
     "Buscá la orden del material que llegó (por N.º o proveedor).",
     "Tocá “Registrar factura” en esa orden para abrir la recepción.",
     "Registrá lo que llegó (ver la ayuda de esa pantalla).",
   ],
-  tips: ["El anillo de % muestra cuánto de la orden ya se recibió."],
+  tips: [
+    "El anillo de % muestra cuánto de la orden ya se recibió.",
+    "Con un panel activo, el buscador busca dentro de ese grupo. “Ver las que faltan recibir” vuelve a la lista completa.",
+  ],
 };
 const RECIBIR: HelpEntry = {
   titulo: "Recibir / registrar factura",

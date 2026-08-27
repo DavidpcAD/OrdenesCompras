@@ -17,6 +17,7 @@ import type { OrdenLinea } from "@/lib/types";
 interface Row { key: string; articuloId: string; variantCode?: string; descripcion: string; unidad: string; unidadBase?: string; factorCompra?: number; almacen: string; cantidad: string; precio: string; iva: string; descuento: string; proyecto?: string; taskNo?: string; pedidoLineaId?: string; pedidoNumero?: string; }
 type Obra = { codigo: string; nombre: string };
 type Tarea = { jobTaskNo: string; descripcion: string; tipo: string };
+type Variante = { code: string; descripcion: string };
 const uid = () => Math.random().toString(36).slice(2, 9);
 
 // Líneas de la orden -> filas editables. Se usa en el estado inicial y al hidratar.
@@ -55,6 +56,8 @@ export default function EditarOrdenPage() {
   // le pide al proveedor sin salir de la corrección de la orden.
   const [unidadesPorItem, setUnidadesPorItem] = useState<Record<string, UnidadDeItem[]>>({});
   const unidadesPedidasRef = useRef<Set<string>>(new Set());
+  const [variantesPorItem, setVariantesPorItem] = useState<Record<string, Variante[]>>({});
+  const variantesPedidasRef = useRef<Set<string>>(new Set());
   const [bcAlm, setBcAlm] = useState<typeof almacenes | null>(null);
   // Obras y sus tareas (Job No. / Job Task No. de BC), para el diálogo de destino.
   const [obras, setObras] = useState<Obra[]>([]);
@@ -135,6 +138,28 @@ export default function EditarOrdenPage() {
         .catch(() => setUnidadesPorItem((m) => ({ ...m, [itemNo]: [] })));
     }
   }, [rows]);
+  // Variantes de los materiales de las líneas. BC EXIGE la variante en el ítem que
+  // la tiene, pero solo lo dice al LANZAR el pedido — o sea que el error le caía al
+  // aprobador y acá no había forma de elegirla (venía la que puso Ingeniería, o
+  // ninguna). Con una sola opción se pone sola: no hay nada que elegir.
+  useEffect(() => {
+    for (const itemNo of new Set(rows.map((r) => codigoDeItem(r.articuloId)).filter(Boolean))) {
+      if (variantesPedidasRef.current.has(itemNo)) continue;
+      variantesPedidasRef.current.add(itemNo);
+      fetch(`/api/bc/variants?item=${encodeURIComponent(itemNo)}`)
+        .then((r) => (r.ok ? r.json() : { variantes: [], disponible: false }))
+        .then((d) => {
+          const vs: Variante[] = Array.isArray(d.variantes) ? d.variantes : [];
+          setVariantesPorItem((m) => ({ ...m, [itemNo]: vs }));
+          if (vs.length === 1) {
+            setRows((rs) => rs.map((r) => (codigoDeItem(r.articuloId) === itemNo && !(r.variantCode ?? "").trim()
+              ? { ...r, variantCode: vs[0].code } : r)));
+          }
+        })
+        .catch(() => setVariantesPorItem((m) => ({ ...m, [itemNo]: [] })));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rows]);
   // Tareas de una obra, una sola vez por obra. Solo las de tipo "Posting": las de
   // tipo Heading/Total son rótulos del presupuesto y BC rechaza la línea de compra
   // que apunte a una de ellas. Si la API no manda el tipo, se dejan todas.
@@ -164,6 +189,11 @@ export default function EditarOrdenPage() {
   const nombreTarea = (jobNo: string, taskNo: string) => tareasDe(jobNo).find((t) => t.jobTaskNo === taskNo)?.descripcion ?? "";
 
   const unidadesDe = (itemNo: string) => unidadesPorItem[codigoDeItem(itemNo)] ?? [];
+  const variantesDe = (itemNo: string) => variantesPorItem[codigoDeItem(itemNo)] ?? [];
+  // Líneas de ítems que exigen variante y siguen sin elegirla. BC rechaza el
+  // lanzamiento con "Variant Code must have a value", así que se frena el guardado
+  // acá, donde sí se puede arreglar.
+  const sinVariante = rows.filter((r) => variantesDe(r.articuloId).length > 1 && !(r.variantCode ?? "").trim());
   // Lo que se ofrece en la celda: las de BC + la que la línea ya tiene.
   const opcionesFila = (itemNo: string, actual: string) => opcionesDeUnidad(unidadesDe(itemNo), actual);
   const factorDe = (itemNo: string, code: string) => {
@@ -241,6 +271,9 @@ export default function EditarOrdenPage() {
     // tareas de esa obra ya cargaron (si BC no contesta, no se bloquea el guardado).
     const sinTarea = rows.find((r) => r.proyecto && tareasDe(r.proyecto).length > 0 && !r.taskNo);
     if (sinTarea) { toast(`Elegí la tarea de la obra ${sinTarea.proyecto} en "${sinTarea.descripcion}": sin ella Business Central no acepta la línea.`, "error"); return; }
+    // Variante sin elegir: mismo criterio que la tarea. Solo se exige cuando el
+    // catálogo de variantes ya cargó y ofrece más de una.
+    if (sinVariante.length) { toast(`Elegí la variante de "${sinVariante[0].descripcion}": sin ella Business Central no puede lanzar el pedido.`, "error"); return; }
     setGuardando(true);
     try {
       const ls: Omit<OrdenLinea, "id" | "cantidadRecibida" | "cantidadFacturada">[] = rows.map((r) => ({
@@ -393,7 +426,24 @@ export default function EditarOrdenPage() {
                 {rows.length === 0 && <tr><td colSpan={9}><div className="empty">Sin líneas. Agregá al menos una.</div></td></tr>}
                 {rows.map((r) => (
                   <tr key={r.key}>
-                    <td><div className="ds-clamp-2" title={r.descripcion} style={{ maxWidth: 360, minWidth: 220 }}>{r.descripcion}</div></td>
+                    <td>
+                      <div className="ds-clamp-2" title={r.descripcion} style={{ maxWidth: 360, minWidth: 220 }}>{r.descripcion}</div>
+                      {/* Variante: solo aparece si el ítem la tiene y hay más de una
+                          (con una sola ya quedó puesta). BC no deja lanzar el pedido
+                          sin ella, así que sin elegir se marca en rojo acá y no allá. */}
+                      {variantesDe(r.articuloId).length > 1 && (
+                        <div className="row gap-2" style={{ alignItems: "center", marginTop: 4, maxWidth: 360 }}>
+                          <span className="ds-label ds-muted">Variante</span>
+                          <span style={!(r.variantCode ?? "").trim() ? { outline: "1.5px solid var(--ds-color-red-100)", borderRadius: 8 } : undefined}>
+                            <Select ariaLabel={`Variante de ${r.descripcion}`} className="ds-select--celda"
+                              value={r.variantCode ?? ""} onChange={(e) => setRow(r.key, { variantCode: e.target.value })}>
+                              <option value="">Elegí…</option>
+                              {variantesDe(r.articuloId).map((v) => <option key={v.code} value={v.code}>{v.code} — {v.descripcion}</option>)}
+                            </Select>
+                          </span>
+                        </div>
+                      )}
+                    </td>
                     <td className="ds-body-sm">{(() => {
                       const pid = pedidoIdDe(r.pedidoLineaId, r.pedidoNumero);
                       if (r.pedidoNumero && pid) return <button type="button" className="linklike" title="Ver la solicitud (quién la pidió)" onClick={() => router.push(`/proveeduria/solicitudes/${pid}`)}>{r.pedidoNumero}</button>;

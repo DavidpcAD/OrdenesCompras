@@ -6,7 +6,7 @@
 //   npm test
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { payloadReplaceLines, sinObrasInexistentes, avisoDeSaneo, lineasOrdenParaBc, obrasSinTarea, crearEnBcAlEnviar, bcPideAbierto, type LineaReplaceBc } from "./bc.ts";
+import { payloadReplaceLines, sinObrasInexistentes, avisoDeSaneo, lineasOrdenParaBc, obrasSinTarea, lineasSinUnidad, obraParaCentroCosto, decidirVariantes, crearEnBcAlEnviar, bcPideAbierto, type LineaReplaceBc } from "./bc.ts";
 import type { OrdenLinea } from "./types.ts";
 
 const item = (p: Partial<LineaReplaceBc> = {}): LineaReplaceBc => ({
@@ -35,9 +35,23 @@ test("la línea de artículo lleva la unidad de compra, en mayúscula y sin espa
   assert.equal(lines[0].unitOfMeasureCode, "EST");
 });
 
-test("sin unidad se manda vacío y BC pone la del ítem (no se inventa una)", () => {
+// Antes esto mandaba `unitOfMeasureCode: ""` creyendo que BC pondría la del ítem.
+// No: la vacía BORRA la que BC ya había puesto al validar el N.º de artículo, y el
+// pedido revienta al LANZARLO ("Unit of Measure Code must have a value"), o sea en
+// manos del aprobador. Probado con CP-003884 en Sandbox. Mismo caso la variante.
+test("sin unidad NO se manda la clave, así sobrevive la que BC pone sola", () => {
   const { lines } = payloadReplaceLines([item({})]);
-  assert.equal(lines[0].unitOfMeasureCode, "");
+  assert.ok(!("unitOfMeasureCode" in lines[0]));
+});
+
+test("sin variante NO se manda la clave (mandarla vacía borra la del ítem)", () => {
+  const { lines } = payloadReplaceLines([item({})]);
+  assert.ok(!("variantCode" in lines[0]));
+});
+
+test("la variante viaja sin espacios cuando la línea la trae", () => {
+  const { lines } = payloadReplaceLines([item({ variantCode: " AZUL " })]);
+  assert.equal(lines[0].variantCode, "AZUL");
 });
 
 test("el cargo viaja como Charge con su tipo y método", () => {
@@ -105,14 +119,21 @@ test("un precio basura queda en 0 (BC lo rechaza y se ve el error)", () => {
   assert.equal((payloadReplaceLines([item({ precio: "abc" })]).lines[0] as any).directUnitCost, 0);
 });
 
+// Los que SÍ viajan vacíos son los que BC no rellena solo: obra, tarea, almacén y
+// descuento. Vacío ahí significa "no tiene", y no borra nada.
+// Unidad y variante son la excepción y por eso se OMITEN (ver más arriba): BC las
+// pone al validar el N.º de artículo y mandarlas vacías las borraría.
 test("los campos opcionales viajan vacíos, no como undefined", () => {
   const { lines } = payloadReplaceLines([item({ variantCode: undefined, jobNo: undefined, taskNo: undefined, locationCode: undefined })]);
   const l = lines[0] as any;
-  assert.equal(l.variantCode, "");
+  assert.ok(!("variantCode" in l));
   assert.equal(l.jobNo, "");
   assert.equal(l.taskNo, "");
   assert.equal(l.locationCode, "");
   assert.equal(l.lineDiscountPct, 0);
+  // Ninguna clave puede llegar como undefined: JSON.stringify la borraría y el
+  // codeunit leería un token ausente donde esperaba un valor.
+  for (const [k, v] of Object.entries(l)) assert.notEqual(v, undefined, k);
 });
 
 test("sin líneas devuelve vacío sin reventar", () => {
@@ -233,6 +254,91 @@ test("una línea con obra y sin tarea se detecta antes de mandar nada a BC", () 
 
 test("el cargo no cuenta: el flete nunca lleva obra", () => {
   assert.deepEqual(obrasSinTarea([{ tipo: "cargo", chargeNo: "TRANSPORTE", cantidad: 1, precio: 5000, jobNo: "VN-L.20" }]), []);
+});
+
+// ---- línea sin unidad de compra ------------------------------------------------
+// Igual que la tarea: BC crea el pedido y revienta al lanzarlo. Y acá NO se puede
+// "dejar que BC ponga la del ítem": la cantidad y el precio están expresados en la
+// unidad de COMPRA, así que caer a la unidad BASE convierte 1 estañón en 1 gramo.
+test("una línea de artículo sin unidad se detecta antes de mandar nada a BC", () => {
+  const malas = lineasSinUnidad([
+    item({ unidad: "EST" }),
+    item({ descripcion: "ADHESIVO EPÓXICO" }),
+    item({ unidad: "   ", descripcion: "SELLADOR" }),
+  ]);
+  assert.deepEqual(malas, ["ADHESIVO EPÓXICO", "SELLADOR"]);
+});
+
+test("el cargo no cuenta: un Item Charge no lleva unidad de medida", () => {
+  assert.deepEqual(lineasSinUnidad([{ tipo: "cargo", chargeNo: "TRANSPORTE", cantidad: 1, precio: 5000 }]), []);
+});
+
+// ---- Centro de Costo del encabezado -------------------------------------------
+// El workflow de aprobación de BC (MS-POAPW-01) dispara por la dimensión CC del
+// ENCABEZADO con valor *VN*/*VB*, no por el almacén de las líneas. Sin esto el
+// pedido nunca entra a aprobación: se queda Abierto y se lanza sin pasar por Luis.
+test("el Centro de Costo sale de la primera línea con obra", () => {
+  assert.equal(obraParaCentroCosto([item({}), item({ jobNo: "VN-I.36", taskNo: "1000" }), item({ jobNo: "VB-5.01", taskNo: "2000" })]), "VN-I.36");
+});
+
+test("una compra para almacén (sin obra) no lleva Centro de Costo", () => {
+  assert.equal(obraParaCentroCosto([item({}), item({})]), "");
+});
+
+test("el cargo no define el Centro de Costo", () => {
+  assert.equal(obraParaCentroCosto([{ tipo: "cargo", chargeNo: "TRANSPORTE", cantidad: 1, precio: 5000, jobNo: "VN-L.20" }]), "");
+});
+
+// ---- variante requerida --------------------------------------------------------
+// BC exige la variante al LANZAR, no al crear. Y hoy nueva/editar orden no tienen
+// selector de variante: la línea llega con la que puso Ingeniería, o sin ninguna.
+// Con una sola opción no hay nada que elegir; con varias, elegir el color/medida no
+// es una decisión del servidor.
+test("con UNA sola variante posible se pone sola: no hay nada que elegir", () => {
+  const { lineas, ambiguas } = decidirVariantes(
+    [item({ itemNo: "M17-0297" })],
+    new Map([["M17-0297", ["STD"]]]),
+  );
+  assert.equal(lineas[0].variantCode, "STD");
+  assert.deepEqual(ambiguas, []);
+});
+
+test("con VARIAS variantes se frena el envío y se listan las opciones", () => {
+  const { lineas, ambiguas } = decidirVariantes(
+    [item({ itemNo: "M17-0297", descripcion: "TUBO PVC" })],
+    new Map([["M17-0297", ["AZUL", "BLANCO"]]]),
+  );
+  assert.equal(lineas[0].variantCode, undefined);
+  assert.match(ambiguas[0], /TUBO PVC/);
+  assert.match(ambiguas[0], /AZUL, BLANCO/);
+});
+
+test("el ítem sin variantes, o cuyo catálogo no contestó, pasa igual", () => {
+  // Lista vacía = BC dijo "no tiene". Ausente del mapa = no se pudo consultar.
+  const conVacia = decidirVariantes([item({ itemNo: "M01-0147" })], new Map([["M01-0147", []]]));
+  const ausente = decidirVariantes([item({ itemNo: "M01-0147" })], new Map());
+  for (const r of [conVacia, ausente]) {
+    assert.deepEqual(r.ambiguas, []);
+    assert.equal(r.lineas[0].variantCode, undefined);
+  }
+});
+
+test("la variante que ya trae la línea no se toca ni se cuestiona", () => {
+  const { lineas, ambiguas } = decidirVariantes(
+    [item({ itemNo: "M17-0297", variantCode: "BLANCO" })],
+    new Map([["M17-0297", ["AZUL", "BLANCO"]]]),
+  );
+  assert.equal(lineas[0].variantCode, "BLANCO");
+  assert.deepEqual(ambiguas, []);
+});
+
+test("un cargo nunca lleva variante", () => {
+  const { lineas, ambiguas } = decidirVariantes(
+    [{ tipo: "cargo", chargeNo: "TRANSPORTE", cantidad: 1, precio: 5000 }],
+    new Map([["TRANSPORTE", ["A", "B"]]]),
+  );
+  assert.equal((lineas[0] as any).variantCode, undefined);
+  assert.deepEqual(ambiguas, []);
 });
 
 // ---- "el pedido tiene que estar Abierto" ---------------------------------------

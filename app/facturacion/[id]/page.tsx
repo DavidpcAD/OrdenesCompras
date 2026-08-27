@@ -876,20 +876,28 @@ export default function RegistrarFacturaPage() {
             <p className="ds-label">Factura del proveedor <span className="ds-strong">{orden.proveedorNombre ?? prov?.nombre}</span> por:</p>
             <h2 className="ds-heading" style={{ margin: "8px 0 4px" }}>{money(totalConIva, orden.currencyCode)}</h2>
             <p className="ds-body-sm ds-muted" style={{ margin: "0 0 16px" }}>Subtotal {money(totalFactura, orden.currencyCode)} + IVA {money(ivaFactura, orden.currencyCode)}</p>
-            <div className="ds-table-wrap" style={{ boxShadow: "none", border: "1.5px solid var(--ds-color-gray-100)" }}>
-              <table className="ds-table">
-                <thead><tr><th>Concepto</th><th className="ds-num">Cant.</th><th className="ds-num">Importe</th></tr></thead>
-                <tbody>
-                  {articulo.filter((l) => Number(recibir[l.id] || 0) > 0).sort((a, b) => a.descripcion.localeCompare(b.descripcion, "es")).map((l) => (
-                    <tr key={l.id}>
-                      <td>{l.descripcion}{distrib[l.id] ? <div className="ds-body-sm ds-muted">+ flete {money(distrib[l.id], orden.currencyCode)}</div> : null}</td>
-                      <td className="ds-num">{num.format(Number(recibir[l.id]))}</td>
-                      <td className="ds-num">{money(importeRecibir(l), orden.currencyCode)}</td>
-                    </tr>
-                  ))}
-                  {fleteAplicado > 0 && <tr><td>{cargo?.descripcion}</td><td className="ds-num">1</td><td className="ds-num">{money(fleteAplicado, orden.currencyCode)}</td></tr>}
-                </tbody>
-              </table>
+            <div className="col gap-3" style={{ borderTop: "1.5px solid var(--ds-color-gray-100)", paddingTop: 12 }}>
+              {articulo.filter((l) => Number(recibir[l.id] || 0) > 0).sort((a, b) => a.descripcion.localeCompare(b.descripcion, "es")).map((l) => (
+                <div key={l.id} className="row row--between gap-4" style={{ alignItems: "baseline" }}>
+                  <div style={{ minWidth: 0 }}>
+                    <div className="ds-clamp-2" title={l.descripcion}>{l.descripcion}</div>
+                    <div className="ds-body-sm ds-muted">
+                      {num.format(Number(recibir[l.id]))} {l.unidad}
+                      {distrib[l.id] ? ` · + flete ${money(distrib[l.id], orden.currencyCode)}` : ""}
+                    </div>
+                  </div>
+                  <span className="ds-strong" style={{ whiteSpace: "nowrap" }}>{money(importeRecibir(l), orden.currencyCode)}</span>
+                </div>
+              ))}
+              {fleteAplicado > 0 && (
+                <div className="row row--between gap-4" style={{ alignItems: "baseline" }}>
+                  <div style={{ minWidth: 0 }}>
+                    <div className="ds-clamp-2">{cargo?.descripcion}</div>
+                    <div className="ds-body-sm ds-muted">cargo de producto</div>
+                  </div>
+                  <span className="ds-strong" style={{ whiteSpace: "nowrap" }}>{money(fleteAplicado, orden.currencyCode)}</span>
+                </div>
+              )}
             </div>
             <p className="ds-body-sm ds-muted mt-4">
               Verificá que el total físico de la factura coincida. Fecha de registro: {fechaRegistro}

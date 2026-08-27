@@ -39,6 +39,7 @@ interface Row {
 // o se la asigna Proveeduría acá, línea por línea.
 type Obra = { codigo: string; nombre: string };
 type Tarea = { jobTaskNo: string; descripcion: string; tipo: string };
+type Variante = { code: string; descripcion: string };
 
 // Cargo de producto (Item Charge) a agregar a la orden: tipo (chargeNo del catálogo
 // BC), cantidad y precio. chargeNo "" = flete por defecto. `key` = id estable para
@@ -66,6 +67,8 @@ export default function ArmarOrdenPage() {
   // viene en la unidad de consumo y no siempre es en la que se compra.
   const [unidadesPorItem, setUnidadesPorItem] = useState<Record<string, UnidadDeItem[]>>({});
   const unidadesPedidasRef = useRef<Set<string>>(new Set());
+  const [variantesPorItem, setVariantesPorItem] = useState<Record<string, Variante[]>>({});
+  const variantesPedidasRef = useRef<Set<string>>(new Set());
 
   // Tareas por obra, cacheadas. `undefined` = todavía no se pidieron; `[]` = BC
   // contestó y esa obra no tiene tareas (se dice en la celda, no se deja el hueco).
@@ -227,7 +230,33 @@ export default function ArmarOrdenPage() {
         .catch(() => setUnidadesPorItem((m) => ({ ...m, [itemNo]: [] })));
     }
   }, [rows]);
+  // Variantes de los materiales de las líneas. BC EXIGE la variante en el ítem que
+  // la tiene, pero solo lo dice al LANZAR el pedido: el error le caía al aprobador y
+  // acá no había forma de elegirla (llegaba la que puso Ingeniería, o ninguna). Con
+  // una sola opción se pone sola, que no hay nada que elegir.
+  useEffect(() => {
+    for (const itemNo of new Set(rows.map((r) => codigoDeItem(r.articuloId)).filter(Boolean))) {
+      if (variantesPedidasRef.current.has(itemNo)) continue;
+      variantesPedidasRef.current.add(itemNo);
+      fetch(`/api/bc/variants?item=${encodeURIComponent(itemNo)}`)
+        .then((r) => (r.ok ? r.json() : { variantes: [], disponible: false }))
+        .then((d) => {
+          const vs: Variante[] = Array.isArray(d.variantes) ? d.variantes : [];
+          setVariantesPorItem((m) => ({ ...m, [itemNo]: vs }));
+          if (vs.length === 1) {
+            setRows((rs) => rs.map((r) => (codigoDeItem(r.articuloId) === itemNo && !(r.variantCode ?? "").trim()
+              ? { ...r, variantCode: vs[0].code } : r)));
+          }
+        })
+        .catch(() => setVariantesPorItem((m) => ({ ...m, [itemNo]: [] })));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rows]);
   const unidadesDe = (itemNo: string) => unidadesPorItem[codigoDeItem(itemNo)] ?? [];
+  const variantesDe = (itemNo: string) => variantesPorItem[codigoDeItem(itemNo)] ?? [];
+  // Líneas cuyo ítem exige variante y siguen sin elegirla: BC no deja lanzar el
+  // pedido así, y esta es la pantalla donde se puede arreglar.
+  const sinVariante = rows.filter((r) => variantesDe(r.articuloId).length > 1 && !(r.variantCode ?? "").trim());
   // Lo que se ofrece en la celda: las de BC + la que la línea ya tiene.
   const opcionesFila = (itemNo: string, actual: string) => opcionesDeUnidad(unidadesDe(itemNo), actual);
   const factorDe = (itemNo: string, code: string) => {
@@ -373,6 +402,9 @@ export default function ArmarOrdenPage() {
       // contestó, no se bloquea el envío por algo que no se pudo verificar.
       const faltaTarea = rows.find((r) => r.proyecto && (tareasDe(r.proyecto) ?? []).length > 0 && !r.tarea);
       if (faltaTarea) { toast(`Elegí la tarea de la obra ${faltaTarea.proyecto} en "${faltaTarea.descripcion}": sin ella Business Central no acepta la línea.`, "error"); return; }
+      // Variante sin elegir: mismo criterio que la tarea. BC no puede LANZAR un
+      // pedido con una línea así, y el error saldría ya en manos del aprobador.
+      if (sinVariante.length) { toast(`Elegí la variante de "${sinVariante[0].descripcion}": sin ella Business Central no puede lanzar el pedido.`, "error"); return; }
     }
     setGuardando(true);
     try {
@@ -556,7 +588,24 @@ export default function ArmarOrdenPage() {
                 {rows.map((r) => (
                   <tr key={r.pedidoLineaId}>
                     <td className="ds-body-sm ds-strong">{r.pedidoNumero}</td>
-                    <td><div style={{ maxWidth: 400, minWidth: 240 }} title={`${r.articuloId} — ${r.descripcion}`}><div className="ds-strong ds-body-sm">{r.articuloId}</div><div className="ds-clamp-2">{r.descripcion}</div></div></td>
+                    <td>
+                      <div style={{ maxWidth: 400, minWidth: 240 }} title={`${r.articuloId} — ${r.descripcion}`}><div className="ds-strong ds-body-sm">{r.articuloId}</div><div className="ds-clamp-2">{r.descripcion}</div></div>
+                      {/* Variante: solo si el ítem tiene más de una (con una sola ya
+                          quedó puesta). BC no lanza el pedido sin ella, así que se
+                          marca acá y no en manos del aprobador. */}
+                      {variantesDe(r.articuloId).length > 1 && (
+                        <div className="row gap-2" style={{ alignItems: "center", marginTop: 4, maxWidth: 400 }}>
+                          <span className="ds-label ds-muted">Variante</span>
+                          <span style={!(r.variantCode ?? "").trim() ? { outline: "1.5px solid var(--ds-color-red-100)", borderRadius: 8 } : undefined}>
+                            <Select ariaLabel={`Variante de ${r.descripcion}`} className="ds-select--celda"
+                              value={r.variantCode ?? ""} onChange={(e) => setRow(r.pedidoLineaId, { variantCode: e.target.value })}>
+                              <option value="">Elegí…</option>
+                              {variantesDe(r.articuloId).map((v) => <option key={v.code} value={v.code}>{v.code} — {v.descripcion}</option>)}
+                            </Select>
+                          </span>
+                        </div>
+                      )}
+                    </td>
                     {/* Destino de ESTA línea: el almacén (centro de costo) donde
                         entra el material y, SOLO si es consumo directo, la obra y su
                         tarea. La compra para stock se queda con el almacén y ya. La

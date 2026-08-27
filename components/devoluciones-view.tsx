@@ -6,13 +6,14 @@ import type { ColumnDef } from "@tanstack/react-table";
 import { Badge } from "@/components/ui";
 import { DataTable } from "@/components/data-table";
 import { useStore } from "@/lib/store";
-import { destinoLabel, devolucionesDeRol, formatDate, numeroOrden } from "@/lib/helpers";
+import { destinoLabel, devolucionesDeRol, formatDate, motivoDevolucion, numeroOrden } from "@/lib/helpers";
 import type { Role } from "@/lib/types";
 
 type Dev = { id: string; tipo: "Solicitud" | "Orden"; numero: string; contra: string; motivo: string; fecha: string; href: string };
 
 // Bandeja de devoluciones, compartida por todos los roles. Reúne:
-//  • Solicitudes que Proveeduría devolvió a Ingeniería (pedido.estado = "devuelto")
+//  • Solicitudes que Proveeduría devolvió a Ingeniería, enteras (pedido.estado =
+//    "devuelto") o por línea (alguna línea con devuelta = true, ver devolucionesDeRol)
 //  • Órdenes que Aprobación rechazó a Proveeduría (orden.estado = "rechazado")
 // Cada rol ve las que le competen y entra a corregirlas.
 export function DevolucionesView({ role }: { role: Role }) {
@@ -26,7 +27,7 @@ export function DevolucionesView({ role }: { role: Role }) {
     for (const p of devSolicitudes) {
       out.push({
         id: p.id, tipo: "Solicitud", numero: p.numero, contra: destinoLabel(p),
-        motivo: (p.notas ?? "").replace(/^↩\s*Devuelto:\s*/i, "").split(" · ")[0] || "—",
+        motivo: motivoDevolucion(p.notas),
         fecha: p.fecha, href: `/proveeduria/solicitudes/${p.id}`,
       });
     }
