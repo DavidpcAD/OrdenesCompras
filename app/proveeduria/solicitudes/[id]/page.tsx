@@ -7,6 +7,7 @@ import { IconWarning } from "@/components/icons";
 import { Timeline } from "@/components/timeline";
 import { useStore } from "@/lib/store";
 import { useVolver } from "@/lib/use-volver";
+import { codigoDeItem } from "@/lib/unidad";
 import { formatDate, num, pedidoBadge, pedidoLineaPendiente, recibidoDeLineaPedido, destinoCodigo, destinoLabel, tipoSolicitudBadge, esConsumoDirecto, puedeDevolverLinea, motivoNoDevolver, ordenesDeLineaPedido } from "@/lib/helpers";
 
 export default function ProveeduriaPedidoDetallePage() {
@@ -134,6 +135,13 @@ export default function ProveeduriaPedidoDetallePage() {
                   <tr key={l.id} style={l.devuelta ? { opacity: 0.6 } : undefined}>
                     <td>
                       <div className="ds-clamp-2" title={l.descripcion} style={{ maxWidth: 420, minWidth: 240 }}>{l.descripcion}</div>
+                      {/* El código del material: es con lo que se busca en BC y con lo
+                          que Proveeduría confirma que va a ordenar lo que pidieron. Va
+                          pelado (el guardado puede traer la variante pegada, que BC no
+                          conoce). */}
+                      {codigoDeItem(l.articuloId ?? "") && (
+                        <div className="ds-body-sm ds-muted">{codigoDeItem(l.articuloId ?? "")}</div>
+                      )}
                       {/* Devuelta = bloqueada: no se puede ordenar ni volver a
                           devolver. El motivo queda en el historial de abajo. */}
                       {l.devuelta && <Badge tone="yellow">↩ Devuelta al ingeniero</Badge>}

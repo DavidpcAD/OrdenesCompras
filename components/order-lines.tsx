@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { Badge } from "@/components/ui";
 import { money, num, ordenLineaImporte, ordenLineaPendiente } from "@/lib/helpers";
+import { codigoDeItem } from "@/lib/unidad";
 import type { Orden, OrdenLinea } from "@/lib/types";
 
 export function OrderLinesTable({ orden, showRecepcion = true, solicitudHref }: { orden: Orden; showRecepcion?: boolean; solicitudHref?: (l: OrdenLinea) => string | null }) {
@@ -31,7 +32,16 @@ export function OrderLinesTable({ orden, showRecepcion = true, solicitudHref }: 
                     {(() => {
                       const rest = [l.proyecto && `Proy. ${l.proyecto}`, l.taskNo && `Tarea ${l.taskNo}`, l.descuentoPct ? `−${l.descuentoPct}%` : null].filter(Boolean).join(" · ");
                       const href = l.pedidoNumero ? solicitudHref?.(l) : null;
+                      // El CÓDIGO del material va primero: es con lo que Proveeduría
+                      // confirma que la línea es la que se pidió y con lo que se busca
+                      // en BC. La descripción sola no alcanza — "TUBO 3X3X1.8MM H.N." y
+                      // "TUBO 3X3 HG 1.8 MM" son dos materiales distintos en la misma
+                      // orden. Se muestra el código pelado (el guardado puede traer la
+                      // variante pegada, "M11-0081 -VAR 12", que BC no conoce).
+                      const codigo = l.tipo === "articulo" ? codigoDeItem(l.articuloId ?? "") : "";
                       return <>
+                        {codigo && <span className="ds-strong">{codigo}</span>}
+                        {codigo && (l.pedidoNumero || rest) ? " · " : ""}
                         {l.pedidoNumero && (href
                           ? <Link className="linklike" href={href} title="Ver la solicitud (quién la pidió)">{l.pedidoNumero}</Link>
                           : <span>{l.pedidoNumero}</span>)}
