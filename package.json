@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "test": "node --experimental-strip-types --test lib/helpers.test.ts lib/bc-amount.test.ts lib/session.test.ts lib/login-throttle.test.ts lib/autorizacion.test.ts lib/reportes.test.ts lib/bc-replace.test.ts lib/bc-entorno.test.ts lib/api-bootstrap.test.ts lib/fetch-guard.test.ts lib/unidad.test.ts lib/borrador-orden.test.ts"
+    "test": "node --experimental-strip-types --test lib/helpers.test.ts lib/bc-amount.test.ts lib/session.test.ts lib/login-throttle.test.ts lib/autorizacion.test.ts lib/reportes.test.ts lib/bc-replace.test.ts lib/bc-entorno.test.ts lib/api-bootstrap.test.ts lib/fetch-guard.test.ts lib/unidad.test.ts lib/borrador-orden.test.ts lib/bc-registro.test.ts"
   },
   "dependencies": {
     "@tanstack/react-table": "^8.21.3",

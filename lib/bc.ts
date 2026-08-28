@@ -1495,6 +1495,130 @@ export function bcPideAbierto(textoDelError: string): boolean {
   return BC_PIDE_ABIERTO.test(textoDelError ?? "");
 }
 
+// ---- Por qué dijo NO Business Central ------------------------------------
+//
+// Cuando BC rechaza un registro hay dos mundos, y la app los trataba igual
+// ("la orden queda por recibir para reintentar"):
+//
+//  · REINTENTABLE — periodo cerrado, permisos, BC caído, un dato de la línea.
+//    Reintentar sirve.
+//  · YA ESTÁ HECHO ALLÁ — reintentar no va a servir NUNCA. Son dos:
+//      1. "Purchase Invoice 586265 already exists for this vendor": el chequeo
+//         estándar de N.º de factura de proveedor repetido. BC ya la registró.
+//      2. "Pedido de compra CP-005148 no encontrado en BC": el PurchHeader.Get
+//         de nuestros codeunits. Cuando un pedido se recibe y factura COMPLETO,
+//         `Purch.-Post` BORRA el pedido de compra (queda la recepción y la
+//         factura registradas), así que el pedido ausente suele significar
+//         justamente que ya se registró todo.
+//
+//    En los dos casos el material YA entró en BC y la app se quedaba con la
+//    orden "por recibir" para siempre, mandando a Bodega a reintentar contra una
+//    pared. Caso real: CP-005148 y la factura 586265, 28 ago 2026.
+const BC_FACTURA_DUPLICADA = /already exists for this vendor|ya existe para este proveedor/i;
+const BC_SIN_PEDIDO = /no encontrado en BC|not found in BC|pedido de compra .{0,40}no (?:encontrado|existe)/i;
+
+export type FalloRegistroBc = "factura-duplicada" | "pedido-no-existe" | "reintentable";
+
+/** Qué clase de "no" dijo BC, leyendo su respuesta. (cubierto por tests) */
+export function clasificarFalloBc(textoDelError: string): FalloRegistroBc {
+  const t = textoDelError ?? "";
+  if (BC_FACTURA_DUPLICADA.test(t)) return "factura-duplicada";
+  if (BC_SIN_PEDIDO.test(t)) return "pedido-no-existe";
+  return "reintentable";
+}
+
+export type BcPedidoEstado = "existe" | "no-existe" | "sin-respuesta";
+
+// ¿Existe el pedido de compra en BC? Distingue "no está" de "BC no contesta",
+// que es la diferencia entre "esto ya se registró / el N.º apunta a nada" y
+// "volvé a intentar en un rato" (mismo criterio que /api/bc/orden-totales).
+export async function bcEstadoDelPedido(orderNo: string): Promise<BcPedidoEstado> {
+  if (!(orderNo ?? "").trim()) return "no-existe";
+  try {
+    const cid = await getStdCompanyId();
+    const filtro = `$filter=${encodeURIComponent(`number eq '${odataStr(orderNo.trim())}'`)}&$select=number&$top=1`;
+    const res = await bcFetch(`${stdRoot()}/companies(${cid})/purchaseOrders?${filtro}`, { cache: "no-store" });
+    if (!res.ok) return "sin-respuesta";
+    const d: any = await res.json().catch(() => ({}));
+    // La consulta contestó 200: si el pedido no vino, no está. No hace falta
+    // sondear /companies como en orden-totales (ahí el 200 no era observable).
+    return (d?.value ?? []).length ? "existe" : "no-existe";
+  } catch {
+    return "sin-respuesta";
+  }
+}
+
+export type BcFacturaProveedor = { numero: string; vendorNo: string; fecha: string; total: number; estado: string };
+
+// La factura de compra que BC YA tiene con ese N.º de factura del proveedor, si
+// existe. Es la prueba de que el registro sí entró (aunque la app lo haya
+// reportado como fallido) y lo que se le muestra a Bodega antes de conciliar.
+// null = no está, o BC no dejó buscarla: nunca inventa un "sí".
+export async function bcFacturaDeProveedor(vendorInvoiceNo: string, vendorNo = ""): Promise<BcFacturaProveedor | null> {
+  const inv = (vendorInvoiceNo ?? "").trim();
+  const prov = (vendorNo ?? "").trim();
+  if (!inv) return null;
+  const CAMPOS = "&$select=number,vendorInvoiceNumber,vendorNumber,invoiceDate,status,totalAmountIncludingTax";
+  const mapear = (r: any): BcFacturaProveedor => ({
+    numero: String(r?.number ?? ""),
+    vendorNo: String(r?.vendorNumber ?? ""),
+    fecha: String(r?.invoiceDate ?? ""),
+    total: Number(r?.totalAmountIncludingTax ?? 0) || 0,
+    estado: String(r?.status ?? ""),
+  });
+  try {
+    const cid = await getStdCompanyId();
+    const pedir = async (filtro: string, top: number, orderby = ""): Promise<any[] | null> => {
+      const url = `${stdRoot()}/companies(${cid})/purchaseInvoices?$filter=${encodeURIComponent(filtro)}`
+        + `${orderby ? `&$orderby=${orderby}` : ""}${CAMPOS}&$top=${top}`;
+      const res = await bcFetch(url, { cache: "no-store" });
+      if (!res.ok) return null;
+      const d: any = await res.json().catch(() => ({}));
+      return (d?.value ?? []) as any[];
+    };
+    const conds = [`vendorInvoiceNumber eq '${odataStr(inv)}'`];
+    if (prov) conds.push(`vendorNumber eq '${odataStr(prov)}'`);
+    let rows = await pedir(conds.join(" and "), 5);
+    // Si BC no deja filtrar por vendorInvoiceNumber, se piden las últimas
+    // facturas del proveedor y se compara acá.
+    if (rows === null && prov) {
+      const ultimas = await pedir(`vendorNumber eq '${odataStr(prov)}'`, 100, "invoiceDate desc");
+      rows = (ultimas ?? []).filter((r) => String(r?.vendorInvoiceNumber ?? "").trim().toLowerCase() === inv.toLowerCase());
+    }
+    return rows && rows.length ? mapear(rows[0]) : null;
+  } catch {
+    return null;
+  }
+}
+
+export type DiagnosticoBc = {
+  motivo: FalloRegistroBc;
+  yaEnBc: boolean;                       // true = BC ya tiene el movimiento
+  pedido: BcPedidoEstado | null;
+  facturaBc: BcFacturaProveedor | null;  // la factura que BC ya tiene, si se pudo ver
+};
+
+// Traduce el "no" de BC a algo que la pantalla pueda usar: ¿se reintenta, o esto
+// ya está registrado allá y lo único que falta es guardarlo acá?
+export async function diagnosticarFalloBc(error: string, orderNo: string, vendorInvoiceNo = "", vendorNo = ""): Promise<DiagnosticoBc> {
+  const motivo = clasificarFalloBc(error);
+  if (motivo === "reintentable") return { motivo, yaEnBc: false, pedido: null, facturaBc: null };
+  if (motivo === "factura-duplicada") {
+    // Que la factura ya exista lo dijo BC: con eso alcanza. Buscarla es para
+    // MOSTRAR cuál es (N.º, fecha, total), no para decidir.
+    return { motivo, yaEnBc: true, pedido: null, facturaBc: await bcFacturaDeProveedor(vendorInvoiceNo, vendorNo) };
+  }
+  // "Pedido no encontrado": se confirma contra BC antes de darlo por cierto. Si el
+  // pedido sí está, el mensaje hablaba de otra cosa (o fue un parpadeo) y esto se
+  // puede reintentar como siempre.
+  const pedido = await bcEstadoDelPedido(orderNo);
+  if (pedido !== "no-existe") return { motivo: "reintentable", yaEnBc: false, pedido, facturaBc: null };
+  // Sin pedido en BC, la factura registrada es la prueba de que ya se registró
+  // todo (Purch.-Post borra el pedido al completarlo).
+  const facturaBc = await bcFacturaDeProveedor(vendorInvoiceNo, vendorNo);
+  return { motivo, yaEnBc: !!facturaBc, pedido, facturaBc };
+}
+
 async function bcPostear(procedimiento: string, etiqueta: string, orderNo: string, body: Record<string, unknown>): Promise<string> {
   const cid = await getStdCompanyId();
   const url = `${odataRoot()}/${procedimiento}?company=${encodeURIComponent(cid)}`;

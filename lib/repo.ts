@@ -1083,6 +1083,11 @@ export interface NewRecepcionDB {
   idOrdenCompra: number; numeroFactura: string; fechaFactura: string; fechaRecepcion: string; fechaRegistro: string;
   total: number; usuario: string; rol: Role;
   lineas: { idOrdenCompraDet: number; cantidadRecibida: number; precioFactura?: number }[];
+  // Línea extra para la BITÁCORA de esta recepción. Hoy la usa la CONCILIACIÓN:
+  // la recepción se guarda acá sin postear en BC porque BC ya la tenía, y eso hay
+  // que poder leerlo después (si no, en la bitácora se ve igual que un registro
+  // normal y nadie entiende por qué en BC quedó con otra fecha).
+  nota?: string;
 }
 
 export async function createRecepcion(input: NewRecepcionDB): Promise<number> {
@@ -1171,7 +1176,8 @@ export async function createRecepcion(input: NewRecepcionDB): Promise<number> {
       await new sql.Request(tx).input("id", sql.Int, input.idOrdenCompra).input("e", sql.Int, idComp)
         .query("UPDATE dbo.OrdenCompra SET idEstado=@e WHERE idOrdenCompra=@id");
     }
-    const detMov = enRevision ? "Recepción (factura en revisión)" : `Factura ${input.numeroFactura}`;
+    const nota = String(input.nota ?? "").trim();
+    const detMov = (enRevision ? "Recepción (factura en revisión)" : `Factura ${input.numeroFactura}`) + (nota ? ` · ${nota}` : "");
     await logMov(tx, { entidad: "recepcion", idEntidad: idRec, documentoNo: input.numeroFactura || "(en revisión)", tipoMovimiento: enRevision ? "recibido" : "creado", usuario: input.usuario, rol: input.rol, detalle: detMov });
     await logMov(tx, { entidad: "orden", idEntidad: input.idOrdenCompra, documentoNo: ordenNo, tipoMovimiento: completa ? "recepcion_total" : "recepcion_parcial", estadoNuevo: completa ? "completado" : undefined, usuario: input.usuario, rol: input.rol, detalle: detMov });
     await tx.commit();

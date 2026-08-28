@@ -59,6 +59,10 @@ interface RegistrarRecepcionInput {
   // producto adicional (flete u otro) para que ella lo agregue. Se recibe y
   // registra la factura igual; esto solo dispara la notificación.
   cargoAviso?: { nota: string; monto?: number };
+  // CONCILIACIÓN con BC: la recepción se guarda acá SIN postear en BC porque BC ya
+  // la tenía (factura ya registrada allá, o pedido ya completado y borrado). El
+  // texto va a la bitácora: sin él, esa recepción se ve igual que cualquier otra.
+  nota?: string;
 }
 
 interface StoreShape {
@@ -687,7 +691,7 @@ export function StoreProvider({ children, useApi }: { children: React.ReactNode;
         const { idRecepcionCompra } = await api.createRecepcion({
           idOrdenCompra: Number(input.ordenId), numeroFactura: input.numeroFactura,
           fechaFactura: input.fechaFactura, fechaRecepcion: input.fechaRecepcion, fechaRegistro: input.fechaRegistro,
-          total: input.total, usuario: persona, rol: rolActual,
+          total: input.total, usuario: persona, rol: rolActual, nota: input.nota,
           lineas: input.lineas.map((l) => ({ idOrdenCompraDet: Number(l.ordenLineaId), cantidadRecibida: l.cantidadRecibida })),
         });
         await refreshFromApi();
@@ -721,7 +725,8 @@ export function StoreProvider({ children, useApi }: { children: React.ReactNode;
           completada = !enRevision && ordenEstaCompleta(upd);
           return { ...upd, estado: (completada ? "completado" : upd.estado) as Orden["estado"] };
         });
-        const detalle = enRevision ? "Recepción (factura en revisión)" : `Factura ${input.numeroFactura}`;
+        const detalle = (enRevision ? "Recepción (factura en revisión)" : `Factura ${input.numeroFactura}`)
+          + (input.nota ? ` · ${input.nota}` : "");
         const movRec = mkMov({ entidad: "recepcion", idEntidad: created.id, documentoNo: input.numeroFactura || "(en revisión)", tipoMovimiento: enRevision ? "recibido" : "creado", detalle });
         const movOrd = mkMov({ entidad: "orden", idEntidad: input.ordenId, documentoNo: orden.numero, tipoMovimiento: completada ? "recepcion_total" : "recepcion_parcial", estadoNuevo: completada ? "completado" : orden.estado, detalle });
         const notif = enRevision
