@@ -220,6 +220,11 @@ export interface Recepcion {
   // MODO 2: material recibido pero la factura quedó EN REVISIÓN (aún sin registrar).
   // Se deriva de numeroFactura vacío; Kattya la registra después (bcFacturarRecibido).
   facturaEnRevision?: boolean;
+  // N.º de la factura que quedó REGISTRADA EN BC (lo devuelve BC al registrar).
+  // No es el numeroFactura del proveedor: es el documento de allá, el que sirve
+  // para encontrar el movimiento en Business Central. Puede no estar: recepciones
+  // viejas, órdenes que no van a BC, o la columna sin migrar (sql/recepcion_bc_factura.sql).
+  bcFacturaNo?: string;
   // Fotos de la factura física (0..n). Metadato solamente: ver RecepcionFoto.
   fotos?: RecepcionFoto[];
 }

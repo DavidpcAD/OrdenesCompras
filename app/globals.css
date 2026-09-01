@@ -1647,6 +1647,7 @@ button.ana-kpi:active { transform: translateY(1px); }
 
 .recv-card__row { display: flex; align-items: flex-start; gap: var(--ds-space-2); }
 .recv-card__name { flex: 1; min-width: 0; font-weight: var(--ds-font-weight-semibold); font-size: var(--ds-font-size-body-md); line-height: 1.25; }
+.recv-card__code { margin-top: 2px; font-size: var(--ds-font-size-body-sm); font-weight: var(--ds-font-weight-regular); color: var(--ds-color-gray-400); }
 .recv-card__row2 { display: flex; align-items: center; justify-content: space-between; gap: var(--ds-space-3); }
 .recv-card__price { min-width: 0; font-size: var(--ds-font-size-body-sm); color: var(--ds-color-gray-400); }
 .recv-card__price b { color: var(--ds-text); font-weight: var(--ds-font-weight-semibold); }
@@ -1686,6 +1687,22 @@ button.ana-kpi:active { transform: translateY(1px); }
 }
 .recv-nc-chip::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--ds-color-red-200); }
 .recv-nc-chip:hover { background: color-mix(in srgb, var(--ds-color-red-100) 20%, var(--ds-tint-base)); }
+
+/* N.º del documento que quedó REGISTRADO en Business Central, al terminar de
+   registrar la factura. Es un dato que se ANOTA: número grande, seleccionable y
+   en un bloque propio para que no se confunda con el N.º del proveedor. */
+.bc-doc {
+  display: flex; flex-direction: column; gap: 2px;
+  padding: var(--ds-space-3) var(--ds-space-4); margin-bottom: var(--ds-space-4);
+  border: 1.5px solid color-mix(in srgb, var(--ds-color-green-100) 40%, var(--ds-tint-base));
+  border-radius: var(--ds-radius-lg);
+  background: color-mix(in srgb, var(--ds-color-green-100) 8%, var(--ds-tint-base));
+}
+.bc-doc__no {
+  font-size: var(--ds-font-size-subtitle-lg);
+  font-weight: var(--ds-font-weight-semibold); color: var(--ds-text);
+  letter-spacing: .01em; user-select: all; word-break: break-all;
+}
 
 /* Bloque de fotos dentro de la tarjeta desplegada de "Recibidas". */
 .rec-fotos { display: flex; flex-direction: column; gap: 6px; margin-bottom: var(--ds-space-3); }

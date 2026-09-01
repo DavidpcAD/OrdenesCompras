@@ -63,6 +63,8 @@ interface RegistrarRecepcionInput {
   // la tenía (factura ya registrada allá, o pedido ya completado y borrado). El
   // texto va a la bitácora: sin él, esa recepción se ve igual que cualquier otra.
   nota?: string;
+  // N.º de la factura que quedó registrada EN BC (lo devuelve BC al registrar).
+  bcFacturaNo?: string;
 }
 
 interface StoreShape {
@@ -691,13 +693,14 @@ export function StoreProvider({ children, useApi }: { children: React.ReactNode;
         const { idRecepcionCompra } = await api.createRecepcion({
           idOrdenCompra: Number(input.ordenId), numeroFactura: input.numeroFactura,
           fechaFactura: input.fechaFactura, fechaRecepcion: input.fechaRecepcion, fechaRegistro: input.fechaRegistro,
-          total: input.total, usuario: persona, rol: rolActual, nota: input.nota,
+          total: input.total, usuario: persona, rol: rolActual, nota: input.nota, bcFacturaNo: input.bcFacturaNo,
           lineas: input.lineas.map((l) => ({ idOrdenCompraDet: Number(l.ordenLineaId), cantidadRecibida: l.cantidadRecibida })),
         });
         await refreshFromApi();
         return { id: String(idRecepcionCompra), ordenId: input.ordenId, numeroFactura: input.numeroFactura,
           fechaFactura: input.fechaFactura, fechaRecepcion: input.fechaRecepcion, fechaRegistro: input.fechaRegistro,
-          total: input.total, lineas: input.lineas, parcial: false, facturaEnRevision: !!input.facturaEnRevision };
+          total: input.total, lineas: input.lineas, parcial: false, facturaEnRevision: !!input.facturaEnRevision,
+          bcFacturaNo: input.bcFacturaNo };
       }
       const enRevision = !!input.facturaEnRevision;
       let created!: Recepcion;
@@ -709,7 +712,7 @@ export function StoreProvider({ children, useApi }: { children: React.ReactNode;
           id: uid(), ordenId: input.ordenId, numeroFactura: input.numeroFactura,
           fechaFactura: input.fechaFactura, fechaRecepcion: input.fechaRecepcion,
           fechaRegistro: input.fechaRegistro, total: input.total, lineas: input.lineas,
-          parcial: recibidoAhora < recibidoTotal, facturaEnRevision: enRevision,
+          parcial: recibidoAhora < recibidoTotal, facturaEnRevision: enRevision, bcFacturaNo: input.bcFacturaNo,
           recibidoPor: persona,   // en modo API lo pone el SQL (creadoPor)
         };
         let completada = false;

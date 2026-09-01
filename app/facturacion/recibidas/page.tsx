@@ -44,7 +44,7 @@ export default function RecibidasPage() {
       const prov = o ? (o.proveedorNombre ?? proveedores.find((p) => p.id === o.proveedorId)?.nombre ?? "") : "";
       // Se busca por lo que se VE (el rótulo o el N.º de BC) y también por el CP-
       // interno crudo, que es el que anda en correos y en la bitácora.
-      return [r.numeroFactura, o ? numeroOrden(o) : "", o?.numero, o?.bcNumber, prov, formatDate(r.fechaRecepcion)]
+      return [r.numeroFactura, r.bcFacturaNo, o ? numeroOrden(o) : "", o?.numero, o?.bcNumber, prov, formatDate(r.fechaRecepcion)]
         .some((v) => (v ?? "").toLowerCase().includes(t));
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -138,6 +138,17 @@ export default function RecibidasPage() {
                       <span className="ds-label ds-muted">Factura</span>
                       <span className="ds-body-sm ds-strong">{r.numeroFactura || "—"}</span>
                     </span>
+                    {/* N.º del documento que quedó registrado EN BC. Es el que sirve
+                        para encontrar el movimiento allá, y antes solo aparecía unos
+                        segundos en el aviso al registrar. Solo está en las recepciones
+                        posteriores a la migración (sql/recepcion_bc_factura.sql), así
+                        que si no hay número no se muestra la columna vacía. */}
+                    {r.bcFacturaNo && (
+                      <span className="col" style={{ gap: 1, textAlign: "right" }}>
+                        <span className="ds-label ds-muted">En BC</span>
+                        <span className="ds-body-sm ds-strong" style={{ userSelect: "all" }}>{r.bcFacturaNo}</span>
+                      </span>
+                    )}
                   </div>
                   {(() => {
                     const open = abiertas.has(r.id);

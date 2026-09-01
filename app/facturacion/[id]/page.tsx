@@ -8,6 +8,7 @@ import { DateField } from "@/components/date-field";
 import { useStore } from "@/lib/store";
 import { useVolver } from "@/lib/use-volver";
 import { esNombreObraVacio, money, distribuirCargo, num, ordenBadge, ordenLineaPendiente, ordenRecibidoPct, todayISO, numeroOrden } from "@/lib/helpers";
+import { codigoDeItem } from "@/lib/unidad";
 import { comprimirFoto, pesoLegible } from "@/lib/foto";
 import type { FotoComprimida } from "@/lib/foto";
 import type { MotivoNC, OrdenLinea } from "@/lib/types";
@@ -103,7 +104,7 @@ export default function RegistrarFacturaPage() {
   // Confirmación de lo que pasó en BC: stock antes → después (inventario) y el
   // material que se consumió directo en una obra.
   // despues: number = stock BC verificado · null = BC no devolvió · undefined = verificando.
-  const [confirmInv, setConfirmInv] = useState<null | { items: InvItem[]; consumo: ConsumoObra[] }>(null);
+  const [confirmInv, setConfirmInv] = useState<null | { items: InvItem[]; consumo: ConsumoObra[]; bcFacturaNo?: string }>(null);
   // BC rechazó el registro porque YA lo tiene (factura ya registrada allá, o pedido
   // ya completado y por eso borrado). Reintentar no sirve: lo que falta es guardar la
   // recepción en la app, y eso lo decide Bodega acá. Guarda todo lo necesario para
@@ -372,7 +373,7 @@ export default function RegistrarFacturaPage() {
       });
       return;
     }
-    let aviso = ""; let bcOk = false; let diag: DiagBc | null = null;
+    let aviso = ""; let bcOk = false; let diag: DiagBc | null = null; let bcFacturaNo = "";
     const antes = await stockDeItems(items); // stock ANTES de registrar
     try {
       // Registrar (Recibir + Facturar) en BC con todos sus movimientos contables.
@@ -386,7 +387,14 @@ export default function RegistrarFacturaPage() {
         }),
       });
       const d = await r.json().catch(() => ({} as any));
-      if (r.ok) { aviso = ` · registrada en BC (${d.postedNo ?? "OK"})`; bcOk = true; }
+      if (r.ok) {
+        // BC devuelve el N.º del documento que quedó registrado allá. Cuando el
+        // codeunit no lo dice, la ruta cae a "Registrado", que no es un número:
+        // eso no se guarda ni se muestra como si lo fuera.
+        const posted = String(d.postedNo ?? "").trim();
+        bcFacturaNo = posted && !/^(registrado|ok)$/i.test(posted) ? posted : "";
+        aviso = ` · registrada en BC (${posted || "OK"})`; bcOk = true;
+      }
       else { aviso = ` · NO se pudo registrar en BC: ${d.error ?? r.status}`; diag = d as DiagBc; }
     } catch (e: any) { aviso = ` · BC no disponible: ${String(e?.message ?? e)}`; }
     if (!bcOk) {
@@ -404,7 +412,7 @@ export default function RegistrarFacturaPage() {
       setGuardando(false);
       return;
     }
-    await guardarLocal({ aviso, bcOk: true, lineas, items, antes, detalle });
+    await guardarLocal({ aviso, bcOk: true, lineas, items, antes, detalle, bcFacturaNo });
   }
 
   // La parte LOCAL del registro: la recepción en la app, la foto de la factura y las
@@ -412,7 +420,7 @@ export default function RegistrarFacturaPage() {
   // registrado ahora, conciliado porque BC ya lo tenía, o una orden que no va a BC—,
   // así que acá no se vuelve a hablar con BC. `nota` queda en la bitácora.
   async function guardarLocal(p: {
-    aviso: string; bcOk: boolean; nota?: string;
+    aviso: string; bcOk: boolean; nota?: string; bcFacturaNo?: string;
     lineas: { ordenLineaId: string; cantidadRecibida: number }[];
     items: string[]; antes: Record<string, number | null>; detalle: DetalleLinea[];
   }) {
@@ -422,7 +430,7 @@ export default function RegistrarFacturaPage() {
       const rec = await registrarRecepcion({
         ordenId: orden!.id, numeroFactura: numeroFactura.trim(),
         fechaFactura, fechaRecepcion, fechaRegistro, total: totalFactura, lineas: p.lineas,
-        cargoAviso: cargoAvisoPayload(), nota: p.nota,
+        cargoAviso: cargoAvisoPayload(), nota: p.nota, bcFacturaNo: p.bcFacturaNo,
       });
       // Foto de la factura: va aparte y después (la recepción ya está hecha).
       const avisoFoto = await subirFotos(rec.id);
@@ -443,6 +451,7 @@ export default function RegistrarFacturaPage() {
         // verificación del stock "después" en BC se consulta en segundo plano (no
         // re-bloquea el POST ya lento). despues=undefined → "verificando…".
         setConfirmInv({
+          bcFacturaNo: p.bcFacturaNo,
           items: items.map((it) => {
             const dels = detalle.filter((d) => d.l.articuloId === it);
             const qty = dels.reduce((s, d) => s + d.qty, 0);
@@ -635,7 +644,7 @@ export default function RegistrarFacturaPage() {
                           <div style={{ minWidth: 0 }}>
                             {l.descripcion}
                             <div className="ds-body-sm ds-muted">
-                              {[l.pedidoNumero, l.proyecto && `Proy. ${l.proyecto}`, l.taskNo && `Tarea ${l.taskNo}`, l.descuentoPct ? `−${l.descuentoPct}%` : null].filter(Boolean).join(" · ")}
+                              {[codigoDeItem(l.articuloId ?? ""), l.pedidoNumero, l.proyecto && `Proy. ${l.proyecto}`, l.taskNo && `Tarea ${l.taskNo}`, l.descuentoPct ? `−${l.descuentoPct}%` : null].filter(Boolean).join(" · ")}
                             </div>
                           </div>
                           {!marcadas[l.id] && (
@@ -716,7 +725,16 @@ export default function RegistrarFacturaPage() {
               return (
                 <div key={l.id} className={`recv-card ${marcada ? "is-nc" : full ? "is-full" : zero ? "is-zero" : ""}`}>
                   <div className="recv-card__row">
-                    <div className="recv-card__name">{l.descripcion}</div>
+                    <div className="recv-card__name">
+                      {l.descripcion}
+                      {/* El código del material, debajo del nombre: es con lo que
+                          Bodega confirma contra la factura del proveedor que llegó
+                          justo ese material, y con lo que se busca en BC. Va pelado
+                          (el guardado puede traer la variante pegada). */}
+                      {codigoDeItem(l.articuloId ?? "") && (
+                        <div className="recv-card__code">{codigoDeItem(l.articuloId ?? "")}</div>
+                      )}
+                    </div>
                     <button type="button" className={`kebab ${marcada ? "is-marked" : ""}`}
                       aria-label="Más opciones" aria-haspopup="menu" aria-expanded={menuOpen === l.id}
                       onClick={() => setMenuOpen(menuOpen === l.id ? null : l.id)}>
@@ -1111,6 +1129,17 @@ export default function RegistrarFacturaPage() {
             onClose={cerrar}
             footer={<Button onClick={cerrar}>Listo</Button>}
           >
+            {/* N.º de la factura REGISTRADA en BC. Va acá arriba y no en el aviso
+                de abajo porque el aviso se va solo en segundos: este cartel se
+                queda hasta que le den Listo, así se puede anotar. Y de todas
+                formas queda guardado con la recepción, visible en "Recibidas". */}
+            {confirmInv.bcFacturaNo && (
+              <div className="bc-doc">
+                <span className="ds-label ds-muted">Factura registrada en Business Central</span>
+                <span className="bc-doc__no">{confirmInv.bcFacturaNo}</span>
+                <span className="ds-body-sm ds-muted">Con este N.º se encuentra el movimiento en BC. Queda guardado en <span className="ds-strong">Recibidas</span>.</span>
+              </div>
+            )}
             {porObra.length > 0 && (
               <>
                 <p className="ds-label">

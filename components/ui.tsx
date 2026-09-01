@@ -450,7 +450,12 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
   const push = useCallback((text: string, tone: Toast["tone"] = "info") => {
     const id = Date.now() + Math.random();
     setToasts((t) => [...t, { id, text, tone }]);
-    setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), 3200);
+    // El aviso vive según lo que hay que LEER, no un tiempo fijo. Con 3,2 s para
+    // todos, los avisos largos —el de "factura registrada", que trae el N.º con
+    // que quedó en BC— se iban antes de poder anotarlos. ~45 ms por carácter
+    // sobre los 3,2 s de piso, con techo de 12 s para no dejarlo clavado.
+    const vida = Math.min(12000, 3200 + text.length * 45);
+    setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), vida);
   }, []);
   return (
     <ToastCtx.Provider value={push}>

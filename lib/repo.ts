@@ -1083,11 +1083,30 @@ export interface NewRecepcionDB {
   idOrdenCompra: number; numeroFactura: string; fechaFactura: string; fechaRecepcion: string; fechaRegistro: string;
   total: number; usuario: string; rol: Role;
   lineas: { idOrdenCompraDet: number; cantidadRecibida: number; precioFactura?: number }[];
+  // N.º de la factura que quedó registrada EN BC (lo devuelve BC al registrar).
+  bcFacturaNo?: string;
   // Línea extra para la BITÁCORA de esta recepción. Hoy la usa la CONCILIACIÓN:
   // la recepción se guarda acá sin postear en BC porque BC ya la tenía, y eso hay
   // que poder leerlo después (si no, en la bitácora se ve igual que un registro
   // normal y nadie entiende por qué en BC quedó con otra fecha).
   nota?: string;
+}
+
+// El N.º de factura de BC vive en una columna que se agrega con
+// sql/recepcion_bc_factura.sql. Todo lo de acá tolera que NO esté: sin ella la
+// recepción se guarda igual y el número simplemente no se muestra. Una migración
+// pendiente no puede impedir que Bodega reciba material.
+let hayColBcFactura: boolean | null = null;
+async function colBcFacturaExiste(): Promise<boolean> {
+  if (hayColBcFactura !== null) return hayColBcFactura;
+  try {
+    const pool = await getPool();
+    const r = await pool.request().query("SELECT COL_LENGTH('dbo.RecepcionCompra','bcFacturaNo') AS len");
+    hayColBcFactura = r.recordset[0]?.len != null;
+  } catch {
+    hayColBcFactura = false;
+  }
+  return hayColBcFactura;
 }
 
 export async function createRecepcion(input: NewRecepcionDB): Promise<number> {
@@ -1113,7 +1132,11 @@ export async function createRecepcion(input: NewRecepcionDB): Promise<number> {
     }
     const max = await new sql.Request(tx).query("SELECT MAX(CAST(SUBSTRING(recepcionNo,5,20) AS INT)) AS m FROM dbo.RecepcionCompra WHERE recepcionNo LIKE 'REC-%'");
     const numero = "REC-" + String((max.recordset[0].m ?? 0) + 1).padStart(6, "0");
-    const ins = await new sql.Request(tx)
+    // El N.º de BC entra en el mismo INSERT, pero solo si la columna ya está: se
+    // pregunta antes en vez de romper el registro por una migración pendiente.
+    const bcNo = String(input.bcFacturaNo ?? "").trim().slice(0, 50);
+    const conBc = !!bcNo && (await colBcFacturaExiste());
+    const rq = new sql.Request(tx)
       .input("idOrdenCompra", sql.Int, input.idOrdenCompra)
       .input("recepcionNo", sql.NVarChar(50), numero)
       .input("numeroFactura", sql.NVarChar(40), input.numeroFactura)
@@ -1121,10 +1144,12 @@ export async function createRecepcion(input: NewRecepcionDB): Promise<number> {
       .input("fechaRecepcion", sql.Date, input.fechaRecepcion)
       .input("fechaRegistro", sql.Date, input.fechaRegistro)
       .input("total", sql.Decimal(18, 2), input.total)
-      .input("creadoPor", sql.NVarChar(100), input.usuario)
-      .query(`INSERT dbo.RecepcionCompra (idOrdenCompra,recepcionNo,numeroFactura,fechaFactura,fechaRecepcion,fechaRegistro,total,esEliminada,fechaCreacion,creadoPor)
+      .input("creadoPor", sql.NVarChar(100), input.usuario);
+    if (conBc) rq.input("bcFacturaNo", sql.NVarChar(50), bcNo);
+    const ins = await rq
+      .query(`INSERT dbo.RecepcionCompra (idOrdenCompra,recepcionNo,numeroFactura,fechaFactura,fechaRecepcion,fechaRegistro,total,esEliminada,fechaCreacion,creadoPor${conBc ? ",bcFacturaNo" : ""})
               OUTPUT INSERTED.idRecepcionCompra
-              VALUES (@idOrdenCompra,@recepcionNo,@numeroFactura,@fechaFactura,@fechaRecepcion,@fechaRegistro,@total,0,getdate(),@creadoPor)`);
+              VALUES (@idOrdenCompra,@recepcionNo,@numeroFactura,@fechaFactura,@fechaRecepcion,@fechaRegistro,@total,0,getdate(),@creadoPor${conBc ? ",@bcFacturaNo" : ""})`);
     const idRec = ins.recordset[0].idRecepcionCompra as number;
 
     // Guard de SOBRE-RECEPCIÓN: la cantidad se acotaba solo en el cliente, así que
@@ -1329,6 +1354,9 @@ export async function listRecepciones(): Promise<Recepcion[]> {
     fechaRecepcion: (r.fechaRecepcion?.toISOString?.() ?? "").slice(0, 10),
     fechaRegistro: (r.fechaRegistro?.toISOString?.() ?? "").slice(0, 10),
     total: Number(r.total ?? 0), parcial: !!r.esParcial, recibidoPor: r.creadoPor ?? undefined,
+    // Sin la migración corrida la columna no viene en el SELECT * y esto queda
+    // en undefined: la pantalla simplemente no muestra el N.º de BC.
+    bcFacturaNo: (r.bcFacturaNo ?? "").toString().trim() || undefined,
     fotos: fotos.get(r.idRecepcionCompra),
     lineas: (porRecepcion.get(r.idRecepcionCompra) ?? [])
       .map((l): RecepcionLinea => ({
