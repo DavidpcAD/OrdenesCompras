@@ -346,7 +346,25 @@ h1, h2, h3, h4, p { margin: 0; }
 .ds-progress--compact .ds-progress__track { width: 70px; height: 8px; }
 
 /* =====================  TABLE  ===================== */
-.ds-table-wrap { width: 100%; overflow-x: auto; border-radius: var(--ds-radius-lg); background: var(--ds-surface); box-shadow: var(--ds-shadow-01); }
+/* Cuando la tabla NO cabe (laptop angosta, o muchas columnas activadas) se desplaza
+   de lado. Sin ninguna señal, eso se lee como una tabla "cortada": estas sombras de
+   scroll aparecen SOLO en el borde que tiene contenido escondido y desaparecen al
+   llegar al final (truco de `background-attachment: local`, sin JS). El color sale de
+   --ds-text —negro en claro, claro en oscuro— porque una sombra negra sobre la
+   superficie oscura no se ve. */
+.ds-table-wrap {
+  width: 100%; overflow-x: auto; border-radius: var(--ds-radius-lg);
+  background-color: var(--ds-surface); box-shadow: var(--ds-shadow-01);
+  background-image:
+    linear-gradient(to right, var(--ds-surface), transparent 32px),
+    linear-gradient(to left, var(--ds-surface), transparent 32px),
+    linear-gradient(to right, color-mix(in srgb, var(--ds-text) 16%, transparent), transparent 14px),
+    linear-gradient(to left, color-mix(in srgb, var(--ds-text) 16%, transparent), transparent 14px);
+  background-position: 0 0, 100% 0, 0 0, 100% 0;
+  background-repeat: no-repeat;
+  background-size: 32px 100%, 32px 100%, 14px 100%, 14px 100%;
+  background-attachment: local, local, scroll, scroll;
+}
 .ds-table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: var(--ds-font-size-label); }
 /* Encabezado oscuro redondeado — mismo estilo en TODAS las tablas (como el DataTable). */
 .ds-table thead th {
@@ -703,7 +721,12 @@ h1, h2, h3, h4, p { margin: 0; }
 /* padding-bottom deja aire para el FAB de acción (abajo-der): el contenido al
    final del scroll no queda tapado por él. */
 .page { width: 100%; max-width: 1480px; margin: 0 auto; padding: var(--ds-space-10) var(--ds-space-6) calc(var(--ds-space-10) * 2 + var(--ds-space-4)); flex: 1; animation: ds-reveal-in .32s cubic-bezier(.22, .61, .36, 1) backwards; }
-.page--wide { max-width: 1480px; }
+/* Las pantallas de TABLA (solicitudes, órdenes, facturación, devoluciones) piden más
+   ancho que una de lectura: en un monitor de 1920 la tabla de solicitudes necesita
+   1480 y el contenedor le daba 1432, así que la última columna quedaba cortada por
+   la mitad — con 170 px de pantalla sin usar al lado. Ojo: esta clase existía desde
+   el principio con el MISMO max-width que .page, o sea que no hacía nada. */
+.page--wide { max-width: 1760px; }
 .page__head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--ds-space-4); margin-bottom: var(--ds-space-6); flex-wrap: wrap; }
 .page__title { display: flex; flex-direction: column; gap: 4px; }
 
