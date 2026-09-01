@@ -9,6 +9,7 @@ import { VistaToggle } from "@/components/vista-toggle";
 import { IconEye, IconReceipt, IconList } from "@/components/icons";
 import { useStore } from "@/lib/store";
 import { destinoLabel, destinoCodigo, money, num, pedidoLineaPendiente, solicitudResumen, tipoSolicitudBadge } from "@/lib/helpers";
+import { useVariantes } from "@/lib/use-variantes";
 
 interface Row {
   pedidoId: string;
@@ -18,6 +19,7 @@ interface Row {
   tipo: "material" | "repuesto" | "stock";
   pedidoLineaId: string;
   articuloId: string;
+  variantCode: string;
   descripcion: string;
   unidad: string;
   almacen: string;
@@ -54,7 +56,7 @@ export default function ProveeduriaMaterialesPage() {
         if (pend <= 0) return;
         rows.push({
           pedidoId: p.id, pedidoNumero: p.numero, destino: destinoLabel(p), solicitante: p.solicitante, tipo: p.tipoSolicitud,
-          pedidoLineaId: l.id, articuloId: l.articuloId, descripcion: l.descripcion,
+          pedidoLineaId: l.id, articuloId: l.articuloId, variantCode: l.variantCode ?? "", descripcion: l.descripcion,
           unidad: l.unidad, almacen: l.almacen, pendiente: pend,
           incluir: false, cantidad: String(pend), precio: "0", iva: "13",
         });
@@ -93,6 +95,11 @@ export default function ProveeduriaMaterialesPage() {
 
   const setRow = (id: string, patch: Partial<Row>) =>
     setRows((rs) => rs.map((r) => (r.pedidoLineaId === id ? { ...r, ...patch } : r)));
+
+  // Variantes de los materiales de la tabla. Acá es donde se decide QUÉ se compra,
+  // y con el ítem genérico ("PORCELANATO 60X60CM") no alcanza: la medida, el grado o
+  // la talla están en la variante. Se piden en una sola llamada para toda la tabla.
+  const variantes = useVariantes(rows.map((r) => r.articuloId));
 
   // Líneas del pedido elegido en el panel izquierdo (o todas) + filtro por
   // solicitante (usuario que creó el pedido). La DataTable maneja búsqueda,
@@ -170,6 +177,30 @@ export default function ProveeduriaMaterialesPage() {
       // metidos en la misma fila, el código se comía ~90px y la medida del material
       // ("… 3/4") quedaba siempre cortada.
       cell: (c) => { const r = c.row.original; return <div style={{ maxWidth: 380, minWidth: 200 }} title={`${r.articuloId} — ${r.descripcion}`}><div className="ds-strong ds-body-sm">{r.articuloId}</div><div className="ds-clamp-2">{r.descripcion}</div></div>; } },
+    // Variante: es lo que distingue lo que hay que comprar cuando el material es
+    // genérico. Si la solicitud no la trae y el material tiene varias, se avisa acá
+    // (antes esta pantalla no mostraba el dato y había que preguntar por WhatsApp).
+    { id: "variante", header: "Variante", meta: { label: "Variante" },
+      accessorFn: (r) => (r.variantCode ? variantes.etiqueta(r.articuloId, r.variantCode)
+        : variantes.falta(r.articuloId, r.variantCode) ? "Sin variante" : "—"),
+      cell: (c) => {
+        const r = c.row.original;
+        if (r.variantCode) {
+          const nombre = variantes.nombreVariante(r.articuloId, r.variantCode);
+          return (
+            <div style={{ maxWidth: 220 }} title={variantes.etiqueta(r.articuloId, r.variantCode)}>
+              <div className="ds-strong ds-body-sm">{r.variantCode}</div>
+              {nombre && <div className="ds-clamp-2 ds-body-sm ds-muted">{nombre}</div>}
+            </div>
+          );
+        }
+        if (variantes.falta(r.articuloId, r.variantCode)) return (
+          <span className="ds-pending-text ds-body-sm" title={`Este material tiene ${variantes.variantesDe(r.articuloId).length} variantes en Business Central y la solicitud no dice cuál. Preguntale a quien la pidió antes de comprar.`}>
+            Sin variante
+          </span>
+        );
+        return <span className="ds-muted ds-body-sm">—</span>;
+      } },
     { id: "obra", header: "Destino", accessorFn: (r) => r.almacen || "—", meta: { label: "Destino" },
       cell: (c) => <span className="ds-muted ds-body-sm">{c.getValue()}</span> },
     { id: "pend", header: "Pend.", accessorFn: (r) => r.pendiente, meta: { label: "Pend.", num: true }, enableColumnFilter: false,

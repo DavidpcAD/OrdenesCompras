@@ -1,6 +1,7 @@
 import type { Orden } from "./types";
 import { ordenLineaImporte } from "./helpers";
 import { documentoDeOrden, destinoLineaDoc, fmtDoc, etiquetaUnidad } from "./orden-doc";
+import { etiquetaVariante, nombreDeVariante, descripcionParaDocumento } from "./variantes.ts";
 import {
   nuevoDocumento, dibujante, encabezadoMarca, bloqueEmpresa, numerarPaginas, formatearFecha,
   A4, MARGEN, DERECHA, ANCHO_UTIL, Y_CONTINUACION, NEGRO,
@@ -30,7 +31,10 @@ const COLS = {
   importe: { x: MARGEN + 455, w: 60 },
 };
 
-export function ordenAPdf(orden: Orden, unidades: Record<string, string> = {}): Promise<Buffer> {
+// `variantes` = "ITEM|CODE" -> nombre de la variante en BC. Va impreso bajo la
+// descripción por lo mismo que en la cotización: el material de BC es genérico y lo
+// que el proveedor tiene que despachar (el grado, la medida, la talla) es la variante.
+export function ordenAPdf(orden: Orden, unidades: Record<string, string> = {}, variantes: Record<string, string> = {}): Promise<Buffer> {
   const d = documentoDeOrden(orden, unidades);
   const { doc, listo } = nuevoDocumento(`${d.numeroDoc} · Orden de compra`);
   const { txt, regla } = dibujante(doc);
@@ -79,7 +83,8 @@ export function ordenAPdf(orden: Orden, unidades: Record<string, string> = {}): 
   cabecera();
 
   for (const l of d.lineas) {
-    const desc = l.descripcion || "—";
+    const desc = descripcionParaDocumento(l.descripcion,
+      etiquetaVariante(l.variantCode, nombreDeVariante(variantes, l.articuloId, l.variantCode)));
     // Alto de la fila = lo que ocupe la descripción con salto de línea.
     const alto = Math.max(12, doc.font("Helvetica").fontSize(8).heightOfString(desc, { width: COLS.desc.w }));
     // Si no cabe, hoja nueva y se repite la cabecera (una orden puede tener 40 líneas).

@@ -4,9 +4,13 @@ import Link from "next/link";
 import { Badge } from "@/components/ui";
 import { money, num, ordenLineaImporte, ordenLineaPendiente } from "@/lib/helpers";
 import { codigoDeItem } from "@/lib/unidad";
+import { useVariantes } from "@/lib/use-variantes";
 import type { Orden, OrdenLinea } from "@/lib/types";
 
 export function OrderLinesTable({ orden, showRecepcion = true, solicitudHref }: { orden: Orden; showRecepcion?: boolean; solicitudHref?: (l: OrdenLinea) => string | null }) {
+  // Variantes de los materiales de la orden. La línea guarda el código ("0042") y el
+  // nombre está en BC: sin él, dos líneas del mismo material se ven idénticas.
+  const variantes = useVariantes(orden.lineas.map((l) => l.articuloId));
   return (
     <div className="ds-table-wrap" style={{ boxShadow: "none" }}>
       <table className="ds-table">
@@ -28,6 +32,9 @@ export function OrderLinesTable({ orden, showRecepcion = true, solicitudHref }: 
                 <td className="hide-mobile">{l.tipo === "cargo" ? <Badge tone="yellow">Cargo</Badge> : <Badge tone="gray">Artículo</Badge>}</td>
                 <td>
                   {l.descripcion}
+                  {l.variantCode && (
+                    <div className="ds-body-sm ds-muted">Variante {variantes.etiqueta(l.articuloId, l.variantCode)}</div>
+                  )}
                   <div className="ds-body-sm ds-muted">
                     {(() => {
                       const rest = [l.proyecto && `Proy. ${l.proyecto}`, l.taskNo && `Tarea ${l.taskNo}`, l.descuentoPct ? `−${l.descuentoPct}%` : null].filter(Boolean).join(" · ");
@@ -37,7 +44,8 @@ export function OrderLinesTable({ orden, showRecepcion = true, solicitudHref }: 
                       // en BC. La descripción sola no alcanza — "TUBO 3X3X1.8MM H.N." y
                       // "TUBO 3X3 HG 1.8 MM" son dos materiales distintos en la misma
                       // orden. Se muestra el código pelado (el guardado puede traer la
-                      // variante pegada, "M11-0081 -VAR 12", que BC no conoce).
+                      // variante pegada, "M11-0081 -VAR 12", que BC no conoce); la
+                      // variante ya va en su propia línea.
                       const codigo = l.tipo === "articulo" ? codigoDeItem(l.articuloId ?? "") : "";
                       return <>
                         {codigo && <span className="ds-strong">{codigo}</span>}

@@ -7,6 +7,7 @@ import { IconWarning } from "@/components/icons";
 import { Timeline } from "@/components/timeline";
 import { useStore } from "@/lib/store";
 import { useVolver } from "@/lib/use-volver";
+import { useVariantes } from "@/lib/use-variantes";
 import { codigoDeItem } from "@/lib/unidad";
 import { formatDate, num, pedidoBadge, pedidoLineaPendiente, recibidoDeLineaPedido, destinoCodigo, destinoLabel, tipoSolicitudBadge, esConsumoDirecto, puedeDevolverLinea, motivoNoDevolver, ordenesDeLineaPedido } from "@/lib/helpers";
 
@@ -25,6 +26,10 @@ export default function ProveeduriaPedidoDetallePage() {
   const [sel, setSel] = useState<Record<string, boolean>>({});
 
   const pedido = pedidos.find((p) => p.id === id);
+  // Variantes de los materiales de esta solicitud (el grado, la medida, la talla):
+  // sin esto la línea dice apenas el material genérico. El hook tolera la lista
+  // vacía, así que se llama antes de los returns tempranos.
+  const variantes = useVariantes((pedido?.lineas ?? []).map((l) => l.articuloId));
   if (!pedido) {
     // Skeleton mientras carga (SQL/BC): evita parpadear "no encontrada".
     if (cargando) {
@@ -142,6 +147,17 @@ export default function ProveeduriaPedidoDetallePage() {
                       {codigoDeItem(l.articuloId ?? "") && (
                         <div className="ds-body-sm ds-muted">{codigoDeItem(l.articuloId ?? "")}</div>
                       )}
+                      {/* Cuál variante del material es: el ítem de BC es genérico
+                          ("PORCELANATO 60X60CM") y el grado/la medida/la talla viven
+                          en la variante. Si el material tiene varias y la solicitud
+                          no dice cuál, se avisa en vez de dejar el hueco. */}
+                      {l.variantCode
+                        ? <div className="ds-body-sm ds-muted">Variante {variantes.etiqueta(l.articuloId, l.variantCode)}</div>
+                        : variantes.falta(l.articuloId, l.variantCode) && (
+                          <div className="ds-body-sm ds-pending-text" title="El material tiene varias variantes en Business Central y la solicitud no dice cuál. Hay que preguntarle a quien la pidió.">
+                            Sin variante — preguntar cuál
+                          </div>
+                        )}
                       {/* Devuelta = bloqueada: no se puede ordenar ni volver a
                           devolver. El motivo queda en el historial de abajo. */}
                       {l.devuelta && <Badge tone="yellow">↩ Devuelta al ingeniero</Badge>}

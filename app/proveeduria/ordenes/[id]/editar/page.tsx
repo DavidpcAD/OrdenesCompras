@@ -6,8 +6,9 @@ import { Badge, Button, Card, EmptyState, Field, Input, Modal, Select, Textarea,
 import { IconWarning } from "@/components/icons";
 import { Combobox } from "@/components/combobox";
 import { useStore } from "@/lib/store";
-import { money, ordenEsDirecta, ordenPedidos, almacenesParaRecepcion, esAlmacenFisico, monedaApp, numeroOrden } from "@/lib/helpers";
+import { money, num, ordenEsDirecta, ordenPedidos, almacenesParaRecepcion, esAlmacenFisico, repartoDeLineaSolicitud, monedaApp, numeroOrden } from "@/lib/helpers";
 import { precioEnUnidad, precioEntreUnidades, cantidadEntreUnidades, equivalencia, equivalenciaDeUnidad, mismaMoneda, codigoDeItem, opcionesDeUnidad, type UnidadDeItem } from "@/lib/unidad";
+import { useVariantes } from "@/lib/use-variantes";
 import type { OrdenLinea } from "@/lib/types";
 
 // OJO con los dos campos de destino, que NO son lo mismo (y estaban pegados en uno):
@@ -17,7 +18,6 @@ import type { OrdenLinea } from "@/lib/types";
 interface Row { key: string; articuloId: string; variantCode?: string; descripcion: string; unidad: string; unidadBase?: string; factorCompra?: number; almacen: string; cantidad: string; precio: string; iva: string; descuento: string; proyecto?: string; taskNo?: string; pedidoLineaId?: string; pedidoNumero?: string; }
 type Obra = { codigo: string; nombre: string };
 type Tarea = { jobTaskNo: string; descripcion: string; tipo: string };
-type Variante = { code: string; descripcion: string };
 const uid = () => Math.random().toString(36).slice(2, 9);
 
 // Líneas de la orden -> filas editables. Se usa en el estado inicial y al hidratar.
@@ -56,8 +56,6 @@ export default function EditarOrdenPage() {
   // le pide al proveedor sin salir de la corrección de la orden.
   const [unidadesPorItem, setUnidadesPorItem] = useState<Record<string, UnidadDeItem[]>>({});
   const unidadesPedidasRef = useRef<Set<string>>(new Set());
-  const [variantesPorItem, setVariantesPorItem] = useState<Record<string, Variante[]>>({});
-  const variantesPedidasRef = useRef<Set<string>>(new Set());
   const [bcAlm, setBcAlm] = useState<typeof almacenes | null>(null);
   // Obras y sus tareas (Job No. / Job Task No. de BC), para el diálogo de destino.
   const [obras, setObras] = useState<Obra[]>([]);
@@ -138,28 +136,27 @@ export default function EditarOrdenPage() {
         .catch(() => setUnidadesPorItem((m) => ({ ...m, [itemNo]: [] })));
     }
   }, [rows]);
-  // Variantes de los materiales de las líneas. BC EXIGE la variante en el ítem que
-  // la tiene, pero solo lo dice al LANZAR el pedido — o sea que el error le caía al
-  // aprobador y acá no había forma de elegirla (venía la que puso Ingeniería, o
-  // ninguna). Con una sola opción se pone sola: no hay nada que elegir.
+  // Variantes de los materiales de las líneas, en UNA sola llamada para toda la
+  // tabla. BC EXIGE la variante en el ítem que la tiene, pero solo lo dice al LANZAR
+  // el pedido — o sea que el error le caía al aprobador y acá no había forma de
+  // elegirla (venía la que puso Ingeniería, o ninguna).
+  const variantes = useVariantes(rows.map((r) => r.articuloId));
+  // Con una sola opción se pone sola: no hay nada que elegir y BC la exige igual.
   useEffect(() => {
-    for (const itemNo of new Set(rows.map((r) => codigoDeItem(r.articuloId)).filter(Boolean))) {
-      if (variantesPedidasRef.current.has(itemNo)) continue;
-      variantesPedidasRef.current.add(itemNo);
-      fetch(`/api/bc/variants?item=${encodeURIComponent(itemNo)}`)
-        .then((r) => (r.ok ? r.json() : { variantes: [], disponible: false }))
-        .then((d) => {
-          const vs: Variante[] = Array.isArray(d.variantes) ? d.variantes : [];
-          setVariantesPorItem((m) => ({ ...m, [itemNo]: vs }));
-          if (vs.length === 1) {
-            setRows((rs) => rs.map((r) => (codigoDeItem(r.articuloId) === itemNo && !(r.variantCode ?? "").trim()
-              ? { ...r, variantCode: vs[0].code } : r)));
-          }
-        })
-        .catch(() => setVariantesPorItem((m) => ({ ...m, [itemNo]: [] })));
-    }
+    setRows((rs) => {
+      let cambio = false;
+      const out = rs.map((r) => {
+        if ((r.variantCode ?? "").trim()) return r;
+        const vs = variantes.variantesDe(r.articuloId);
+        if (vs.length !== 1) return r;
+        cambio = true;
+        return { ...r, variantCode: vs[0].code };
+      });
+      // El MISMO array si no hubo cambios: uno nuevo volvería a disparar el efecto.
+      return cambio ? out : rs;
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rows]);
+  }, [variantes.version, rows]);
   // Tareas de una obra, una sola vez por obra. Solo las de tipo "Posting": las de
   // tipo Heading/Total son rótulos del presupuesto y BC rechaza la línea de compra
   // que apunte a una de ellas. Si la API no manda el tipo, se dejan todas.
@@ -189,11 +186,50 @@ export default function EditarOrdenPage() {
   const nombreTarea = (jobNo: string, taskNo: string) => tareasDe(jobNo).find((t) => t.jobTaskNo === taskNo)?.descripcion ?? "";
 
   const unidadesDe = (itemNo: string) => unidadesPorItem[codigoDeItem(itemNo)] ?? [];
-  const variantesDe = (itemNo: string) => variantesPorItem[codigoDeItem(itemNo)] ?? [];
+  const variantesDe = (itemNo: string) => variantes.variantesDe(itemNo);
   // Líneas de ítems que exigen variante y siguen sin elegirla. BC rechaza el
   // lanzamiento con "Variant Code must have a value", así que se frena el guardado
   // acá, donde sí se puede arreglar.
   const sinVariante = rows.filter((r) => variantesDe(r.articuloId).length > 1 && !(r.variantCode ?? "").trim());
+
+  // ---- Partir una línea en varias filas, una por variante -----------------------
+  //
+  // Lo mismo que al armar la orden: la solicitud pidió "10 PAR" de un zapato que en
+  // BC existe por talla y hay que comprar 2 de la 39 y 3 de la 42. Las filas nuevas
+  // CONSERVAN el enlace con la línea de solicitud (a diferencia de "+ Agregar
+  // artículo", que crea una línea manual y deja el pendiente abierto).
+  const lineaDeSolicitud = (pedidoLineaId?: string) => {
+    if (!pedidoLineaId) return null;
+    for (const p of pedidos) {
+      const l = p.lineas.find((x) => x.id === pedidoLineaId);
+      if (l) return l;
+    }
+    return null;
+  };
+  const filasDe = (pedidoLineaId?: string) => (pedidoLineaId ? rows.filter((r) => r.pedidoLineaId === pedidoLineaId) : []);
+  // Cuánto se puede repartir entre las filas de una misma línea de solicitud. Acá el
+  // pendiente incluye lo que ESTA orden ya le tiene tomado: al guardar, el saldo se
+  // revierte y se vuelve a aplicar (ver updateOrden). `pendiente: null` = no se puede
+  // comparar porque alguna línea está en otra unidad de compra.
+  function repartoDe(pedidoLineaId?: string) {
+    const linea = lineaDeSolicitud(pedidoLineaId);
+    const r = repartoDeLineaSolicitud(filasDe(pedidoLineaId), linea);
+    if (!linea || r.pendiente == null) return { ...r, pendiente: null as number | null };
+    const norm = (u?: string) => (u ?? "").trim().toUpperCase();
+    const guardadas = (orden?.lineas ?? []).filter((l) => l.pedidoLineaId === pedidoLineaId);
+    if (guardadas.some((l) => norm(l.unidad) !== norm(linea.unidad))) return { ...r, pendiente: null as number | null };
+    return { ...r, pendiente: r.pendiente + guardadas.reduce((s, l) => s + l.cantidad, 0) };
+  }
+  function partirLinea(fila: Row) {
+    setRows((rs) => {
+      const i = rs.findIndex((x) => x.key === fila.key);
+      if (i < 0) return rs;
+      const { total, pendiente } = repartoDe(fila.pedidoLineaId);
+      const resto = pendiente != null ? Math.max(0, pendiente - total) : 0;
+      const nueva: Row = { ...fila, key: `v-${uid()}`, variantCode: "", cantidad: resto > 0 ? String(resto) : "" };
+      return [...rs.slice(0, i + 1), nueva, ...rs.slice(i + 1)];
+    });
+  }
   // Lo que se ofrece en la celda: las de BC + la que la línea ya tiene.
   const opcionesFila = (itemNo: string, actual: string) => opcionesDeUnidad(unidadesDe(itemNo), actual);
   const factorDe = (itemNo: string, code: string) => {
@@ -277,6 +313,16 @@ export default function EditarOrdenPage() {
     // Variante sin elegir: mismo criterio que la tarea. Solo se exige cuando el
     // catálogo de variantes ya cargó y ofrece más de una.
     if (sinVariante.length) { toast(`Elegí la variante de "${sinVariante[0].descripcion}": sin ella Business Central no puede lanzar el pedido.`, "error"); return; }
+    // Una línea de solicitud partida en varias filas no puede sumar MÁS de lo que se
+    // pidió (contando lo que esta orden ya le tenía tomado).
+    for (const idLinea of new Set(rows.map((r) => r.pedidoLineaId).filter(Boolean))) {
+      const { total, pendiente, unidad } = repartoDe(idLinea);
+      if (pendiente != null && total > pendiente + 1e-9) {
+        const desc = filasDe(idLinea)[0]?.descripcion ?? "";
+        toast(`"${desc}": entre las filas se piden ${num.format(total)} ${unidad} y la solicitud tiene ${num.format(pendiente)} ${unidad} pendiente(s).`, "error");
+        return;
+      }
+    }
     setGuardando(true);
     try {
       const ls: Omit<OrdenLinea, "id" | "cantidadRecibida" | "cantidadFacturada">[] = rows.map((r) => ({
@@ -435,7 +481,7 @@ export default function EditarOrdenPage() {
                           (con una sola ya quedó puesta). BC no deja lanzar el pedido
                           sin ella, así que sin elegir se marca en rojo acá y no allá. */}
                       {variantesDe(r.articuloId).length > 1 && (
-                        <div className="row gap-2" style={{ alignItems: "center", marginTop: 4, maxWidth: 360 }}>
+                        <div className="row gap-2 wrap" style={{ alignItems: "center", marginTop: 4, maxWidth: 360 }}>
                           <span className="ds-label ds-muted">Variante</span>
                           <span style={!(r.variantCode ?? "").trim() ? { outline: "1.5px solid var(--ds-color-red-100)", borderRadius: 8 } : undefined}>
                             <Select ariaLabel={`Variante de ${r.descripcion}`} className="ds-select--celda"
@@ -444,8 +490,28 @@ export default function EditarOrdenPage() {
                               {variantesDe(r.articuloId).map((v) => <option key={v.code} value={v.code}>{v.code} — {v.descripcion}</option>)}
                             </Select>
                           </span>
+                          {/* Otra fila del mismo material para pedir otra variante
+                              (dos tallas, dos grados), sin perder la solicitud. */}
+                          {r.pedidoLineaId && (
+                            <button type="button" className="link-btn ds-body-sm" onClick={() => partirLinea(r)}
+                              title="Partir la línea: agrega otra fila del mismo material para pedir otra variante. Entre todas no se puede pasar de lo solicitado.">
+                              + otra variante
+                            </button>
+                          )}
                         </div>
                       )}
+                      {/* Cómo va el reparto de la línea partida. */}
+                      {filasDe(r.pedidoLineaId).length > 1 && (() => {
+                        const { total, pendiente, unidad } = repartoDe(r.pedidoLineaId);
+                        if (pendiente == null) return null;
+                        const exceso = total > pendiente + 1e-9;
+                        return (
+                          <div className={`ds-body-sm ${exceso ? "ds-pending-text" : "ds-muted"}`} style={{ marginTop: 2 }}>
+                            Repartido {num.format(total)} de {num.format(pendiente)} {unidad}
+                            {exceso ? " · se pasa de lo solicitado" : ""}
+                          </div>
+                        );
+                      })()}
                     </td>
                     <td className="ds-body-sm">{(() => {
                       const pid = pedidoIdDe(r.pedidoLineaId, r.pedidoNumero);

@@ -7,11 +7,15 @@ import { Combobox } from "@/components/combobox";
 import { IconCheck, IconWarning } from "@/components/icons";
 import { useStore } from "@/lib/store";
 import { leerBorrador, guardarBorrador, borrarBorrador, hace, type BorradorOrden } from "@/lib/borrador-orden";
-import { money, ultimoPrecioProveedor, almacenesParaRecepcion, esAlmacenFisico, pedidoLineaPendiente, obraParaOrden, esConsumoDirecto, monedaApp, numeroOrden } from "@/lib/helpers";
+import { money, num, ultimoPrecioProveedor, almacenesParaRecepcion, esAlmacenFisico, pedidoLineaPendiente, repartoDeLineaSolicitud, obraParaOrden, esConsumoDirecto, monedaApp, numeroOrden } from "@/lib/helpers";
 import { precioEnUnidad, precioEntreUnidades, cantidadEntreUnidades, equivalencia, equivalenciaDeUnidad, mismaMoneda, codigoDeItem, opcionesDeUnidad, type PrecioRef, type UnidadDeItem } from "@/lib/unidad";
+import { useVariantes } from "@/lib/use-variantes";
 import type { OrdenLinea } from "@/lib/types";
 
 interface Row {
+  // id de la FILA. No alcanza el de la línea de solicitud: una misma línea puede
+  // estar en VARIAS filas, una por variante (ver `partirLinea`).
+  key: string;
   pedidoNumero: string;
   pedidoLineaId: string;
   articuloId: string;
@@ -40,13 +44,13 @@ interface Row {
 // o se la asigna Proveeduría acá, línea por línea.
 type Obra = { codigo: string; nombre: string };
 type Tarea = { jobTaskNo: string; descripcion: string; tipo: string };
-type Variante = { code: string; descripcion: string };
 
 // Cargo de producto (Item Charge) a agregar a la orden: tipo (chargeNo del catálogo
 // BC), cantidad, precio e IVA%. chargeNo "" = flete por defecto. `key` = id estable
 // para React (no usar el índice: al quitar un cargo se corrían los valores).
 interface Cargo { key: string; chargeNo: string; descripcion: string; cantidad: string; precio: string; iva: string; }
 const cargoUid = () => Math.random().toString(36).slice(2, 9);
+const filaUid = () => `f-${Math.random().toString(36).slice(2, 9)}`;
 
 export default function ArmarOrdenPage() {
   const { pedidos, proveedores, ordenes, almacenes, borrador, usuario, createOrden, setOrdenEstado, setBorrador } = useStore();
@@ -81,8 +85,6 @@ export default function ArmarOrdenPage() {
   // viene en la unidad de consumo y no siempre es en la que se compra.
   const [unidadesPorItem, setUnidadesPorItem] = useState<Record<string, UnidadDeItem[]>>({});
   const unidadesPedidasRef = useRef<Set<string>>(new Set());
-  const [variantesPorItem, setVariantesPorItem] = useState<Record<string, Variante[]>>({});
-  const variantesPedidasRef = useRef<Set<string>>(new Set());
 
   // Tareas por obra, cacheadas. `undefined` = todavía no se pidieron; `[]` = BC
   // contestó y esa obra no tiene tareas (se dice en la celda, no se deja el hueco).
@@ -156,7 +158,9 @@ export default function ArmarOrdenPage() {
   const catAlm = almacenesParaRecepcion(bcAlm ?? almacenes);
 
   const [rows, setRows] = useState<Row[]>(() =>
-    rescate ? rescate.filas :
+    // Los borradores guardados ANTES de que las filas tuvieran `key` no la traen:
+    // se les pone una al rescatarlos (sin esto la fila no se podría ni editar).
+    rescate ? rescate.filas.map((f) => (f.key ? f : { ...f, key: filaUid() })) :
     borrador.map((b) => {
       let info: Partial<Row> = { pedidoNumero: "", articuloId: "", variantCode: "", descripcion: "", unidad: "", almacen: "", proyecto: "", tarea: "" };
       for (const p of pedidos) {
@@ -164,7 +168,7 @@ export default function ArmarOrdenPage() {
         if (l) { info = { pedidoNumero: p.numero, articuloId: l.articuloId, variantCode: l.variantCode ?? "", descripcion: l.descripcion, unidad: l.unidad, unidadBase: l.unidadBase, factorCompra: l.factorCompra, almacen: l.almacen, proyecto: obraParaOrden(l), tarea: l.taskNo ?? "" }; break; }
       }
       return {
-        pedidoLineaId: b.pedidoLineaId, ...info,
+        key: filaUid(), pedidoLineaId: b.pedidoLineaId, ...info,
         cantidad: String(b.cantidad), precio: String(b.precio), iva: String(b.iva), descuento: "0",
       } as Row;
     })
@@ -228,9 +232,9 @@ export default function ArmarOrdenPage() {
     return () => { cancel = true; };
   }, [proveedorId, itemIdsKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const setRow = (id: string, patch: Partial<Row>) =>
-    setRows((rs) => rs.map((r) => (r.pedidoLineaId === id ? { ...r, ...patch } : r)));
-  const removeRow = (id: string) => setRows((rs) => rs.filter((r) => r.pedidoLineaId !== id));
+  const setRow = (key: string, patch: Partial<Row>) =>
+    setRows((rs) => rs.map((r) => (r.key === key ? { ...r, ...patch } : r)));
+  const removeRow = (key: string) => setRows((rs) => rs.filter((r) => r.key !== key));
 
   // Tareas de las obras que aparecen en las líneas. Se piden solas al entrar: la
   // tarea se elige de una lista, no se escribe, y esperar a que el usuario toque
@@ -273,33 +277,64 @@ export default function ArmarOrdenPage() {
         .catch(() => setUnidadesPorItem((m) => ({ ...m, [itemNo]: [] })));
     }
   }, [rows]);
-  // Variantes de los materiales de las líneas. BC EXIGE la variante en el ítem que
-  // la tiene, pero solo lo dice al LANZAR el pedido: el error le caía al aprobador y
-  // acá no había forma de elegirla (llegaba la que puso Ingeniería, o ninguna). Con
-  // una sola opción se pone sola, que no hay nada que elegir.
+  // Variantes de los materiales de las líneas, en UNA sola llamada para toda la tabla
+  // (antes era una por material). BC EXIGE la variante en el ítem que la tiene, pero
+  // solo lo dice al LANZAR el pedido: el error le caía al aprobador y acá no había
+  // forma de elegirla (llegaba la que puso Ingeniería, o ninguna).
+  const variantes = useVariantes(rows.map((r) => r.articuloId));
+  const variantesDe = (itemNo: string) => variantes.variantesDe(itemNo);
+  // Con UNA sola opción se pone sola: no hay nada que elegir y BC la exige igual.
   useEffect(() => {
-    for (const itemNo of new Set(rows.map((r) => codigoDeItem(r.articuloId)).filter(Boolean))) {
-      if (variantesPedidasRef.current.has(itemNo)) continue;
-      variantesPedidasRef.current.add(itemNo);
-      fetch(`/api/bc/variants?item=${encodeURIComponent(itemNo)}`)
-        .then((r) => (r.ok ? r.json() : { variantes: [], disponible: false }))
-        .then((d) => {
-          const vs: Variante[] = Array.isArray(d.variantes) ? d.variantes : [];
-          setVariantesPorItem((m) => ({ ...m, [itemNo]: vs }));
-          if (vs.length === 1) {
-            setRows((rs) => rs.map((r) => (codigoDeItem(r.articuloId) === itemNo && !(r.variantCode ?? "").trim()
-              ? { ...r, variantCode: vs[0].code } : r)));
-          }
-        })
-        .catch(() => setVariantesPorItem((m) => ({ ...m, [itemNo]: [] })));
-    }
+    setRows((rs) => {
+      let cambio = false;
+      const out = rs.map((r) => {
+        if ((r.variantCode ?? "").trim()) return r;
+        const vs = variantes.variantesDe(r.articuloId);
+        if (vs.length !== 1) return r;
+        cambio = true;
+        return { ...r, variantCode: vs[0].code };
+      });
+      // Devolver el MISMO array cuando no hay nada que cambiar: uno nuevo volvería a
+      // disparar este efecto (rows está en las dependencias) y no pararía nunca.
+      return cambio ? out : rs;
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rows]);
+  }, [variantes.version, rows]);
   const unidadesDe = (itemNo: string) => unidadesPorItem[codigoDeItem(itemNo)] ?? [];
-  const variantesDe = (itemNo: string) => variantesPorItem[codigoDeItem(itemNo)] ?? [];
   // Líneas cuyo ítem exige variante y siguen sin elegirla: BC no deja lanzar el
   // pedido así, y esta es la pantalla donde se puede arreglar.
   const sinVariante = rows.filter((r) => variantesDe(r.articuloId).length > 1 && !(r.variantCode ?? "").trim());
+
+  // ---- Partir una línea de solicitud en varias filas, una por variante ----------
+  //
+  // La solicitud pide "10 PAR" de un zapato que en BC existe por TALLA: con una sola
+  // fila hay que elegir una talla para las 10. Partiéndola se piden 2 de la 39 y 3 de
+  // la 42 sin tocar la solicitud y sin recurrir a una línea manual (que pierde el
+  // enlace con quien pidió el material). Varias líneas de orden contra la misma línea
+  // de solicitud ya las soportan la base y el saldo (se suman antes de descontar).
+  const lineaDeSolicitud = (pedidoLineaId: string) => {
+    for (const p of pedidos) {
+      const l = p.lineas.find((x) => x.id === pedidoLineaId);
+      if (l) return l;
+    }
+    return null;
+  };
+  const filasDe = (pedidoLineaId: string) => rows.filter((r) => r.pedidoLineaId === pedidoLineaId);
+  const repartoDe = (pedidoLineaId: string) =>
+    repartoDeLineaSolicitud(filasDe(pedidoLineaId), lineaDeSolicitud(pedidoLineaId));
+  function partirLinea(r: Row) {
+    setRows((rs) => {
+      const i = rs.findIndex((x) => x.key === r.key);
+      if (i < 0) return rs;
+      // La fila nueva arranca con lo que quede sin repartir del pendiente; si ya está
+      // todo repartido, vacía (la cantidad se le quita a la fila de arriba).
+      const { total, pendiente } = repartoDeLineaSolicitud(
+        rs.filter((x) => x.pedidoLineaId === r.pedidoLineaId), lineaDeSolicitud(r.pedidoLineaId));
+      const resto = pendiente != null ? Math.max(0, pendiente - total) : 0;
+      const nueva: Row = { ...r, key: filaUid(), variantCode: "", cantidad: resto > 0 ? String(resto) : "" };
+      return [...rs.slice(0, i + 1), nueva, ...rs.slice(i + 1)];
+    });
+  }
   // Lo que se ofrece en la celda: las de BC + la que la línea ya tiene.
   const opcionesFila = (itemNo: string, actual: string) => opcionesDeUnidad(unidadesDe(itemNo), actual);
   const factorDe = (itemNo: string, code: string) => {
@@ -316,7 +351,7 @@ export default function ArmarOrdenPage() {
     const q = Number(r.cantidad) || 0;
     const nuevoP = precioEntreUnidades(p, factorDe(r.articuloId, r.unidad), factorDe(r.articuloId, code));
     const nuevaQ = cantidadEntreUnidades(q, factorDe(r.articuloId, r.unidad), factorDe(r.articuloId, code));
-    setRow(r.pedidoLineaId, {
+    setRow(r.key, {
       unidad: code,
       factorCompra: factorDe(r.articuloId, code),
       ...(p > 0 ? { precio: nuevoP != null ? String(Number(nuevoP.toFixed(5))) : "" } : {}),
@@ -346,7 +381,7 @@ export default function ArmarOrdenPage() {
     // para que proveeduría escriba lo acordado con el proveedor.
     const hist = precioRefEnLinea(l.articuloId, l.unidad, l.unidadBase) ?? 0;
     setRows((rs) => [...rs, {
-      pedidoNumero: p.numero, pedidoLineaId: l.id, articuloId: l.articuloId, variantCode: l.variantCode ?? "",
+      key: filaUid(), pedidoNumero: p.numero, pedidoLineaId: l.id, articuloId: l.articuloId, variantCode: l.variantCode ?? "",
       descripcion: l.descripcion, unidad: l.unidad, unidadBase: l.unidadBase, factorCompra: l.factorCompra, almacen: l.almacen,
       cantidad: String(pend), precio: String(hist || 0), iva: "13", descuento: "0",
       proyecto: obraParaOrden(l), tarea: l.taskNo ?? "",
@@ -436,6 +471,17 @@ export default function ArmarOrdenPage() {
     const malPrecio = rows.find((r) => !Number.isFinite(Number(r.precio)) || Number(r.precio) < 0);
     if (malPrecio) {
       toast(`El precio de "${malPrecio.descripcion}" no es un número válido.`, "error"); return;
+    }
+    // Una línea de solicitud partida en varias filas (una por variante) no puede
+    // sumar MÁS de lo que se pidió: si no, partir por talla se vuelve comprar el
+    // doble y el saldo de la solicitud queda consumido de más.
+    for (const idLinea of new Set(rows.map((r) => r.pedidoLineaId))) {
+      const { total, pendiente, unidad } = repartoDe(idLinea);
+      if (pendiente != null && total > pendiente + 1e-9) {
+        const desc = filasDe(idLinea)[0]?.descripcion ?? "";
+        toast(`"${desc}": entre las filas se piden ${num.format(total)} ${unidad} y la solicitud tiene ${num.format(pendiente)} ${unidad} pendiente(s).`, "error");
+        return;
+      }
     }
     // Precio obligatorio para enviar a aprobación: ninguna línea puede ir a BC en 0.
     if (aprobar) {
@@ -660,7 +706,7 @@ export default function ArmarOrdenPage() {
               </thead>
               <tbody>
                 {rows.map((r) => (
-                  <tr key={r.pedidoLineaId}>
+                  <tr key={r.key}>
                     <td className="ds-body-sm ds-strong">{r.pedidoNumero}</td>
                     <td>
                       <div style={{ maxWidth: 400, minWidth: 240 }} title={`${r.articuloId} — ${r.descripcion}`}><div className="ds-strong ds-body-sm">{r.articuloId}</div><div className="ds-clamp-2">{r.descripcion}</div></div>
@@ -668,17 +714,36 @@ export default function ArmarOrdenPage() {
                           quedó puesta). BC no lanza el pedido sin ella, así que se
                           marca acá y no en manos del aprobador. */}
                       {variantesDe(r.articuloId).length > 1 && (
-                        <div className="row gap-2" style={{ alignItems: "center", marginTop: 4, maxWidth: 400 }}>
+                        <div className="row gap-2 wrap" style={{ alignItems: "center", marginTop: 4, maxWidth: 400 }}>
                           <span className="ds-label ds-muted">Variante</span>
                           <span style={!(r.variantCode ?? "").trim() ? { outline: "1.5px solid var(--ds-color-red-100)", borderRadius: 8 } : undefined}>
                             <Select ariaLabel={`Variante de ${r.descripcion}`} className="ds-select--celda"
-                              value={r.variantCode ?? ""} onChange={(e) => setRow(r.pedidoLineaId, { variantCode: e.target.value })}>
+                              value={r.variantCode ?? ""} onChange={(e) => setRow(r.key, { variantCode: e.target.value })}>
                               <option value="">Elegí…</option>
                               {variantesDe(r.articuloId).map((v) => <option key={v.code} value={v.code}>{v.code} — {v.descripcion}</option>)}
                             </Select>
                           </span>
+                          {/* Una fila más contra la MISMA solicitud, para pedir otra
+                              variante del mismo material (dos tallas, dos grados). */}
+                          <button type="button" className="link-btn ds-body-sm" onClick={() => partirLinea(r)}
+                            title="Partir la línea: agrega otra fila del mismo material para pedir otra variante (p. ej. dos tallas). Entre todas no se puede pasar de lo solicitado.">
+                            + otra variante
+                          </button>
                         </div>
                       )}
+                      {/* Cómo va el reparto de la línea partida. Sin esto no se ve si
+                          las tallas suman lo que se pidió, o si se pasaron. */}
+                      {filasDe(r.pedidoLineaId).length > 1 && (() => {
+                        const { total, pendiente, unidad } = repartoDe(r.pedidoLineaId);
+                        if (pendiente == null) return null;
+                        const exceso = total > pendiente + 1e-9;
+                        return (
+                          <div className={`ds-body-sm ${exceso ? "ds-pending-text" : "ds-muted"}`} style={{ marginTop: 2 }}>
+                            Repartido {num.format(total)} de {num.format(pendiente)} {unidad}
+                            {exceso ? " · se pasa de lo solicitado" : ""}
+                          </div>
+                        );
+                      })()}
                     </td>
                     {/* Destino de ESTA línea: el almacén (centro de costo) donde
                         entra el material y, SOLO si es consumo directo, la obra y su
@@ -704,7 +769,7 @@ export default function ArmarOrdenPage() {
                       {/* La unidad al lado de la cantidad: "40" solo no dice nada
                           cuando el material se compra por M3, KG o SACO. */}
                       <span className="row gap-2" style={{ justifyContent: "flex-end", alignItems: "baseline" }}>
-                        <input className="ds-cell-input" aria-label="Cantidad" type="number" min={0} value={r.cantidad} style={{ width: 70 }} onChange={(e) => setRow(r.pedidoLineaId, { cantidad: e.target.value })} />
+                        <input className="ds-cell-input" aria-label="Cantidad" type="number" min={0} value={r.cantidad} style={{ width: 70 }} onChange={(e) => setRow(r.key, { cantidad: e.target.value })} />
                         {/* Con qué unidad se le pide al proveedor. La solicitud llega
                             en la unidad de consumo (GR) y acá se decide si se compra
                             por estañón, cubeta o litro. */}
@@ -724,7 +789,7 @@ export default function ArmarOrdenPage() {
                       </span>
                     </td>
                     <td className="ds-num">
-                      <input className="ds-cell-input" aria-label="Precio" type="number" min={0} value={r.precio} style={{ width: 92 }} onChange={(e) => setRow(r.pedidoLineaId, { precio: e.target.value })} />
+                      <input className="ds-cell-input" aria-label="Precio" type="number" min={0} value={r.precio} style={{ width: 92 }} onChange={(e) => setRow(r.key, { precio: e.target.value })} />
                       {(() => {
                         const lp = lastPrice(r);
                         if (lp == null) {
@@ -743,20 +808,20 @@ export default function ArmarOrdenPage() {
                         return (
                           <button type="button" className="link-btn ds-body-sm"
                             title={igual ? "Precio igual al último" : "Usar este último precio"}
-                            onClick={() => setRow(r.pedidoLineaId, { precio: String(lp) })}
+                            onClick={() => setRow(r.key, { precio: String(lp) })}
                             style={{ color: up ? "var(--ds-color-red-200)" : down ? "var(--ds-color-green-200)" : "var(--ds-color-gray-400)", cursor: igual ? "default" : "pointer" }}>
                             últ. {money(lp, currency)} {up ? "↑" : down ? "↓" : "="}
                           </button>
                         );
                       })()}
                     </td>
-                    <td className="ds-num"><input className="ds-cell-input" aria-label="Descuento %" type="number" min={0} max={100} value={r.descuento} style={{ width: 64 }} onChange={(e) => setRow(r.pedidoLineaId, { descuento: e.target.value })} /></td>
-                    <td className="ds-num"><input className="ds-cell-input" aria-label="IVA %" type="number" min={0} value={r.iva} style={{ width: 64 }} onChange={(e) => setRow(r.pedidoLineaId, { iva: e.target.value })} /></td>
+                    <td className="ds-num"><input className="ds-cell-input" aria-label="Descuento %" type="number" min={0} max={100} value={r.descuento} style={{ width: 64 }} onChange={(e) => setRow(r.key, { descuento: e.target.value })} /></td>
+                    <td className="ds-num"><input className="ds-cell-input" aria-label="IVA %" type="number" min={0} value={r.iva} style={{ width: 64 }} onChange={(e) => setRow(r.key, { iva: e.target.value })} /></td>
                     <td className="ds-num ds-strong">
                       {money(calcImporte(r) || 0, currency)}
                       {fleteShare(r) > 0 && <div className="ds-body-sm ds-muted" style={{ fontWeight: 400 }}>+ cargos {money(fleteShare(r), currency)}</div>}
                     </td>
-                    <td className="ds-num"><button type="button" className="icon-btn" title="Quitar línea" aria-label="Quitar línea" onClick={() => removeRow(r.pedidoLineaId)}>×</button></td>
+                    <td className="ds-num"><button type="button" className="icon-btn" title="Quitar línea" aria-label="Quitar línea" onClick={() => removeRow(r.key)}>×</button></td>
                   </tr>
                 ))}
                 {/* Cargos de producto también como líneas (igual que en BC). Se editan
@@ -820,7 +885,7 @@ export default function ArmarOrdenPage() {
             <Button
               disabled={!!editObra.proyecto && (tareasDe(editObra.proyecto) ?? []).length > 0 && !editObra.tarea}
               onClick={() => {
-                setRow(editObra.pedidoLineaId, { proyecto: editObra.proyecto || "", tarea: editObra.proyecto ? editObra.tarea : "" });
+                setRow(editObra.key, { proyecto: editObra.proyecto || "", tarea: editObra.proyecto ? editObra.tarea : "" });
                 setEditObra(null);
               }}>Guardar</Button>
           </>}>

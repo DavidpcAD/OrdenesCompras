@@ -5,6 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import { useStore } from "@/lib/store";
 import { num, formatDate, ordenLineaImporte, numeroOrden } from "@/lib/helpers";
 import { documentoDeOrden, destinoLineaDoc, etiquetaUnidad } from "@/lib/orden-doc";
+import { useVariantes } from "@/lib/use-variantes";
 import { Button } from "@/components/ui";
 import { AdelanteMark } from "@/components/icons";
 
@@ -41,6 +42,21 @@ export default function ImprimirOrdenPage() {
     return () => { document.title = previo; };
   }, [numeroTitulo]);
 
+  // Descripciones de unidad de BC ("EST" -> "ESTAÑON"), las mismas que imprime el PDF
+  // del servidor. Mientras cargan se ve el código; no hay salto de layout.
+  const [unidadesBc, setUnidadesBc] = useState<Record<string, string>>({});
+  useEffect(() => {
+    fetch("/api/bc/unidades").then((r) => (r.ok ? r.json() : { unidades: {} }))
+      .then((d) => setUnidadesBc(d.unidades ?? {})).catch(() => {});
+  }, []);
+  // Nombre de la variante de cada línea, igual que en el PDF del servidor: el material
+  // de BC es genérico y lo que hay que despachar es la variante.
+  //
+  // OJO: los hooks van ACÁ, antes de los returns tempranos de abajo. Estaban después,
+  // y eso reventaba ("rendered more hooks than during the previous render") cuando la
+  // orden no estaba en el store en el primer render y llegaba en el segundo.
+  const variantes = useVariantes((orden?.lineas ?? []).map((l) => l.articuloId));
+
   if (!orden) {
     // Durante la carga (SQL/BC) el store aún está vacío: no mostrar "no encontrada".
     if (cargando) {
@@ -69,13 +85,6 @@ export default function ImprimirOrdenPage() {
   const prov = proveedores.find((p) => p.id === orden.proveedorId);
   // Los números del documento salen de UN solo lugar, compartido con el PDF que
   // genera el servidor: si cada uno los calculara, un día dirían cosas distintas.
-  // Descripciones de unidad de BC ("EST" -> "ESTAÑON"), las mismas que imprime el
-  // PDF del servidor. Mientras cargan se ve el código; no hay salto de layout.
-  const [unidadesBc, setUnidadesBc] = useState<Record<string, string>>({});
-  useEffect(() => {
-    fetch("/api/bc/unidades").then((r) => (r.ok ? r.json() : { unidades: {} }))
-      .then((d) => setUnidadesBc(d.unidades ?? {})).catch(() => {});
-  }, []);
   const { numeroDoc, moneda: cur, lineas, almacenUnico, subtotal, iva, ivaPct, total, porTasaIva, unidades } = documentoDeOrden(orden, unidadesBc);
   const destinoLinea = destinoLineaDoc;
 
@@ -221,7 +230,10 @@ export default function ImprimirOrdenPage() {
             {lineas.map((l) => (
               <tr key={l.id}>
                 <td style={{ whiteSpace: "nowrap", fontWeight: 600 }}>{l.tipo === "cargo" ? "—" : (destinoLinea(l) || "—")}</td>
-                <td>{l.descripcion}</td>
+                <td>
+                  {l.descripcion}
+                  {l.variantCode && <div style={{ color: "var(--ds-color-gray-500)" }}>Variante: {variantes.etiqueta(l.articuloId, l.variantCode)}</div>}
+                </td>
                 <td className="n">{num.format(l.cantidad)}</td>
                 <td>{etiquetaUnidad(l.unidad, unidades)}</td>
                 <td className="n">{fmt(l.precioUnitario)}</td>

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getOrden } from "@/lib/repo";
 import { ordenAPdf } from "@/lib/orden-pdf";
-import { bcDescripcionUnidades } from "@/lib/bc";
+import { bcDescripcionUnidades, bcNombresDeVariante } from "@/lib/bc";
 import { nombreArchivoOrden, ordenImprimible } from "@/lib/orden-doc";
 
 export const runtime = "nodejs";
@@ -27,7 +27,14 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     // Las descripciones de las unidades vienen de BC para imprimir "ESTAÑON" en vez
     // de "EST", igual que el reporte de BC. Si BC no responde, el PDF sale con el
     // código: no se cae por esto.
-    const pdf = await ordenAPdf(orden, await bcDescripcionUnidades().catch(() => ({})));
+    // Y el NOMBRE de la variante de cada línea ("0042 → … NO. 42"): el material de
+    // BC es genérico y sin la variante el proveedor no sabe qué despachar. Igual que
+    // las unidades, si BC no contesta el PDF sale con el código.
+    const [unidades, nombresVar] = await Promise.all([
+      bcDescripcionUnidades().catch(() => ({})),
+      bcNombresDeVariante(orden.lineas.map((l) => l.articuloId ?? "")).catch(() => ({})),
+    ]);
+    const pdf = await ordenAPdf(orden, unidades, nombresVar);
     const verEnPantalla = new URL(req.url).searchParams.get("ver") === "1";
     return new NextResponse(pdf as any, {
       headers: {

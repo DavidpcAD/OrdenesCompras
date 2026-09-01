@@ -185,6 +185,27 @@ export function pedidoLineaPendiente(l: PedidoLinea): number {
   return Math.max(0, l.cantidad - l.cantidadOrdenada);
 }
 
+// REPARTO de una línea de solicitud entre varias líneas de la orden.
+//
+// Pasa con los materiales que en BC existen por variante: la solicitud pide "10 PAR"
+// de un zapato y hay que comprar 2 de la talla 39 y 3 de la 42. Una fila por variante
+// es la única forma de decirlo, y entonces hay que sumar TODAS las filas que salen de
+// la misma línea de solicitud para no comprar más de lo que se pidió.
+//
+// `pendiente: null` significa que NO se puede comparar: alguna fila cambió la unidad
+// de compra (la solicitud pidió 255.000 GR y se compra 1 ESTAÑON), y sumar gramos
+// contra estañones daría un falso "se pasó del pendiente".
+export function repartoDeLineaSolicitud(
+  filas: { cantidad: string | number; unidad: string }[],
+  linea: PedidoLinea | null | undefined,
+): { total: number; pendiente: number | null; unidad: string } {
+  const total = (filas ?? []).reduce((s, f) => s + (Number(f.cantidad) || 0), 0);
+  if (!linea) return { total, pendiente: null, unidad: "" };
+  const norm = (u?: string) => (u ?? "").trim().toUpperCase();
+  const comparable = (filas ?? []).every((f) => norm(f.unidad) === norm(linea.unidad));
+  return { total, pendiente: comparable ? pedidoLineaPendiente(linea) : null, unidad: linea.unidad };
+}
+
 // ¿Se puede devolver esta línea al ingeniero? Solo lo que Proveeduría todavía no
 // comprometió: con orden de compra hecha, el material ya está pedido al proveedor
 // y devolver la línea dejaría a Ingeniería creyendo que no se compró.

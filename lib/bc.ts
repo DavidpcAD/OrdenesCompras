@@ -6,6 +6,8 @@
 // de BC_BASE_URL (o de BC_TENANT_ID/BC_ENVIRONMENT).
 
 import type { OrdenLinea } from "./types";
+import { claveVariante } from "./variantes.ts";
+import { codigoDeItem } from "./unidad.ts";
 
 type TokenCache = { token: string; exp: number };
 let tokenCache: TokenCache | null = null;
@@ -871,6 +873,101 @@ export async function bcVariantsEx(itemNo: string): Promise<BcVariantsResult> {
   const cached = lastGoodVariants.get(itemNo);
   if (cached) { console.warn(`BC variantes de ${itemNo} falló; sirviendo último resultado bueno cacheado.`); return cached; }
   return { variantes: [], disponible: false };
+}
+
+// ---- Variantes de VARIOS ítems en una sola consulta ------------------------
+//
+// Las pantallas que muestran la variante (materiales solicitados, detalle de la
+// solicitud, líneas de la orden) tienen decenas de líneas: preguntar ítem por ítem
+// eran decenas de llamadas a BC por cada vez que se abría la pantalla. Se piden en
+// lotes de 20 con un solo `$filter`.
+const LOTE_VARIANTES = 20;
+
+// Agrupa las filas de itemVariants por ítem. Devuelve null cuando la respuesta no
+// dice a qué ítem pertenece cada fila: agrupar a ciegas sería repartir variantes
+// entre materiales que no son (mejor "no se pudo" que un dato inventado).
+//
+// Con un lote de UN solo ítem sí se pueden atribuir todas las filas: la consulta
+// preguntó por ese y nada más.
+export function agruparVariantes(rows: any[], lote: string[]): Record<string, BcVariante[]> | null {
+  const norm = (s: string) => s.trim().toUpperCase();
+  const porItem: Record<string, BcVariante[]> = {};
+  const indice = new Map<string, string>();
+  for (const i of lote) { const k = i.trim(); if (k) { porItem[k] = []; indice.set(norm(k), k); } }
+  const unico = Object.keys(porItem).length === 1 ? Object.keys(porItem)[0] : "";
+  for (const v of rows ?? []) {
+    const item = String(v?.itemNumber ?? v?.ItemNumber ?? v?.itemNo ?? v?.ItemNo ?? "").trim();
+    const clave = item ? indice.get(norm(item)) : unico;
+    if (!clave) {
+      if (!item) return null;   // la respuesta no identifica el ítem y el lote es de varios
+      continue;                 // vino un ítem que no se preguntó: se ignora
+    }
+    porItem[clave].push(...mapVariantes([v]));
+  }
+  return porItem;
+}
+
+async function variantesDeLote(lote: string[]): Promise<Record<string, BcVariante[]> | null> {
+  const filtro = `$filter=${encodeURIComponent(lote.map((n) => `itemNumber eq '${n.replace(/'/g, "''")}'`).join(" or "))}`;
+
+  // 1) API custom de Adelante, igual que bcVariantsEx.
+  try {
+    const cid = await getCompanyId();
+    const res = await bcFetch(`${customRoot("inventory")}/companies(${cid})/itemVariants?${filtro}`, { cache: "no-store" });
+    if (res.ok) { const g = agruparVariantes((await res.json()).value, lote); if (g) return g; }
+  } catch { /* intenta la estándar */ }
+
+  // 2) Fallback: API estándar v2.0.
+  try {
+    const cid = await getStdCompanyId();
+    const res = await bcFetch(`${stdRoot()}/companies(${cid})/itemVariants?${filtro}`, { cache: "no-store" });
+    if (res.ok) { const g = agruparVariantes((await res.json()).value, lote); if (g) return g; }
+  } catch { /* ambas fallaron */ }
+
+  console.warn(`BC variantes en lote falló para ${lote.length} ítem(s).`);
+  return null;
+}
+
+export type BcVariantesLote = { porItem: Record<string, BcVariante[]>; disponible: boolean };
+
+// Variantes de una lista de ítems. `disponible=false` significa que algún lote no se
+// pudo consultar: la pantalla NO debe concluir "no tiene variantes" (mismo criterio
+// que bcVariantsEx). Un lote que falla no se reintenta ítem por ítem a propósito:
+// con 100 líneas en pantalla eso serían 100 llamadas a BC justo cuando está mal.
+export async function bcVariantesDeItems(items: string[]): Promise<BcVariantesLote> {
+  // El itemNo de una línea puede traer la variante pegada ("M11-0081 -VAR 12"): BC
+  // solo conoce "M11-0081", así que se pregunta por el código pelado. Es la misma
+  // normalización que hace la clave de los documentos (`claveVariante`), y sin ella
+  // el PDF quedaba sin el nombre justo en las líneas que sí tienen variante.
+  const unicos = [...new Set((items ?? []).map((i) => codigoDeItem(i ?? "")).filter(Boolean))];
+  if (!unicos.length) return { porItem: {}, disponible: true };
+  const porItem: Record<string, BcVariante[]> = {};
+  let disponible = true;
+  for (let i = 0; i < unicos.length; i += LOTE_VARIANTES) {
+    const lote = unicos.slice(i, i + LOTE_VARIANTES);
+    const g = await variantesDeLote(lote);
+    if (!g) { disponible = false; continue; }
+    Object.assign(porItem, g);
+    // Alimenta la caché de "último resultado bueno" que usa bcVariantsEx cuando BC
+    // parpadea: lo que ya se preguntó en lote no hay que volver a preguntarlo suelto.
+    for (const [item, vs] of Object.entries(g)) lastGoodVariants.set(item, { variantes: vs, disponible: true });
+  }
+  return { porItem, disponible };
+}
+
+// Nombre de cada variante, con la clave que usan los documentos ("ITEM|CODE" →
+// "ZAPATO … NO. 42"). Es lo que se imprime al lado del material en el PDF de
+// cotización y en el de la orden.
+export async function bcNombresDeVariante(items: string[]): Promise<Record<string, string>> {
+  const { porItem } = await bcVariantesDeItems(items);
+  const out: Record<string, string> = {};
+  for (const [item, vs] of Object.entries(porItem)) {
+    for (const v of vs) {
+      const code = (v.code ?? "").trim();
+      if (code) out[claveVariante(item, code)] = (v.descripcion ?? "").trim();
+    }
+  }
+  return out;
 }
 
 // Resuelve el código de variante de un item a su itemVariantId (systemId GUID),

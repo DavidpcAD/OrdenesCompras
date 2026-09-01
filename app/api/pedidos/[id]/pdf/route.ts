@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getPedido } from "@/lib/repo";
 import { pedidoAPdf, nombreArchivoPedido } from "@/lib/pedido-pdf";
-import { bcDescripcionUnidades } from "@/lib/bc";
+import { bcDescripcionUnidades, bcNombresDeVariante } from "@/lib/bc";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -25,7 +25,13 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     }
     // Descripciones de unidad desde BC ("ESTAÑON" en vez de "EST"). Si BC no
     // responde, sale el código: el documento no se cae por esto.
-    const pdf = await pedidoAPdf(pedido, await bcDescripcionUnidades().catch(() => ({})));
+    // Y el NOMBRE de la variante de cada línea: "PORCELANATO 60X60CM" no se puede
+    // cotizar sin saber cuál es (ni "VARILLA DEFORME #3" sin el grado).
+    const [unidades, nombresVar] = await Promise.all([
+      bcDescripcionUnidades().catch(() => ({})),
+      bcNombresDeVariante(pedido.lineas.map((l) => l.articuloId ?? "")).catch(() => ({})),
+    ]);
+    const pdf = await pedidoAPdf(pedido, unidades, nombresVar);
     const verEnPantalla = new URL(req.url).searchParams.get("ver") === "1";
     return new NextResponse(pdf as any, {
       headers: {

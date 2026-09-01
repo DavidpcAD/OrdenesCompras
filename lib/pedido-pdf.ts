@@ -1,6 +1,7 @@
 import type { Pedido, PedidoLinea } from "./types";
 import { lineasACotizar, observacionesParaProveedor, destinoCodigo, destinoLabel } from "./helpers";
 import { etiquetaUnidad, fmtDoc } from "./orden-doc";
+import { etiquetaVariante, nombreDeVariante, descripcionParaDocumento } from "./variantes.ts";
 import {
   nuevoDocumento, dibujante, encabezadoMarca, bloqueEmpresa, numerarPaginas, formatearFecha,
   A4, MARGEN, DERECHA, ANCHO_UTIL, ANCHO_UTIL as UTIL, Y_CONTINUACION, GRIS, NEGRO,
@@ -33,7 +34,11 @@ export function nombreArchivoPedido(pedido: Pedido): string {
   return `${num}-solicitud-de-cotizacion.pdf`;
 }
 
-export function pedidoAPdf(pedido: Pedido, unidades: Record<string, string> = {}): Promise<Buffer> {
+// `variantes` = "ITEM|CODE" -> nombre de la variante en BC (lo trae la ruta desde
+// BC). El proveedor NO puede cotizar "PORCELANATO 60X60CM" ni "VARILLA DEFORME #3":
+// el tipo y el grado están en la variante, así que van impresos bajo la descripción.
+// Si BC no contestó, sale el código de variante; si la línea no tiene, no sale nada.
+export function pedidoAPdf(pedido: Pedido, unidades: Record<string, string> = {}, variantes: Record<string, string> = {}): Promise<Buffer> {
   const { doc, listo } = nuevoDocumento(`${pedido.numero} · Solicitud de cotización`);
   const { txt, regla } = dibujante(doc);
   const filas = lineasACotizar(pedido);
@@ -91,7 +96,8 @@ export function pedidoAPdf(pedido: Pedido, unidades: Record<string, string> = {}
     // La descripción COMPLETA, con salto de línea: la medida del material suele
     // estar al final ("CODO 45 PVC PARED DELGADA 3/4"), así que cortarla deja el
     // documento inservible para cotizar.
-    const desc = linea.descripcion || "—";
+    const desc = descripcionParaDocumento(linea.descripcion,
+      etiquetaVariante(linea.variantCode, nombreDeVariante(variantes, linea.articuloId, linea.variantCode)));
     const cod = linea.articuloId || "";
     // El alto de la fila lo manda el que ocupe más: hay códigos con variante
     // ("M08-0123-VAR 02") que no caben en una línea y antes se le montaban encima

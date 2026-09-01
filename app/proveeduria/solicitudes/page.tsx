@@ -9,6 +9,7 @@ import { VistaToggle } from "@/components/vista-toggle";
 import { IconReceipt, IconList } from "@/components/icons";
 import { useStore } from "@/lib/store";
 import { formatDate, pedidoCompraBadge, pedidoOrdenadoPct, ordenesPorPedido, recibidoPorLineaPedido, destinoCodigo, destinoLabel, tipoSolicitudBadge, numeroOrden } from "@/lib/helpers";
+import { useVariantes } from "@/lib/use-variantes";
 import type { Pedido } from "@/lib/types";
 
 type Filtro = "todas" | "pendiente" | "parcial" | "ordenado";
@@ -111,25 +112,41 @@ export default function ProveeduriaSolicitudesPage() {
 
         <div className="mt-6">
           <DataTable data={base} columns={columns} tablaKey="solicitudes-prov" buscarPlaceholder="Buscar por N.º, material u obra…" getRowId={(p) => p.id} onRowClick={(p) => router.push(`/proveeduria/solicitudes/${p.id}`)} vacio="No hay solicitudes que coincidan."
-            renderExpanded={(p) => (
-              <table className="ds-table" style={{ boxShadow: "none", background: "transparent" }}>
-                <thead>
-                  <tr><th>Artículo</th><th>Variante</th><th className="ds-num">Cantidad</th><th>Unidad</th></tr>
-                </thead>
-                <tbody>
-                  {p.lineas.map((l) => (
-                    <tr key={l.id}>
-                      <td>{l.descripcion}</td>
-                      <td className="ds-muted ds-body-sm">{l.variantCode || "—"}</td>
-                      <td className="ds-num">{l.cantidad}</td>
-                      <td className="ds-muted">{l.unidad}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )} />
+            renderExpanded={(p) => <LineasDeSolicitud pedido={p} />} />
         </div>
       </main>
     </>
+  );
+}
+
+// Las líneas de la solicitud desplegada. Es su propio componente para que las
+// variantes se pidan a BC SOLO de la solicitud que se abrió, y no de todas las de
+// la lista (son cientos de materiales).
+function LineasDeSolicitud({ pedido }: { pedido: Pedido }) {
+  const variantes = useVariantes(pedido.lineas.map((l) => l.articuloId));
+  return (
+    <table className="ds-table" style={{ boxShadow: "none", background: "transparent" }}>
+      <thead>
+        <tr><th>Artículo</th><th>Variante</th><th className="ds-num">Cantidad</th><th>Unidad</th></tr>
+      </thead>
+      <tbody>
+        {pedido.lineas.map((l) => (
+          <tr key={l.id}>
+            <td>{l.descripcion}</td>
+            {/* El CÓDIGO de la variante no dice nada ("0042"): al lado va el nombre
+                que tiene en BC, que es lo que distingue el material. */}
+            <td className="ds-body-sm">
+              {l.variantCode
+                ? <span className="ds-muted" title={variantes.etiqueta(l.articuloId, l.variantCode)}>{variantes.etiqueta(l.articuloId, l.variantCode)}</span>
+                : variantes.falta(l.articuloId, l.variantCode)
+                  ? <span className="ds-pending-text" title="El material tiene varias variantes en Business Central y la solicitud no dice cuál.">Sin variante</span>
+                  : <span className="ds-muted">—</span>}
+            </td>
+            <td className="ds-num">{l.cantidad}</td>
+            <td className="ds-muted">{l.unidad}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
   );
 }
