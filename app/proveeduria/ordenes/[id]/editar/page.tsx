@@ -62,6 +62,7 @@ export default function EditarOrdenPage() {
   const [tareasPorObra, setTareasPorObra] = useState<Record<string, Tarea[]>>({});
   // Línea cuyo destino (obra + tarea) se está corrigiendo (null = cerrado).
   const [editObra, setEditObra] = useState<Row | null>(null);
+  const [itemCharges, setItemCharges] = useState<{ no: string; descripcion: string }[]>([]);
   useEffect(() => {
     fetch("/api/bc/vendors").then((r) => (r.ok ? r.json() : { proveedores: [] })).then((d) => { if (Array.isArray(d.proveedores) && d.proveedores.length) setBcProv(d.proveedores); }).catch(() => {});
     // Igual que en compra directa: la unidad que manda es la de COMPRA de BC.
@@ -72,14 +73,26 @@ export default function EditarOrdenPage() {
     // de nuevo, porque acá el destino era solo texto.
     fetch("/api/bc/obras").then((r) => (r.ok ? r.json() : { obras: [] }))
       .then((d) => { if (Array.isArray(d.obras)) setObras(d.obras.map((o: any) => ({ codigo: o.codigo, nombre: o.nombre }))); }).catch(() => {});
+    // Tipos de cargo de producto (Item Charge de BC), los mismos que ofrece compra
+    // directa: sin esto la pantalla solo sabía decir "flete" y no había forma de ver
+    // ni de corregir qué cargo trae la orden.
+    fetch("/api/bc/itemcharges").then((r) => (r.ok ? r.json() : { itemCharges: [] }))
+      .then((d) => { if (Array.isArray(d.itemCharges)) setItemCharges(d.itemCharges); }).catch(() => {});
   }, []);
   const catProv = bcProv ?? proveedores;
   const catAlm = almacenesParaRecepcion(bcAlm ?? almacenes);
 
-  const cargo = orden?.lineas.find((l) => l.tipo === "cargo");
+  // Los cargos de producto de la orden. NO son siempre flete: pueden ser impuestos
+  // de exterior, servicio de corte, etc. — el tipo lo elige quien arma la orden y es
+  // un Item Charge real de BC. Esta pantalla edita EL PRIMERO; si hay más, se
+  // conservan tal cual al guardar (antes se perdían).
+  const cargos = (orden?.lineas ?? []).filter((l) => l.tipo === "cargo");
+  const cargo = cargos[0];
   const [proveedorId, setProveedorId] = useState(orden?.proveedorId ?? "");
   const [currency, setCurrency] = useState(monedaApp(orden?.currencyCode));
   const [flete, setFlete] = useState(cargo ? String(cargo.precioUnitario) : "");
+  const [cargoNo, setCargoNo] = useState(cargo?.chargeNo ?? "");
+  const [cargoDesc, setCargoDesc] = useState(cargo?.descripcion ?? "");
   const [almacen, setAlmacen] = useState(almacenComun(orden?.lineas ?? []));
   const [observaciones, setObservaciones] = useState(orden?.observaciones ?? "");
   const [notaInterna, setNotaInterna] = useState(orden?.notaInterna ?? "");
@@ -101,6 +114,8 @@ export default function EditarOrdenPage() {
     setNotaInterna(orden.notaInterna ?? "");
     const cg = orden.lineas.find((l) => l.tipo === "cargo");
     setFlete(cg ? String(cg.precioUnitario) : "");
+    setCargoNo(cg?.chargeNo ?? "");
+    setCargoDesc(cg?.descripcion ?? "");
     setRows(filasDeOrden(orden.lineas));
   }, [orden]);
   const [qaCode, setQaCode] = useState(""); const [qaQty, setQaQty] = useState(""); const [qaPrecio, setQaPrecio] = useState("");
@@ -296,6 +311,13 @@ export default function EditarOrdenPage() {
 
   async function guardar() {
     if (!proveedorId) { toast("Seleccioná un proveedor.", "error"); return; }
+    // Un cargo SIN tipo lo rechaza BC (necesita un Item Charge real): la línea se
+    // cae al reescribir el pedido y el aviso llega después, con la orden ya guardada.
+    // Mejor cortarlo acá — es la misma regla que ya exige compra directa.
+    if (fleteNum > 0 && !cargoNo) {
+      toast("Elegí el tipo del cargo de producto (flete, impuestos de exterior, etc.): sin tipo Business Central no lo acepta.", "error");
+      return;
+    }
     // Sin resolver contra el catálogo no se sabe el nombre: guardar borraría el que
     // la orden ya tenía. Mejor frenar y pedir que lo elija.
     if (!provSel) { toast("No se pudo resolver el proveedor de la orden contra el catálogo de BC. Elegilo de nuevo en el campo Proveedor.", "error"); return; }
@@ -348,14 +370,25 @@ export default function EditarOrdenPage() {
       if (fleteNum > 0) {
         ls.push({
           tipo: "cargo",
-          chargeNo: cargo?.chargeNo,
+          chargeNo: cargoNo || cargo?.chargeNo,
           chargeMethod: cargo?.chargeMethod,
-          descripcion: cargo?.descripcion || "FLETE / TRANSPORTE",
+          descripcion: cargoDesc || cargo?.descripcion || "CARGO",
           cantidad: cargo?.cantidad && cargo.cantidad > 0 ? cargo.cantidad : 1,
           unidad: cargo?.unidad || "UND",
           almacen: almacen || cargo?.almacen || rows[0]?.almacen || "",
           precioUnitario: fleteNum,
           ivaPct: cargo?.ivaPct ?? 13,
+        });
+      }
+      // Cargos del 2.º en adelante: esta pantalla solo edita el primero, así que los
+      // demás se reemiten TAL CUAL. Antes se caían al guardar sin decir nada, porque
+      // el payload se armaba con un solo cargo.
+      for (const c of cargos.slice(1)) {
+        ls.push({
+          tipo: "cargo", chargeNo: c.chargeNo, chargeMethod: c.chargeMethod,
+          descripcion: c.descripcion, cantidad: c.cantidad > 0 ? c.cantidad : 1,
+          unidad: c.unidad || "UND", almacen: almacen || c.almacen || "",
+          precioUnitario: c.precioUnitario, ivaPct: c.ivaPct ?? 13,
         });
       }
       const r = await updateOrden(orden!.id, { proveedorId, proveedorNo: provSel?.code, proveedorNombre: provSel?.nombre, currencyCode: currency, almacenRecepcion: almacen || undefined, observaciones: observaciones.trim() || undefined, notaInterna: notaInterna.trim() || undefined, lineas: ls });
@@ -388,7 +421,33 @@ export default function EditarOrdenPage() {
             <Field label="Moneda">
               <Select value={currency} onChange={(e) => setCurrency(e.target.value)}><option value="">CRC (colones)</option><option value="USD">USD (dólares)</option></Select>
             </Field>
-            <Field label="Flete / transporte" help="Opcional, se distribuye al facturar">
+            {/* NO es "el flete": es el cargo de producto que traiga la orden, que
+                puede ser impuestos de exterior, servicio de corte u otro. Antes esto
+                era un campo llamado "Flete / transporte" que mostraba el monto de
+                CUALQUIER cargo, así que una orden con Impuestos Exterior se leía como
+                si alguien le hubiera puesto un flete que nadie puso — y el tipo no se
+                veía ni se podía cambiar (Proveeduría, CP-005254). */}
+            <Field label="Cargo de producto" help={cargo ? "El que ya trae la orden. Se distribuye entre las líneas al facturar." : "Opcional (flete, impuestos de exterior, etc.). Se distribuye al facturar."}>
+              <Select value={cargoNo} onChange={(e) => {
+                const no = e.target.value;
+                const ic = itemCharges.find((x) => x.no === no);
+                setCargoNo(no);
+                // La descripción sigue al tipo, salvo que el usuario ya tenga una
+                // propia que no sea el viejo texto por defecto.
+                if (ic) setCargoDesc(ic.descripcion);
+              }}>
+                <option value="">— Sin cargo —</option>
+                {/* El tipo que ya trae la orden se ofrece aunque el catálogo de BC no
+                    haya cargado (o ya no lo tenga): si no, guardar lo borraría. */}
+                {cargo?.chargeNo && !itemCharges.some((ic) => ic.no === cargo.chargeNo) && (
+                  <option value={cargo.chargeNo}>{cargo.chargeNo} · {cargo.descripcion ?? ""}</option>
+                )}
+                {itemCharges.map((ic) => <option key={ic.no} value={ic.no}>{ic.no} · {ic.descripcion}</option>)}
+              </Select>
+            </Field>
+            <Field label={`Monto del cargo${cargoDesc ? ` · ${cargoDesc}` : ""}`}
+              help={cargos.length > 1 ? `OJO: esta orden tiene ${cargos.length} cargos. Acá se edita el primero; los otros se conservan como están.` : undefined}
+              warning={cargos.length > 1}>
               <Input type="number" min={0} value={flete} onChange={(e) => setFlete(e.target.value)} placeholder="0" />
             </Field>
             <Field label="Almacén / centro de costo de recepción"
