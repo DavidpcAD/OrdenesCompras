@@ -261,6 +261,12 @@ export function pedidoLineaPendiente(l: PedidoLinea): number {
 // `pendiente: null` significa que NO se puede comparar: alguna fila cambió la unidad
 // de compra (la solicitud pidió 255.000 GR y se compra 1 ESTAÑON), y sumar gramos
 // contra estañones daría un falso "se pasó del pendiente".
+//
+// OJO: pasarse del pendiente se AVISA, no se prohíbe. El proveedor de granel entrega
+// lo que le cabe a la góndola (se pidieron 25.000 KG de cemento y Holcim descargó
+// 27.100) y la orden tiene que reflejar lo que va a llegar, o Bodega no lo puede
+// recibir ni Contabilidad calzar la factura. Frenarlo dejó a Proveeduría sin poder
+// corregir una orden real el 1 sep 2026.
 export function repartoDeLineaSolicitud(
   filas: { cantidad: string | number; unidad: string }[],
   linea: PedidoLinea | null | undefined,

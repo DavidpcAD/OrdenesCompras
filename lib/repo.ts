@@ -1341,6 +1341,35 @@ export async function setOrdenEstado(id: number, estado: string, usuario: string
   await tx.commit();
 }
 
+// Re-apuntar la orden a OTRO pedido de Business Central. No toca el estado ni las
+// líneas: cambia el único dato con el que Bodega recibe y Contabilidad factura.
+//
+// Hace falta porque en BC un pedido no se corrige, se borra y se crea otro. Sin esto
+// la orden queda amarrada de por vida al número viejo: reenviarla a aprobación solo
+// reescribe las líneas del pedido que ya no existe, y descartarla está prohibido
+// justamente por tener bcNo. El número VIEJO queda en la bitácora: dentro de tres
+// meses, cuando las fechas no calcen, esa línea es la única explicación.
+export async function setOrdenBcNumber(
+  id: number, bcNo: string, usuario: string, rol: Role, motivo?: string, anterior?: string,
+) {
+  const pool = await getPool();
+  const prev = await pool.request().input("id", sql.Int, id)
+    .query("SELECT ordenNo, bcNo FROM dbo.OrdenCompra WHERE idOrdenCompra=@id AND esEliminada=0");
+  if (!prev.recordset.length) throw new Error("Orden no encontrada.");
+  const viejo = String(anterior ?? prev.recordset[0].bcNo ?? "").trim();
+  await pool.request()
+    .input("id", sql.Int, id).input("bcno", sql.NVarChar(20), bcNo).input("u", sql.NVarChar(100), usuario)
+    .query("UPDATE dbo.OrdenCompra SET bcNo=@bcno, syncedToBc=1, fechaModificacion=getdate(), modificadoPor=@u WHERE idOrdenCompra=@id");
+  const tx = new sql.Transaction(pool); await tx.begin();
+  await logMov(tx, {
+    entidad: "orden", idEntidad: id, documentoNo: prev.recordset[0]?.ordenNo ?? "",
+    tipoMovimiento: "bc_renumerado",
+    detalle: [`N.º de Business Central: ${viejo || "(ninguno)"} → ${bcNo}`, motivo ? `Motivo: ${motivo}` : ""].filter(Boolean).join(" · "),
+    usuario, rol,
+  });
+  await tx.commit();
+}
+
 // ----------------------------------------------------------------- RECEPCIONES
 export interface NewRecepcionDB {
   idOrdenCompra: number; numeroFactura: string; fechaFactura: string; fechaRecepcion: string; fechaRegistro: string;

@@ -1420,6 +1420,22 @@ export function lineasSinUnidad(lineas: LineaReplaceBc[]): string[] {
     .map((l) => `${l.descripcion || l.itemNo || "línea"}`);
 }
 
+// Líneas de artículo SIN almacén (locationCode). Es el único de los tres que BC NO
+// castiga: el pedido se crea, se lanza y se registra igual, y el material no entra a
+// ningún lado. Nadie se entera hasta que alguien busca el stock y no está — o hasta
+// que Proveeduría tiene que arreglarlo en BC, y lo arregla BORRANDO el pedido y
+// creando otro. Ahí la orden de la app queda apuntando a un número que ya no existe
+// y no hay cómo re-apuntarla (CP-004719 → CP-005200, ago 2026).
+//
+// Se corre sobre el resultado de `lineasOrdenParaBc`, o sea con el default de
+// BC_RECEPCION_LOCATION YA aplicado: si igual llega vacío es que no hay a dónde caer,
+// ni en la línea ni en la configuración. Ahí no se manda nada a BC. (Cubierto por tests.)
+export function lineasSinAlmacen(lineas: LineaReplaceBc[]): string[] {
+  return (lineas ?? [])
+    .filter((l) => l.tipo !== "cargo" && (l.itemNo ?? "").trim() && !(l.locationCode ?? "").trim())
+    .map((l) => `${l.descripcion || l.itemNo || "línea"}`);
+}
+
 // Ítems que EXIGEN variante y cuya línea viene sin ella. BC solo lo dice al LANZAR
 // ("Variant Code must have a value"), igual que la unidad y la tarea, así que el
 // error le cae al aprobador y no a quien puede arreglarlo.

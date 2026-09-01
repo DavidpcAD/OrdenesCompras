@@ -112,6 +112,10 @@ interface StoreShape {
   // debe des-lanzar el pedido en BC. "Cancelar envío" NO lo manda: ahí BC no tiene
   // nada lanzado que tocar.
   setOrdenEstado: (id: string, estado: Orden["estado"], extra?: { bcNumber?: string; bcDeepLink?: string; reabrirBc?: boolean }) => Promise<{ bcAviso?: string }>;
+  // Apuntar la orden a OTRO pedido de Business Central. En BC un pedido no se
+  // corrige: se borra y se crea otro, y la orden se queda hablando con un número que
+  // ya no existe. El servidor verifica que el nuevo exista antes de guardarlo.
+  corregirBcNumber: (id: string, bcNumber: string, motivo: string) => Promise<{ bcAviso?: string }>;
 
   // Cerrar una orden LANZADA que ya no va a recibir el resto del material. Con
   // `devolverSaldo` (default true) lo no recibido vuelve a las solicitudes para
@@ -588,6 +592,24 @@ export function StoreProvider({ children, useApi }: { children: React.ReactNode;
       return {};
     };
 
+    const corregirBcNumber: StoreShape["corregirBcNumber"] = async (id, bcNumber, motivo) => {
+      const nuevo = bcNumber.trim().toUpperCase();
+      if (USE_API) {
+        const r = await api.corregirBcNumber(id, { corregirBcNumber: nuevo, motivo, usuario: persona, rol: rolActual });
+        await refreshFromApi();
+        return { bcAviso: r?.bcAviso };
+      }
+      setData((d) => {
+        const prevo = d.ordenes.find((o) => o.id === id);
+        const mov = mkMov({
+          entidad: "orden", idEntidad: id, documentoNo: prevo?.numero ?? "", tipoMovimiento: "bc_renumerado",
+          detalle: `N.º de Business Central: ${prevo?.bcNumber || "(ninguno)"} → ${nuevo}${motivo ? ` · Motivo: ${motivo}` : ""}`,
+        });
+        return { ...d, ordenes: d.ordenes.map((o) => (o.id === id ? { ...o, bcNumber: nuevo } : o)), movimientos: [mov, ...d.movimientos] };
+      });
+      return {};
+    };
+
     // ---------------- CERRAR ORDEN / PASAR EL PENDIENTE ----------------
     // Descartar el BORRADOR de una orden. Existe porque crear la orden ya consume el
     // saldo de la solicitud: sin esto, una orden armada por error dejaba ese material
@@ -965,7 +987,7 @@ export function StoreProvider({ children, useApi }: { children: React.ReactNode;
       maquinas: seed.maquinas, almacenes: seed.almacenes,
       pedidos: data.pedidos, ordenes: data.ordenes, recepciones: data.recepciones, movimientos: data.movimientos,
       addPedido, editPedido, setPedidoEstado, deletePedido,
-      createOrden, updateOrden, setOrdenEstado, cerrarOrden, descartarOrden, nuevaOrdenConPendiente, registrarRecepcion, guardarFotosRecepcion, facturarRecepcion, devolverPedido, devolverLineasOrden, devolverOrden, reset,
+      createOrden, updateOrden, setOrdenEstado, corregirBcNumber, cerrarOrden, descartarOrden, nuevaOrdenConPendiente, registrarRecepcion, guardarFotosRecepcion, facturarRecepcion, devolverPedido, devolverLineasOrden, devolverOrden, reset,
       notasCredito, marcarNotasCredito, cargarNotasCredito, resolverNotaCredito,
       notificaciones: data.notificaciones, marcarNotifsLeidas, marcarNotifLeida,
       borrador, setBorrador,

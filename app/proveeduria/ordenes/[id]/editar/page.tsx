@@ -335,16 +335,9 @@ export default function EditarOrdenPage() {
     // Variante sin elegir: mismo criterio que la tarea. Solo se exige cuando el
     // catálogo de variantes ya cargó y ofrece más de una.
     if (sinVariante.length) { toast(`Elegí la variante de "${sinVariante[0].descripcion}": sin ella Business Central no puede lanzar el pedido.`, "error"); return; }
-    // Una línea de solicitud partida en varias filas no puede sumar MÁS de lo que se
-    // pidió (contando lo que esta orden ya le tenía tomado).
-    for (const idLinea of new Set(rows.map((r) => r.pedidoLineaId).filter(Boolean))) {
-      const { total, pendiente, unidad } = repartoDe(idLinea);
-      if (pendiente != null && total > pendiente + 1e-9) {
-        const desc = filasDe(idLinea)[0]?.descripcion ?? "";
-        toast(`"${desc}": entre las filas se piden ${num.format(total)} ${unidad} y la solicitud tiene ${num.format(pendiente)} ${unidad} pendiente(s).`, "error");
-        return;
-      }
-    }
+    // Ordenar MÁS de lo solicitado NO se frena: es el caso real de "entregaron más"
+    // (granel), y la orden tiene que reflejar lo que llegó para poder recibirlo y
+    // facturarlo. El exceso se muestra en la fila; la decisión es de quien compra.
     setGuardando(true);
     try {
       const ls: Omit<OrdenLinea, "id" | "cantidadRecibida" | "cantidadFacturada">[] = rows.map((r) => ({
@@ -559,15 +552,19 @@ export default function EditarOrdenPage() {
                           )}
                         </div>
                       )}
-                      {/* Cómo va el reparto de la línea partida. */}
-                      {filasDe(r.pedidoLineaId).length > 1 && (() => {
+                      {/* El reparto de la línea partida, y el exceso cuando se ordena
+                          más de lo solicitado (que se puede: entregaron más). */}
+                      {(() => {
                         const { total, pendiente, unidad } = repartoDe(r.pedidoLineaId);
                         if (pendiente == null) return null;
-                        const exceso = total > pendiente + 1e-9;
+                        const exceso = total - pendiente;
+                        const partida = filasDe(r.pedidoLineaId).length > 1;
+                        if (exceso <= 1e-9 && !partida) return null;
                         return (
-                          <div className={`ds-body-sm ${exceso ? "ds-pending-text" : "ds-muted"}`} style={{ marginTop: 2 }}>
-                            Repartido {num.format(total)} de {num.format(pendiente)} {unidad}
-                            {exceso ? " · se pasa de lo solicitado" : ""}
+                          <div className={`ds-body-sm ${exceso > 1e-9 ? "ds-pending-text" : "ds-muted"}`} style={{ marginTop: 2 }}>
+                            {exceso > 1e-9
+                              ? `${num.format(total)} ${unidad} · ${num.format(exceso)} más de lo solicitado (${num.format(pendiente)})`
+                              : `Repartido ${num.format(total)} de ${num.format(pendiente)} ${unidad}`}
                           </div>
                         );
                       })()}

@@ -110,6 +110,17 @@ test("repartoDeLineaSolicitud: cantidades vacías o con texto valen 0, no NaN", 
   assert.equal(r.total, 0);
 });
 
+// Pasarse de lo solicitado es LEGÍTIMO (entregaron más de lo pedido): la función lo
+// informa —total > pendiente— y la pantalla lo muestra; nadie lo bloquea. Frenarlo
+// dejó a Proveeduría sin poder corregir una orden real de cemento el 1 sep 2026.
+test("repartoDeLineaSolicitud: ordenar de más se informa, no es un error", () => {
+  const cemento = linea({ id: "l9", descripcion: "CEMENTO INDUSTRIAL", unidad: "KG", cantidad: 25000 });
+  const r = repartoDeLineaSolicitud([{ cantidad: "27100", unidad: "KG" }], cemento);
+  assert.equal(r.total, 27100);
+  assert.equal(r.pendiente, 25000);
+  assert.equal(r.total - (r.pendiente ?? 0), 2100);
+});
+
 test("repartoDeLineaSolicitud: en otra unidad de compra NO compara (255.000 GR = 1 EST)", () => {
   // La solicitud pidió gramos y Proveeduría compra por estañón: comparar 1 contra
   // 255.000 diría "se pasó" o "falta" según el lado, y las dos cosas serían falsas.

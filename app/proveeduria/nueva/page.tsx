@@ -472,17 +472,12 @@ export default function ArmarOrdenPage() {
     if (malPrecio) {
       toast(`El precio de "${malPrecio.descripcion}" no es un número válido.`, "error"); return;
     }
-    // Una línea de solicitud partida en varias filas (una por variante) no puede
-    // sumar MÁS de lo que se pidió: si no, partir por talla se vuelve comprar el
-    // doble y el saldo de la solicitud queda consumido de más.
-    for (const idLinea of new Set(rows.map((r) => r.pedidoLineaId))) {
-      const { total, pendiente, unidad } = repartoDe(idLinea);
-      if (pendiente != null && total > pendiente + 1e-9) {
-        const desc = filasDe(idLinea)[0]?.descripcion ?? "";
-        toast(`"${desc}": entre las filas se piden ${num.format(total)} ${unidad} y la solicitud tiene ${num.format(pendiente)} ${unidad} pendiente(s).`, "error");
-        return;
-      }
-    }
+    // Pedir MÁS de lo solicitado NO se frena: pasa de verdad y es legítimo. El
+    // proveedor de granel entrega lo que le cabe a la góndola (se pidieron 25.000 KG
+    // de cemento y Holcim descargó 27.100), y la orden tiene que reflejar lo que va a
+    // llegar para que Bodega pueda recibirlo y Contabilidad calce la factura. Lo que
+    // corresponde es DECIRLO —el exceso se ve en la fila, ver `repartoDe`— no impedirlo.
+    // (El modelo lo tolera desde siempre: el % ordenado de la solicitud topa en 100.)
     // Precio obligatorio para enviar a aprobación: ninguna línea puede ir a BC en 0.
     if (aprobar) {
       const sinPrecio = rows.filter((r) => !(Number(r.precio) > 0)).length;
@@ -498,16 +493,21 @@ export default function ArmarOrdenPage() {
     }
     setGuardando(true);
     try {
+    // El almacén de cada línea es el que puso quien pidió el material. Cuando la
+    // solicitud vino SIN almacén, cae al que está elegido arriba en vez de viajar
+    // vacío: sin locationCode BC crea y lanza el pedido igual y el material no entra a
+    // ningún lado — y eso termina con Proveeduría rehaciendo el pedido allá, que es
+    // lo que deja la orden huérfana (CP-004719, ago 2026).
     const ls: Omit<OrdenLinea, "id" | "cantidadRecibida" | "cantidadFacturada">[] = rows.map((r) => ({
       tipo: "articulo", articuloId: r.articuloId, variantCode: r.variantCode || undefined, pedidoLineaId: r.pedidoLineaId, pedidoNumero: r.pedidoNumero,
-      descripcion: r.descripcion, cantidad: Number(r.cantidad), unidad: r.unidad, almacen: r.almacen,
+      descripcion: r.descripcion, cantidad: Number(r.cantidad), unidad: r.unidad, almacen: r.almacen || almacen,
       precioUnitario: Number(r.precio), ivaPct: Number(r.iva) || 0, descuentoPct: Number(r.descuento) || 0,
       proyecto: r.proyecto || undefined, taskNo: r.tarea || undefined,
     }));
     for (const c of cargos) {
       if (cargoImporte(c) <= 0) continue;
       ls.push({ tipo: "cargo", chargeNo: c.chargeNo || undefined, chargeMethod: metodoAsig, descripcion: c.descripcion || "CARGO",
-        cantidad: Number(c.cantidad) || 1, unidad: "UND", almacen: rows[0].almacen,
+        cantidad: Number(c.cantidad) || 1, unidad: "UND", almacen: rows[0].almacen || almacen,
         precioUnitario: Number(c.precio) || 0, ivaPct: Number(c.iva) || 0 });
     }
     const orden = await createOrden({ proveedorId, proveedorNo: provSel?.code, proveedorNombre: provSel?.nombre, currencyCode: currency, almacenRecepcion: almacen, observaciones: observaciones.trim() || undefined, notaInterna: notaInterna.trim() || undefined, lineas: ls });
@@ -731,16 +731,20 @@ export default function ArmarOrdenPage() {
                           </button>
                         </div>
                       )}
-                      {/* Cómo va el reparto de la línea partida. Sin esto no se ve si
-                          las tallas suman lo que se pidió, o si se pasaron. */}
-                      {filasDe(r.pedidoLineaId).length > 1 && (() => {
+                      {/* Cómo va la línea contra lo que se pidió: el reparto cuando
+                          está partida por variante, y el exceso cuando se ordena más
+                          (que se puede: el proveedor de granel entrega de más). */}
+                      {(() => {
                         const { total, pendiente, unidad } = repartoDe(r.pedidoLineaId);
                         if (pendiente == null) return null;
-                        const exceso = total > pendiente + 1e-9;
+                        const exceso = total - pendiente;
+                        const partida = filasDe(r.pedidoLineaId).length > 1;
+                        if (exceso <= 1e-9 && !partida) return null;
                         return (
-                          <div className={`ds-body-sm ${exceso ? "ds-pending-text" : "ds-muted"}`} style={{ marginTop: 2 }}>
-                            Repartido {num.format(total)} de {num.format(pendiente)} {unidad}
-                            {exceso ? " · se pasa de lo solicitado" : ""}
+                          <div className={`ds-body-sm ${exceso > 1e-9 ? "ds-pending-text" : "ds-muted"}`} style={{ marginTop: 2 }}>
+                            {exceso > 1e-9
+                              ? `${num.format(total)} ${unidad} · ${num.format(exceso)} más de lo solicitado (${num.format(pendiente)})`
+                              : `Repartido ${num.format(total)} de ${num.format(pendiente)} ${unidad}`}
                           </div>
                         );
                       })()}

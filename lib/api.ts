@@ -76,6 +76,10 @@ export const api = {
   getOrden: (id: string): Promise<Orden> => fetch(`/api/ordenes/${id}`).then(jsonOrThrow),
   patchOrdenEstado: (id: string, body: unknown) =>
     fetch(`/api/ordenes/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }).then(jsonOrThrow),
+  // Re-apuntar la orden a otro pedido de BC (allá un pedido se "corrige" borrándolo
+  // y creando otro, y la orden se queda hablando con un número que ya no existe).
+  corregirBcNumber: (id: string, body: unknown): Promise<{ bcAviso?: string }> =>
+    fetch(`/api/ordenes/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }).then(jsonOrThrow),
   cerrarOrden: (id: string, body: unknown) =>
     fetch(`/api/ordenes/${id}/cerrar`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }).then(jsonOrThrow),
   nuevaOrdenConPendiente: (id: string, body: unknown) =>

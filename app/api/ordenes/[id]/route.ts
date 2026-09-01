@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import { getOrden, setOrdenEstado, updateOrden, descartarOrden, ordenTieneRecepciones, obrasDeLineasPedido, MSG_NO_REABRIR } from "@/lib/repo";
-import { bcReopenPedido, bcReplaceOrderLines, bcCrearPedidoAbierto, crearEnBcAlEnviar, lineasOrdenParaBc, obrasSinTarea, lineasSinUnidad, resolverVariantesRequeridas, sanearObrasDeLineas, avisoDeSaneo, bcOrdenTotales } from "@/lib/bc";
+import { getOrden, setOrdenEstado, setOrdenBcNumber, updateOrden, descartarOrden, ordenTieneRecepciones, obrasDeLineasPedido, MSG_NO_REABRIR } from "@/lib/repo";
+import { bcReopenPedido, bcReplaceOrderLines, bcCrearPedidoAbierto, crearEnBcAlEnviar, lineasOrdenParaBc, obrasSinTarea, lineasSinUnidad, lineasSinAlmacen, resolverVariantesRequeridas, sanearObrasDeLineas, avisoDeSaneo, bcOrdenTotales, bcEstadoDelPedido } from "@/lib/bc";
 import { ordenLineaImporte } from "@/lib/helpers";
 import { actor } from "@/lib/actor";
 
@@ -23,6 +23,38 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     const { estado, motivo, bcNumber, reabrirBc } = body;
     const a = await actor(body);   // identidad de la sesión, no del body
     const id = Number(params.id);
+
+    // CORREGIR el N.º de Business Central de la orden. Existe porque en BC un pedido
+    // no se "corrige": se BORRA y se crea otro. Cuando eso pasa, la orden de la app
+    // se queda apuntando a un número que ya no existe y no había forma de moverla —
+    // reenviar a aprobación con bcNo puesto solo reescribe las líneas del pedido viejo,
+    // y descartar está bloqueado justamente por tener bcNo. La orden quedaba trabada
+    // para siempre y Bodega registrando contra una pared. Caso real: CP-005148.
+    const nuevoBc = String(body?.corregirBcNumber ?? "").trim().toUpperCase();
+    if (nuevoBc) {
+      const o = await getOrden(id);
+      if (!o) return NextResponse.json({ error: "no encontrada" }, { status: 404 });
+      if (nuevoBc === (o.bcNumber ?? "").trim().toUpperCase()) {
+        return NextResponse.json({ error: `La orden ya apunta a ${nuevoBc}.` }, { status: 409 });
+      }
+      // El número nuevo TIENE que existir en BC. Escribir uno que no existe es repetir
+      // el problema con otro número: Bodega no se entera hasta que va a registrar.
+      const estadoBc = await bcEstadoDelPedido(nuevoBc);
+      if (estadoBc === "no-existe") {
+        return NextResponse.json({
+          error: `Business Central no tiene ningún pedido de compra ${nuevoBc}. Confirmá el número con Proveeduría antes de apuntarle la orden.`,
+        }, { status: 409 });
+      }
+      await setOrdenBcNumber(id, nuevoBc, a.usuario, a.rol, String(body?.motivo ?? "").trim(), o.bcNumber);
+      return NextResponse.json({
+        ok: true,
+        // BC caído no frena la corrección (si no, una orden trabada se queda trabada
+        // por un endpoint lento), pero no se puede dar por verificado lo que no se vio.
+        bcAviso: estadoBc === "sin-respuesta"
+          ? `La orden ya apunta a ${nuevoBc}, pero Business Central no contestó y NO se pudo verificar que ese pedido exista. Confirmalo antes de recibir contra esta orden.`
+          : undefined,
+      });
+    }
 
     // REABRIR: la orden vuelve a "Abierto" acá Y el pedido se des-lanza en BC. Si no,
     // en BC queda Lanzado y no se puede editar ni re-sincronizar antes de volver a
@@ -81,6 +113,16 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
       if (sinUnidad.length) {
         return NextResponse.json({
           error: `La orden NO se envió a aprobación: ${sinUnidad.length} línea(s) no tienen unidad de compra — ${sinUnidad.join("; ")}. Business Central no puede lanzar un pedido con una línea sin unidad: editá la orden, elegí la unidad y reintentá.`,
+        }, { status: 409 });
+      }
+      // Sin almacén el pedido se crea y se lanza igual, y el material no entra a
+      // ningún lado: BC no dice una palabra. Es el error que después obliga a
+      // Proveeduría a REHACER el pedido en BC — y rehacerlo es lo que deja huérfana a
+      // la orden de la app. Por eso se corta acá, que es donde todavía es gratis.
+      const sinAlmacen = lineasSinAlmacen(lineasBc);
+      if (sinAlmacen.length) {
+        return NextResponse.json({
+          error: `La orden NO se envió a aprobación: ${sinAlmacen.length} línea(s) no tienen almacén — ${sinAlmacen.join("; ")}. Sin almacén el material no entra a ningún lado en Business Central (el pedido se lanza igual y el stock nunca sube). Editá la orden, elegí el almacén de recepción y reintentá.`,
         }, { status: 409 });
       }
       // Variante: la que se puede deducir (el ítem tiene una sola) se pone acá; la

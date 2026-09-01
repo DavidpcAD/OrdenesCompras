@@ -34,6 +34,7 @@ const LABEL: Record<string, string> = {
   recepcion_parcial: "Recepción parcial",
   recepcion_total: "Recepción total",
   eliminado: "Eliminado",
+  bc_renumerado: "N.º de Business Central corregido",
 };
 
 // Etiqueta contextual: el mismo tipo de movimiento se lee distinto según
@@ -69,6 +70,7 @@ function colorPunto(m: Movimiento): string {
       case "completado": return "var(--ds-color-green-200)"; // recibido total / completado · verde fuerte
       case "rechazado": return "var(--ds-color-red-200)";    // rechazada · rojo
       case "cerrado": return "var(--ds-color-gray-400)";     // cerrada a mano · neutral
+      case "bc_renumerado": return "var(--ds-color-yellow)";  // se re-apuntó a otro pedido de BC
       case "eliminado": return "var(--ds-color-red-100)";
     }
   }

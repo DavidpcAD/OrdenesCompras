@@ -6,7 +6,7 @@
 //   npm test
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { payloadReplaceLines, sinObrasInexistentes, avisoDeSaneo, lineasOrdenParaBc, obrasSinTarea, lineasSinUnidad, centroCostoDeOrden, centroCostoDeLinea, decidirVariantes, crearEnBcAlEnviar, bcPideAbierto, type LineaReplaceBc } from "./bc.ts";
+import { payloadReplaceLines, sinObrasInexistentes, avisoDeSaneo, lineasOrdenParaBc, obrasSinTarea, lineasSinUnidad, lineasSinAlmacen, centroCostoDeOrden, centroCostoDeLinea, decidirVariantes, crearEnBcAlEnviar, bcPideAbierto, type LineaReplaceBc } from "./bc.ts";
 import type { OrdenLinea } from "./types.ts";
 
 const item = (p: Partial<LineaReplaceBc> = {}): LineaReplaceBc => ({
@@ -271,6 +271,23 @@ test("una línea de artículo sin unidad se detecta antes de mandar nada a BC", 
 
 test("el cargo no cuenta: un Item Charge no lleva unidad de medida", () => {
   assert.deepEqual(lineasSinUnidad([{ tipo: "cargo", chargeNo: "TRANSPORTE", cantidad: 1, precio: 5000 }]), []);
+});
+
+// ---- línea sin almacén ---------------------------------------------------------
+// El único de los tres que BC no castiga: crea el pedido, lo lanza y el material no
+// entra a ningún lado. Se descubre semanas después, y se "arregla" rehaciendo el
+// pedido en BC — que es lo que deja la orden de la app apuntando a un número muerto.
+test("una línea de artículo sin almacén se detecta antes de mandar nada a BC", () => {
+  const malas = lineasSinAlmacen([
+    item({ locationCode: "VN-L.30" }),
+    item({ locationCode: "", descripcion: "INODORO ONE PIECE" }),
+    item({ locationCode: "   ", descripcion: "LAVAMANOS PEDESTAL" }),
+  ]);
+  assert.deepEqual(malas, ["INODORO ONE PIECE", "LAVAMANOS PEDESTAL"]);
+});
+
+test("el cargo no cuenta: un Item Charge no entra a ningún almacén", () => {
+  assert.deepEqual(lineasSinAlmacen([{ tipo: "cargo", chargeNo: "TRANSPORTE", cantidad: 1, precio: 5000 }]), []);
 });
 
 // ---- Centro de Costo del encabezado -------------------------------------------

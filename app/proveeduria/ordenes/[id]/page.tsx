@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { Button, Checkbox, EmptyState, Field, Modal, Select, Skeleton, Textarea, useToast } from "@/components/ui";
+import { Button, Checkbox, EmptyState, Field, Input, Modal, Select, Skeleton, Textarea, useToast } from "@/components/ui";
 import { IconWarning } from "@/components/icons";
 import { OrdenDetalle } from "@/components/orden-detalle";
 import { useStore } from "@/lib/store";
@@ -12,7 +12,7 @@ export default function ProvOrdenDetallePage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
   const toast = useToast();
-  const { ordenes, pedidos, recepciones, setOrdenEstado, cerrarOrden, descartarOrden, devolverLineasOrden, nuevaOrdenConPendiente, cargando } = useStore();
+  const { ordenes, pedidos, recepciones, setOrdenEstado, corregirBcNumber, cerrarOrden, descartarOrden, devolverLineasOrden, nuevaOrdenConPendiente, cargando } = useStore();
   const [procesando, setProcesando] = useState(false);
   // Aviso de BC que NO se puede perder (el toast se desvanece y el usuario se queda
   // creyendo que el pedido en BC también se reabrió).
@@ -31,6 +31,12 @@ export default function ProvOrdenDetallePage() {
   const [devolviendo, setDevolviendo] = useState(false);
   const [motivoDev, setMotivoDev] = useState("");
   const [selDev, setSelDev] = useState<Record<string, boolean>>({});
+  // Apuntar la orden a otro pedido de BC. Allá un pedido no se corrige: se borra y se
+  // crea otro, y la orden se queda hablando con un número que ya no existe (Bodega
+  // registra y BC contesta "pedido no encontrado", una y otra vez).
+  const [renumerando, setRenumerando] = useState(false);
+  const [nuevoBc, setNuevoBc] = useState("");
+  const [motivoBc, setMotivoBc] = useState("");
   const [motivo, setMotivo] = useState("");
   const [nota, setNota] = useState("");
   const [devolver, setDevolver] = useState(true);
@@ -168,6 +174,25 @@ export default function ProvOrdenDetallePage() {
     }
   }
 
+  async function confirmarRenumerado() {
+    const nuevo = nuevoBc.trim().toUpperCase();
+    if (!nuevo) { toast("Escribí el N.º del pedido en Business Central.", "error"); return; }
+    if (procesando) return;
+    setProcesando(true);
+    try {
+      const r = await corregirBcNumber(orden!.id, nuevo, motivoBc.trim());
+      setRenumerando(false);
+      if (r?.bcAviso) { setAvisoBc(r.bcAviso); toast(r.bcAviso, "info"); }
+      else { setAvisoBc(null); toast(`${numeroOrden(orden!)} ahora apunta a ${nuevo} en Business Central`, "success"); }
+    } catch (e: any) {
+      // El servidor verifica contra BC que el pedido exista: ese "no" es información,
+      // no una falla, y tiene que leerse completo (dice qué confirmar y con quién).
+      toast(String(e?.message ?? e), "error");
+    } finally {
+      setProcesando(false);
+    }
+  }
+
   const acciones = (
     <>
       {orden.estado === "abierto" && (
@@ -233,6 +258,16 @@ export default function ProvOrdenDetallePage() {
           Cerrar orden
         </Button>
       )}
+      {/* Re-apuntar a otro pedido de BC. Se ofrece siempre que la orden viva allá:
+          el caso típico es que Proveeduría haya borrado el pedido y creado otro, y
+          hasta ahora eso dejaba la orden trabada sin ninguna salida por pantalla. */}
+      {orden.bcNumber && (
+        <Button variant="outline" disabled={procesando}
+          title={`Esta orden recibe y factura contra el pedido ${orden.bcNumber} de Business Central. Si en BC lo borraron y crearon otro, apuntala al nuevo.`}
+          onClick={() => { setNuevoBc(""); setMotivoBc(""); setRenumerando(true); }}>
+          Corregir N.º de BC
+        </Button>
+      )}
     </>
   );
 
@@ -250,6 +285,38 @@ export default function ProvOrdenDetallePage() {
             <Button variant="outline" size="sm" onClick={() => setAvisoBc(null)}>Entendido</Button>
           </div>
         ) : null} />
+
+      {renumerando && (
+        <Modal title={`Corregir el N.º de Business Central de ${numeroOrden(orden)}`} onClose={() => setRenumerando(false)} footer={
+          <>
+            <Button variant="outline" onClick={() => setRenumerando(false)} disabled={procesando}>Cancelar</Button>
+            <Button onClick={() => void confirmarRenumerado()} disabled={procesando || !nuevoBc.trim()}>
+              {procesando ? "Verificando en BC…" : "Apuntar a este pedido"}
+            </Button>
+          </>
+        }>
+          <p className="ds-body-sm" style={{ marginTop: 0 }}>
+            Esta orden recibe y factura contra el pedido <span className="ds-strong">{orden.bcNumber}</span>.
+            Si en Business Central lo <span className="ds-strong">borraron y crearon otro</span> (es lo que pasa cuando
+            hay que corregirle el almacén o las líneas), apuntala acá al número nuevo: Bodega vuelve a poder registrar
+            normal y BC hace la recepción y la factura de verdad.
+          </p>
+          <Field label="N.º del pedido en Business Central" help="Se verifica contra BC antes de guardarlo: si ese pedido no existe allá, no se guarda.">
+            <Input value={nuevoBc} placeholder="CP-005300" autoFocus spellCheck={false}
+              onChange={(e) => setNuevoBc(e.target.value.toUpperCase())} />
+          </Field>
+          <Field label="Motivo (opcional)" help="Queda en la bitácora junto con el número viejo. Dentro de tres meses es la única explicación de por qué las fechas no calzan.">
+            <Textarea rows={2} value={motivoBc} maxLength={200}
+              onChange={(e) => setMotivoBc(e.target.value)} placeholder="Ej. Proveeduría borró el pedido para ponerle el almacén y creó este" />
+          </Field>
+          {tieneRecepciones && (
+            <p className="ds-body-sm ds-pending-text">
+              OJO: esta orden ya tiene recepciones registradas. Lo que ya se recibió sigue apuntando al documento
+              con el que se registró en su momento; el número nuevo manda solo de acá en adelante.
+            </p>
+          )}
+        </Modal>
+      )}
 
       {descartando && (
         <Modal title={`Descartar ${numeroOrden(orden)}`} onClose={() => setDescartando(false)} footer={
