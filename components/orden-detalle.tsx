@@ -67,6 +67,20 @@ export function OrdenDetalle({
   const subtotal = orden.lineas.filter((l) => l.tipo === "articulo").reduce((s, l) => s + ordenLineaImporte(l), 0);
   const iva = orden.lineas.filter((l) => l.tipo === "articulo").reduce((s, l) => s + ordenLineaImporte(l) * ((l.ivaPct || 0) / 100), 0);
   const flete = orden.lineas.filter((l) => l.tipo === "cargo").reduce((s, l) => s + l.cantidad * l.precioUnitario, 0);
+  // BC contra el estimado de la orden. El IVA% que se escribe en la orden NO viaja a
+  // BC: allá se calcula cruzando el grupo de IVA del proveedor con el del artículo
+  // (en la línea que se manda no va ningún campo de IVA). Cuando esos dos no dan lo
+  // mismo, el total de acá "cambia" al mandar la orden a aprobación y desde la
+  // pantalla no había forma de saber por qué. Caso real: CP-005254 (Amazon) con IVA 0
+  // acá —el correcto, el impuesto de aduana va en su propia línea de cargo— y 13% en
+  // BC por el grupo del proveedor.
+  // Solo se compara en la MISMA moneda: contra un pedido en dólares la resta no
+  // significaría nada.
+  const estimadoLocal = subtotal + flete + iva;
+  const monedaDe = (c?: string) => ((c ?? "").trim().toUpperCase() || "CRC");
+  const difBc = bcTot && monedaDe(bcTot.currencyCode) === monedaDe(orden.currencyCode)
+    ? bcTot.total - estimadoLocal : 0;
+  const hayDifBc = Math.abs(difBc) > 0.01;
   // El PDF para el proveedor solo se habilita cuando la orden fue APROBADA (Lanzada
   // en BC) — o ya completada. Antes de eso no debe enviarse nada al proveedor.
   const puedeImprimir = orden.estado === "lanzado" || orden.estado === "completado";
@@ -178,6 +192,11 @@ export function OrdenDetalle({
               <div className="totals__row"><span>IVA</span><span>{money(bcTot.iva, bcTot.currencyCode || orden.currencyCode)}</span></div>
               <div className="totals__row totals__row--grand" style={{ gridColumn: "1 / -1" }}><span>Total (con IVA)</span><span>{money(bcTot.total, bcTot.currencyCode || orden.currencyCode)}</span></div>
               <div style={{ gridColumn: "1 / -1" }} className="ds-body-sm ds-muted">Totales calculados por Business Central ✓</div>
+              {hayDifBc && (
+                <div style={{ gridColumn: "1 / -1" }} className="ds-body-sm ds-pending-text">
+                  {difBc > 0 ? "+" : "−"}{money(Math.abs(difBc), bcTot!.currencyCode || orden.currencyCode)} contra el estimado de la orden ({money(estimadoLocal, orden.currencyCode)})
+                </div>
+              )}
             </>
           ) : (
             <>
@@ -194,6 +213,26 @@ export function OrdenDetalle({
           )}
         </div>
       </div>
+
+      {/* Por qué el total de BC no es el de la orden. Sin esto el número aparecía
+          cambiado y no había a qué agarrarse: el IVA% de la orden es solo para la
+          cuenta de acá. */}
+      {hayDifBc && (
+        <div className="ds-callout ds-callout--yellow mt-4" role="status">
+          <span className="ds-callout__icon"><IconWarning size={18} /></span>
+          <div>
+            <div className="ds-callout__title">El total de BC no coincide con el de la orden</div>
+            <div className="ds-callout__body">
+              La diferencia es <span className="ds-strong">IVA</span>: el IVA lo calcula Business Central cruzando el grupo de
+              IVA del <span className="ds-strong">proveedor</span> con el del <span className="ds-strong">artículo</span> — el IVA% que se
+              escribe en la orden es solo para el estimado de esta pantalla, no viaja a BC.
+              El que se contabiliza es el de BC. Si no corresponde (una compra del exterior, por ejemplo, donde el impuesto de
+              aduana va en su propia línea de cargo), hay que corregir el grupo de IVA <span className="ds-strong">en BC</span> y
+              volver a enviar la orden a aprobación: así la app le reescribe las líneas y BC recalcula.
+            </div>
+          </div>
+        </div>
+      )}
 
       <h3 className="ds-subtitle mt-6" style={{ marginBottom: 12 }}>Recepciones / facturas</h3>
       {recs.length === 0 ? (

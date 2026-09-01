@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getOrden, setOrdenEstado, updateOrden, descartarOrden, ordenTieneRecepciones, obrasDeLineasPedido, MSG_NO_REABRIR } from "@/lib/repo";
-import { bcReopenPedido, bcReplaceOrderLines, bcCrearPedidoAbierto, crearEnBcAlEnviar, lineasOrdenParaBc, obrasSinTarea, lineasSinUnidad, resolverVariantesRequeridas, sanearObrasDeLineas, avisoDeSaneo } from "@/lib/bc";
+import { bcReopenPedido, bcReplaceOrderLines, bcCrearPedidoAbierto, crearEnBcAlEnviar, lineasOrdenParaBc, obrasSinTarea, lineasSinUnidad, resolverVariantesRequeridas, sanearObrasDeLineas, avisoDeSaneo, bcOrdenTotales } from "@/lib/bc";
+import { ordenLineaImporte } from "@/lib/helpers";
 import { actor } from "@/lib/actor";
 
 export const runtime = "nodejs";
@@ -125,6 +126,33 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
             error: `La orden NO se envió a aprobación porque no se pudo crear el pedido en Business Central — ${String(e?.message ?? e)}`,
           }, { status: 502 });
         }
+      }
+      // El IVA% que se escribe en la orden NO viaja a BC: allá se calcula solo,
+      // cruzando el grupo de IVA del PROVEEDOR con el del ARTÍCULO (mirá
+      // payloadReplaceLines: en la línea no va ningún campo de IVA). Cuando esos dos
+      // no dan lo mismo, el total de la orden "cambia" justo al mandarla a aprobación
+      // y desde la pantalla no hay forma de saber por qué.
+      //
+      // Caso real (1 sep 2026): CP-000134 → CP-005254, una compra de Amazon con IVA 0
+      // en la app (correcto: el impuesto de aduana va en su propia línea de cargo) y
+      // 13% en BC, porque el proveedor tenía el grupo de IVA doméstico. El 0 era el
+      // bueno. Comparar y DECIRLO es lo único que la app puede hacer de su lado: el
+      // número que se contabiliza es el de BC.
+      if (bcNo) {
+        try {
+          const bcT = await bcOrdenTotales(bcNo);
+          const moneda = (c?: string) => ((c ?? "").trim().toUpperCase() || "CRC");
+          if (bcT && moneda(bcT.currencyCode) === moneda(o.currencyCode)) {
+            const estimado = o.lineas.reduce(
+              (s, l) => s + ordenLineaImporte(l) * (l.tipo === "cargo" ? 1 : 1 + (l.ivaPct || 0) / 100), 0);
+            const dif = bcT.total - estimado;
+            if (Math.abs(dif) > 0.01) {
+              const fmt = (n: number) => n.toLocaleString("es-CR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+              bcAviso = [bcAviso, `OJO con el total: BC calculó ${fmt(bcT.total)} (IVA ${fmt(bcT.iva)}) y el estimado de la orden era ${fmt(estimado)} — BC cobra ${fmt(Math.abs(dif))} ${dif > 0 ? "más" : "menos"}. El IVA lo pone BC según el grupo de IVA del proveedor y del artículo, no el IVA% de la orden. Si el de BC no corresponde, hay que corregirlo EN BC (y volver a enviar la orden para que reescriba las líneas).`]
+                .filter(Boolean).join(" · ");
+            }
+          }
+        } catch { /* si BC no contesta los totales, el envío no se frena por eso */ }
       }
     }
 
