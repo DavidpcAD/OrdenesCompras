@@ -7,6 +7,27 @@ export function tipoSolicitudBadge(t: TipoSolicitud): { label: string; tone: str
     : { label: "Material", tone: "green" };
 }
 
+// Qué tipo de movimiento de la bitácora es una DEVOLUCIÓN y qué tipo es una EDICIÓN.
+//
+// Se decide en JS y no en el `LIKE` del SQL porque ahí ya se metió el gol: filtrar
+// por '%devol%' NO encuentra "devuelto" (dice "devu-elto"), que es justo el tipo que
+// escribe esta app — la bandeja salía vacía en producción con la devolución sentada
+// en la tabla. El SQL filtra ancho ('%dev%', '%edit%'…) y la decisión fina, que es la
+// que se puede equivocar, vive acá con pruebas.
+//
+// Las dos apps escriben en la misma bitácora y cada una nombra los tipos a su manera
+// ("devuelto", "devuelta", "devolución"; "editado", "edición", "modificado"), así que
+// se acepta cualquiera de las formas.
+const norm = (t?: string) => (t ?? "").trim().toLowerCase();
+export function esTipoDevolucion(tipo?: string): boolean {
+  const t = norm(tipo);
+  return t.includes("devuelt") || t.includes("devol");
+}
+export function esTipoEdicion(tipo?: string): boolean {
+  const t = norm(tipo);
+  return t.includes("edit") || t.includes("edic") || t.includes("modific");
+}
+
 // En qué punto va una solicitud que Proveeduría devolvió:
 //   "esperando"  -> todavía tiene líneas marcadas como devueltas (o el pedido entero
 //                   está devuelto): la pelota la tiene el ingeniero, no hay nada que

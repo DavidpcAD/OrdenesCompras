@@ -17,6 +17,7 @@ import {
   puedeDevolverLinea, motivoNoDevolver, ordenesDeLineaPedido, ordenEsBorradorDescartable,
   lineasACotizar, observacionesParaProveedor, motivoDevolucion, devolucionesDeRol,
   estadoDeDevolucion, devolucionesPendientes, correccionDeSolicitud,
+  esTipoDevolucion, esTipoEdicion,
 } from "./helpers.ts";
 import type { Orden, OrdenLinea, Pedido, PedidoLinea } from "./types.ts";
 
@@ -570,6 +571,29 @@ test("devolucionesDeRol: una solicitud con una línea devuelta aparece aunque el
 // línea, el ingeniero la corrigió desde la app de Producción y la solicitud se
 // esfumó de la bandeja — nadie avisó de que ya estaba lista para ordenar.
 const devolucion = { fecha: "2026-08-26T16:39:00.000Z", motivo: "Cambiar código de material", lineas: "PERLING 2X4X1.8MM H.G" };
+
+// El bug que se fue a producción: el filtro SQL buscaba '%devol%' y "devuelto" NO
+// lo contiene (dice "devu-elto"), que es justo el tipo que escribe esta app. La
+// bandeja salía vacía con la devolución sentada en la tabla.
+test("esTipoDevolucion: reconoce devuelto/devuelta/devolución, no cualquier movimiento", () => {
+  assert.equal(esTipoDevolucion("devuelto"), true);
+  assert.equal(esTipoDevolucion("devuelta"), true);
+  assert.equal(esTipoDevolucion("Devueltas"), true);
+  assert.equal(esTipoDevolucion("devolución"), true);
+  assert.equal(esTipoDevolucion("devolver"), true);
+  assert.equal(esTipoDevolucion("aprobado"), false);
+  assert.equal(esTipoDevolucion("recepcion_parcial"), false);
+  assert.equal(esTipoDevolucion(undefined), false);
+});
+
+test("esTipoEdicion: reconoce editado/edición/modificado", () => {
+  assert.equal(esTipoEdicion("editado"), true);
+  assert.equal(esTipoEdicion("Edición"), true);
+  assert.equal(esTipoEdicion("modificado"), true);
+  assert.equal(esTipoEdicion("creado"), false);
+  assert.equal(esTipoEdicion("devuelto"), false);
+  assert.equal(esTipoEdicion(undefined), false);
+});
 
 test("estadoDeDevolucion: esperando mientras la línea siga marcada, corregida cuando ya no", () => {
   const marcada = pedido([{ ...pLinea({ id: "l1" }), devuelta: true }], { devolucion });

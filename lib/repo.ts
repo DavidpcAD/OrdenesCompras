@@ -1,7 +1,7 @@
 import { getAuthPool, getPool, sql } from "./db";
 import { bcDeepLinkPedido, bcDeepLinkFacturaRegistrada, bcUnidadesDeCompra, sanearObrasDeLineas } from "./bc";
 import { unidadCorregida } from "./unidad";
-import { etiquetaInterna } from "./helpers";
+import { etiquetaInterna, esTipoDevolucion, esTipoEdicion } from "./helpers";
 import type { UnidadCompraItem } from "./bc";
 import type { DevolucionSolicitud, Orden, OrdenLinea, Pedido, PedidoLinea, Recepcion, RecepcionFoto, RecepcionLinea, Role, NotaCreditoLinea } from "./types";
 
@@ -119,14 +119,17 @@ async function devolucionesDeSolicitudes(): Promise<Map<string, DevolucionSolici
   const out = new Map<string, DevolucionSolicitud>();
   try {
     const pool = await getPool();
-    // 1) La devolución más reciente de cada solicitud. Se tolera cómo escriba el tipo
-    //    la otra app (devuelto / devolución / devuelta), igual que motivosRechazo.
+    // 1) La devolución más reciente de cada solicitud. El LIKE va ANCHO ('%dev%') y
+    //    quién es devolución lo decide `esTipoDevolucion`: filtrar por '%devol%' no
+    //    encuentra "devuelto" —el tipo que escribe esta app— y la bandeja salía
+    //    vacía con la devolución sentada en la tabla.
     const dev = await pool.request().query(
-      `SELECT idEntidad, fecha, detalle, usuario FROM dbo.Movimiento
-        WHERE entidad='pedido' AND tipoMovimiento LIKE '%devol%'
+      `SELECT idEntidad, tipoMovimiento, fecha, detalle, usuario FROM dbo.Movimiento
+        WHERE entidad='pedido' AND tipoMovimiento LIKE '%dev%'
         ORDER BY fecha DESC, idMovimiento DESC`
     );
     for (const m of dev.recordset) {
+      if (!esTipoDevolucion(m.tipoMovimiento)) continue;
       const key = String(m.idEntidad);
       if (out.has(key)) continue;              // la primera es la más reciente
       const detalle = String(m.detalle ?? "");
@@ -142,8 +145,7 @@ async function devolucionesDeSolicitudes(): Promise<Map<string, DevolucionSolici
     if (!out.size) return out;
 
     // 2) ¿La editaron DESPUÉS? Esa es la señal de que el ingeniero ya la corrigió.
-    //    "edit%" no cubre "edición" (no lleva la t), y la otra app podría decir
-    //    "modificado": se aceptan las tres formas.
+    //    Mismo criterio que arriba: SQL ancho, decisión en `esTipoEdicion`.
     const ids = [...out.keys()].map(Number).filter(Number.isFinite);
     const req = pool.request();
     let filtroIds = "";
@@ -152,13 +154,14 @@ async function devolucionesDeSolicitudes(): Promise<Map<string, DevolucionSolici
       filtroIds = ` AND idEntidad IN (${params.join(",")})`;
     }
     const ed = await req.query(
-      `SELECT idEntidad, fecha, usuario, rol FROM dbo.Movimiento
+      `SELECT idEntidad, tipoMovimiento, fecha, usuario, rol FROM dbo.Movimiento
         WHERE entidad='pedido'${filtroIds}
           AND (tipoMovimiento LIKE '%edit%' OR tipoMovimiento LIKE '%edic%' OR tipoMovimiento LIKE '%modific%')
         ORDER BY fecha DESC, idMovimiento DESC`
     );
     const vistos = new Set<string>();
     for (const m of ed.recordset) {
+      if (!esTipoEdicion(m.tipoMovimiento)) continue;
       const key = String(m.idEntidad);
       if (vistos.has(key)) continue;           // la primera es la edición más reciente
       vistos.add(key);
@@ -169,7 +172,12 @@ async function devolucionesDeSolicitudes(): Promise<Map<string, DevolucionSolici
       // cuando la solicitud se estaba armando.
       if (fecha > d.fecha) d.corregida = { fecha, usuario: m.usuario ?? undefined, rol: m.rol ?? undefined };
     }
-  } catch { /* sin bitácora disponible: las solicitudes quedan sin dato de devolución */ }
+  } catch (e) {
+    // Sin bitácora las solicitudes quedan sin dato de devolución (la pantalla no se
+    // cae). Pero se LOGUEA: este catch en silencio fue lo que hizo que un filtro mal
+    // escrito pasara por "no hay devoluciones" en vez de por un error.
+    console.warn("devoluciones de solicitudes (bitácora)", e);
+  }
   return out;
 }
 
