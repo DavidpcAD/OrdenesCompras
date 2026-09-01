@@ -66,6 +66,11 @@ export const api = {
   deletePedido: (id: string, body: unknown) =>
     fetch(`/api/pedidos/${id}`, { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }).then(jsonOrThrow),
 
+  // Devolver al ingeniero LÍNEAS que ya están dentro de una orden Abierta/Rechazada:
+  // salen de la orden (el saldo vuelve a la solicitud) y quedan marcadas devueltas.
+  devolverLineasOrden: (id: string, body: unknown): Promise<{ ordenNo: string; devueltas: number; nombres: string[]; ordenDescartada: boolean; bcAviso?: string }> =>
+    fetch(`/api/ordenes/${id}/devolver-lineas`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }).then(jsonOrThrow),
+
   createOrden: (body: unknown): Promise<{ idOrdenCompra: number }> =>
     fetch("/api/ordenes", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }).then(jsonOrThrow),
   getOrden: (id: string): Promise<Orden> => fetch(`/api/ordenes/${id}`).then(jsonOrThrow),

@@ -6,13 +6,13 @@ import { Button, Checkbox, EmptyState, Field, Modal, Select, Skeleton, Textarea,
 import { IconWarning } from "@/components/icons";
 import { OrdenDetalle } from "@/components/orden-detalle";
 import { useStore } from "@/lib/store";
-import { num, ordenPendienteResumen, numeroOrden, etiquetaInterna } from "@/lib/helpers";
+import { num, ordenPendienteResumen, numeroOrden, etiquetaInterna, ordenAdmiteDevolucion, puedeDevolverLineaOrden, motivoNoDevolverLineaOrden, ordenQuedaSinMaterial } from "@/lib/helpers";
 
 export default function ProvOrdenDetallePage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
   const toast = useToast();
-  const { ordenes, pedidos, recepciones, setOrdenEstado, cerrarOrden, descartarOrden, nuevaOrdenConPendiente, cargando } = useStore();
+  const { ordenes, pedidos, recepciones, setOrdenEstado, cerrarOrden, descartarOrden, devolverLineasOrden, nuevaOrdenConPendiente, cargando } = useStore();
   const [procesando, setProcesando] = useState(false);
   // Aviso de BC que NO se puede perder (el toast se desvanece y el usuario se queda
   // creyendo que el pedido en BC también se reabrió).
@@ -25,6 +25,12 @@ export default function ProvOrdenDetallePage() {
   // por error dejó "ordenado").
   const [descartando, setDescartando] = useState(false);
   const [motivoDescarte, setMotivoDescarte] = useState("");
+  // Devolver material al INGENIERO desde la orden: la variante, la medida o el grado
+  // los define quien pide, así que cuando la orden se rechaza por eso el material
+  // tiene que volver a sus manos (la línea sale de la orden y el saldo se libera).
+  const [devolviendo, setDevolviendo] = useState(false);
+  const [motivoDev, setMotivoDev] = useState("");
+  const [selDev, setSelDev] = useState<Record<string, boolean>>({});
   const [motivo, setMotivo] = useState("");
   const [nota, setNota] = useState("");
   const [devolver, setDevolver] = useState(true);
@@ -100,6 +106,40 @@ export default function ProvOrdenDetallePage() {
     }
   }
 
+  // Líneas de esta orden que se le pueden devolver al ingeniero (material de una
+  // solicitud, sin recibir ni facturar).
+  const lineasDevolvibles = orden.lineas.filter(puedeDevolverLineaOrden);
+  const elegidasDev = Object.entries(selDev).filter(([, v]) => v).map(([k]) => k);
+  const dejaSinMaterial = elegidasDev.length > 0 && ordenQuedaSinMaterial(orden, elegidasDev);
+
+  function abrirDevolver() {
+    // Todas marcadas por defecto: lo normal es que la orden se rechace completa
+    // ("falta variante" en varias líneas) y desmarcar es más rápido que marcar.
+    setSelDev(Object.fromEntries(lineasDevolvibles.map((l) => [l.id, true])));
+    setMotivoDev("");
+    setDevolviendo(true);
+  }
+
+  async function confirmarDevolucion() {
+    if (!elegidasDev.length) { toast("Marcá al menos una línea para devolver.", "error"); return; }
+    if (!motivoDev.trim()) { toast("Escribí qué tiene que corregir el ingeniero.", "error"); return; }
+    if (procesando) return;
+    setProcesando(true);
+    try {
+      const r = await devolverLineasOrden(orden!.id, motivoDev.trim(), elegidasDev);
+      setDevolviendo(false);
+      if (r.bcAviso) setAvisoBc(r.bcAviso);
+      toast(`${r.devueltas} línea(s) volvieron al ingeniero${r.ordenDescartada ? ` · ${numeroOrden(orden!)} se descartó (quedó sin material)` : ""}`, "success");
+      // Sin material la orden ya no existe: quedarse en su detalle mostraría una
+      // pantalla de "no encontrada".
+      if (r.ordenDescartada) router.push("/proveeduria/ordenes");
+    } catch (e: any) {
+      toast(`No se pudo devolver: ${String(e?.message ?? e)}`, "error");
+    } finally {
+      setProcesando(false);
+    }
+  }
+
   async function confirmarCierre() {
     if (!motivo) { toast("Elegí el motivo del cierre.", "error"); return; }
     if (procesando) return;
@@ -137,6 +177,17 @@ export default function ProvOrdenDetallePage() {
             {procesando ? "Enviando…" : "Enviar a aprobación"}
           </Button>
         </>
+      )}
+      {/* Devolver al ingeniero: la salida para lo que Proveeduría NO decide (la
+          variante, la medida, el grado). Sirve aunque la orden ya viva en BC, que es
+          justo donde antes no había salida: la línea sale de la orden, el saldo
+          vuelve a la solicitud y el ingeniero la ve en SU bandeja de devoluciones. */}
+      {ordenAdmiteDevolucion(orden) && lineasDevolvibles.length > 0 && (
+        <Button variant="outline" disabled={procesando}
+          title="Devuelve material de esta orden al ingeniero para que lo corrija (la variante, la medida, el grado). La línea sale de la orden y el saldo vuelve a la solicitud."
+          onClick={abrirDevolver}>
+          Devolver al ingeniero
+        </Button>
       )}
       {/* Descartar: solo lo que NO existe en BC. Lo que ya está allá se reabre o se
           cierra, para que el rastro quede en los dos lados. */}
@@ -221,6 +272,66 @@ export default function ProvOrdenDetallePage() {
           <Field label="Motivo (opcional)" help="Queda en el historial: dentro de un mes explica por qué se descartó.">
             <Textarea rows={2} value={motivoDescarte} maxLength={200}
               onChange={(e) => setMotivoDescarte(e.target.value)} placeholder="Ej. se armó con el proveedor equivocado" />
+          </Field>
+        </Modal>
+      )}
+
+      {devolviendo && (
+        <Modal wide title={`Devolver material de ${numeroOrden(orden)} al ingeniero`} onClose={() => setDevolviendo(false)} footer={
+          <>
+            <Button variant="outline" onClick={() => setDevolviendo(false)} disabled={procesando}>Cancelar</Button>
+            <Button variant="red" onClick={() => void confirmarDevolucion()} disabled={procesando || !elegidasDev.length || !motivoDev.trim()}>
+              {procesando ? "Devolviendo…" : `Devolver ${elegidasDev.length} línea(s)`}
+            </Button>
+          </>
+        }>
+          <p className="ds-body-sm" style={{ marginTop: 0 }}>
+            El material que elijas <span className="ds-strong">sale de esta orden</span> y vuelve a quedar pendiente en su
+            solicitud, marcado como devuelto: el ingeniero lo ve en su bandeja de devoluciones con el motivo y lo corrige
+            desde Producción. Cuando vuelva corregido, aparece acá en <span className="ds-strong">Devoluciones → Listas para ordenar</span>.
+          </p>
+          {orden.bcNumber && (
+            <p className="ds-body-sm ds-pending-text">
+              Esta orden ya existe en Business Central como {orden.bcNumber}: {dejaSinMaterial
+                ? "al quedar sin material se descarta acá, pero el pedido de BC hay que darlo de baja allá (se avisa con el link)."
+                : "las líneas que queden se le vuelven a empujar a BC."}
+            </p>
+          )}
+          <div className="ds-table-wrap mt-2" style={{ boxShadow: "none" }}>
+            <table className="ds-table">
+              <thead><tr><th style={{ width: 40 }}></th><th>Material</th><th className="ds-num">Cantidad</th><th>Solicitud</th><th>Estado</th></tr></thead>
+              <tbody>
+                {orden.lineas.map((l) => {
+                  const bloqueo = motivoNoDevolverLineaOrden(l);
+                  return (
+                    <tr key={l.id} style={bloqueo ? { opacity: 0.55 } : undefined}>
+                      <td>
+                        <Checkbox checked={!!selDev[l.id]} disabled={!!bloqueo}
+                          aria-label={`Devolver ${l.descripcion}`}
+                          onChange={(e) => setSelDev((m) => ({ ...m, [l.id]: e.target.checked }))} />
+                      </td>
+                      <td>
+                        <div className="ds-clamp-2" style={{ maxWidth: 360 }}>{l.descripcion}</div>
+                        <div className="ds-body-sm ds-muted">{l.articuloId}{l.variantCode ? ` · var. ${l.variantCode}` : ""}</div>
+                      </td>
+                      <td className="ds-num ds-body-sm">{num.format(l.cantidad)} {l.unidad}</td>
+                      <td className="ds-body-sm ds-muted">{l.pedidoNumero ?? "—"}</td>
+                      <td className="ds-body-sm ds-muted">{bloqueo || "se puede devolver"}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+          {dejaSinMaterial && (
+            <p className="ds-body-sm ds-pending-text mt-2">
+              Vuelve TODO el material: esta orden se queda sin líneas y se descarta.
+            </p>
+          )}
+          <Field label="Qué tiene que corregir" help="Lo lee el ingeniero en su bandeja de devoluciones. Sé concreto: es lo único que le dice qué hacer." className="mt-4">
+            <Textarea rows={2} value={motivoDev} maxLength={200}
+              onChange={(e) => setMotivoDev(e.target.value)}
+              placeholder="Ej. falta la variante del tapón sanitario: decinos si va cementar o roscar" />
           </Field>
         </Modal>
       )}

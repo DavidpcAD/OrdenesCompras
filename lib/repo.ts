@@ -472,37 +472,60 @@ export async function devolverLineasPedido(
 
   const tx = new sql.Transaction(pool); await tx.begin();
   try {
-    for (const l of aDevolver) {
-      await new sql.Request(tx)
-        .input("id", sql.Int, l.idPedidoCompraDet).input("e", sql.Int, idDevuelto).input("u", sql.NVarChar(100), usuario)
-        .query("UPDATE dbo.PedidoCompraDet SET idEstado=@e, fechaModificacion=getdate(), modificadoPor=@u WHERE idPedidoCompraDet=@id");
-    }
-    // La nota del pedido se toca SIEMPRE, no solo cuando vuelve entero: es el único
-    // canal que la app de Producción ya muestra hoy (la bandeja de Devoluciones y el
-    // detalle del ingeniero la leen de ahí). Sin esto, una devolución parcial no la
-    // ve nadie del otro lado hasta que esa app lea el estado por línea.
-    const prevNota = cab.recordset[0]?.notaCreador ?? "";
-    const encabezado = pedidoDevuelto ? `↩ Devuelto: ${motivo}` : `↩ Devuelta(s): ${nombres.join("; ")} — ${motivo}`;
-    const nota = `${encabezado}${prevNota ? ` · ${prevNota}` : ""}`.slice(0, 500);
-    const reqCab = new sql.Request(tx)
-      .input("id", sql.Int, idPedido).input("u", sql.NVarChar(100), usuario)
-      .input("nota", sql.NVarChar(500), nota);
-    let setEstado = "";
-    if (pedidoDevuelto) { reqCab.input("e", sql.Int, idDevuelto); setEstado = "idEstado=@e, "; }
-    await reqCab.query(`UPDATE dbo.PedidoCompra SET ${setEstado}notaCreador=@nota, fechaModificacion=getdate(), modificadoPor=@u WHERE idPedidoCompra=@id`);
-    // Un solo movimiento con los nombres: el historial tiene que decir QUÉ se
-    // devolvió, no solo que hubo una devolución.
-    await logMov(tx, {
-      entidad: "pedido", idEntidad: idPedido, documentoNo: pedidoNo,
-      tipoMovimiento: "devuelto",
-      estadoAnterior: codigoDeId(cab.recordset[0]?.idEstado),
-      estadoNuevo: pedidoDevuelto ? "devuelto" : codigoDeId(cab.recordset[0]?.idEstado),
-      detalle: `${pedidoDevuelto ? "Solicitud devuelta" : `Devuelta(s) ${nombres.length} línea(s): ${nombres.join("; ")}`}${motivo ? ` · Motivo: ${motivo}` : ""}`,
-      usuario, rol,
+    await marcarLineasDevueltasTx(tx, {
+      idPedido, pedidoNo, idEstadoPedido: cab.recordset[0]?.idEstado,
+      notaPrevia: cab.recordset[0]?.notaCreador ?? "",
+      idsLinea: aDevolver.map((l) => Number(l.idPedidoCompraDet)),
+      nombres, pedidoDevuelto, motivo, usuario, rol,
     });
     await tx.commit();
   } catch (e) { await tx.rollback(); throw e; }
   return { devueltas: aDevolver.length, pedidoDevuelto, nombres };
+}
+
+// Marca líneas de una solicitud como DEVUELTAS, dentro de una transacción abierta.
+//
+// Vive aparte porque hay DOS caminos que devuelven al ingeniero y tienen que dejar el
+// dato idéntico: la devolución desde la solicitud (líneas que nadie ordenó) y la
+// devolución desde una ORDEN rechazada (la línea ya estaba comprometida y primero se
+// le saca a la orden — ver devolverLineasDeOrden). Si el formato de la nota o el
+// movimiento se escribieran dos veces, un día dirían cosas distintas y la app de
+// Producción —que lee de ahí— mostraría una y no la otra.
+async function marcarLineasDevueltasTx(tx: sql.Transaction, o: {
+  idPedido: number; pedidoNo: string; idEstadoPedido: number | null; notaPrevia: string;
+  idsLinea: number[]; nombres: string[]; pedidoDevuelto: boolean;
+  motivo: string; usuario: string; rol: Role;
+  // De dónde salió la devolución, para el historial ("desde la orden CP-005154").
+  origen?: string;
+}): Promise<void> {
+  const idDevuelto = await idDeEstado("devuelto");
+  for (const idLinea of o.idsLinea) {
+    await new sql.Request(tx)
+      .input("id", sql.Int, idLinea).input("e", sql.Int, idDevuelto).input("u", sql.NVarChar(100), o.usuario)
+      .query("UPDATE dbo.PedidoCompraDet SET idEstado=@e, fechaModificacion=getdate(), modificadoPor=@u WHERE idPedidoCompraDet=@id");
+  }
+  // La nota del pedido se toca SIEMPRE, no solo cuando vuelve entero: es el único
+  // canal que la app de Producción ya muestra hoy (la bandeja de Devoluciones y el
+  // detalle del ingeniero la leen de ahí). Sin esto, una devolución parcial no la
+  // ve nadie del otro lado hasta que esa app lea el estado por línea.
+  const encabezado = o.pedidoDevuelto ? `↩ Devuelto: ${o.motivo}` : `↩ Devuelta(s): ${o.nombres.join("; ")} — ${o.motivo}`;
+  const nota = `${encabezado}${o.notaPrevia ? ` · ${o.notaPrevia}` : ""}`.slice(0, 500);
+  const reqCab = new sql.Request(tx)
+    .input("id", sql.Int, o.idPedido).input("u", sql.NVarChar(100), o.usuario)
+    .input("nota", sql.NVarChar(500), nota);
+  let setEstado = "";
+  if (o.pedidoDevuelto) { reqCab.input("e", sql.Int, idDevuelto); setEstado = "idEstado=@e, "; }
+  await reqCab.query(`UPDATE dbo.PedidoCompra SET ${setEstado}notaCreador=@nota, fechaModificacion=getdate(), modificadoPor=@u WHERE idPedidoCompra=@id`);
+  // Un solo movimiento con los nombres: el historial tiene que decir QUÉ se
+  // devolvió, no solo que hubo una devolución.
+  await logMov(tx, {
+    entidad: "pedido", idEntidad: o.idPedido, documentoNo: o.pedidoNo,
+    tipoMovimiento: "devuelto",
+    estadoAnterior: codigoDeId(o.idEstadoPedido),
+    estadoNuevo: o.pedidoDevuelto ? "devuelto" : codigoDeId(o.idEstadoPedido),
+    detalle: `${o.pedidoDevuelto ? "Solicitud devuelta" : `Devuelta(s) ${o.nombres.length} línea(s): ${o.nombres.join("; ")}`}${o.origen ? ` · ${o.origen}` : ""}${o.motivo ? ` · Motivo: ${o.motivo}` : ""}`,
+    usuario: o.usuario, rol: o.rol,
+  });
 }
 
 // Obra de cada línea de SOLICITUD (dbo.PedidoCompraDet.obra), por id de línea.
@@ -1147,6 +1170,155 @@ export async function descartarOrden(
     await tx.commit();
     return { numero: head.recordset[0].ordenNo ?? "", saldoDevuelto };
   } catch (e) { await tx.rollback(); throw e; }
+}
+
+// DEVOLVER AL INGENIERO líneas que ya están dentro de una ORDEN (Abierta o
+// Rechazada). Es el camino que faltaba: la variante, la medida o el grado del material
+// los define QUIEN PIDE, no Proveeduría, así que cuando una orden se rechaza por eso
+// (CP-005154, "Falta variante") el material tiene que volver a manos del ingeniero.
+// Hasta hoy no se podía: la línea ya tenía orden —y con orden no se devuelve— y la
+// orden ya existía en BC —y así no se descarta—, o sea que la única salida era que
+// Proveeduría eligiera la variante, que es justo lo que no le toca.
+//
+// Lo que hace, en una sola transacción: le SACA las líneas a la orden (devolviéndole
+// el saldo a la solicitud, con el mismo UPDATE agrupado que usa updateOrden) y recién
+// entonces las marca devueltas. Si la orden se queda sin material, se descarta.
+//
+// Lo que NO hace: tocar Business Central. El pedido de allá lo re-sincroniza quien
+// llama (mismo camino que editar la orden), y si la orden se descarta y ya existía en
+// BC hay que darla de baja a mano — esta función devuelve `bcNo` justamente para
+// poder decirlo. Borrar un pedido en BC no es algo que la app pueda decidir sola.
+export async function devolverLineasDeOrden(
+  idOrden: number, lineaIds: number[], motivo: string, usuario: string, rol: Role,
+): Promise<{ ordenNo: string; bcNo: string; devueltas: number; nombres: string[]; ordenDescartada: boolean; pedidos: string[] }> {
+  if (!lineaIds?.length) throw new Error("No se eligió ninguna línea para devolver.");
+  if (!String(motivo ?? "").trim()) throw new Error("Escribí el motivo: es lo que el ingeniero va a leer para saber qué corregir.");
+  if (!(await ensureLineaEstado())) throw new Error("La base todavía no tiene la columna dbo.PedidoCompraDet.idEstado, que es donde se marca la línea devuelta.");
+  await ensureEstados();
+  const pool = await getPool();
+
+  const head = await pool.request().input("id", sql.Int, idOrden)
+    .query("SELECT ordenNo, idEstado, bcNo FROM dbo.OrdenCompra WHERE idOrdenCompra=@id AND esEliminada=0");
+  if (!head.recordset.length) throw new Error("Orden no encontrada.");
+  const estado = codigoDeId(head.recordset[0].idEstado);
+  const ordenNo = String(head.recordset[0].ordenNo ?? "");
+  const bcNo = String(head.recordset[0].bcNo ?? "").trim();
+  if (estado !== "abierto" && estado !== "rechazado") {
+    throw new Error(`Solo se devuelve material de una orden Abierta o Rechazada; esta está ${estado === "pendiente_aprobacion" ? "esperando aprobación (cancelá el envío primero)" : estado}.`);
+  }
+  if (await ordenTieneRecepciones(idOrden)) throw new Error("La orden ya tiene recepciones registradas: ese material ya llegó y no se devuelve al ingeniero.");
+
+  const det = await pool.request().input("id", sql.Int, idOrden).query(
+    `SELECT od.idOrdenCompraDet, od.idPedidoCompraDet, od.tipoLinea, od.descripcion, od.quantity,
+            od.quantityRecibida, od.quantityFacturada, pcd.idPedidoCompra
+       FROM dbo.OrdenCompraDet od
+       LEFT JOIN dbo.PedidoCompraDet pcd ON pcd.idPedidoCompraDet = od.idPedidoCompraDet
+      WHERE od.idOrdenCompra = @id`);
+  const porId = new Map<number, any>(det.recordset.map((l: any) => [Number(l.idOrdenCompraDet), l]));
+
+  const aDevolver: any[] = [];
+  for (const lid of lineaIds) {
+    const l = porId.get(Number(lid));
+    if (!l) throw new Error(`La línea ${lid} no es de esta orden.`);
+    const nombre = String(l.descripcion || `Línea ${lid}`);
+    if (l.tipoLinea !== "articulo") throw new Error(`${nombre}: un cargo no se devuelve al ingeniero.`);
+    if (!l.idPedidoCompraDet) throw new Error(`${nombre}: esta línea no viene de una solicitud (se agregó a mano), así que no hay a quién devolvérsela. Quitala editando la orden.`);
+    if (Number(l.quantityRecibida ?? 0) > 0 || Number(l.quantityFacturada ?? 0) > 0) {
+      throw new Error(`${nombre}: ya tiene recibido/facturado, no se puede devolver.`);
+    }
+    // La línea dice de qué solicitud viene, pero esa solicitud tiene que EXISTIR: si
+    // el enlace quedó colgando (línea borrada del otro lado), devolverla sacaría el
+    // material de la orden sin que nadie lo reciba de vuelta. Mejor frenar y decirlo.
+    if (!Number.isFinite(Number(l.idPedidoCompra))) {
+      throw new Error(`${nombre}: la solicitud de origen ya no existe, así que no hay a quién devolvérsela. Quitala editando la orden.`);
+    }
+    aDevolver.push(l);
+  }
+  const ids = aDevolver.map((l) => Number(l.idOrdenCompraDet));
+  const nombres = aDevolver.map((l) => String(l.descripcion || `Línea ${l.idOrdenCompraDet}`));
+  // ¿Queda material en la orden? Si no, no tiene sentido dejarla viva: una orden sin
+  // artículos no se puede guardar ni enviar, y en BC quedaría un pedido vacío.
+  const quedan = det.recordset.filter((l: any) => l.tipoLinea === "articulo" && !ids.includes(Number(l.idOrdenCompraDet)));
+  const ordenDescartada = quedan.length === 0;
+
+  // Líneas de solicitud agrupadas por solicitud: la devolución se escribe POR PEDIDO
+  // (su nota, su estado, su movimiento), y una orden puede mezclar varias.
+  const porPedido = new Map<number, number[]>();
+  for (const l of aDevolver) {
+    const k = Number(l.idPedidoCompra);
+    porPedido.set(k, [...(porPedido.get(k) ?? []), Number(l.idPedidoCompraDet)]);
+  }
+
+  const tx = new sql.Transaction(pool); await tx.begin();
+  try {
+    // 1) devolverle el saldo a la solicitud SOLO por las líneas que se van. Mismo
+    //    UPDATE agrupado de updateOrden/descartarOrden: dos líneas de la orden pueden
+    //    colgar de la misma línea de solicitud y en un JOIN eso se toca una sola vez.
+    const reqSaldo = new sql.Request(tx).input("id", sql.Int, idOrden);
+    const paramsIds = ids.map((x, i) => { reqSaldo.input(`l${i}`, sql.Int, x); return `@l${i}`; });
+    await reqSaldo.query(`
+      UPDATE pcd SET pcd.quantityOrdenado =
+        CASE WHEN ISNULL(pcd.quantityOrdenado,0) - x.q < 0 THEN 0 ELSE ISNULL(pcd.quantityOrdenado,0) - x.q END
+      FROM dbo.PedidoCompraDet pcd
+      JOIN (SELECT idPedidoCompraDet, SUM(quantity) AS q
+              FROM dbo.OrdenCompraDet
+             WHERE idOrdenCompra = @id AND idPedidoCompraDet IS NOT NULL
+               AND idOrdenCompraDet IN (${paramsIds.join(",")})
+             GROUP BY idPedidoCompraDet) x ON x.idPedidoCompraDet = pcd.idPedidoCompraDet`);
+
+    // 2) sacarle las líneas a la orden
+    const reqDel = new sql.Request(tx).input("id", sql.Int, idOrden);
+    const paramsDel = ids.map((x, i) => { reqDel.input(`d${i}`, sql.Int, x); return `@d${i}`; });
+    await reqDel.query(`DELETE FROM dbo.OrdenCompraDet WHERE idOrdenCompra=@id AND idOrdenCompraDet IN (${paramsDel.join(",")})`);
+
+    // 3) marcar devueltas las líneas de cada solicitud (ya sin saldo comprometido)
+    for (const [idPedido, idsLinea] of porPedido) {
+      const cab = await new sql.Request(tx).input("id", sql.Int, idPedido)
+        .query("SELECT pedidoNo, idEstado, notaCreador FROM dbo.PedidoCompra WHERE idPedidoCompra=@id");
+      if (!cab.recordset.length) continue;
+      const idDevuelto = await idDeEstado("devuelto");
+      const lineasPedido = await new sql.Request(tx).input("id", sql.Int, idPedido)
+        .query("SELECT idPedidoCompraDet, idEstado, descripcion FROM dbo.PedidoCompraDet WHERE idPedidoCompra=@id");
+      const yaDevueltas = new Set<number>([
+        ...lineasPedido.recordset.filter((l: any) => l.idEstado === idDevuelto).map((l: any) => Number(l.idPedidoCompraDet)),
+        ...idsLinea,
+      ]);
+      const pedidoDevuelto = lineasPedido.recordset.every((l: any) => yaDevueltas.has(Number(l.idPedidoCompraDet)));
+      const nombresPedido = lineasPedido.recordset
+        .filter((l: any) => idsLinea.includes(Number(l.idPedidoCompraDet)))
+        .map((l: any) => String(l.descripcion || `Línea ${l.idPedidoCompraDet}`));
+      await marcarLineasDevueltasTx(tx, {
+        idPedido, pedidoNo: cab.recordset[0].pedidoNo ?? "", idEstadoPedido: cab.recordset[0].idEstado,
+        notaPrevia: cab.recordset[0].notaCreador ?? "",
+        idsLinea, nombres: nombresPedido, pedidoDevuelto, motivo, usuario, rol,
+        origen: `Devuelta desde la orden ${bcNo || ordenNo}`,
+      });
+    }
+
+    // 4) la orden: se descarta si se quedó sin material, o queda con el resto
+    const detalleOrden = `${nombres.length} línea(s) devuelta(s) al ingeniero: ${nombres.join("; ")} · Motivo: ${motivo}`;
+    if (ordenDescartada) {
+      await new sql.Request(tx).input("id", sql.Int, idOrden).input("u", sql.NVarChar(100), usuario)
+        .query("UPDATE dbo.OrdenCompra SET esEliminada=1, fechaModificacion=getdate(), modificadoPor=@u WHERE idOrdenCompra=@id");
+      await logMov(tx, {
+        entidad: "orden", idEntidad: idOrden, documentoNo: ordenNo, tipoMovimiento: "eliminado",
+        estadoAnterior: estado, detalle: `Orden descartada · ${detalleOrden}`, usuario, rol,
+      });
+    } else {
+      await new sql.Request(tx).input("id", sql.Int, idOrden).input("u", sql.NVarChar(100), usuario)
+        .query("UPDATE dbo.OrdenCompra SET fechaModificacion=getdate(), modificadoPor=@u WHERE idOrdenCompra=@id");
+      await logMov(tx, {
+        entidad: "orden", idEntidad: idOrden, documentoNo: ordenNo, tipoMovimiento: "editado",
+        detalle: detalleOrden, usuario, rol,
+      });
+    }
+    await tx.commit();
+  } catch (e) { await tx.rollback(); throw e; }
+
+  return {
+    ordenNo, bcNo, devueltas: aDevolver.length, nombres, ordenDescartada,
+    pedidos: [...porPedido.keys()].map(String),
+  };
 }
 
 export async function setOrdenEstado(id: number, estado: string, usuario: string, rol: Role, motivo?: string, bcNumber?: string) {

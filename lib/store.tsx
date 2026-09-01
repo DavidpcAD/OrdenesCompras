@@ -133,6 +133,9 @@ interface StoreShape {
   // Devuelve al ingeniero las LÍNEAS elegidas de una solicitud. El pedido entero
   // pasa a "Devuelto" solo si no le queda ninguna línea viva (lo decide el server).
   devolverPedido: (id: string, motivo: string, lineaIds: string[]) => Promise<{ devueltas: number; pedidoDevuelto: boolean }>;
+  // Devolver al ingeniero líneas que YA están en una orden (Abierta/Rechazada): la
+  // línea sale de la orden, el saldo vuelve a la solicitud y queda marcada devuelta.
+  devolverLineasOrden: (idOrden: string, motivo: string, lineaIds: string[]) => Promise<{ devueltas: number; ordenDescartada: boolean; bcAviso?: string }>;
   devolverOrden: (id: string, motivo: string) => Promise<void>;
 
   // Notas de crédito (Bodega): líneas de factura con problema para emitir NC.
@@ -846,6 +849,56 @@ export function StoreProvider({ children, useApi }: { children: React.ReactNode;
       return resultado;
     };
 
+    // ------- DEVOLVER AL INGENIERO LÍNEAS QUE YA ESTÁN EN UNA ORDEN ---------
+    // La variante/medida/grado del material los define quien pide, no Proveeduría:
+    // cuando una orden se rechaza por eso, el material vuelve al ingeniero. La línea
+    // sale de la orden (devolviendo el saldo) y recién ahí se marca devuelta.
+    const devolverLineasOrden: StoreShape["devolverLineasOrden"] = async (idOrden, motivo, lineaIds) => {
+      if (USE_API) {
+        const r = await api.devolverLineasOrden(idOrden, { lineaIds, motivo, usuario: persona, rol: rolActual });
+        await refreshFromApi();
+        return { devueltas: Number(r?.devueltas ?? 0), ordenDescartada: !!r?.ordenDescartada, bcAviso: r?.bcAviso };
+      }
+      const ids = new Set(lineaIds);
+      let out = { devueltas: 0, ordenDescartada: false as boolean, bcAviso: undefined as string | undefined };
+      setData((d) => {
+        const o = d.ordenes.find((x) => x.id === idOrden);
+        if (!o) return d;
+        const vanVolver = o.lineas.filter((l) => ids.has(l.id) && l.tipo === "articulo" && l.pedidoLineaId);
+        if (!vanVolver.length) return d;
+        const quedan = o.lineas.filter((l) => !ids.has(l.id));
+        const sinMaterial = !quedan.some((l) => l.tipo === "articulo");
+        out = { devueltas: vanVolver.length, ordenDescartada: sinMaterial, bcAviso: undefined };
+        // El saldo vuelve a la solicitud SOLO por lo que se va (se arma una orden
+        // "fantasma" con esas líneas y se reusa la misma función del descarte).
+        const pedidosConSaldo = devolverPendienteAPedidos(d.pedidos, { ...o, lineas: vanVolver.map((l) => ({ ...l, cantidadRecibida: 0 })) });
+        const idsPedidoLinea = new Set(vanVolver.map((l) => l.pedidoLineaId));
+        const nombres = vanVolver.map((l) => l.descripcion);
+        const pedidos = pedidosConSaldo.map((p) => {
+          if (!p.lineas.some((pl) => idsPedidoLinea.has(pl.id))) return p;
+          const lineas = p.lineas.map((pl) => (idsPedidoLinea.has(pl.id) ? { ...pl, devuelta: true } : pl));
+          const todo = lineas.every((pl) => pl.devuelta);
+          return {
+            ...p, lineas,
+            devolucion: { fecha: new Date().toISOString(), motivo, lineas: nombres.join("; "), usuario: persona },
+            ...(todo ? { estado: "devuelto" as Pedido["estado"] } : {}),
+            notas: `↩ Devuelta(s): ${nombres.join("; ")} — ${motivo}${p.notas ? ` · ${p.notas}` : ""}`,
+          };
+        });
+        const movs = [mkMov({ entidad: "orden", idEntidad: idOrden, documentoNo: o.numero,
+          tipoMovimiento: sinMaterial ? "eliminado" : "editado", estadoAnterior: o.estado,
+          detalle: `${sinMaterial ? "Orden descartada · " : ""}${nombres.length} línea(s) devuelta(s) al ingeniero: ${nombres.join("; ")} · Motivo: ${motivo}` })];
+        return {
+          ...d,
+          ordenes: sinMaterial ? d.ordenes.filter((x) => x.id !== idOrden)
+            : d.ordenes.map((x) => (x.id === idOrden ? { ...x, lineas: quedan } : x)),
+          pedidos,
+          movimientos: [...movs, ...d.movimientos],
+        };
+      });
+      return out;
+    };
+
     // ---------------- DEVOLVER / DENEGAR ORDEN A PROVEEDURÍA ----------------
     // Luis Roberto (Aprobación) devuelve/deniega una orden. El motivo es
     // obligatorio (lo valida la UI) y queda en el historial + como nota de la orden.
@@ -912,7 +965,7 @@ export function StoreProvider({ children, useApi }: { children: React.ReactNode;
       maquinas: seed.maquinas, almacenes: seed.almacenes,
       pedidos: data.pedidos, ordenes: data.ordenes, recepciones: data.recepciones, movimientos: data.movimientos,
       addPedido, editPedido, setPedidoEstado, deletePedido,
-      createOrden, updateOrden, setOrdenEstado, cerrarOrden, descartarOrden, nuevaOrdenConPendiente, registrarRecepcion, guardarFotosRecepcion, facturarRecepcion, devolverPedido, devolverOrden, reset,
+      createOrden, updateOrden, setOrdenEstado, cerrarOrden, descartarOrden, nuevaOrdenConPendiente, registrarRecepcion, guardarFotosRecepcion, facturarRecepcion, devolverPedido, devolverLineasOrden, devolverOrden, reset,
       notasCredito, marcarNotasCredito, cargarNotasCredito, resolverNotaCredito,
       notificaciones: data.notificaciones, marcarNotifsLeidas, marcarNotifLeida,
       borrador, setBorrador,

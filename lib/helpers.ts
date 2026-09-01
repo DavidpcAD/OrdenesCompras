@@ -296,13 +296,54 @@ export function ordenesDeLineaPedido(ordenes: Orden[], pedidoLineaId: string): O
 
 // ¿Es un BORRADOR que se puede descartar? Abierta o rechazada y sin N.º de BC: no
 // existe en Business Central, así que descartarla no deja nada colgando allá.
-export function ordenEsBorradorDescartable(o: Pick<Orden, "estado" | "bcNumber">): boolean {
-  return (o.estado === "abierto" || o.estado === "rechazado") && !o.bcNumber;
+// OJO con el segundo campo: acá entran tanto órdenes completas (`bcNumber`) como la
+// proyección por línea de `ordenesDeLineaPedido` (que trae `enBc`). Mirando solo
+// `bcNumber`, la proyección lo daba SIEMPRE por descartable y la pantalla aconsejaba
+// "descartá ese borrador" sobre una orden que ya vive en BC — donde descartar falla.
+export function ordenEsBorradorDescartable(o: { estado: Orden["estado"]; bcNumber?: string; enBc?: boolean }): boolean {
+  return (o.estado === "abierto" || o.estado === "rechazado") && !(o.bcNumber || o.enBc);
+}
+
+// ---- Devolver al ingeniero DESDE UNA ORDEN -----------------------------------
+//
+// La variante, la medida o el grado del material los define QUIEN PIDE, no
+// Proveeduría. Cuando una orden se rechaza por eso ("Falta variante"), el material
+// tiene que volver al ingeniero — pero la línea ya estaba comprometida en la orden, y
+// con orden hecha no se devolvía. Estas reglas son la salida: la línea sale de la
+// orden y recién ahí se marca devuelta (ver devolverLineasDeOrden en repo.ts).
+
+// Una orden admite devolver material mientras se pueda editar: Abierta o Rechazada.
+// Lanzada ya está en manos del proveedor, y completada ya llegó.
+export function ordenAdmiteDevolucion(o: Pick<Orden, "estado">): boolean {
+  return o.estado === "abierto" || o.estado === "rechazado";
+}
+
+// Y la línea, si es material de una solicitud que todavía nadie recibió ni facturó.
+// Un cargo (flete) no se le devuelve a nadie, y una línea agregada a mano no tiene
+// solicitud de origen: esa se quita editando la orden.
+export function puedeDevolverLineaOrden(l: OrdenLinea): boolean {
+  return !motivoNoDevolverLineaOrden(l);
+}
+
+export function motivoNoDevolverLineaOrden(l: OrdenLinea): string {
+  if (l.tipo !== "articulo") return "es un cargo, no material de una solicitud";
+  if (!l.pedidoLineaId) return "se agregó a mano: no viene de una solicitud (quitala editando la orden)";
+  if ((l.cantidadRecibida ?? 0) > 0) return "ya tiene material recibido";
+  if ((l.cantidadFacturada ?? 0) > 0) return "ya está facturada";
+  return "";
+}
+
+// ¿La orden se queda SIN material si se devuelven estas líneas? Ahí no tiene sentido
+// dejarla viva (una orden sin artículos no se puede guardar ni enviar): se descarta.
+export function ordenQuedaSinMaterial(o: Orden, lineaIds: string[]): boolean {
+  const ids = new Set(lineaIds);
+  return !o.lineas.some((l) => l.tipo === "articulo" && !ids.has(l.id));
 }
 
 // Motivo por el que una línea NO se puede devolver (para decirlo en la pantalla en
 // vez de dejar la casilla apagada sin explicación). Con las órdenes a mano, nombra
-// la que se la llevó y —si todavía es un borrador— dice cómo soltarla.
+// la que se la llevó y dice cómo soltarla: descartando el borrador, o devolviéndola
+// desde la propia orden si ya vive en Business Central.
 export function motivoNoDevolver(l: PedidoLinea, ordenes?: Orden[]): string {
   if (l.devuelta) return "ya está devuelta";
   if ((l.cantidadOrdenada ?? 0) <= 0) return "";
@@ -320,6 +361,11 @@ export function motivoNoDevolver(l: PedidoLinea, ordenes?: Orden[]): string {
     // Todavía no se le pidió nada a nadie: el material se suelta descartando ese
     // borrador (o quitando la línea de él) y ahí sí se puede devolver.
     return `está en ${nombres} (todavía sin enviar a Business Central) — descartá ese borrador y esta línea se libera`;
+  }
+  // Orden Abierta o Rechazada que ya existe en BC: no se descarta, pero el material
+  // SÍ se puede devolver desde esa orden (la línea sale de ahí y vuelve al ingeniero).
+  if (base.every((o) => ordenAdmiteDevolucion(o))) {
+    return `está en ${nombres} — devolvela desde la orden`;
   }
   return `ya tiene orden de compra (${nombres})`;
 }

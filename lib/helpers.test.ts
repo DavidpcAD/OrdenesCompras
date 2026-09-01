@@ -15,6 +15,7 @@ import {
   ordenPendienteResumen, devolverPendienteAPedidos, proveedorLabel,
   numeroOrden, etiquetaInterna, tieneBc, esConsumoDirecto, obraParaOrden, destinoDeRecepcion,
   puedeDevolverLinea, motivoNoDevolver, ordenesDeLineaPedido, ordenEsBorradorDescartable,
+  ordenAdmiteDevolucion, puedeDevolverLineaOrden, motivoNoDevolverLineaOrden, ordenQuedaSinMaterial,
   lineasACotizar, observacionesParaProveedor, motivoDevolucion, devolucionesDeRol,
   estadoDeDevolucion, devolucionesPendientes, correccionDeSolicitud,
   esTipoDevolucion, esTipoEdicion,
@@ -512,6 +513,51 @@ test("motivoNoDevolver: si la retiene un borrador, dice cómo liberarla", () => 
   const enBc = motivoNoDevolver(l, [ordenConLinea({ id: "2", bcNumber: "CP-005192", estado: "lanzado" }, "pl9")]);
   assert.match(enBc, /CP-005192/);
   assert.doesNotMatch(enBc, /descartá/i);
+});
+
+// El caso que abrió esto (CP-005154, rechazada por "Falta variante"): la línea ya
+// estaba en una orden que vive en BC, así que no se podía devolver (con orden hecha,
+// no se devuelve) ni descartar la orden (ya está en BC). La única salida era que
+// Proveeduría eligiera la variante, que es justo lo que no le toca.
+test("devolver desde la orden: solo material de solicitud, sin recibir ni facturar", () => {
+  const base = { id: "ol1", tipo: "articulo" as const, pedidoLineaId: "pl1" };
+  assert.equal(puedeDevolverLineaOrden(linea(base)), true);
+  assert.equal(motivoNoDevolverLineaOrden(linea(base)), "");
+  // Un cargo (flete) no se le devuelve a nadie.
+  assert.match(motivoNoDevolverLineaOrden(linea({ ...base, tipo: "cargo" })), /cargo/);
+  // Línea agregada a mano: no hay solicitud de origen.
+  assert.match(motivoNoDevolverLineaOrden(linea({ id: "ol2", tipo: "articulo" })), /a mano/);
+  // Con material recibido o facturado ya no vuelve.
+  assert.match(motivoNoDevolverLineaOrden(linea({ ...base, cantidadRecibida: 2 })), /recibido/);
+  assert.match(motivoNoDevolverLineaOrden(linea({ ...base, cantidadFacturada: 2 })), /facturada/);
+});
+
+test("devolver desde la orden: solo mientras la orden se pueda editar", () => {
+  assert.equal(ordenAdmiteDevolucion({ estado: "abierto" }), true);
+  assert.equal(ordenAdmiteDevolucion({ estado: "rechazado" }), true);
+  assert.equal(ordenAdmiteDevolucion({ estado: "pendiente_aprobacion" }), false);
+  assert.equal(ordenAdmiteDevolucion({ estado: "lanzado" }), false);
+  assert.equal(ordenAdmiteDevolucion({ estado: "completado" }), false);
+});
+
+test("ordenQuedaSinMaterial: el flete no cuenta como material que quede", () => {
+  const o = { ...orden([
+    linea({ id: "a", tipo: "articulo", pedidoLineaId: "p1" }),
+    linea({ id: "b", tipo: "articulo", pedidoLineaId: "p2" }),
+    linea({ id: "f", tipo: "cargo" }),
+  ]) };
+  assert.equal(ordenQuedaSinMaterial(o, ["a"]), false);
+  // Si se van las dos de material, lo único que queda es el flete: la orden se
+  // descarta (una orden sin artículos no se puede guardar ni enviar).
+  assert.equal(ordenQuedaSinMaterial(o, ["a", "b"]), true);
+});
+
+test("motivoNoDevolver: una orden Rechazada que ya está en BC manda a devolver desde la orden", () => {
+  const l = lineaPed({ id: "pl9", cantidadOrdenada: 5 });
+  const m = motivoNoDevolver(l, [ordenConLinea({ id: "3", bcNumber: "CP-005154", estado: "rechazado" }, "pl9")]);
+  assert.match(m, /CP-005154/);
+  assert.match(m, /devolvela desde la orden/i);
+  assert.doesNotMatch(m, /descartá/i);
 });
 
 test("motivoNoDevolver: una orden cerrada no tapa el consejo del borrador", () => {
