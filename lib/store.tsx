@@ -140,6 +140,10 @@ interface StoreShape {
   // Devolver al ingeniero líneas que YA están en una orden (Abierta/Rechazada): la
   // línea sale de la orden, el saldo vuelve a la solicitud y queda marcada devuelta.
   devolverLineasOrden: (idOrden: string, motivo: string, lineaIds: string[]) => Promise<{ devueltas: number; ordenDescartada: boolean; bcAviso?: string }>;
+  // Copiar a las líneas el IVA que BC va a contabilizar (el de la app es un estimado
+  // que no viaja a BC): así el total de la orden, el del PDF y el del aprobador dejan
+  // de estar cortos o largos. Solo en modo API: sin BC no hay de dónde copiarlo.
+  alinearIvaConBc: (idOrden: string) => Promise<{ cambiadas: number; detalle: string[] }>;
   devolverOrden: (id: string, motivo: string) => Promise<void>;
 
   // Notas de crédito (Bodega): líneas de factura con problema para emitir NC.
@@ -871,6 +875,14 @@ export function StoreProvider({ children, useApi }: { children: React.ReactNode;
       return resultado;
     };
 
+    // ---------------- ALINEAR EL IVA CON BUSINESS CENTRAL ----------------
+    const alinearIvaConBc: StoreShape["alinearIvaConBc"] = async (idOrden) => {
+      if (!USE_API) throw new Error("Sin Business Central no hay IVA que copiar (la app está en modo de prueba).");
+      const r = await api.alinearIvaConBc(idOrden, { usuario: persona, rol: rolActual });
+      await refreshFromApi();
+      return { cambiadas: Number(r?.cambiadas ?? 0), detalle: Array.isArray(r?.detalle) ? r.detalle : [] };
+    };
+
     // ------- DEVOLVER AL INGENIERO LÍNEAS QUE YA ESTÁN EN UNA ORDEN ---------
     // La variante/medida/grado del material los define quien pide, no Proveeduría:
     // cuando una orden se rechaza por eso, el material vuelve al ingeniero. La línea
@@ -987,7 +999,7 @@ export function StoreProvider({ children, useApi }: { children: React.ReactNode;
       maquinas: seed.maquinas, almacenes: seed.almacenes,
       pedidos: data.pedidos, ordenes: data.ordenes, recepciones: data.recepciones, movimientos: data.movimientos,
       addPedido, editPedido, setPedidoEstado, deletePedido,
-      createOrden, updateOrden, setOrdenEstado, corregirBcNumber, cerrarOrden, descartarOrden, nuevaOrdenConPendiente, registrarRecepcion, guardarFotosRecepcion, facturarRecepcion, devolverPedido, devolverLineasOrden, devolverOrden, reset,
+      createOrden, updateOrden, setOrdenEstado, corregirBcNumber, cerrarOrden, descartarOrden, nuevaOrdenConPendiente, registrarRecepcion, guardarFotosRecepcion, facturarRecepcion, devolverPedido, devolverLineasOrden, alinearIvaConBc, devolverOrden, reset,
       notasCredito, marcarNotasCredito, cargarNotasCredito, resolverNotaCredito,
       notificaciones: data.notificaciones, marcarNotifsLeidas, marcarNotifLeida,
       borrador, setBorrador,

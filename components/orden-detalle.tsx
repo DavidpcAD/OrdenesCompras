@@ -22,6 +22,7 @@ export function OrdenDetalle({
   solicitudHref,
   pedidoHref,
   aviso,
+  onAlinearIva,
 }: {
   orden: Orden;
   volverHref: string;
@@ -35,9 +36,13 @@ export function OrdenDetalle({
   // "se reabrió acá pero en BC sigue Lanzado". Si eso se pierde, la orden queda
   // descuadrada con BC y nadie se enteró.
   aviso?: React.ReactNode;
+  // Copiar a las líneas el IVA que BC va a contabilizar. Lo pasa la pantalla del rol
+  // que puede corregir la orden (Proveeduría); sin esto el aviso solo explica.
+  onAlinearIva?: () => void | Promise<void>;
 }) {
   const { proveedores, recepciones } = useStore();
   const router = useRouter();
+  const [alineando, setAlineando] = useState(false);
   const [verFactura, setVerFactura] = useState<string | null>(null);
   // Totales calculados por BC (fuente de verdad). Se leen si la orden ya está en BC.
   const [bcTot, setBcTot] = useState<{ subtotal: number; iva: number; total: number; currencyCode: string } | null>(null);
@@ -230,6 +235,18 @@ export function OrdenDetalle({
               aduana va en su propia línea de cargo), hay que corregir el grupo de IVA <span className="ds-strong">en BC</span> y
               volver a enviar la orden a aprobación: así la app le reescribe las líneas y BC recalcula.
             </div>
+            {/* Y si el que vale es el de BC —lo normal—, esto lo copia a las líneas de
+                una vez: el total de la orden, el del PDF del proveedor y el que ve
+                quien aprueba dejan de estar cortos. */}
+            {onAlinearIva && (
+              <div className="mt-2">
+                <Button variant="outline" size="sm" disabled={alineando}
+                  title="Copia a cada línea el IVA% que Business Central va a contabilizar. No toca BC."
+                  onClick={async () => { setAlineando(true); try { await onAlinearIva(); } finally { setAlineando(false); } }}>
+                  {alineando ? "Alineando…" : "Usar el IVA de BC"}
+                </Button>
+              </div>
+            )}
           </div>
         </div>
       )}

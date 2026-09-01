@@ -12,7 +12,7 @@ export default function ProvOrdenDetallePage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
   const toast = useToast();
-  const { ordenes, pedidos, recepciones, setOrdenEstado, corregirBcNumber, cerrarOrden, descartarOrden, devolverLineasOrden, nuevaOrdenConPendiente, cargando } = useStore();
+  const { ordenes, pedidos, recepciones, setOrdenEstado, corregirBcNumber, cerrarOrden, descartarOrden, devolverLineasOrden, alinearIvaConBc, nuevaOrdenConPendiente, cargando } = useStore();
   const [procesando, setProcesando] = useState(false);
   // Aviso de BC que NO se puede perder (el toast se desvanece y el usuario se queda
   // creyendo que el pedido en BC también se reabrió).
@@ -146,6 +146,19 @@ export default function ProvOrdenDetallePage() {
     }
   }
 
+  // Copiar a las líneas el IVA que BC va a contabilizar (lo ofrece el aviso amarillo
+  // del detalle cuando los totales no coinciden).
+  async function usarIvaDeBc() {
+    try {
+      const r = await alinearIvaConBc(orden!.id);
+      toast(r.cambiadas > 0
+        ? `IVA alineado con BC en ${r.cambiadas} línea(s) · ${r.detalle.join(" · ")}`
+        : "El IVA de la orden ya coincide con el de BC: no había nada que cambiar.", r.cambiadas > 0 ? "success" : "info");
+    } catch (e: any) {
+      toast(String(e?.message ?? e), "error");
+    }
+  }
+
   async function confirmarCierre() {
     if (!motivo) { toast("Elegí el motivo del cierre.", "error"); return; }
     if (procesando) return;
@@ -258,14 +271,20 @@ export default function ProvOrdenDetallePage() {
           Cerrar orden
         </Button>
       )}
-      {/* Re-apuntar a otro pedido de BC. Se ofrece siempre que la orden viva allá:
-          el caso típico es que Proveeduría haya borrado el pedido y creado otro, y
-          hasta ahora eso dejaba la orden trabada sin ninguna salida por pantalla. */}
-      {orden.bcNumber && (
+      {/* Apuntar la orden a un pedido de BC. Dos agujeros, el mismo botón:
+          · el pedido se borró allá y crearon otro (Proveeduría "corrige" así), y la
+            orden se quedó hablando con un número muerto;
+          · la orden vive en BC pero la app nunca se enteró del número — es el caso
+            que "Volver a abrir" ya avisaba ("buscá el pedido en BC a mano") sin dar
+            después ningún lugar donde anotarlo.
+          En los dos casos, hasta ahora, la orden quedaba trabada sin salida. */}
+      {(orden.bcNumber || orden.estado === "lanzado" || orden.estado === "pendiente_aprobacion") && (
         <Button variant="outline" disabled={procesando}
-          title={`Esta orden recibe y factura contra el pedido ${orden.bcNumber} de Business Central. Si en BC lo borraron y crearon otro, apuntala al nuevo.`}
+          title={orden.bcNumber
+            ? `Esta orden recibe y factura contra el pedido ${orden.bcNumber} de Business Central. Si en BC lo borraron y crearon otro, apuntala al nuevo.`
+            : "Esta orden no tiene N.º de Business Central guardado: buscá el pedido en BC y anotalo acá para que Bodega pueda registrar contra él."}
           onClick={() => { setNuevoBc(""); setMotivoBc(""); setRenumerando(true); }}>
-          Corregir N.º de BC
+          {orden.bcNumber ? "Corregir N.º de BC" : "Poner el N.º de BC"}
         </Button>
       )}
     </>
@@ -274,6 +293,7 @@ export default function ProvOrdenDetallePage() {
   return (
     <>
       <OrdenDetalle orden={orden} volverHref="/proveeduria/ordenes" volverLabel="Volver a órdenes" acciones={acciones} solicitudHref={solicitudHref}
+        onAlinearIva={() => usarIvaDeBc()}
         pedidoHref={(n) => { const p = pedidos.find((x) => x.numero === n); return p ? `/proveeduria/solicitudes/${p.id}` : null; }}
         aviso={avisoBc ? (
           <div className="ds-callout ds-callout--yellow mb-4" role="alert">
@@ -287,7 +307,7 @@ export default function ProvOrdenDetallePage() {
         ) : null} />
 
       {renumerando && (
-        <Modal title={`Corregir el N.º de Business Central de ${numeroOrden(orden)}`} onClose={() => setRenumerando(false)} footer={
+        <Modal title={`${orden.bcNumber ? "Corregir" : "Poner"} el N.º de Business Central de ${numeroOrden(orden)}`} onClose={() => setRenumerando(false)} footer={
           <>
             <Button variant="outline" onClick={() => setRenumerando(false)} disabled={procesando}>Cancelar</Button>
             <Button onClick={() => void confirmarRenumerado()} disabled={procesando || !nuevoBc.trim()}>
@@ -296,10 +316,16 @@ export default function ProvOrdenDetallePage() {
           </>
         }>
           <p className="ds-body-sm" style={{ marginTop: 0 }}>
-            Esta orden recibe y factura contra el pedido <span className="ds-strong">{orden.bcNumber}</span>.
-            Si en Business Central lo <span className="ds-strong">borraron y crearon otro</span> (es lo que pasa cuando
-            hay que corregirle el almacén o las líneas), apuntala acá al número nuevo: Bodega vuelve a poder registrar
-            normal y BC hace la recepción y la factura de verdad.
+            {orden.bcNumber ? (<>
+              Esta orden recibe y factura contra el pedido <span className="ds-strong">{orden.bcNumber}</span>.
+              Si en Business Central lo <span className="ds-strong">borraron y crearon otro</span> (es lo que pasa cuando
+              hay que corregirle el almacén o las líneas), apuntala acá al número nuevo: Bodega vuelve a poder registrar
+              normal y BC hace la recepción y la factura de verdad.
+            </>) : (<>
+              Esta orden <span className="ds-strong">no tiene N.º de Business Central guardado</span>, así que Bodega no
+              puede registrar contra ella y acá no se puede des-lanzar nada. Buscá el pedido en BC (por proveedor y fecha)
+              y anotá su número.
+            </>)}
           </p>
           <Field label="N.º del pedido en Business Central" help="Se verifica contra BC antes de guardarlo: si ese pedido no existe allá, no se guarda.">
             <Input value={nuevoBc} placeholder="CP-005300" autoFocus spellCheck={false}

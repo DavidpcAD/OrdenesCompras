@@ -1,6 +1,6 @@
 import { getAuthPool, getPool, sql } from "./db";
 import { bcDeepLinkPedido, bcDeepLinkFacturaRegistrada, bcUnidadesDeCompra, sanearObrasDeLineas } from "./bc";
-import { unidadCorregida } from "./unidad";
+import { unidadCorregida, codigoDeItem } from "./unidad";
 import { etiquetaInterna, esTipoDevolucion, esTipoEdicion } from "./helpers";
 import type { UnidadCompraItem } from "./bc";
 import type { DevolucionSolicitud, Orden, OrdenLinea, Pedido, PedidoLinea, Recepcion, RecepcionFoto, RecepcionLinea, Role, NotaCreditoLinea } from "./types";
@@ -1368,6 +1368,57 @@ export async function setOrdenBcNumber(
     usuario, rol,
   });
   await tx.commit();
+}
+
+// Adoptar en la orden el IVA que BC va a contabilizar (código de artículo/cargo → %).
+//
+// El IVA% de la app es solo su estimado: no viaja a BC, que lo calcula con el grupo
+// de IVA del proveedor cruzado con el del artículo. Cuando no coinciden, el total de
+// la orden, el del PDF que firma el proveedor y el que ve quien aprueba quedan mal
+// (CP-005254: la app decía 0% y BC cobra 13%). Esto los alinea SIN tocar BC: BC es la
+// fuente, la app copia. Si el que está mal es el de BC, se corrige allá el grupo de
+// IVA y se vuelve a correr esto.
+export async function aplicarIvaDeBcEnOrden(
+  id: number, porCodigo: Record<string, number>, usuario: string, rol: Role,
+): Promise<{ ordenNo: string; cambiadas: number; detalle: string[] }> {
+  const pool = await getPool();
+  const head = await pool.request().input("id", sql.Int, id)
+    .query("SELECT ordenNo FROM dbo.OrdenCompra WHERE idOrdenCompra=@id AND esEliminada=0");
+  if (!head.recordset.length) throw new Error("Orden no encontrada.");
+  const ordenNo = String(head.recordset[0].ordenNo ?? "");
+
+  const det = await pool.request().input("id", sql.Int, id).query(
+    `SELECT idOrdenCompraDet, tipoLinea, itemNo, ${await ensureCargoCols() ? "chargeNo" : "NULL AS chargeNo"}, descripcion, vatPct
+       FROM dbo.OrdenCompraDet WHERE idOrdenCompra=@id`);
+
+  const norm = (x: any) => String(x ?? "").trim().toUpperCase();
+  const cambios: { idLinea: number; de: number; a: number; nombre: string }[] = [];
+  for (const l of det.recordset) {
+    // El itemNo de una línea puede traer la variante pegada ("M11-0081 -VAR 12"): el
+    // código con el que BC nombra la línea es el pelado.
+    const code = l.tipoLinea === "cargo" ? norm(l.chargeNo) : norm(codigoDeItem(String(l.itemNo ?? "")));
+    if (!code || !(code in porCodigo)) continue;
+    const nuevo = Number(porCodigo[code]);
+    const viejo = Number(l.vatPct ?? 0);
+    if (!Number.isFinite(nuevo) || Math.abs(nuevo - viejo) < 1e-9) continue;
+    cambios.push({ idLinea: Number(l.idOrdenCompraDet), de: viejo, a: nuevo, nombre: String(l.descripcion || code) });
+  }
+  if (!cambios.length) return { ordenNo, cambiadas: 0, detalle: [] };
+
+  const tx = new sql.Transaction(pool); await tx.begin();
+  try {
+    for (const c of cambios) {
+      await new sql.Request(tx).input("id", sql.Int, c.idLinea).input("p", sql.Decimal(9, 4), c.a)
+        .query("UPDATE dbo.OrdenCompraDet SET vatPct=@p WHERE idOrdenCompraDet=@id");
+    }
+    const detalle = cambios.map((c) => `${c.nombre}: ${c.de}% → ${c.a}%`);
+    await logMov(tx, {
+      entidad: "orden", idEntidad: id, documentoNo: ordenNo, tipoMovimiento: "editado",
+      detalle: `IVA alineado con Business Central · ${detalle.join(" · ")}`, usuario, rol,
+    });
+    await tx.commit();
+    return { ordenNo, cambiadas: cambios.length, detalle };
+  } catch (e) { await tx.rollback(); throw e; }
 }
 
 // ----------------------------------------------------------------- RECEPCIONES

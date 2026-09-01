@@ -804,6 +804,41 @@ export type BcOrdenTotales = { subtotal: number; iva: number; total: number; cur
 // (excl. IVA, incluye cargos), IVA total y total con IVA. La app los MUESTRA tal
 // cual para que la orden se vea igual que en BC (en vez de recalcular y desalinearse).
 // Defensiva: null si BC no responde o el pedido no existe todavía.
+// IVA REAL por línea, tal como lo va a contabilizar BC: código de artículo (o de
+// cargo) → % de IVA.
+//
+// Hace falta porque el IVA% que se escribe en la app NO viaja a BC: allá se calcula
+// cruzando el grupo de IVA del proveedor con el del artículo. Cuando los dos no
+// coinciden, el estimado de la app —y con él el total del PDF que ve el proveedor y
+// el que aprueba— queda corto o largo (CP-005254: la app decía IVA 0 y BC cobra 13%
+// del artículo, ₡1.270,16 de diferencia). Con esto la app puede adoptar el de BC.
+export async function bcIvaDeLineasOrden(orderNo: string): Promise<Record<string, number> | null> {
+  if (!orderNo) return null;
+  try {
+    const cid = await getStdCompanyId();
+    // Las líneas de la API estándar cuelgan del pedido por su GUID, no por el N.º.
+    const filtro = `$filter=${encodeURIComponent(`number eq '${odataStr(orderNo)}'`)}&$select=id&$top=1`;
+    const res = await bcFetch(`${stdRoot()}/companies(${cid})/purchaseOrders?${filtro}`, { cache: "no-store" });
+    if (!res.ok) return null;
+    const id = ((await res.json())?.value ?? [])[0]?.id;
+    if (!id) return null;
+    const resL = await bcFetch(
+      `${stdRoot()}/companies(${cid})/purchaseOrders(${id})/purchaseOrderLines?$select=lineType,lineObjectNumber,description,taxPercent`,
+      { cache: "no-store" });
+    if (!resL.ok) return null;
+    const out: Record<string, number> = {};
+    for (const l of ((await resL.json())?.value ?? [])) {
+      // `lineObjectNumber` es el N.º de artículo en las líneas Item y el N.º de
+      // cargo en las Charge — los dos códigos con los que la app arma sus líneas.
+      const code = String(l?.lineObjectNumber ?? "").trim().toUpperCase();
+      const pct = Number(l?.taxPercent);
+      if (!code || !Number.isFinite(pct)) continue;
+      out[code] = pct;
+    }
+    return out;
+  } catch { return null; }
+}
+
 export async function bcOrdenTotales(orderNo: string): Promise<BcOrdenTotales | null> {
   if (!orderNo) return null;
   try {

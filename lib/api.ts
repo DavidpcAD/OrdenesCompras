@@ -66,6 +66,10 @@ export const api = {
   deletePedido: (id: string, body: unknown) =>
     fetch(`/api/pedidos/${id}`, { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }).then(jsonOrThrow),
 
+  // Copiar a la orden el IVA que BC va a contabilizar (el de la app es solo estimado).
+  alinearIvaConBc: (id: string, body: unknown): Promise<{ ordenNo: string; cambiadas: number; detalle: string[] }> =>
+    fetch(`/api/ordenes/${id}/iva-bc`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }).then(jsonOrThrow),
+
   // Devolver al ingeniero LÍNEAS que ya están dentro de una orden Abierta/Rechazada:
   // salen de la orden (el saldo vuelve a la solicitud) y quedan marcadas devueltas.
   devolverLineasOrden: (id: string, body: unknown): Promise<{ ordenNo: string; devueltas: number; nombres: string[]; ordenDescartada: boolean; bcAviso?: string }> =>
