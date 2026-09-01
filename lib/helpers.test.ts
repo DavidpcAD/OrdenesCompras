@@ -16,6 +16,7 @@ import {
   numeroOrden, etiquetaInterna, tieneBc, esConsumoDirecto, obraParaOrden, destinoDeRecepcion,
   puedeDevolverLinea, motivoNoDevolver, ordenesDeLineaPedido, ordenEsBorradorDescartable,
   lineasACotizar, observacionesParaProveedor, motivoDevolucion, devolucionesDeRol,
+  estadoDeDevolucion, devolucionesPendientes, correccionDeSolicitud,
 } from "./helpers.ts";
 import type { Orden, OrdenLinea, Pedido, PedidoLinea } from "./types.ts";
 
@@ -558,10 +559,65 @@ test("motivoDevolucion: entiende el pedido entero y la devolución por línea", 
 test("devolucionesDeRol: una solicitud con una línea devuelta aparece aunque el pedido siga su curso", () => {
   const conLineaDevuelta = pedido([{ ...pLinea({ id: "l1" }), devuelta: true }, pLinea({ id: "l2", cantidadOrdenada: 10 })], { estado: "aprobado" });
   const sinDevolver = pedido([pLinea({ id: "l1" })], { estado: "aprobado", id: "p2" });
-  const { solicitudes } = devolucionesDeRol("proveeduria", [conLineaDevuelta, sinDevolver], []);
-  assert.deepEqual(solicitudes.map((p) => p.id), ["p1"]);
+  const { esperando, corregidas } = devolucionesDeRol("proveeduria", [conLineaDevuelta, sinDevolver], []);
+  assert.deepEqual(esperando.map((p) => p.id), ["p1"]);
+  assert.deepEqual(corregidas.map((p) => p.id), []);
   // Otro rol (facturación, aprobación) no gestiona devoluciones de solicitudes.
-  assert.deepEqual(devolucionesDeRol("facturacion", [conLineaDevuelta], []).solicitudes, []);
+  assert.deepEqual(devolucionesDeRol("facturacion", [conLineaDevuelta], []).esperando, []);
+});
+
+// El caso que motivó todo esto (PED-000023, 1 sep 2026): Proveeduría devolvió una
+// línea, el ingeniero la corrigió desde la app de Producción y la solicitud se
+// esfumó de la bandeja — nadie avisó de que ya estaba lista para ordenar.
+const devolucion = { fecha: "2026-08-26T16:39:00.000Z", motivo: "Cambiar código de material", lineas: "PERLING 2X4X1.8MM H.G" };
+
+test("estadoDeDevolucion: esperando mientras la línea siga marcada, corregida cuando ya no", () => {
+  const marcada = pedido([{ ...pLinea({ id: "l1" }), devuelta: true }], { devolucion });
+  assert.equal(estadoDeDevolucion(marcada), "esperando");
+
+  // El ingeniero corrigió: la app de Producción le quita la marca a la línea. Lo
+  // único que queda es el movimiento de la bitácora, y por eso se sabe que HUBO
+  // devolución (antes, acá ya no había nada que distinguirla de una normal).
+  const corregida = pedido([pLinea({ id: "l1", cantidad: 25 })], { devolucion });
+  assert.equal(estadoDeDevolucion(corregida), "corregida");
+
+  // Una solicitud que nunca se devolvió no es ninguna de las dos.
+  assert.equal(estadoDeDevolucion(pedido([pLinea({ id: "l1" })])), null);
+  // Y una corregida que YA se ordenó sale de la bandeja: es la condición de salida,
+  // sin ella el punto rojo del menú se quedaba prendido para siempre.
+  const yaOrdenada = pedido([pLinea({ id: "l1", cantidad: 25, cantidadOrdenada: 25 })], { devolucion });
+  assert.equal(estadoDeDevolucion(yaOrdenada), null);
+  // Pedido devuelto COMPLETO: sigue esperando aunque no haya marca por línea.
+  assert.equal(estadoDeDevolucion(pedido([pLinea({ id: "l1" })], { estado: "devuelto", devolucion })), "esperando");
+});
+
+test("devolucionesPendientes: el punto rojo cuenta lo accionable (corregidas + órdenes rechazadas)", () => {
+  const esperandoP = pedido([{ ...pLinea({ id: "l1" }), devuelta: true }], { id: "p1", devolucion });
+  const corregidaP = pedido([pLinea({ id: "l1", cantidad: 25 })], { id: "p2", devolucion });
+  const rechazada = { ...orden([linea({ id: "o1" })]), estado: "rechazado" as const };
+
+  // Lo que espera al ingeniero NO cuenta: no hay nada que hacer con eso y dejaba el
+  // menú con un número que no se podía bajar.
+  assert.equal(devolucionesPendientes("proveeduria", [esperandoP], []), 0);
+  assert.equal(devolucionesPendientes("proveeduria", [esperandoP, corregidaP], []), 1);
+  assert.equal(devolucionesPendientes("proveeduria", [esperandoP, corregidaP], [rechazada]), 2);
+  // Los otros roles no gestionan devoluciones de solicitudes: contabilidad no ve
+  // ninguna, y facturación solo las órdenes rechazadas.
+  assert.equal(devolucionesPendientes("contabilidad", [corregidaP], [rechazada]), 0);
+  assert.equal(devolucionesPendientes("facturacion", [corregidaP], [rechazada]), 1);
+});
+
+test("correccionDeSolicitud: dice quién y cuándo si la bitácora lo tiene, y no inventa si no", () => {
+  const conEdicion = pedido([pLinea({ id: "l1" })], {
+    devolucion: { ...devolucion, corregida: { fecha: "2026-09-01T15:23:00.000Z", usuario: "Ana Beatriz Gomez Viquez", rol: "ingenieria" } },
+  });
+  assert.equal(correccionDeSolicitud(conEdicion).quien, "Ana Beatriz Gomez Viquez");
+  assert.match(correccionDeSolicitud(conEdicion).fecha, /^2026-09-01/);
+  // Sin la edición en el log igual se sabe que está corregida (por la marca de la
+  // línea), pero la fecha no se inventa.
+  const sinEdicion = pedido([pLinea({ id: "l1" })], { devolucion });
+  assert.equal(correccionDeSolicitud(sinEdicion).fecha, "");
+  assert.equal(correccionDeSolicitud(sinEdicion).quien, "");
 });
 
 // El fallback "si no hay pendiente, cotizá todo" no puede resucitar lo devuelto.

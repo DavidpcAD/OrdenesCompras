@@ -8,7 +8,7 @@ import { DataTable } from "@/components/data-table";
 import { VistaToggle } from "@/components/vista-toggle";
 import { IconEye, IconReceipt, IconList } from "@/components/icons";
 import { useStore } from "@/lib/store";
-import { destinoLabel, destinoCodigo, money, num, pedidoLineaPendiente, solicitudResumen, tipoSolicitudBadge } from "@/lib/helpers";
+import { destinoLabel, destinoCodigo, money, num, pedidoLineaPendiente, solicitudResumen, tipoSolicitudBadge, estadoDeDevolucion } from "@/lib/helpers";
 import { useVariantes } from "@/lib/use-variantes";
 
 interface Row {
@@ -96,6 +96,14 @@ export default function ProveeduriaMaterialesPage() {
   const setRow = (id: string, patch: Partial<Row>) =>
     setRows((rs) => rs.map((r) => (r.pedidoLineaId === id ? { ...r, ...patch } : r)));
 
+  // Solicitudes que volvieron CORREGIDAS de una devolución. La línea vuelve a estar
+  // comprable y hasta ahora no se distinguía de una normal: quien la devolvió tenía
+  // que acordarse de que existía (ver estadoDeDevolucion).
+  const corregidas = useMemo(
+    () => new Set(pedidos.filter((p) => estadoDeDevolucion(p) === "corregida").map((p) => p.id)),
+    [pedidos],
+  );
+
   // Variantes de los materiales de la tabla. Acá es donde se decide QUÉ se compra,
   // y con el ítem genérico ("PORCELANATO 60X60CM") no alcanza: la medida, el grado o
   // la talla están en la variante. Se piden en una sola llamada para toda la tabla.
@@ -170,8 +178,18 @@ export default function ProveeduriaMaterialesPage() {
           onChange={(e) => setRow(r.pedidoLineaId, { incluir: e.target.checked })} />
       ); },
     },
-    { id: "pedido", header: "Pedido", accessorFn: (r) => r.pedidoNumero, meta: { label: "Pedido" },
-      cell: (c) => { const r = c.row.original; return <span className="row gap-2" style={{ alignItems: "center" }}>{dot(r.tipo === "repuesto" ? "yellow" : "green")}<span className="ds-body-sm ds-strong">{r.pedidoNumero}</span></span>; } },
+    { id: "pedido", header: "Pedido", accessorFn: (r) => `${r.pedidoNumero}${corregidas.has(r.pedidoId) ? " corregida" : ""}`, meta: { label: "Pedido" },
+      cell: (c) => { const r = c.row.original; return (
+        <span className="col" style={{ gap: 2 }}>
+          <span className="row gap-2" style={{ alignItems: "center" }}>{dot(r.tipo === "repuesto" ? "yellow" : "green")}<span className="ds-body-sm ds-strong">{r.pedidoNumero}</span></span>
+          {corregidas.has(r.pedidoId) && (
+            <span className="ds-body-sm ds-strong" style={{ color: "var(--ds-color-green-200)" }}
+              title="Esta solicitud se había devuelto al ingeniero y ya la corrigió: revisá la línea antes de ordenar.">
+              ↩ corregida
+            </span>
+          )}
+        </span>
+      ); } },
     { id: "articulo", header: "Artículo", accessorFn: (r) => `${r.articuloId} ${r.descripcion}`, meta: { label: "Artículo" },
       // El código va ARRIBA en su propia línea y la descripción abajo en dos líneas:
       // metidos en la misma fila, el código se comía ~90px y la medida del material

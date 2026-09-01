@@ -109,6 +109,24 @@ export interface PedidoLinea {
   notas?: string;
 }
 
+// DEVOLUCIÓN de una solicitud (o de algunas de sus líneas) que hizo Proveeduría.
+//
+// No tiene columnas propias: se reconstruye del log `dbo.Movimiento`, donde queda el
+// movimiento "devuelto" con su motivo, y la EDICIÓN posterior que hace el ingeniero
+// desde la app de Producción (las dos apps escriben en la misma bitácora).
+//
+// Por qué importa: hasta ahora la única señal de que ya la habían corregido era que
+// la solicitud DESAPARECÍA de la bandeja de Devoluciones. Nadie avisaba, y había que
+// acordarse de que estaba devuelta para volver a mirarla.
+export interface DevolucionSolicitud {
+  fecha: string;             // ISO — la devolución más reciente
+  motivo?: string;
+  lineas?: string;           // qué se devolvió, tal como se llamaba entonces
+  usuario?: string;          // quién la devolvió (Proveeduría)
+  // Edición del ingeniero POSTERIOR a la devolución. `undefined` = todavía no la tocó.
+  corregida?: { fecha: string; usuario?: string; rol?: string };
+}
+
 export interface Pedido {
   id: string;
   numero: string;            // PED-000123
@@ -124,6 +142,8 @@ export interface Pedido {
   prioridad: "normal" | "alta" | "urgente";
   notas?: string;
   idClasificacion?: number | null; // clasificación WBS (para ligar la celda de la Matriz al pedido)
+  // Devolución que le hizo Proveeduría, si hubo (sale de la bitácora, no de la tabla).
+  devolucion?: DevolucionSolicitud;
   lineas: PedidoLinea[];
 }
 

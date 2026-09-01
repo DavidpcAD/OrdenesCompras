@@ -7,26 +7,71 @@ export function tipoSolicitudBadge(t: TipoSolicitud): { label: string; tone: str
     : { label: "Material", tone: "green" };
 }
 
+// En qué punto va una solicitud que Proveeduría devolvió:
+//   "esperando"  -> todavía tiene líneas marcadas como devueltas (o el pedido entero
+//                   está devuelto): la pelota la tiene el ingeniero, no hay nada que
+//                   hacer de este lado.
+//   "corregida"  -> hubo devolución, ya NO queda nada marcado y TODAVÍA hay saldo por
+//                   ordenar: el ingeniero la arregló y hay que comprarla. ESTO es lo
+//                   accionable, y antes no se veía en ninguna parte — la solicitud
+//                   simplemente desaparecía de la bandeja cuando la corregían.
+//   null         -> nunca se devolvió, o ya se ordenó lo que volvió corregido.
+//
+// El saldo es la condición de SALIDA: sin él, una corregida se quedaba en la bandeja
+// (y en el punto rojo del menú) para siempre, que es justo el número que no se puede
+// bajar. Al armar la orden con lo que volvió, la solicitud se queda sin pendiente y
+// sale sola. Si el ingeniero BORRÓ la línea en vez de corregirla también sale: no hay
+// nada que comprar.
+//
+// `p.devolucion` sale de la bitácora (ver devolucionesDeSolicitudes en repo.ts): el
+// estado por línea se borra al corregir, así que sin el log no habría cómo saber que
+// esta solicitud pasó por una devolución.
+export type EstadoDevolucion = "esperando" | "corregida";
+export function estadoDeDevolucion(p: Pedido): EstadoDevolucion | null {
+  const marcada = p.estado === "devuelto" || p.lineas.some((l) => l.devuelta);
+  if (marcada) return "esperando";
+  if (!p.devolucion) return null;
+  return pedidoTieneSaldo(p) ? "corregida" : null;
+}
+
 // Devoluciones que le competen a un rol: solicitudes que Proveeduría devolvió a
-// Ingeniería (pedido "devuelto", o alguna línea suya "devuelta" aunque el pedido
-// siga su curso con el resto) y órdenes que Aprobación rechazó (orden
-// "rechazado"). Una sola regla para la bandeja de Devoluciones Y para el punto rojo
-// del menú: si se escriben aparte, tarde o temprano dicen cosas distintas.
-export function devolucionesDeRol(role: Role, pedidos: Pedido[], ordenes: Orden[]): { solicitudes: Pedido[]; ordenes: Orden[] } {
+// Ingeniería —separadas en las que siguen esperando y las que ya volvieron
+// corregidas— y órdenes que Aprobación rechazó (orden "rechazado"). Una sola regla
+// para la bandeja de Devoluciones Y para el punto rojo del menú: si se escriben
+// aparte, tarde o temprano dicen cosas distintas.
+export function devolucionesDeRol(
+  role: Role, pedidos: Pedido[], ordenes: Orden[],
+): { esperando: Pedido[]; corregidas: Pedido[]; ordenes: Orden[] } {
+  const mias = role === "proveeduria" ? pedidos : [];
   return {
-    solicitudes: role === "proveeduria"
-      ? pedidos.filter((p) => p.estado === "devuelto" || p.lineas.some((l) => l.devuelta))
-      : [],
+    esperando: mias.filter((p) => estadoDeDevolucion(p) === "esperando"),
+    corregidas: mias.filter((p) => estadoDeDevolucion(p) === "corregida"),
     ordenes: role === "proveeduria" || role === "facturacion" ? ordenes.filter((o) => o.estado === "rechazado") : [],
   };
 }
 
-// Cuántas devoluciones quedan sin corregir (0 = nada que hacer). El punto rojo del
-// menú se apaga solo: al reenviar la solicitud o relanzar la orden, el estado cambia
-// y esto vuelve a 0. No hay nada que "marcar como leído".
+// Lo que cuenta el punto rojo del menú: lo ACCIONABLE. Las solicitudes ya corregidas
+// (volvieron del ingeniero y hay que ordenarlas) y las órdenes rechazadas (hay que
+// corregirlas y relanzarlas).
+//
+// Lo que está esperando al ingeniero se muestra en la bandeja pero NO cuenta: tenerlo
+// en el punto rojo dejaba el menú con un número permanente que no se podía bajar, y
+// escondía justo lo único que sí hay que atender.
+//
+// Se apaga solo: al ordenar lo corregido la solicitud se queda sin saldo y sale de la
+// lista; al relanzar la orden cambia de estado. No hay nada que "marcar como leído".
 export function devolucionesPendientes(role: Role, pedidos: Pedido[], ordenes: Orden[]): number {
   const d = devolucionesDeRol(role, pedidos, ordenes);
-  return d.solicitudes.length + d.ordenes.length;
+  return d.corregidas.length + d.ordenes.length;
+}
+
+// Cuándo y quién corrigió la solicitud, para decirlo en la bandeja. Si la bitácora no
+// tiene la edición del ingeniero (o la otra app no la escribió), se sabe que está
+// corregida por el estado de las líneas pero no la fecha: se devuelve "" y la UI
+// muestra el dato que sí tiene.
+export function correccionDeSolicitud(p: Pedido): { fecha: string; quien: string } {
+  const c = p.devolucion?.corregida;
+  return { fecha: c?.fecha ?? "", quien: (c?.usuario ?? "").trim() };
 }
 
 export function destinoLabel(p: Pedido): string {

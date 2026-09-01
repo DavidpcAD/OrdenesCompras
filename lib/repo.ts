@@ -3,7 +3,7 @@ import { bcDeepLinkPedido, bcDeepLinkFacturaRegistrada, bcUnidadesDeCompra, sane
 import { unidadCorregida } from "./unidad";
 import { etiquetaInterna } from "./helpers";
 import type { UnidadCompraItem } from "./bc";
-import type { Orden, OrdenLinea, Pedido, PedidoLinea, Recepcion, RecepcionFoto, RecepcionLinea, Role, NotaCreditoLinea } from "./types";
+import type { DevolucionSolicitud, Orden, OrdenLinea, Pedido, PedidoLinea, Recepcion, RecepcionFoto, RecepcionLinea, Role, NotaCreditoLinea } from "./types";
 
 /* ============================================================================
    Capa de acceso a datos (SQL Server) para Compras Adelante.
@@ -99,14 +99,88 @@ export async function health() {
 }
 
 // ----------------------------------------------------------------- PEDIDOS
+
+// DEVOLUCIONES de solicitudes, reconstruidas del log de movimientos.
+//
+// `dbo.PedidoCompraDet.idEstado` dice si una línea está devuelta AHORA, pero se borra
+// cuando el ingeniero la corrige: después de eso no queda rastro de que hubo una
+// devolución y la solicitud simplemente DESAPARECÍA de la bandeja de Devoluciones —
+// la única forma de enterarse de que ya la habían arreglado era acordarse de ella.
+//
+// El log sí lo guarda: el movimiento "devuelto" (con el motivo y las líneas, lo
+// escribe esta app) y la EDICIÓN posterior del ingeniero, que la app de Producción
+// escribe en la misma bitácora. Comparando las dos fechas se sabe si ya la corrigió.
+//
+// Son dos consultas chicas: las devoluciones son pocas en toda la vida de la base, y
+// las ediciones se piden SOLO de esas solicitudes.
+const isoFecha = (f: any): string => (typeof f?.toISOString === "function" ? f.toISOString() : String(f ?? ""));
+
+async function devolucionesDeSolicitudes(): Promise<Map<string, DevolucionSolicitud>> {
+  const out = new Map<string, DevolucionSolicitud>();
+  try {
+    const pool = await getPool();
+    // 1) La devolución más reciente de cada solicitud. Se tolera cómo escriba el tipo
+    //    la otra app (devuelto / devolución / devuelta), igual que motivosRechazo.
+    const dev = await pool.request().query(
+      `SELECT idEntidad, fecha, detalle, usuario FROM dbo.Movimiento
+        WHERE entidad='pedido' AND tipoMovimiento LIKE '%devol%'
+        ORDER BY fecha DESC, idMovimiento DESC`
+    );
+    for (const m of dev.recordset) {
+      const key = String(m.idEntidad);
+      if (out.has(key)) continue;              // la primera es la más reciente
+      const detalle = String(m.detalle ?? "");
+      const motivo = (detalle.split(/·\s*Motivo:\s*/i)[1] ?? "").trim();
+      const lineas = (detalle.match(/l[íi]nea\(s\):\s*([^·]*)/i)?.[1] ?? "").trim();
+      out.set(key, {
+        fecha: isoFecha(m.fecha),
+        motivo: motivo || undefined,
+        lineas: lineas || undefined,
+        usuario: m.usuario ?? undefined,
+      });
+    }
+    if (!out.size) return out;
+
+    // 2) ¿La editaron DESPUÉS? Esa es la señal de que el ingeniero ya la corrigió.
+    //    "edit%" no cubre "edición" (no lleva la t), y la otra app podría decir
+    //    "modificado": se aceptan las tres formas.
+    const ids = [...out.keys()].map(Number).filter(Number.isFinite);
+    const req = pool.request();
+    let filtroIds = "";
+    if (ids.length <= 500) {
+      const params = ids.map((id, i) => { req.input(`p${i}`, sql.Int, id); return `@p${i}`; });
+      filtroIds = ` AND idEntidad IN (${params.join(",")})`;
+    }
+    const ed = await req.query(
+      `SELECT idEntidad, fecha, usuario, rol FROM dbo.Movimiento
+        WHERE entidad='pedido'${filtroIds}
+          AND (tipoMovimiento LIKE '%edit%' OR tipoMovimiento LIKE '%edic%' OR tipoMovimiento LIKE '%modific%')
+        ORDER BY fecha DESC, idMovimiento DESC`
+    );
+    const vistos = new Set<string>();
+    for (const m of ed.recordset) {
+      const key = String(m.idEntidad);
+      if (vistos.has(key)) continue;           // la primera es la edición más reciente
+      vistos.add(key);
+      const d = out.get(key);
+      if (!d) continue;
+      const fecha = isoFecha(m.fecha);
+      // Solo cuenta si es POSTERIOR a la devolución: las ediciones de antes son de
+      // cuando la solicitud se estaba armando.
+      if (fecha > d.fecha) d.corregida = { fecha, usuario: m.usuario ?? undefined, rol: m.rol ?? undefined };
+    }
+  } catch { /* sin bitácora disponible: las solicitudes quedan sin dato de devolución */ }
+  return out;
+}
+
 export async function listPedidos(): Promise<Pedido[]> {
   await ensureEstados();
   const pool = await getPool();
   const h = await pool.request().query("SELECT * FROM dbo.PedidoCompra WHERE esEliminada = 0 ORDER BY idPedidoCompra DESC");
   const d = await pool.request().query("SELECT * FROM dbo.PedidoCompraDet ORDER BY idPedidoCompraDet");
   const porPedido = porCabecera(d.recordset, "idPedidoCompra");
-  const unidades = await mapaUnidades();
-  return h.recordset.map((p) => mapPedido(p, porPedido.get(p.idPedidoCompra) ?? [], unidades));
+  const [unidades, devoluciones] = await Promise.all([mapaUnidades(), devolucionesDeSolicitudes()]);
+  return h.recordset.map((p) => mapPedido(p, porPedido.get(p.idPedidoCompra) ?? [], unidades, devoluciones));
 }
 
 export async function getPedido(id: number): Promise<Pedido | null> {
@@ -115,7 +189,8 @@ export async function getPedido(id: number): Promise<Pedido | null> {
   const h = await pool.request().input("id", sql.Int, id).query("SELECT * FROM dbo.PedidoCompra WHERE idPedidoCompra=@id");
   if (!h.recordset.length) return null;
   const d = await pool.request().input("id", sql.Int, id).query("SELECT * FROM dbo.PedidoCompraDet WHERE idPedidoCompra=@id ORDER BY idPedidoCompraDet");
-  return mapPedido(h.recordset[0], d.recordset, await mapaUnidades());
+  const [unidades, devoluciones] = await Promise.all([mapaUnidades(), devolucionesDeSolicitudes()]);
+  return mapPedido(h.recordset[0], d.recordset, unidades, devoluciones);
 }
 
 // Unidades de compra de BC, una sola vez por request. Si BC no responde devuelve
@@ -146,7 +221,11 @@ function unidadLinea(itemNo: string, guardada: string, mapa: Record<string, Unid
   };
 }
 
-function mapPedido(p: any, lineas: any[], unidades: Record<string, UnidadCompraItem> = {}): Pedido {
+function mapPedido(
+  p: any, lineas: any[],
+  unidades: Record<string, UnidadCompraItem> = {},
+  devoluciones: Map<string, DevolucionSolicitud> = new Map(),
+): Pedido {
   return {
     id: String(p.idPedidoCompra), numero: p.pedidoNo ?? "",
     tipoSolicitud: (p.tipoSolicitud ?? "material") as Pedido["tipoSolicitud"],
@@ -156,6 +235,10 @@ function mapPedido(p: any, lineas: any[], unidades: Record<string, UnidadCompraI
     estado: (codigoDeId(p.idEstado) ?? "borrador") as Pedido["estado"],
     prioridad: (p.prioridad ?? "normal") as Pedido["prioridad"], notas: p.notaCreador ?? undefined,
     idClasificacion: p.idClasificacion ?? null,
+    // Devolución + si el ingeniero ya la corrigió (sale de la bitácora, ver
+    // devolucionesDeSolicitudes). Sin esto, una solicitud corregida no se distingue
+    // de una que nunca se devolvió.
+    devolucion: devoluciones.get(String(p.idPedidoCompra)),
     lineas: lineas.map((l): PedidoLinea => ({
       id: String(l.idPedidoCompraDet), articuloId: l.itemNo ?? "", descripcion: l.descripcion ?? "",
       cantidad: Number(l.quantitySolicitado ?? 0),

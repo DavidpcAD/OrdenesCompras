@@ -9,7 +9,7 @@ import { useStore } from "@/lib/store";
 import { useVolver } from "@/lib/use-volver";
 import { useVariantes } from "@/lib/use-variantes";
 import { codigoDeItem } from "@/lib/unidad";
-import { formatDate, num, pedidoBadge, pedidoLineaPendiente, recibidoDeLineaPedido, destinoCodigo, destinoLabel, tipoSolicitudBadge, esConsumoDirecto, puedeDevolverLinea, motivoNoDevolver, ordenesDeLineaPedido } from "@/lib/helpers";
+import { formatDate, num, pedidoBadge, pedidoLineaPendiente, recibidoDeLineaPedido, destinoCodigo, destinoLabel, tipoSolicitudBadge, esConsumoDirecto, puedeDevolverLinea, motivoNoDevolver, ordenesDeLineaPedido, estadoDeDevolucion, correccionDeSolicitud } from "@/lib/helpers";
 
 export default function ProveeduriaPedidoDetallePage() {
   const { id } = useParams<{ id: string }>();
@@ -124,6 +124,37 @@ export default function ProveeduriaPedidoDetallePage() {
           </div>
         </div>
 
+        {/* Cómo va la devolución que le hiciste a esta solicitud. Hasta ahora, cuando
+            el ingeniero corregía, esto no se decía en ninguna parte: la solicitud
+            salía de la bandeja de Devoluciones y punto. */}
+        {(() => {
+          const estado = estadoDeDevolucion(pedido);
+          if (!estado) return null;
+          const { fecha, quien } = correccionDeSolicitud(pedido);
+          const dev = pedido.devolucion;
+          const corregida = estado === "corregida";
+          return (
+            <Card className="mt-2" style={{ background: corregida
+              ? "color-mix(in srgb, var(--ds-color-green-100) 10%, var(--ds-tint-base))"
+              : "color-mix(in srgb, var(--ds-color-yellow) 8%, var(--ds-tint-base))" }}>
+              <span className="ds-label ds-muted">{corregida ? "Devolución corregida" : "Devuelta al ingeniero"}</span>
+              <p style={{ margin: "4px 0 0" }}>
+                {corregida
+                  ? <>El ingeniero ya corrigió lo que devolviste{fecha ? <> el <span className="ds-strong">{formatDate(fecha)}</span></> : ""}{quien ? <> ({quien})</> : ""}. Revisá las líneas y armá la orden.</>
+                  : <>Esperando al ingeniero. La(s) línea(s) devuelta(s) quedan bloqueadas hasta que las corrija en Producción.</>}
+              </p>
+              {(dev?.lineas || dev?.motivo) && (
+                <p className="ds-body-sm ds-muted" style={{ margin: "6px 0 0" }}>
+                  {dev?.fecha ? `Devuelta el ${formatDate(dev.fecha)}` : "Devuelta"}
+                  {dev?.usuario ? ` por ${dev.usuario}` : ""}
+                  {dev?.lineas ? ` · ${dev.lineas}` : ""}
+                  {dev?.motivo ? ` · Motivo: ${dev.motivo}` : ""}
+                </p>
+              )}
+            </Card>
+          );
+        })()}
+
         {pedido.notas && (
           <Card className="mt-2" style={{ background: "color-mix(in srgb, var(--ds-color-yellow) 8%, var(--ds-tint-base))" }}>
             <span className="ds-label ds-muted">Comentario</span>
@@ -143,7 +174,7 @@ export default function ProveeduriaPedidoDetallePage() {
                       {/* El código del material: es con lo que se busca en BC y con lo
                           que Proveeduría confirma que va a ordenar lo que pidieron. Va
                           pelado (el guardado puede traer la variante pegada, que BC no
-                          conoce). */}
+                          conoce); la variante se muestra abajo con su nombre. */}
                       {codigoDeItem(l.articuloId ?? "") && (
                         <div className="ds-body-sm ds-muted">{codigoDeItem(l.articuloId ?? "")}</div>
                       )}

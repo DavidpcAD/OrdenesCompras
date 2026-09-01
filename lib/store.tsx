@@ -833,6 +833,10 @@ export function StoreProvider({ children, useApi }: { children: React.ReactNode;
           ...d,
           pedidos: d.pedidos.map((p) => (p.id === id ? {
             ...p, lineas,
+            // Igual que en SQL, donde esto se reconstruye de la bitácora: queda
+            // registrado que HUBO devolución, para poder decir después "ya la
+            // corrigieron" cuando el ingeniero le quite la marca a la línea.
+            devolucion: { fecha: new Date().toISOString(), motivo, lineas: nombres.join("; "), usuario: persona },
             ...(todo ? { estado: "devuelto" as Pedido["estado"], notas: motivo ? `↩ Devuelto: ${motivo}${p.notas ? ` · ${p.notas}` : ""}` : p.notas } : {}),
           } : p)),
           movimientos: [mov, ...d.movimientos],

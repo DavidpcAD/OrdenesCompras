@@ -159,8 +159,10 @@ export function AppShell({ role, children }: { role: Role; children: React.React
   const notifsRol = notificaciones.filter((n) => !n.rol || n.rol === role);
   const noLeidas = notifsRol.filter((n) => !n.leida).length;
   // Punto rojo del menú: avisos que salen del DATO, no de que el usuario los "lea"
-  // (al revés de la campanita). Hoy solo Devoluciones: se prende mientras haya algo
-  // por corregir y se apaga solo cuando la última se arregla.
+  // (al revés de la campanita). Hoy solo Devoluciones: cuenta lo ACCIONABLE — las
+  // solicitudes que el ingeniero ya corrigió (hay que ordenarlas) y las órdenes que
+  // Aprobación rechazó. Lo que sigue esperando al ingeniero no cuenta: no hay nada
+  // que hacer con eso y el número no se podía bajar nunca.
   const avisos = useMemo<Record<string, number>>(() => ({
     "/proveeduria/devoluciones": devolucionesPendientes(role, pedidos, ordenes),
   }), [role, pedidos, ordenes]);
@@ -319,7 +321,7 @@ export function AppShell({ role, children }: { role: Role; children: React.React
               const aviso = avisos[n.href] ?? 0;
               // Con aviso, el nombre accesible/tooltip dice cuántas hay: el punto
               // solo no le sirve a quien usa lector de pantalla.
-              const rotulo = aviso > 0 ? `${n.label} · ${aviso} sin corregir` : n.label;
+              const rotulo = aviso > 0 ? `${n.label} · ${aviso} por atender` : n.label;
               return (
                 <button key={n.href} className={`app-nav__item${active ? " is-active" : ""}`}
                   title={rotulo} aria-label={aviso > 0 ? rotulo : undefined}
@@ -396,7 +398,7 @@ export function AppShell({ role, children }: { role: Role; children: React.React
           mismo punto rojo que el ítem del menú: con el drawer cerrado el ítem no se ve. */}
       {hasNav && !navOpen && (
         <button type="button" className="ds-btn ds-btn--black ds-btn--layout-icon fab fab--menu" onClick={() => setNavOpen(true)}
-          aria-label={avisosTotal > 0 ? `Abrir menú · ${avisosTotal} sin corregir` : "Abrir menú"}>
+          aria-label={avisosTotal > 0 ? `Abrir menú · ${avisosTotal} por atender` : "Abrir menú"}>
           {avisosTotal > 0 && <span className="app-nav__dot" aria-hidden />}
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M3 6h18M3 12h18M3 18h18" /></svg>
         </button>
