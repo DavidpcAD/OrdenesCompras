@@ -1918,3 +1918,116 @@ button.ana-kpi:active { transform: translateY(1px); }
   .topbar__identity { min-width: 0; overflow: hidden; }
   .topbar__identity > span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 }
+
+/* ---------------------------------------------------------------------------
+   Diálogo "Agregar líneas de solicitud" (components/agregar-lineas-solicitud.tsx):
+   sumarle a una orden las líneas de solicitud que quedaron pendientes.
+
+   Por qué no alcanzaba lo que ya había:
+   · NO se puede usar `.ds-table`: su `thead th` (370) pinta de negro CUALQUIER
+     <th> y no hay variante clara, así que un thead con dos filas (rótulos +
+     filtros) daba dos barras negras apiladas adentro de un diálogo claro.
+   · Sí se reusa la pseudo-tabla en grilla del DS: `.rec-line`, `.rec-line--head`
+     y `.rec-line__desc/__code/__name/__qty` (853-874). Lo único que le falta al
+     DS es esta grilla de 4 columnas, un encabezado de lista PEGAJOSO (no hay
+     ninguno; el precedente más cercano es `.notif-panel__head`, 1377) y la celda
+     de acción.
+   · El rótulo de grupo, el divisor entre grupos y el pie con la señal de "hay
+     más abajo" son `.combo__group`, `.combo__group-wrap` (471-472) y
+     `.combo__more` (481) tal cual, sin CSS nuevo.
+   Este bloque va AL FINAL a propósito: `.addl-line` tiene que pisar el padding y
+   la grilla de `.rec-line` y ambas pesan igual (0-1-0), así que gana la última.
+   --------------------------------------------------------------------------- */
+
+/* Buscador + chip, FUERA de la caja con scroll: así el único sticky de la lista
+   es el encabezado de columnas. El reset de `.md-filtro` es el mismo que el DS
+   ya hace en `.md-filtros .md-filtro` (1170): deja de ser sticky y pierde el
+   margen de abajo. */
+.addl-tools { display: flex; align-items: center; flex-wrap: wrap; gap: var(--ds-space-2); margin: var(--ds-space-4) 0 var(--ds-space-2); }
+.addl-tools .md-filtro { position: static; margin-bottom: 0; flex: 1 1 220px; min-width: 0; }
+.addl-tools .filter-chip { flex-shrink: 0; }
+
+/* La ÚNICA parte del diálogo con scroll propio. `.modal` ya trae overflow auto
+   (1305), pero por ahí se van también el título y el pie; con el tope de acá el
+   pie del diálogo queda a la vista sin anidar un segundo scrollbar. */
+.addl-scroll {
+  /* El alto se despeja de la única condición que importa: que el diálogo ENTERO
+     quepa en su tope de 88vh y NO aparezca un segundo scrollbar (el de .modal)
+     encima del de la lista. Medido en desktop, el título + la ayuda + el
+     buscador + el pie suman ~260px, así que la lista no puede pasar de
+     0,88·alto − 260; los 300 son esos 260 con 40px de holgura. El tope en
+     píxeles solo recorta pantallas muy altas, donde 520px ya son ~9 filas. */
+  max-height: max(160px, min(calc(88vh - 300px), 520px)); overflow-y: auto; overscroll-behavior: contain;
+  border: 1.5px solid var(--ds-color-gray-100); border-radius: var(--ds-radius-lg);
+  background: var(--ds-surface);
+  /* Con 6 líneas o menos no hay buscador, y sin él la caja quedaba pegada al texto
+     de ayuda. Cuando el buscador está, él pone la separación. */
+  margin-top: var(--ds-space-4);
+}
+.addl-tools + .addl-scroll { margin-top: 0; }
+
+/* Con teclado, la fila que recibe el foco no puede quedar debajo del encabezado ni
+   del pie pegajosos: el navegador la acomoda dejando ese margen. */
+.addl-line { scroll-margin-top: 40px; scroll-margin-bottom: 40px; }
+
+/* La MISMA grilla para el encabezado y para las filas, para que las columnas
+   queden clavadas de arriba a abajo (`.ds-table` no es table-layout: fixed, y
+   por eso "Artículo" se comía el ancho). Piso de 260px para el nombre del
+   material por la razón que el DS dejó comentada en 855-858: la medida va al
+   FINAL ("… 1-1/4\" METALICO"). */
+.addl-line { grid-template-columns: minmax(260px, 1fr) 148px 104px 104px; gap: var(--ds-space-3); padding: 8px 12px; }
+
+/* La tipografía del encabezado (12px, semibold, gray-400) y su filo de 1.5px ya
+   los pone `.rec-line--head` (864-865); acá solo se lo hace pegajoso. */
+.addl-line--head { position: sticky; top: 0; z-index: 1; padding: 7px 12px; background: var(--ds-surface); }
+
+.addl-line__dest { min-width: 0; font-size: var(--ds-font-size-body-sm); color: var(--ds-color-gray-400); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.addl-line__acc { display: flex; flex-direction: column; align-items: flex-end; justify-content: center; gap: 2px; min-width: 0; }
+
+/* Área de toque de 44px SIN pastilla: `<Button size="sm">` mide 44px pero es una
+   pastilla blanca con sombra y radio 32px (206), y una por fila era justamente
+   el "qué feo". El DS ya usa `.link-btn` para las acciones de fila de la tabla
+   de líneas de la orden. */
+.addl-add { min-height: 44px; display: inline-flex; align-items: center; padding: 0 2px; }
+.addl-line__ok { display: inline-flex; align-items: center; gap: 4px; min-height: 14px; font-size: 11px; font-weight: 700; color: var(--ds-color-green-300); white-space: nowrap; }
+
+/* Ya agregada: la fila NO desaparece. Si desapareciera, la lista se correría
+   bajo el cursor (o bajo el dedo) y el clic siguiente caería en otra línea. */
+.addl-line.is-ya { background: color-mix(in srgb, var(--ds-color-green-100) 10%, var(--ds-tint-base)); }
+
+/* Grupo que viene de la solicitud de ESTA orden. green-300 es el verde de TEXTO
+   del DS (en oscuro se remapea al verde de marca, 112). El filo verde de 3px
+   evita repetir la marca fila por fila. */
+.addl-grp__origen { font-weight: 700; color: var(--ds-color-green-300); }
+.addl-grp--origen .combo__group { box-shadow: inset 3px 0 0 var(--ds-color-green-100); }
+
+/* En desktop el rótulo lo dice la columna; en móvil no hay encabezado. */
+.addl-pendlbl { display: none; font-size: var(--ds-font-size-body-sm); font-weight: var(--ds-font-weight-regular); color: var(--ds-color-gray-400); }
+
+/* Corte PROPIO de este diálogo (800px es donde el modal deja de alojar las 4
+   columnas), no el de las utilidades de visibilidad (.hide-mobile corta en 640).
+   Se puede elegir libre porque acá no se usa ninguna de esas clases: la fila se
+   REORDENA, no se duplica, así que no hay forma de que un dato aparezca dos
+   veces entre dos breakpoints. Material arriba (2 líneas), destino y pendiente
+   abajo, y la acción a la derecha centrada sobre los dos renglones. */
+@media (max-width: 800px) {
+  /* Dos columnas: todo el dato a la izquierda, en tres renglones, y la acción a
+     la derecha centrada sobre los tres. El destino va en su PROPIO renglón, a
+     ancho completo: apretado en la misma línea que el pendiente quedaba en
+     "AL…" — y a dónde entra el material es justo lo que hay que leer para
+     decidir. El pendiente va abajo, con la palabra "Pendiente" adelante, porque
+     acá no hay encabezado de columnas que lo diga. */
+  .addl-line { grid-template-columns: minmax(0, 1fr) 84px; column-gap: var(--ds-space-2); row-gap: 2px; padding: 10px; }
+  .addl-line > .rec-line__desc { grid-area: 1 / 1 / 2 / 2; }
+  .addl-line__dest { grid-area: 2 / 1 / 3 / 2; }
+  .addl-line > .rec-line__qty { grid-area: 3 / 1 / 4 / 2; text-align: left; }
+  .addl-line__acc { grid-area: 1 / 2 / 4 / 3; justify-content: center; }
+  .addl-line--head { display: none; }
+  .addl-pendlbl { display: inline; }
+  /* Misma cuenta que en desktop pero con MÁS chrome que descontar (~350px: el
+     título ocupa dos renglones, y el buscador y el chip van uno debajo del
+     otro), así que la lista es más baja, no más alta. La lista conserva su
+     scroll propio —es lo que deja el botón "Listo" al alcance con 60 líneas— y
+     el piso de 160px evita que se cierre del todo en un teléfono muy chico. */
+  .addl-scroll { max-height: max(160px, min(calc(88vh - 390px), 340px)); }
+}

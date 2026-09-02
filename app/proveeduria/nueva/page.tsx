@@ -2,13 +2,14 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Badge, Button, Card, EmptyState, Field, Input, Modal, Select, Textarea, useToast } from "@/components/ui";
+import { Badge, Button, Card, Field, Input, Modal, Select, Textarea, useToast } from "@/components/ui";
 import { DestinoLinea } from "@/components/destino-linea";
+import { AgregarLineasSolicitud } from "@/components/agregar-lineas-solicitud";
 import { Combobox } from "@/components/combobox";
 import { IconCheck, IconWarning } from "@/components/icons";
 import { useStore } from "@/lib/store";
 import { leerBorrador, guardarBorrador, borrarBorrador, hace, type BorradorOrden } from "@/lib/borrador-orden";
-import { money, num, ultimoPrecioProveedor, almacenesParaRecepcion, esAlmacenFisico, pedidoLineaPendiente, repartoDeLineaSolicitud, obraParaOrden, esConsumoDirecto, monedaApp, numeroOrden } from "@/lib/helpers";
+import { money, num, ultimoPrecioProveedor, almacenesParaRecepcion, esAlmacenFisico, pedidoLineaPendiente, repartoDeLineaSolicitud, obraParaOrden, monedaApp, numeroOrden } from "@/lib/helpers";
 import { precioEnUnidad, precioEntreUnidades, cantidadEntreUnidades, equivalencia, equivalenciaDeUnidad, mismaMoneda, codigoDeItem, opcionesDeUnidad, type PrecioRef, type UnidadDeItem } from "@/lib/unidad";
 import { useVariantes } from "@/lib/use-variantes";
 import type { OrdenLinea } from "@/lib/types";
@@ -237,6 +238,8 @@ export default function ArmarOrdenPage() {
   const setRow = (key: string, patch: Partial<Row>) =>
     setRows((rs) => rs.map((r) => (r.key === key ? { ...r, ...patch } : r)));
   const removeRow = (key: string) => setRows((rs) => rs.filter((r) => r.key !== key));
+  // Deshacer un "Agregar" del diálogo sin salir de él (ver components/agregar-lineas-solicitud.tsx).
+  const quitarDeSolicitud = (l: { id: string }) => setRows((rs) => rs.filter((r) => r.pedidoLineaId !== l.id));
 
   // Tareas de las obras que aparecen en las líneas. Se piden solas al entrar: la
   // tarea se elige de una lista, no se escribe, y esperar a que el usuario toque
@@ -370,16 +373,15 @@ export default function ArmarOrdenPage() {
   // Agregar líneas de OTRAS solicitudes ya hechas (pendientes por ordenar) a la
   // orden que se está armando, sin salir de la página.
   const [addOpen, setAddOpen] = useState(false);
-  const [addF, setAddF] = useState({ pedido: "", articulo: "", destino: "" });
   const yaEnOrden = new Set(rows.map((r) => r.pedidoLineaId));
   const lineasDisponibles = pedidos
     .filter((p) => p.estado === "aprobado" || p.estado === "en_orden")
     .flatMap((p) => p.lineas
       .filter((l) => pedidoLineaPendiente(l) > 0 && !yaEnOrden.has(l.id))
-      .map((l) => ({ p, l, pend: pedidoLineaPendiente(l) })));
-  const inc = (v: string, q: string) => !q || v.toLowerCase().includes(q.toLowerCase());
-  const lineasDispFiltradas = lineasDisponibles.filter(({ p, l }) =>
-    inc(p.numero, addF.pedido) && inc(l.descripcion, addF.articulo) && inc(l.almacen || p.obraCodigo || "", addF.destino));
+      .map((l) => ({ p, l, pend: pedidoLineaPendiente(l) })))
+    // Los grupos del diálogo salen en este orden: por número de solicitud, para
+    // que no dependa del orden en que el bootstrap trajo los pedidos.
+    .sort((a, b) => a.p.numero.localeCompare(b.p.numero));
   function agregarDeSolicitud(p: (typeof pedidos)[number], l: (typeof pedidos)[number]["lineas"][number], pend: number) {
     // Precio inicial = último precio de compra real (BC); si no hay historial, 0
     // para que proveeduría escriba lo acordado con el proveedor.
@@ -919,47 +921,12 @@ export default function ArmarOrdenPage() {
       )}
 
       {addOpen && (
-        <Modal wide title="Agregar de solicitudes pendientes" onClose={() => setAddOpen(false)}
-          footer={<Button variant="outline" onClick={() => setAddOpen(false)}>Cerrar</Button>}>
-          <p className="ds-muted ds-body-sm" style={{ marginTop: 0 }}>Líneas pendientes por ordenar de solicitudes ya hechas. Se suman a esta orden.</p>
-          {lineasDisponibles.length === 0 ? (
-            <EmptyState title="No hay líneas pendientes en otras solicitudes." />
-          ) : (
-            <div className="ds-table-wrap" style={{ boxShadow: "none", maxHeight: 420, overflow: "auto" }}>
-              <table className="ds-table">
-                <thead>
-                  <tr><th>Pedido</th><th>Artículo</th><th>Destino</th><th className="ds-num">Pendiente</th><th /></tr>
-                  <tr>
-                    <th><input className="ds-cell-input" aria-label="Filtrar por pedido" style={{ width: "100%" }} placeholder="Filtrar…" value={addF.pedido} onChange={(e) => setAddF((f) => ({ ...f, pedido: e.target.value }))} /></th>
-                    <th><input className="ds-cell-input" aria-label="Filtrar por artículo" style={{ width: "100%" }} placeholder="Filtrar…" value={addF.articulo} onChange={(e) => setAddF((f) => ({ ...f, articulo: e.target.value }))} /></th>
-                    <th><input className="ds-cell-input" aria-label="Filtrar por destino" style={{ width: "100%" }} placeholder="Filtrar…" value={addF.destino} onChange={(e) => setAddF((f) => ({ ...f, destino: e.target.value }))} /></th>
-                    <th /><th />
-                  </tr>
-                </thead>
-                <tbody>
-                  {lineasDispFiltradas.length === 0 && <tr><td colSpan={5}><div className="empty empty--compact">Ninguna línea coincide con el filtro.</div></td></tr>}
-                  {lineasDispFiltradas.map(({ p, l, pend }) => (
-                    <tr key={l.id}>
-                      <td className="ds-body-sm ds-strong">{p.numero}</td>
-                      <td><div style={{ maxWidth: 380, minWidth: 220 }} title={`${l.articuloId} — ${l.descripcion}`}><div className="ds-strong ds-body-sm">{l.articuloId}</div><div className="ds-clamp-2">{l.descripcion}</div></div></td>
-                      {/* La tarea es lo que hace que la línea sea consumo de obra: con
-                          ella se muestra la obra y la tarea, sin ella el almacén al que
-                          va el material (la obra de la solicitud es apenas un dato). */}
-                      <td className="ds-muted ds-body-sm">
-                        <DestinoLinea inline
-                          almacen={l.almacen || p.obraCodigo || ""}
-                          obra={esConsumoDirecto(l) ? l.proyecto : ""}
-                          tarea={l.taskNo} tareaNombre={l.taskDescr} />
-                      </td>
-                      <td className="ds-num">{pend} {l.unidad}</td>
-                      <td className="ds-num"><Button variant="outline" size="sm" onClick={() => agregarDeSolicitud(p, l, pend)}>Agregar</Button></td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </Modal>
+        <AgregarLineasSolicitud
+          lineas={lineasDisponibles}
+          yaAgregada={(l) => yaEnOrden.has(l.id)}
+          onAgregar={agregarDeSolicitud}
+          onQuitar={quitarDeSolicitud}
+          onClose={(n) => { setAddOpen(false); if (n > 0) toast(`${n} línea(s) agregada(s) — todavía hay que darle a “Guardar como abierta”.`, "success"); }} />
       )}
     </>
   );
