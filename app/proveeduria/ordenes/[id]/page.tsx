@@ -173,10 +173,10 @@ export default function ProvOrdenDetallePage() {
       if (crearNueva) {
         const n = await nuevaOrdenConPendiente(orden!.id, texto);
         setCerrando(false);
-        // `n` es una orden recién creada: nunca tiene N.º de BC todavía, así que va
-        // el rótulo. Si no, el toast decía "CP-000046" sobre una pantalla cuyo
-        // título ya dice "Interno 46".
-        toast(`${numeroOrden(orden!)} cerrada · ${etiquetaInterna(n.numero)} creada con lo pendiente`, "success");
+        // `n` es una orden recién creada: nunca tiene N.º de BC todavía, así que no
+        // se la nombra con un número (antes el toast decía "CP-000046", un número
+        // que en BC no existe). La pantalla a la que rebota ya es la de ella.
+        toast(`${numeroOrden(orden!)} cerrada · se armó una orden nueva con lo pendiente`, "success");
         if (n.id) router.push(`/proveeduria/ordenes/${n.id}`);
         return;
       }

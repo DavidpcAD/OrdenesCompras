@@ -346,6 +346,18 @@ export function ordenQuedaSinMaterial(o: Orden, lineaIds: string[]): boolean {
   return !o.lineas.some((l) => l.tipo === "articulo" && !ids.has(l.id));
 }
 
+// Cómo se NOMBRAN varias órdenes en una frase. Las que todavía no están en BC no
+// tienen número y todas se llaman igual, así que dos borradores se CUENTAN ("2
+// órdenes en armado") en vez de listarse dos veces con el mismo nombre.
+function nombresDeOrdenes(os: { etiqueta: string }[]): string {
+  const conNumero = [...new Set(os.map((o) => o.etiqueta).filter((e) => e !== ORDEN_SIN_BC))];
+  const sinNumero = os.length - os.filter((o) => o.etiqueta !== ORDEN_SIN_BC).length;
+  const partes = [...conNumero];
+  if (sinNumero === 1) partes.push("una orden en armado");
+  else if (sinNumero > 1) partes.push(`${sinNumero} órdenes en armado`);
+  return partes.join(", ");
+}
+
 // Motivo por el que una línea NO se puede devolver (para decirlo en la pantalla en
 // vez de dejar la casilla apagada sin explicación). Con las órdenes a mano, nombra
 // la que se la llevó y dice cómo soltarla: descartando el borrador, o devolviéndola
@@ -361,7 +373,7 @@ export function motivoNoDevolver(l: PedidoLinea, ordenes?: Orden[]): string {
   // corresponde en vez de quedar tapado por una orden vieja.
   const vivas = suyas.filter((o) => o.estado !== "completado");
   const base = vivas.length ? vivas : suyas;
-  const nombres = base.map((o) => o.etiqueta).join(", ");
+  const nombres = nombresDeOrdenes(base);
   const borradores = base.filter((o) => ordenEsBorradorDescartable(o));
   if (borradores.length === base.length) {
     // Todavía no se le pidió nada a nadie: el material se suelta descartando ese
@@ -574,13 +586,25 @@ export function ordenEsParcial(o: Orden): boolean {
 // N.º de la orden TAL COMO SE MANEJA: el de Business Central. Es el que existe en el
 // ERP, el que ve el proveedor en el PDF y el que Contabilidad busca.
 //
-// Mientras la orden todavía no está en BC no hay número que mostrar, así que se
-// muestra un RÓTULO, no un número: ver `etiquetaInterna`.
+// Mientras la orden todavía no está en BC no hay número que mostrar, y no se
+// inventa ninguno: se dice EN QUÉ ESTADO está. Antes salía el consecutivo interno
+// de la app ("Interno 900"), y era un número que no le servía a nadie — en BC no
+// existe, y quien lo leía o lo buscaba allá sin encontrarlo, o lo confundía con un
+// pedido de verdad. El número aparece cuando BC lo da, o sea al enviar la orden a
+// aprobación (ahí la app crea el pedido Abierto en BC y se guarda su N.º).
+//
+// El consecutivo interno NO desaparece: sigue en la bitácora, en los correos y en
+// la búsqueda de las listas, y las pantallas lo ponen en el `title` para soporte.
+export const ORDEN_SIN_BC = "Orden en armado";
 export function numeroOrden(o: { numero: string; bcNumber?: string }): string {
-  return o.bcNumber || etiquetaInterna(o.numero);
+  return (o.bcNumber ?? "").trim() || ORDEN_SIN_BC;
 }
 
-// Rótulo de una orden que todavía no existe en Business Central.
+// Rótulo con el consecutivo INTERNO de una orden que todavía no está en BC.
+//
+// Ya no se usa en las pantallas (ver `numeroOrden`): queda para la bitácora y los
+// reportes, donde una fila por orden necesita algo que la distinga de las otras y
+// "Orden en armado" repetido no distinguiría nada.
 //
 // El `numero` interno de la app es una serie aparte (MAX+1 sobre su propia tabla,
 // ver createOrden) que además usa el MISMO prefijo y el MISMO formato de 6 dígitos

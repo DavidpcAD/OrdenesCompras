@@ -151,14 +151,14 @@ test("una solicitud sabe en qué órdenes de compra entró (y al revés)", () =>
     // Ya está en BC: se muestra su N.º de BC.
     { id: "o1", numero: "CP-000001", bcNumber: "CP-005101", lineas: [{ pedidoNumero: "PED-1" }] },
     // Todavía no está en BC y sin pedidoNumero: se resuelve por el id de la línea de
-    // pedido, y se muestra el rótulo interno (nunca un CP- que allá no existe).
+    // pedido, y se nombra por su estado (nunca un CP- que allá no existe).
     { id: "o2", numero: "CP-000002", lineas: [{ pedidoLineaId: "l2" }, { pedidoLineaId: "l9" }] },
     // Directa: no aporta a ninguna solicitud.
     { id: "o3", numero: "CP-000003", lineas: [{ pedidoNumero: "Manual" }] },
   ] as any[];
   const m = ordenesPorPedido([p1, p2], ordenes);
-  assert.deepEqual(m.get("PED-1")?.map((o) => o.numero), ["CP-005101", "Interno 2"]);
-  assert.deepEqual(m.get("PED-2")?.map((o) => o.numero), ["Interno 2"]);
+  assert.deepEqual(m.get("PED-1")?.map((o) => o.numero), ["CP-005101", "Orden en armado"]);
+  assert.deepEqual(m.get("PED-2")?.map((o) => o.numero), ["Orden en armado"]);
   assert.equal(m.size, 2);   // la directa no crea entradas
 });
 
@@ -376,12 +376,15 @@ test("numeroOrden: con N.º de BC gana el de BC", () => {
 
 test("numeroOrden: sin N.º de BC NO se muestra algo que parezca de BC", () => {
   const r = numeroOrden({ numero: "CP-000037" });
-  assert.equal(r, "Interno 37");
+  // Ni el N.º de BC (no hay) ni el consecutivo interno de la app: ese número no
+  // existe en Business Central y quien lo buscaba allá no lo encontraba.
+  assert.equal(r, "Orden en armado");
+  assert.doesNotMatch(r, /\d/);
   assert.ok(!/^CP-/.test(r), "no puede empezar con CP-");
 });
 
 test("numeroOrden: bcNumber vacío o en blanco cuenta como sin BC", () => {
-  assert.equal(numeroOrden({ numero: "CP-000037", bcNumber: "" }), "Interno 37");
+  assert.equal(numeroOrden({ numero: "CP-000037", bcNumber: "" }), "Orden en armado");
 });
 
 test("etiquetaInterna: quita el prefijo y los ceros de relleno", () => {
@@ -507,7 +510,8 @@ test("ordenEsBorradorDescartable: solo abierta/rechazada y sin N.º de BC", () =
 test("motivoNoDevolver: si la retiene un borrador, dice cómo liberarla", () => {
   const l = lineaPed({ id: "pl9", cantidadOrdenada: 5 });
   const soloBorrador = motivoNoDevolver(l, [ordenConLinea({ id: "1", numero: "CP-000070" }, "pl9")]);
-  assert.match(soloBorrador, /Interno 70/);
+  assert.match(soloBorrador, /una orden en armado/);
+  assert.doesNotMatch(soloBorrador, /CP-|Interno/);
   assert.match(soloBorrador, /descartá/i);
   // Con una orden que YA está en BC no hay atajo: se nombra y punto.
   const enBc = motivoNoDevolver(l, [ordenConLinea({ id: "2", bcNumber: "CP-005192", estado: "lanzado" }, "pl9")]);
@@ -567,7 +571,29 @@ test("motivoNoDevolver: una orden cerrada no tapa el consejo del borrador", () =
     ordenConLinea({ id: "1", numero: "CP-000070" }, "pl9"),
   ]);
   assert.match(m, /descartá/i);
-  assert.match(m, /Interno 70/);
+  assert.match(m, /una orden en armado/);
+});
+
+test("motivoNoDevolver: dos borradores se cuentan, no se listan dos veces igual", () => {
+  // Sin N.º de BC las dos órdenes se llaman igual ("Orden en armado"), así que
+  // listarlas daría "Orden en armado, Orden en armado" y no diría nada.
+  const l = lineaPed({ id: "pl9", cantidadOrdenada: 8 });
+  const m = motivoNoDevolver(l, [
+    ordenConLinea({ id: "1", numero: "CP-000070" }, "pl9"),
+    ordenConLinea({ id: "2", numero: "CP-000071" }, "pl9"),
+  ]);
+  assert.match(m, /2 órdenes en armado/);
+  assert.match(m, /descartá/i);
+});
+
+test("motivoNoDevolver: mezcla de una en BC y un borrador nombra las dos cosas", () => {
+  const l = lineaPed({ id: "pl9", cantidadOrdenada: 8 });
+  const m = motivoNoDevolver(l, [
+    ordenConLinea({ id: "1", bcNumber: "CP-005192", estado: "abierto" }, "pl9"),
+    ordenConLinea({ id: "2", numero: "CP-000071" }, "pl9"),
+  ]);
+  assert.match(m, /CP-005192/);
+  assert.match(m, /una orden en armado/);
 });
 
 test("motivoNoDevolver: sin la lista de órdenes sigue dando el motivo corto", () => {

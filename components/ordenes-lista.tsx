@@ -8,7 +8,7 @@ import { DataTable } from "@/components/data-table";
 import { IconChevronDown } from "@/components/icons";
 import { useStore } from "@/lib/store";
 import { useSoloMias } from "@/lib/use-solo-mias";
-import { money, formatDate, ordenAlmacenes, ordenAvance, ordenBadge, ordenObras, ordenRecibidoPct, ordenSubtotal, ordenPedidos, ordenEsDirecta, ordenLineaImporte, proveedorLabel, num, numeroOrden } from "@/lib/helpers";
+import { money, formatDate, ordenAlmacenes, ordenAvance, ordenBadge, ordenObras, ordenRecibidoPct, ordenSubtotal, ordenPedidos, ordenEsDirecta, ordenLineaImporte, proveedorLabel, num, numeroOrden, tieneBc } from "@/lib/helpers";
 import type { Orden } from "@/lib/types";
 
 // N.º de solicitud de origen. Con link es un botón que abre esa solicitud (y no
@@ -89,7 +89,13 @@ export function OrdenesLista({
       // el accessor para poder buscar por los dos: ya no se muestra en ningún lado,
       // pero está en los correos y en la bitácora, y soporte lo tiene a mano.
       id: "num", header: "N.º", accessorFn: (o) => `${numeroOrden(o)} ${o.numero}`,
-      meta: { label: "N.º" }, cell: (c) => <span className="ds-strong">{numeroOrden(c.row.original)}</span>,
+      meta: { label: "N.º" },
+      // En la celda, la orden que todavía no está en BC dice "En armado" y no un
+      // número: la columna ya se llama N.º, así que la frase larga sobra. El
+      // interno va en el title, para soporte.
+      cell: (c) => { const o = c.row.original; return tieneBc(o)
+        ? <span className="ds-strong">{o.bcNumber}</span>
+        : <span className="ds-muted" title={`N.º interno de la app: ${o.numero}`}>En armado</span>; },
     },
     { id: "prov", header: "Proveedor", accessorFn: (o) => proveedorLabel(o, proveedores), meta: { label: "Proveedor" }, cell: (c) => c.getValue() },
     {

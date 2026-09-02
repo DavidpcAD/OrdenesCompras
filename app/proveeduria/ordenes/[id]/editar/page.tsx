@@ -469,7 +469,15 @@ export default function EditarOrdenPage() {
         <button type="button" className="back-link" onClick={() => router.push(`/proveeduria/ordenes/${id}`)}>Volver a la orden</button>
         <div className="page__head">
           <div className="page__title">
-            <div className="row gap-3"><h1 className="ds-heading">Editar {numeroOrden(orden)}</h1><Badge tone="gray">Abierta</Badge></div>
+            {/* Mientras la orden no está en BC no tiene número, así que el título
+                dice lo que se está haciendo. Con N.º de BC, el título ES el número:
+                es el que Angie tiene que poder leer y buscar allá. */}
+            <div className="row gap-3">
+              <h1 className="ds-heading" title={`N.º interno de la app: ${orden.numero}`}>
+                {orden.bcNumber ? `Editar ${orden.bcNumber}` : "Armando orden de compra"}
+              </h1>
+              <Badge tone="gray">Abierta</Badge>
+            </div>
             <p className="ds-muted">Ajustá proveedor, almacén, líneas y precios. Solo se puede mientras la orden esté Abierta.</p>
           </div>
         </div>

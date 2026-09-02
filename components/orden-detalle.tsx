@@ -154,11 +154,14 @@ export function OrdenDetalle({
       <div className="page__head">
         <div className="page__title">
           <div className="row gap-3">
-            <h1 className="ds-heading">{numeroOrden(orden)}</h1>
+            {/* El N.º interno de la app NO se muestra (no existe en BC y no le
+                sirve a nadie), pero va en el title: soporte lo necesita porque es
+                el que anda en la bitácora y en los correos. */}
+            <h1 className="ds-heading" title={`N.º interno de la app: ${orden.numero}`}>{numeroOrden(orden)}</h1>
             <Badge tone={b.tone}>{b.label}</Badge>
             {esDirecta && <Badge tone="yellow">Directa</Badge>}
           </div>
-          <p className="ds-muted">{orden.proveedorNo ?? prov?.code} · {proveedorLabel(orden, proveedores)} · emitida {formatDate(orden.fecha)} · recibido {ordenRecibidoPct(orden)}%{tieneBc(orden) ? ` · interno ${orden.numero}` : " · todavía no está en BC"}</p>
+          <p className="ds-muted">{orden.proveedorNo ?? prov?.code} · {proveedorLabel(orden, proveedores)} · emitida {formatDate(orden.fecha)} · recibido {ordenRecibidoPct(orden)}%{tieneBc(orden) ? "" : " · todavía no está en Business Central"}</p>
           {orden.almacenRecepcion && <p className="ds-body-sm ds-muted">Recepción en almacén <span className="ds-strong">{orden.almacenRecepcion}</span></p>}
           <div className="row gap-2 wrap mt-2">
             {esDirecta ? (
