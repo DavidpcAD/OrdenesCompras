@@ -98,6 +98,9 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
       const obrasSolicitud = await obrasDeLineasPedido(
         o.lineas.map((l) => Number(l.pedidoLineaId)).filter((n) => Number.isFinite(n)));
       let lineasBc = lineasOrdenParaBc(o.lineas, obrasSolicitud);
+      // ¿La escritura de líneas a BC llegó a entrar? Si no, el cotejo de abajo sobra:
+      // el pedido tiene las viejas y ya se sabe por qué.
+      let escrituraFallo = false;
       // Obra sin tarea = pedido que NO se va a poder lanzar. BC lo acepta al crearlo
       // y revienta después, en manos del aprobador, así que se corta acá.
       const sinTarea = obrasSinTarea(lineasBc);
@@ -157,6 +160,11 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
           if (r.omitidas.length) bcAviso = `Enviada a aprobación. OJO: BC no recibió ${r.omitidas.length} línea(s) — ${r.omitidas.join("; ")}.`;
         } catch (e: any) {
           bcAviso = `Se envió a aprobación, pero el pedido ${o.bcNumber} en BC quedó con las líneas VIEJAS: ${String(e?.message ?? e)}`;
+          // Si la reescritura no entró, ya SABEMOS por qué BC va a estar distinto, y el
+          // motivo real (típico: "el pedido debe estar Abierto" — hay que reabrirlo en
+          // BC) es más útil que el cotejo. Cotejar acá convertiría este aviso deliberado
+          // —que a propósito NO frena el envío— en un bloqueo con el mensaje equivocado.
+          escrituraFallo = true;
         }
       } else {
         // Sin pedido en BC no hay nada que aprobar: si la creación falla, la orden se
@@ -198,10 +206,19 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
       // El N.º de BC ya quedó guardado, así que no se pierde nada y se puede
       // reintentar corrigiendo.
       const numeroBc = bcNo || o.bcNumber || "";
-      if (numeroBc) {
+      if (numeroBc && !escrituraFallo) {
         const chequeo = await chequearOrdenContraBc(numeroBc, lineasReplaceParaCotejo(lineasBc));
         const detalle = (chequeo.cotejo?.diferencias ?? []).map((d) => `• ${d.texto}`).join("\n");
-        if (chequeo.estado === "desalineado" || chequeo.estado === "sin-pedido") {
+        // La diferencia de UNIDAD se avisa pero NO frena. Pasa cuando el ítem en BC no
+        // tiene registrada la unidad con la que se guardó la línea (una solicitud en UND
+        // de un material que en BC solo tiene CUB): el codeunit la ignora a propósito
+        // —mejor la unidad del ítem que tumbar el pedido entero— y la línea queda en
+        // otra unidad. Desde la app NO hay forma de arreglar eso (la unidad se registra
+        // en BC), así que bloquear dejaría la orden sin salida por algo que Proveeduría
+        // no puede tocar. Se dice fuerte y se sigue.
+        const soloUnidad = !!chequeo.cotejo?.diferencias.length
+          && chequeo.cotejo.diferencias.every((d) => d.clase === "unidad");
+        if ((chequeo.estado === "desalineado" && !soloUnidad) || chequeo.estado === "sin-pedido") {
           await guardarChequeoBc(id, chequeo.estado, chequeo.mensaje, a.usuario, a.rol).catch(() => { /* el aviso importa más que guardarlo */ });
           // Interruptor de emergencia (App Setting BC_PARED_APROBACION=0): si el cotejo
           // diera un falso positivo en producción, Proveeduría se quedaría sin poder
@@ -210,12 +227,17 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
           if (paredAprobacionActiva()) {
             return NextResponse.json({
               error: `La orden NO se envió a aprobación: lo que quedó en Business Central NO es lo que dice la orden.\n\n${chequeo.mensaje}\n${detalle}\n\n`
-                + `El pedido ${numeroBc} existe en BC pero con esas diferencias. Corregí la orden y volvé a enviarla, o arreglá el pedido en BC. `
+                + `El pedido ${numeroBc} YA quedó creado en Business Central (con esas diferencias) y la orden guardó su número: no se creó nada de más ni hay que borrarlo. `
+                + `Corregí la orden acá y volvé a enviarla —se le reescriben las líneas a ese mismo pedido— o arreglá el pedido en BC. `
                 + `No se manda a aprobación algo que allá no está igual: así fue como una línea entera se perdió y se facturó de menos.`,
               bcCheck: { estado: chequeo.estado, diferencias: chequeo.cotejo?.diferencias ?? [] },
             }, { status: 409 });
           }
           bcAviso = [bcAviso, `OJO: ${chequeo.mensaje}${detalle ? ` ${detalle}` : ""}`].filter(Boolean).join(" · ");
+        } else if (chequeo.estado === "desalineado") {
+          // Desalineado que no frena (solo la unidad): se guarda igual y se avisa.
+          await guardarChequeoBc(id, "desalineado", chequeo.mensaje, a.usuario, a.rol).catch(() => { /* idem */ });
+          bcAviso = [bcAviso, `OJO: ${chequeo.mensaje}${detalle ? ` ${detalle}` : ""} Se envió igual: la unidad de un artículo se registra en Business Central, no acá.`].filter(Boolean).join(" · ");
         } else if (chequeo.estado === "ok") {
           await guardarChequeoBc(id, "ok", chequeo.mensaje, a.usuario, a.rol).catch(() => { /* no bloquea el envío */ });
         } else {

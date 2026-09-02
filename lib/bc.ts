@@ -917,7 +917,15 @@ export async function bcLineasPedido(orderNo: string): Promise<BcLineasPedido | 
     // orden completada diría "a BC le faltan las 7 líneas" y, peor, el freno de
     // Bodega bloquearía el diálogo de conciliación (el que sirve justo cuando BC ya
     // registró la factura). Se confirma con una consulta barata antes de afirmar nada.
-    if (!rows.length && (await bcEstadoDelPedido(no)) !== "existe") return null;
+    if (!rows.length) {
+      // Un pedido que existe NO puede tener cero líneas: o BC lo borró (y entonces no
+      // hay nada que cotejar), o esta lectura no está mirando lo mismo que la escritura
+      // — la API custom resuelve la compañía por otro camino que la estándar, con la que
+      // la app CREA el pedido. Ante la duda no se acusa: se baja al siguiente camino,
+      // que usa la misma resolución de compañía que la escritura.
+      if ((await bcEstadoDelPedido(no)) !== "existe") return null;
+      throw new Error("purchaseLines devolvió 0 líneas para un pedido que sí existe");
+    }
     return {
       fuente: "custom",
       lineas: rows.map((r: any) => ({
@@ -954,7 +962,10 @@ export async function bcLineasPedido(orderNo: string): Promise<BcLineasPedido | 
       // Mismo cuidado que arriba: sin líneas, primero confirmar que el pedido existe.
       // (Acá el codeunit ya falla si no existe —GetOrder hace Error—, pero el día que
       // eso cambie no puede convertirse en una acusación silenciosa.)
-      if (!(payload?.lines ?? []).length && (await bcEstadoDelPedido(no)) !== "existe") return null;
+      if (!(payload?.lines ?? []).length) {
+        if ((await bcEstadoDelPedido(no)) !== "existe") return null;
+        throw new Error("GetOrderLines devolvió 0 líneas para un pedido que sí existe");
+      }
       return {
         fuente: "custom",
         lineas: (payload?.lines ?? []).map((r: any) => {
@@ -996,9 +1007,14 @@ export async function bcLineasPedido(orderNo: string): Promise<BcLineasPedido | 
       `${stdRoot()}/companies(${cid})/purchaseOrders(${id})/purchaseOrderLines`,
       { cache: "no-store" });
     if (!resL.ok) return null;
+    const filas = ((await resL.json())?.value ?? []);
+    // Último camino: si acá tampoco hay líneas, el pedido existe pero no se pudo ver su
+    // contenido. Se devuelve null ("no se pudo leer") en vez de una lista vacía, que
+    // sería acusar a BC de no tener nada.
+    if (!filas.length) return null;
     return {
       fuente: "estandar",
-      lineas: ((await resL.json())?.value ?? []).map((l: any) => {
+      lineas: filas.map((l: any) => {
         const cantidad = Number(l.quantity ?? 0) || 0;
         const recibida = Number(l.receivedQuantity ?? 0) || 0;
         return {
