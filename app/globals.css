@@ -129,6 +129,13 @@
 /* Segmento activo: en claro era blanco sobre riel gris; en oscuro lo elevamos
    sobre el riel (gris-200 > gris-100) con texto claro. */
 :root[data-theme="dark"] .segmented__btn.is-active { background: var(--ds-color-gray-200); color: var(--ds-text); }
+/* Íd. con el chip de filtro: en claro el DS lo pinta negro sólido, pero en oscuro el
+   negro sobre la superficie del panel (#212530) contrasta 1,37:1, o sea que el
+   relleno y el borde desaparecen y lo único que delata que está activado es que la
+   letra se pone blanca. Se eleva con gris-200 (la rampa está invertida: en oscuro es
+   un gris claro) y texto oscuro, que es como se lee "prendido". */
+:root[data-theme="dark"] .filter-chip.is-active { background: var(--ds-color-gray-500); border-color: var(--ds-color-gray-500); color: var(--ds-bg); }
+:root[data-theme="dark"] .filter-chip.is-active .filter-chip__count { background: color-mix(in srgb, var(--ds-color-black) 18%, transparent); color: var(--ds-bg); }
 
 * { box-sizing: border-box; }
 
@@ -1186,9 +1193,11 @@ h1, h2, h3, h4, p { margin: 0; }
 .empty--compact { padding: var(--ds-space-5) 0; }
 /* Estado vacío unificado (componente EmptyState del DS). */
 /* `--ds-space-9` NO existe (los tokens de espacio son 1..6 y 10), así que esta
-   declaración de padding era inválida y se caía entera: TODOS los estados vacíos
-   de la app estaban sin aire arriba y abajo. */
-.ds-empty { display: flex; flex-direction: column; align-items: center; gap: var(--ds-space-2); text-align: center; padding: var(--ds-space-6) var(--ds-space-5); color: var(--ds-color-gray-500); }
+   declaración de padding era inválida y se caía ENTERA: todos los estados vacíos de
+   la app quedaban con 0 de padding, también los 20px de los lados. Se usa el 10
+   (40px) y no el 6, porque el que faltaba era el 9 (36px) y el 10 es el token que
+   existe más cerca: se respeta el aire que el DS quería. */
+.ds-empty { display: flex; flex-direction: column; align-items: center; gap: var(--ds-space-2); text-align: center; padding: var(--ds-space-10) var(--ds-space-5); color: var(--ds-color-gray-500); }
 .ds-empty__icon { display: inline-flex; align-items: center; justify-content: center; width: 52px; height: 52px; border-radius: 50%; background: var(--ds-color-gray-100); color: var(--ds-color-gray-400); margin-bottom: var(--ds-space-1); }
 .ds-empty__title { font-weight: var(--ds-font-weight-semibold); color: var(--ds-color-gray-500); }
 .ds-empty__hint { font-size: var(--ds-font-size-body-sm); color: var(--ds-color-gray-400); max-width: 48ch; line-height: 1.5; }
