@@ -1872,6 +1872,49 @@ export async function bcEstadoDelPedido(orderNo: string): Promise<BcPedidoEstado
   }
 }
 
+// ── ARTÍCULOS BLOQUEADOS EN BC ───────────────────────────────────────────────
+// Un artículo con "Bloqueado" marcado NO se puede comprar: BC rechaza la línea al
+// insertarla en el pedido. Y ahí está la causa REAL, verificada, de la línea que se
+// perdió en CP-005172: `M06-0116 TORNILLO P/GYP 1-1/4 P FINA` estaba bloqueado en BC
+// desde el 14/08/2026 — once días antes de la orden. BC rechazó esa línea, quien la
+// creó siguió con las demás, y el pedido se lanzó con 6 de 7 líneas.
+//
+// El catálogo de la app ya esconde los bloqueados (bcItemsPagina/bcItems los filtran),
+// pero eso no alcanza: la línea puede venir de una SOLICITUD de Ingeniería hecha antes
+// del bloqueo, o el artículo puede bloquearse después de armada la orden. El único
+// momento que sirve para preguntarlo es justo antes de mandar el pedido a BC.
+//
+// Devuelve los artículos bloqueados que trae la orden (vacío = todo en orden). Si BC
+// no contesta devuelve vacío: no se traba una orden por una consulta que falló.
+export async function itemsBloqueadosDeLineas(lineas: LineaReplaceBc[]): Promise<string[]> {
+  const codigos = [...new Set((lineas ?? [])
+    .filter((l) => l.tipo !== "cargo")
+    .map((l) => codigoDeItem(String(l.itemNo ?? "")).trim().toUpperCase())
+    .filter(Boolean))];
+  if (!codigos.length) return [];
+  const bloqueados = new Set<string>();
+  try {
+    const cid = await getCompanyId();
+    // De a 20 por consulta: el $filter va en la URL y con una orden de 30 líneas se
+    // pasa de largo.
+    for (let i = 0; i < codigos.length; i += 20) {
+      const trozo = codigos.slice(i, i + 20);
+      const filtro = trozo.map((c) => `No eq '${odataStr(c)}'`).join(" or ");
+      const url = `${customRoot("inventory")}/companies(${cid})/items?$filter=${encodeURIComponent(filtro)}&$select=No,Description,Blocked`;
+      const res = await bcFetch(url, { cache: "no-store" });
+      if (!res.ok) return [];
+      for (const it of ((await res.json())?.value ?? [])) {
+        if (it?.Blocked ?? it?.blocked) {
+          const no = String(it.No ?? it.no ?? "").trim();
+          const desc = String(it.Description ?? it.description ?? "").replace(/ /g, " ").trim();
+          bloqueados.add(desc ? `${no} (${desc})` : no);
+        }
+      }
+    }
+  } catch { return []; }
+  return [...bloqueados];
+}
+
 // ── LA PARED: la orden de la app contra el pedido de BC ──────────────────────
 // Se llama en los tres momentos en que la app y BC se pueden separar:
 //   1. al CREAR el pedido (enviar a aprobación) — ahí es gratis arreglarlo;

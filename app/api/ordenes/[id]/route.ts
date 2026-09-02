@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getOrden, setOrdenEstado, setOrdenBcNumber, updateOrden, descartarOrden, ordenTieneRecepciones, obrasDeLineasPedido, asignarBcNumber, guardarChequeoBc, guardarVariantesResueltas, MSG_NO_REABRIR } from "@/lib/repo";
-import { bcReopenPedido, bcReplaceOrderLines, bcCrearPedidoAbierto, crearEnBcAlEnviar, lineasOrdenParaBc, obrasSinTarea, lineasSinUnidad, lineasSinAlmacen, resolverVariantesRequeridas, sanearObrasDeLineas, avisoDeSaneo, bcOrdenTotales, bcEstadoDelPedido, chequearOrdenContraBc, lineasReplaceParaCotejo, lineasOrdenParaCotejo, paredAprobacionActiva } from "@/lib/bc";
+import { bcReopenPedido, bcReplaceOrderLines, bcCrearPedidoAbierto, crearEnBcAlEnviar, lineasOrdenParaBc, obrasSinTarea, lineasSinUnidad, lineasSinAlmacen, resolverVariantesRequeridas, sanearObrasDeLineas, avisoDeSaneo, bcOrdenTotales, bcEstadoDelPedido, chequearOrdenContraBc, lineasReplaceParaCotejo, lineasOrdenParaCotejo, paredAprobacionActiva, itemsBloqueadosDeLineas } from "@/lib/bc";
 import { ordenLineaImporte } from "@/lib/helpers";
 import { actor } from "@/lib/actor";
 
@@ -128,6 +128,20 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
           error: `La orden NO se envió a aprobación: ${sinAlmacen.length} línea(s) no tienen almacén — ${sinAlmacen.join("; ")}. Sin almacén el material no entra a ningún lado en Business Central (el pedido se lanza igual y el stock nunca sube). Editá la orden, elegí el almacén de recepción y reintentá.`,
         }, { status: 409 });
       }
+      // Artículo BLOQUEADO en BC: BC rechaza esa línea al insertarla en el pedido y
+      // quien lo crea sigue con las demás. Es la causa verificada de la línea perdida
+      // en CP-005172 (M06-0116, bloqueado en BC desde el 14/08 y ordenado el 25/08):
+      // el pedido se lanzó con 6 de 7 líneas y ₡22.820 se facturaron de menos.
+      // Se corta acá, que es donde todavía no cuesta nada.
+      const bloqueados = await itemsBloqueadosDeLineas(lineasBc);
+      if (bloqueados.length) {
+        return NextResponse.json({
+          error: `La orden NO se envió a aprobación: ${bloqueados.length} artículo(s) están BLOQUEADOS en Business Central — ${bloqueados.join("; ")}. `
+            + `BC no deja comprarlos: si la orden se manda igual, esa línea se cae del pedido y nadie se entera hasta que llega la factura. `
+            + `Sacá esa línea de la orden, o pedile a quien lleva BC que desbloquee el artículo.`,
+        }, { status: 409 });
+      }
+
       // Variante: la que se puede deducir (el ítem tiene una sola) se pone acá; la
       // que hay que ELEGIR frena el envío, porque el color o la medida del material
       // no los decide el servidor. Ojo: las pantallas de nueva/editar orden todavía
