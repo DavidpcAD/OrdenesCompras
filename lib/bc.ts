@@ -8,6 +8,7 @@
 import type { OrdenLinea } from "./types";
 import { claveVariante } from "./variantes.ts";
 import { codigoDeItem } from "./unidad.ts";
+import { cotejarLineas, type Cotejo, type LineaApp, type LineaBc } from "./bc-conciliacion.ts";
 
 type TokenCache = { token: string; exp: number };
 let tokenCache: TokenCache | null = null;
@@ -862,6 +863,165 @@ export async function bcOrdenTotales(orderNo: string): Promise<BcOrdenTotales | 
   } catch { return null; }
 }
 
+// ── LAS LÍNEAS DEL PEDIDO EN BC, PARA COTEJARLAS CONTRA LA ORDEN ─────────────
+// La app escribía a BC y nunca volvía a mirar. Así se perdió una línea entera de
+// CP-005172 (₡22.820 de tornillos que el proveedor facturó y BC nunca registró):
+// el pedido se creó con 6 de 7 líneas y nadie lo supo hasta ver el papel.
+//
+// Se lee por la API CUSTOM `purchaseLines` (page 50174, ya publicada, filtrada a
+// Document Type = Order), que es la única que devuelve el CÓDIGO de variante —la
+// estándar `purchaseOrderLines` solo trae el GUID del itemVariant, y sin el código
+// no se puede cotejar una línea con variante contra la orden.
+//
+// `fuente` dice con qué se comparó, porque cambia lo que se puede afirmar:
+//   "custom"   → completo (incluye variante).
+//   "estandar" → sin variante: sirve para ver si FALTA una línea, no para
+//                distinguir dos variantes del mismo material.
+//   null en `lineas` → no se pudo leer (BC caído, API no publicada, pedido que ya
+//                no existe). NUNCA se devuelve [] en ese caso: una lista vacía
+//                significaría "BC no tiene nada" y eso sí sería una acusación.
+export type BcLineasPedido = { lineas: LineaBc[]; fuente: "custom" | "estandar"; };
+
+// El tipo de línea llega de tres fuentes distintas y ninguna promete el mismo texto:
+// la API estándar manda "Item"/"Charge", la custom manda el enum formateado y el
+// codeunit manda el CAPTION EN EL IDIOMA DE LA SESIÓN ("Producto", "Cargo (prod.)").
+// Por eso se acepta también el número del enum de BC (2 = Item, 5 = Charge (Item)),
+// que es lo único estable — y por eso GetOrderLines manda `typeNo`.
+function tipoLineaBc(t: unknown, typeNo?: unknown): "articulo" | "cargo" | "otro" {
+  const n = Number(typeNo);
+  if (Number.isFinite(n) && n > 0) {
+    if (n === 2) return "articulo";
+    if (n === 5) return "cargo";
+    return "otro";
+  }
+  const s = String(t ?? "").trim().toLowerCase().replace(/[\s_.\-()]/g, "");
+  if (s === "item" || s === "articulo" || s === "artículo" || s === "producto" || s === "2") return "articulo";
+  if (s.startsWith("charge") || s.startsWith("cargo") || s === "5") return "cargo";
+  return "otro";
+}
+
+export async function bcLineasPedido(orderNo: string): Promise<BcLineasPedido | null> {
+  const no = (orderNo ?? "").trim();
+  if (!no) return null;
+
+  // 1) API custom de Adelante (la buena: trae variantCode y las cantidades ya
+  //    recibidas/facturadas, que es lo que hace falta para frenar una recepción).
+  try {
+    const rows = await listCustom(
+      "purchasing",
+      `purchaseLines?$filter=${encodeURIComponent(`documentNo eq '${odataStr(no)}'`)}&$orderby=lineNo`,
+    );
+    // CERO líneas NO significa "el pedido está vacío": un $filter contra un pedido
+    // que ya no existe devuelve exactamente lo mismo, y BC BORRA el pedido cuando se
+    // recibe y factura todo. Tratar las dos cosas igual sería catastrófico: toda
+    // orden completada diría "a BC le faltan las 7 líneas" y, peor, el freno de
+    // Bodega bloquearía el diálogo de conciliación (el que sirve justo cuando BC ya
+    // registró la factura). Se confirma con una consulta barata antes de afirmar nada.
+    if (!rows.length && (await bcEstadoDelPedido(no)) !== "existe") return null;
+    return {
+      fuente: "custom",
+      lineas: rows.map((r: any) => ({
+        documentNo: String(r.documentNo ?? no),
+        lineNo: Number(r.lineNo ?? 0) || 0,
+        tipo: tipoLineaBc(r.type),
+        itemNo: String(r.no ?? "").trim(),
+        variantCode: String(r.variantCode ?? "").trim(),
+        descripcion: String(r.description ?? "").trim(),
+        unidad: String(r.unitOfMeasureCode ?? "").trim(),
+        almacen: String(r.locationCode ?? "").trim(),
+        cantidad: Number(r.quantity ?? 0) || 0,
+        recibida: Number(r.quantityReceived ?? 0) || 0,
+        facturada: Number(r.quantityInvoiced ?? 0) || 0,
+        pendiente: Number(r.outstandingQuantity ?? 0) || 0,
+        precioUnitario: Number(r.directUnitCost ?? 0) || 0,
+      })),
+    };
+  } catch { /* la custom puede no estar publicada en este entorno: se sigue probando */ }
+
+  // 1-bis) El codeunit (AdelantePO_GetOrderLines, desde 1.2.6.0). Es el MISMO canal
+  // por el que la app escribe las líneas, así que si escribir funciona, leer también:
+  // no depende de que la página API esté publicada ni permisada.
+  try {
+    const cid = await getStdCompanyId();
+    const res = await bcFetch(`${odataRoot()}/AdelantePO_GetOrderLines?company=${encodeURIComponent(cid)}`, {
+      method: "POST", cache: "no-store",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ orderNo: no }),
+    });
+    if (res.ok) {
+      const d: any = await res.json().catch(() => ({}));
+      const payload = JSON.parse(String(d?.value ?? "{}"));
+      // Mismo cuidado que arriba: sin líneas, primero confirmar que el pedido existe.
+      // (Acá el codeunit ya falla si no existe —GetOrder hace Error—, pero el día que
+      // eso cambie no puede convertirse en una acusación silenciosa.)
+      if (!(payload?.lines ?? []).length && (await bcEstadoDelPedido(no)) !== "existe") return null;
+      return {
+        fuente: "custom",
+        lineas: (payload?.lines ?? []).map((r: any) => {
+          const cantidad = Number(r.quantity ?? 0) || 0;
+          const recibida = Number(r.quantityReceived ?? 0) || 0;
+          return {
+            documentNo: String(payload?.orderNo ?? no),
+            lineNo: Number(r.lineNo ?? 0) || 0,
+            tipo: tipoLineaBc(r.type, r.typeNo),
+            itemNo: String(r.no ?? "").trim(),
+            variantCode: String(r.variantCode ?? "").trim(),
+            descripcion: String(r.description ?? "").trim(),
+            unidad: String(r.unitOfMeasureCode ?? "").trim(),
+            almacen: String(r.locationCode ?? "").trim(),
+            cantidad,
+            recibida,
+            facturada: Number(r.quantityInvoiced ?? 0) || 0,
+            pendiente: Number(r.outstandingQuantity ?? Math.max(0, cantidad - recibida)) || 0,
+            precioUnitario: Number(r.directUnitCost ?? 0) || 0,
+          };
+        }),
+      };
+    }
+  } catch { /* último recurso: la API estándar */ }
+
+  // 2) Red de seguridad: API estándar v2.0. No trae el código de variante, así que
+  //    el cotejo que salga de acá tiene que ignorar la variante (lo dice `fuente`).
+  try {
+    const cid = await getStdCompanyId();
+    const filtro = `$filter=${encodeURIComponent(`number eq '${odataStr(no)}'`)}&$select=id&$top=1`;
+    const res = await bcFetch(`${stdRoot()}/companies(${cid})/purchaseOrders?${filtro}`, { cache: "no-store" });
+    if (!res.ok) return null;
+    const id = ((await res.json())?.value ?? [])[0]?.id;
+    if (!id) return null;   // el pedido no está en BC: eso lo reporta bcEstadoDelPedido
+    // SIN $select a propósito: si uno solo de los campos no existe en la versión de la
+    // API, BC contesta 400 y se pierde la lectura entera — o sea, la verificación se
+    // apaga justo cuando es el último recurso. Se pide todo y se lee lo que venga.
+    const resL = await bcFetch(
+      `${stdRoot()}/companies(${cid})/purchaseOrders(${id})/purchaseOrderLines`,
+      { cache: "no-store" });
+    if (!resL.ok) return null;
+    return {
+      fuente: "estandar",
+      lineas: ((await resL.json())?.value ?? []).map((l: any) => {
+        const cantidad = Number(l.quantity ?? 0) || 0;
+        const recibida = Number(l.receivedQuantity ?? 0) || 0;
+        return {
+          documentNo: no,
+          lineNo: Number(l.sequence ?? 0) || 0,
+          tipo: tipoLineaBc(l.lineType),
+          itemNo: String(l.lineObjectNumber ?? "").trim(),
+          variantCode: "",
+          descripcion: String(l.description ?? "").trim(),
+          unidad: String(l.unitOfMeasureCode ?? "").trim(),
+          almacen: "",
+          cantidad,
+          recibida,
+          facturada: Number(l.invoicedQuantity ?? 0) || 0,
+          pendiente: Math.max(0, cantidad - recibida),
+          // El costo unitario se llama distinto según la versión de la API.
+          precioUnitario: Number(l.unitCost ?? l.directUnitCost ?? 0) || 0,
+        };
+      }),
+    };
+  } catch { return null; }
+}
+
 export type BcVariante = { code: string; descripcion: string; id?: string };
 
 // Resultado de cargar variantes. `disponible=false` significa que NO se pudo
@@ -1694,6 +1854,302 @@ export async function bcEstadoDelPedido(orderNo: string): Promise<BcPedidoEstado
   } catch {
     return "sin-respuesta";
   }
+}
+
+// ── LA PARED: la orden de la app contra el pedido de BC ──────────────────────
+// Se llama en los tres momentos en que la app y BC se pueden separar:
+//   1. al CREAR el pedido (enviar a aprobación) — ahí es gratis arreglarlo;
+//   2. al GUARDAR una orden que ya vive en BC;
+//   3. antes de RECIBIR/FACTURAR — ahí ya es plata.
+//
+// `estado`:
+//   "ok"           → las líneas coinciden. Es lo único que autoriza a seguir.
+//   "desalineado"  → coinciden en parte: `cotejo.diferencias` dice exactamente qué.
+//   "sin-pedido"   → BC contestó y NO tiene ese pedido. Ojo: en una orden COMPLETADA
+//                    esto es NORMAL (al registrarlo todo, BC borra el pedido), y por
+//                    eso quien llama tiene que mirar el estado de la orden antes de
+//                    gritar. Ver `chequeoAplica`.
+//   "sin-lectura"  → no se pudo leer BC (caído, sin permiso, API no publicada). NO
+//                    es lo mismo que "está mal": no se afirma nada.
+export type EstadoChequeoBc = "ok" | "desalineado" | "sin-pedido" | "sin-lectura";
+export type ChequeoBc = {
+  estado: EstadoChequeoBc;
+  fuente?: "custom" | "estandar";
+  cotejo?: Cotejo;
+  mensaje: string;
+  // Fecha en que se hizo (la pone quien lo guarda; acá no se inventan relojes).
+};
+
+// Traduce las líneas de la orden de la app a lo que entiende el cotejo. El itemNo se
+// deja crudo a propósito: `claveLinea` es la que pela la variante pegada, y así el
+// cotejo trata igual a "M11-0081 -VAR 12" y a "M11-0081".
+export function lineasOrdenParaCotejo(lineas: OrdenLinea[]): LineaApp[] {
+  return (lineas ?? []).map((l) => ({
+    id: String(l.id),
+    tipo: l.tipo === "cargo" ? ("cargo" as const) : ("articulo" as const),
+    itemNo: String((l.tipo === "cargo" ? l.chargeNo : l.articuloId) ?? ""),
+    variantCode: String(l.variantCode ?? ""),
+    descripcion: String(l.descripcion ?? ""),
+    cantidad: Number(l.cantidad) || 0,
+    precioUnitario: Number(l.precioUnitario) || 0,
+    // La unidad NO es opcional acá: sin ella no se detecta el caso más caro de todos
+    // (la misma cantidad en otra unidad — 1 EST son 255.000 GR).
+    unidad: String(l.unidad ?? ""),
+  }));
+}
+
+// Lo que REALMENTE se le mandó a BC, en forma de cotejo. Se usa en el momento de
+// crear/reescribir: ahí la comparación tiene que ser contra el payload que salió
+// —no contra el SQL crudo— porque la app resuelve la variante en vuelo
+// (resolverVariantesRequeridas) y todavía no la guardó. Comparar contra SQL daría
+// "falta en BC" en cada línea con variante resuelta, que es un falso positivo.
+export function lineasReplaceParaCotejo(lineas: LineaReplaceBc[]): LineaApp[] {
+  return (lineas ?? []).map((l, i) => ({
+    id: String(i),
+    tipo: l.tipo === "cargo" ? ("cargo" as const) : ("articulo" as const),
+    itemNo: String((l.tipo === "cargo" ? l.chargeNo : l.itemNo) ?? ""),
+    variantCode: String(l.variantCode ?? ""),
+    descripcion: String(l.descripcion ?? ""),
+    cantidad: Number(l.cantidad) || 0,
+    precioUnitario: toBcAmount(l.precio),
+    unidad: String(l.unidad ?? ""),
+  }));
+}
+
+export async function chequearOrdenContraBc(orderNo: string, lineas: LineaApp[]): Promise<ChequeoBc> {
+  const no = (orderNo ?? "").trim();
+  if (!no) return { estado: "sin-lectura", mensaje: "La orden no tiene N.º de Business Central." };
+  const bc = await bcLineasPedido(no);
+  if (!bc) {
+    // Se distingue "no está" de "no se pudo ver": la primera es un hecho sobre BC,
+    // la segunda es un hecho sobre la red. Confundirlas fue lo que llenó la pantalla
+    // de falsos "BC no tiene el pedido".
+    const est = await bcEstadoDelPedido(no);
+    if (est === "no-existe") {
+      return { estado: "sin-pedido", mensaje: `Business Central no tiene el pedido ${no}.` };
+    }
+    return { estado: "sin-lectura", mensaje: `No se pudieron leer las líneas de ${no} en Business Central (BC no contestó o la API de líneas no está publicada).` };
+  }
+  // Un pedido que existe pero devuelve CERO líneas es un pedido vacío en BC: no se
+  // puede lanzar y no hay nada que recibir. Cuenta como desalineado del peor tipo.
+  const cotejo = cotejarLineas(lineas, bc.lineas, {
+    ignorarVariante: bc.fuente === "estandar",
+    soloArticulos: true,
+  });
+  if (cotejo.ok) {
+    return {
+      estado: "ok", fuente: bc.fuente, cotejo,
+      mensaje: `${no}: las ${cotejo.lineasApp} línea(s) de la orden están en Business Central.`
+        + (bc.fuente === "estandar" ? " (Verificado sin variante: la API de líneas de Adelante no contestó.)" : ""),
+    };
+  }
+  return {
+    estado: "desalineado", fuente: bc.fuente, cotejo,
+    mensaje: `${no}: ${cotejo.resumen}`
+      + (bc.fuente === "estandar" ? " (Verificado sin variante: la API de líneas de Adelante no contestó.)" : ""),
+  };
+}
+
+// ── LO QUE BC REGISTRÓ DE VERDAD (factura de compra registrada) ──────────────
+// Para cotejar una orden que ya se completó: allá el pedido ya no existe (BC lo
+// borra al registrarlo todo), así que la única prueba de qué entró es la factura
+// registrada. Es lo que hizo falta para entender CP-005172: su factura CFR-009599
+// tenía 6 líneas y la orden 7.
+//
+// Va por la API estándar (`purchaseInvoices` + $expand de sus líneas), que alcanza
+// para lo que importa: artículo, cantidad y precio. No trae el código de variante —
+// por eso el cotejo contra facturas se hace ignorando la variante.
+export async function bcLineasFacturaRegistrada(numeroFactura: string): Promise<LineaBc[] | null> {
+  const no = (numeroFactura ?? "").trim();
+  if (!no) return null;
+  try {
+    const cid = await getStdCompanyId();
+    const url = `${stdRoot()}/companies(${cid})/purchaseInvoices`
+      + `?$filter=${encodeURIComponent(`number eq '${odataStr(no)}'`)}&$top=1&$select=number`
+      + `&$expand=purchaseInvoiceLines($select=sequence,lineType,lineObjectNumber,description,unitOfMeasureCode,quantity,unitCost)`;
+    const res = await bcFetch(url, { cache: "no-store" });
+    if (!res.ok) return null;
+    const inv = ((await res.json())?.value ?? [])[0];
+    if (!inv) return null;
+    return (inv.purchaseInvoiceLines ?? []).map((l: any) => {
+      const cantidad = Number(l.quantity ?? 0) || 0;
+      return {
+        documentNo: no,
+        lineNo: Number(l.sequence ?? 0) || 0,
+        tipo: tipoLineaBc(l.lineType),
+        itemNo: String(l.lineObjectNumber ?? "").trim(),
+        variantCode: "",
+        descripcion: String(l.description ?? "").trim(),
+        unidad: String(l.unitOfMeasureCode ?? "").trim(),
+        almacen: "",
+        cantidad,
+        recibida: cantidad,
+        facturada: cantidad,
+        pendiente: 0,
+        precioUnitario: Number(l.unitCost ?? 0) || 0,
+      };
+    });
+  } catch { return null; }
+}
+
+// Lo que BC REGISTRÓ contra ESTE pedido, buscado por el N.º de pedido de origen
+// (`Order No.` de las líneas de factura registrada). Es el camino bueno para mirar
+// hacia atrás: no depende de que la app haya guardado el N.º del documento —cosa que
+// solo hace desde el 1 de septiembre de 2026—, así que alcanza también a las órdenes
+// viejas, que son justamente las que nadie revisó nunca.
+//
+// Necesita la página API `postedInvoiceLines` (50247, desde la versión 1.2.6.0 de la
+// extensión). Mientras no esté publicada devuelve null y el cotejo cae al camino por
+// N.º de factura guardado.
+export async function bcLineasFacturadasDePedido(orderNo: string): Promise<LineaBc[] | null> {
+  const no = (orderNo ?? "").trim();
+  if (!no) return null;
+  try {
+    const rows = await listCustom(
+      "purchasing",
+      `postedInvoiceLines?$filter=${encodeURIComponent(`orderNo eq '${odataStr(no)}'`)}&$orderby=documentNo,lineNo`,
+    );
+    return rows.map((r: any) => {
+      const cantidad = Number(r.quantity ?? 0) || 0;
+      return {
+        documentNo: String(r.documentNo ?? ""),
+        lineNo: Number(r.lineNo ?? 0) || 0,
+        tipo: tipoLineaBc(r.type),
+        itemNo: String(r.no ?? "").trim(),
+        variantCode: String(r.variantCode ?? "").trim(),
+        descripcion: String(r.description ?? "").trim(),
+        unidad: String(r.unitOfMeasureCode ?? "").trim(),
+        almacen: String(r.locationCode ?? "").trim(),
+        cantidad,
+        recibida: cantidad,
+        facturada: cantidad,
+        pendiente: 0,
+        precioUnitario: Number(r.directUnitCost ?? 0) || 0,
+      };
+    });
+  } catch { return null; }
+}
+
+// ── EL FRENO ANTES DE REGISTRAR ──────────────────────────────────────────────
+// Antes de recibir o facturar, se comprueba que CADA línea que se va a postear
+// exista en el pedido de BC y tenga saldo suficiente.
+//
+// Por qué acá y no solo en BC: los tres procedures de registro del codeunit buscan
+// la línea con `FindFirst()` y, si no la encuentran, NO HACEN NADA — sin error y
+// sin decirlo. BC devuelve el N.º de la factura registrada igual, la app da el
+// registro por bueno y marca recibido lo que allá nunca entró. Así se facturó
+// CP-005172 con ₡22.820 de menos y así entró material a la bodega que el inventario
+// de BC nunca vio.
+//
+// El criterio replica EXACTAMENTE los filtros del AL (No. + Variant Code + saldo),
+// así que lo que pasa este chequeo es lo que el codeunit va a poder calzar.
+// ── INTERRUPTORES DE EMERGENCIA ──────────────────────────────────────────────
+// Los dos cortes nuevos (no dejar enviar a aprobación una orden que en BC quedó
+// distinta, y no dejar registrar una línea que BC no va a poder calzar) FRENAN
+// trabajo real. Si alguno diera un falso positivo en producción, Proveeduría no
+// puede mandar órdenes o Bodega no puede recibir un camión — y esperar un despliegue
+// para destrabarlo no es una opción. Se apagan desde App Settings de Azure, igual que
+// BC_CREAR_AL_ENVIAR:
+//
+//   BC_PARED_APROBACION=0   → el cotejo se hace y se guarda, pero NO frena el envío.
+//   BC_FRENO_REGISTRO=0     → no se verifica antes de postear (queda solo el freno
+//                             del codeunit, cuando la extensión 1.2.6.0 esté publicada).
+//
+// Apagados, la app NO vuelve a ser ciega: sigue cotejando, guardando el resultado en
+// la orden y avisando. Lo único que se pierde es el corte.
+export function paredAprobacionActiva(): boolean {
+  const v = (process.env.BC_PARED_APROBACION ?? "").trim().toLowerCase();
+  return !(v === "0" || v === "false" || v === "no");
+}
+export function frenoRegistroActivo(): boolean {
+  const v = (process.env.BC_FRENO_REGISTRO ?? "").trim().toLowerCase();
+  return !(v === "0" || v === "false" || v === "no");
+}
+
+export type ModoRegistro = "recibir" | "facturar-recibido";
+
+export type FrenoRegistro = { ok: boolean; problemas: string[]; verificado: boolean };
+
+export async function verificarLineasPosteables(
+  orderNo: string,
+  lineas: { itemNo: string; qty: number; variantCode?: string }[],
+  modo: ModoRegistro = "recibir",
+): Promise<FrenoRegistro> {
+  const pedidas = (lineas ?? []).filter((l) => (l.itemNo ?? "").trim() && (Number(l.qty) || 0) > 0);
+  if (!pedidas.length) return { ok: true, problemas: [], verificado: false };
+  const bc = await bcLineasPedido(orderNo);
+  // Sin lectura no se frena: si BC no contesta, el registro tampoco va a entrar y
+  // el error va a salir por su propio camino. Bloquear acá sería trabar a Bodega
+  // por un problema de red. `verificado:false` deja constancia de que no se miró.
+  if (!bc) return { ok: true, problemas: [], verificado: false };
+
+  const problemas: string[] = [];
+  // Se consume el saldo a medida que se valida, igual que hace el codeunit al
+  // asignar cantidades: dos líneas del mismo material no pueden usar el mismo saldo.
+  const saldo = new Map<string, number>();
+  const porItem = new Map<string, LineaBc[]>();
+  for (const l of bc.lineas) {
+    if (l.tipo !== "articulo") continue;
+    const item = codigoDeItem(l.itemNo).toUpperCase();
+    porItem.set(item, [...(porItem.get(item) ?? []), l]);
+    const disponible = modo === "facturar-recibido" ? Math.max(0, l.recibida - l.facturada) : l.pendiente;
+    saldo.set(`${item}|${l.variantCode.trim().toUpperCase()}`, (saldo.get(`${item}|${l.variantCode.trim().toUpperCase()}`) ?? 0) + disponible);
+  }
+  const queFalta = modo === "facturar-recibido" ? "recibido sin facturar" : "pendiente de recibir";
+
+  for (const p of pedidas) {
+    const item = codigoDeItem(String(p.itemNo)).toUpperCase();
+    const variante = String(p.variantCode ?? "").trim().toUpperCase();
+    const enBc = porItem.get(item) ?? [];
+    if (!enBc.length) {
+      problemas.push(`${p.itemNo}: el pedido ${orderNo} de Business Central NO tiene ninguna línea de este artículo. Si se registra, BC lo va a ignorar en silencio y la app lo va a dar por recibido.`);
+      continue;
+    }
+    // La variante solo se puede exigir si BC nos la devolvió (la API estándar no
+    // la trae). Si se comparó sin ella, se avisa pero no se frena por variante.
+    const clave = bc.fuente === "custom" && variante ? `${item}|${variante}` : "";
+    if (clave && !saldo.has(clave)) {
+      const otras = [...new Set(enBc.map((l) => l.variantCode || "(sin variante)"))].join(", ");
+      problemas.push(`${p.itemNo}: la orden lo recibe con variante "${variante}" y en BC la(s) línea(s) de ese artículo tienen ${otras}. El registro filtra por variante: no va a calzar y BC lo va a saltar sin avisar.`);
+      continue;
+    }
+    // Saldo: sumado por artículo+variante cuando hay variante, y por artículo cuando
+    // no (que es como lo va a resolver el codeunit).
+    // Sin variante se puede tomar saldo de cualquier variante del artículo, pero se
+    // empieza por la línea SIN variante: si no, esta línea le come el saldo a la
+    // variante que otra línea sí pidió por nombre y la frena después sin motivo.
+    const claves = clave
+      ? [clave]
+      : [`${item}|`, ...[...saldo.keys()].filter((k) => k.startsWith(`${item}|`) && k !== `${item}|`)];
+    const disponible = claves.reduce((s, k) => s + (saldo.get(k) ?? 0), 0);
+    const q = Number(p.qty) || 0;
+    if (disponible + 1e-6 < q) {
+      problemas.push(`${p.itemNo}: se quieren registrar ${q} y en BC solo hay ${disponible} ${queFalta} en el pedido ${orderNo}.`);
+      continue;
+    }
+    // Descontar del saldo, en orden, para que la siguiente línea del mismo material
+    // no vuelva a contar lo mismo.
+    let resta = q;
+    for (const k of claves) {
+      if (resta <= 0) break;
+      const s = saldo.get(k) ?? 0;
+      const usa = Math.min(s, resta);
+      saldo.set(k, s - usa);
+      resta -= usa;
+    }
+  }
+  return { ok: problemas.length === 0, problemas, verificado: true };
+}
+
+// ¿Tiene sentido gritar por este chequeo, según el estado de la orden?
+// En una orden COMPLETADA que BC ya borró no hay nada roto: Purch.-Post borra el
+// pedido cuando se recibió y facturó todo. Decirle a esa orden "BC no tiene el
+// pedido" es el falso positivo que hizo que nadie mirara el aviso cuando SÍ estaba
+// roto (CP-005172 lo mostraba, y era ruido).
+export function chequeoAplica(estado: EstadoChequeoBc, estadoOrden: string): boolean {
+  if (estado === "ok" || estado === "sin-lectura") return false;
+  if (estado === "sin-pedido") return estadoOrden !== "completado";
+  return true;   // "desalineado" importa siempre: la plata ya no cuadra
 }
 
 export type BcFacturaProveedor = { numero: string; vendorNo: string; fecha: string; total: number; estado: string };

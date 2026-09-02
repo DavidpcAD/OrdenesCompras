@@ -65,6 +65,10 @@ const ROLE_META: Record<Role, { label: string; persona: string; home: string; na
       { href: "/proveeduria/devoluciones", label: "Devoluciones", icon: IconWarning },
       { href: "/proveeduria/inventarios", label: "Inventarios", icon: IconBox },
       { href: "/proveeduria/reportes", label: "Reportes", icon: IconMatrix },
+      // Cotejo contra Business Central: encuentra el material que está en una orden
+      // y no llegó a BC (CP-005172 llegó a la factura del proveedor con una línea
+      // de menos y nadie se enteró hasta ver el papel).
+      { href: "/proveeduria/conciliacion-bc", label: "Conciliación BC", icon: IconCheck },
     ],
   },
   facturacion: {

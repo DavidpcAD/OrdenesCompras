@@ -59,8 +59,42 @@ export function OrdenDetalle({
       .catch(() => { /* sin BC: se muestran los totales locales */ });
     return () => { vivo = false; };
   }, [orden.bcNumber]);
+  // Verificar contra BC a pedido: relee las líneas del pedido (o de las facturas
+  // registradas, si la orden ya está completada y BC borró el pedido) y las coteja
+  // con las de la orden. El resultado se guarda del lado del servidor, así que al
+  // refrescar la pantalla el aviso queda actualizado.
+  const [verificando, setVerificando] = useState(false);
+  async function verificarBc() {
+    if (!orden.bcNumber) return;
+    setVerificando(true);
+    try {
+      const r = await fetch(`/api/ordenes/${orden.id}/chequeo-bc`, { cache: "no-store" });
+      const d = await r.json().catch(() => ({} as any));
+      const estado = String(d?.estado ?? "sin-lectura");
+      setChequeo({ estado, mensaje: String(d?.mensaje ?? ""), diferencias: d?.diferencias ?? [] });
+      // El aviso rojo GUARDADO es de la última vez. Si acabamos de verificar y ahora
+      // coincide, dejarlo en pantalla sería decir dos cosas opuestas a la vez (el
+      // servidor ya lo actualizó; esto es solo para no esperar a que recargue).
+      if (estado === "ok") setGuardadoVencido(true);
+    } catch (e: any) {
+      setChequeo({ estado: "sin-lectura", mensaje: String(e?.message ?? e), diferencias: [] });
+    } finally { setVerificando(false); }
+  }
+  // Resultado de la verificación pedida desde esta pantalla (el guardado viene en
+  // `orden.bcCheck` y se sigue mostrando aunque nadie apriete nada).
+  const [chequeo, setChequeo] = useState<null | { estado: string; mensaje: string; diferencias: { texto: string }[] }>(null);
+  // El cotejo guardado quedó viejo porque acabamos de verificar y ahora sí coincide.
+  const [guardadoVencido, setGuardadoVencido] = useState(false);
+
   // El pedido que la app tiene apuntado no está en BC.
-  const pedidoFantasma = !!orden.bcNumber && bcMotivo === "no-existe";
+  //
+  // En una orden COMPLETADA eso es NORMAL y no hay que decir nada: cuando se recibe y
+  // factura todo, `Purch.-Post` BORRA el pedido de compra (queda la recepción y la
+  // factura registradas). El aviso salía igual en todas las completadas, y esa es la
+  // razón por la que nadie lo miró el día que sí estaba roto: CP-005172 lo mostraba
+  // mientras le faltaban ₡22.820 de verdad. Un aviso que grita siempre no avisa nada.
+  const ordenCerrada = orden.estado === "completado";
+  const pedidoFantasma = !!orden.bcNumber && bcMotivo === "no-existe" && !ordenCerrada;
 
   const prov = proveedores.find((p) => p.id === orden.proveedorId);
   const b = ordenBadge(orden.estado);
@@ -126,11 +160,68 @@ export function OrdenDetalle({
             <button className="link-btn" title="Abrir el Pedido en Business Central (editar · vista previa de registro · registrar)"
               onClick={() => window.open(orden.bcDeepLink!, "_blank")}>↗ Abrir en BC</button>
           )}
+          {orden.bcNumber && (
+            <button className="link-btn" disabled={verificando}
+              title="Releer el pedido en Business Central y comparar sus líneas con las de esta orden"
+              onClick={() => void verificarBc()}>{verificando ? "Verificando…" : "Verificar contra BC"}</button>
+          )}
           {acciones}
         </div>
       </div>
 
       {aviso}
+
+      {/* COTEJO CONTRA BC. Es lo único de esta pantalla que compara la orden con lo
+          que Business Central tiene de verdad, línea por línea. Se guarda en la orden
+          (no es un toast) y se queda hasta que alguien lo arregle: la orden 46
+          (CP-005172) llegó a la factura del proveedor con una línea de menos porque
+          el aviso duraba tres segundos. */}
+      {orden.bcCheck && orden.bcCheck.estado !== "ok" && !guardadoVencido && !(orden.bcCheck.estado === "sin-pedido" && ordenCerrada) && (
+        <div className="ds-callout ds-callout--red mb-4" role="alert">
+          <span className="ds-callout__icon"><IconWarning size={18} /></span>
+          <div>
+            <div className="ds-callout__title">
+              {orden.bcCheck.estado === "sin-pedido"
+                ? `Business Central no tiene el pedido ${orden.bcNumber}`
+                : "Esta orden y el pedido en Business Central NO dicen lo mismo"}
+            </div>
+            <div className="ds-callout__body">
+              <div style={{ whiteSpace: "pre-wrap" }}>{orden.bcCheck.detalle}</div>
+              <div className="ds-body-sm ds-muted mt-2">
+                Verificado {orden.bcCheck.fecha ? formatDate(orden.bcCheck.fecha) : "—"}. Mientras no coincidan, lo que Bodega
+                reciba y Contabilidad facture puede entrar de menos en BC (o no entrar).
+              </div>
+              <div className="row gap-2 mt-2">
+                <Button variant="outline" size="sm" disabled={verificando} onClick={() => void verificarBc()}>
+                  {verificando ? "Verificando…" : "Volver a verificar"}
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {chequeo && (
+        <div className={`ds-callout mb-4 ${chequeo.estado === "ok" ? "ds-callout--green" : chequeo.estado === "sin-lectura" ? "ds-callout--yellow" : "ds-callout--red"}`} role="status">
+          <span className="ds-callout__icon"><IconWarning size={18} /></span>
+          <div>
+            <div className="ds-callout__title">
+              {chequeo.estado === "ok" ? "Verificado contra Business Central" : "Verificación contra Business Central"}
+            </div>
+            <div className="ds-callout__body">
+              <div>{chequeo.mensaje}</div>
+              {!!chequeo.diferencias.length && (
+                <ul style={{ margin: "6px 0 0 18px" }}>
+                  {chequeo.diferencias.map((d, i) => <li key={i}>{d.texto}</li>)}
+                </ul>
+              )}
+              <div className="mt-2">
+                <Button variant="outline" size="sm" onClick={() => setChequeo(null)}>Cerrar</Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {pedidoFantasma && (
         <div className="ds-callout ds-callout--red mb-4" role="status">

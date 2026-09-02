@@ -1401,6 +1401,13 @@ h1, h2, h3, h4, p { margin: 0; }
 @media (max-width: 640px) {
   .hide-mobile { display: none !important; }
 }
+/* El reverso EXACTO de .hide-mobile: el dato que reaparece dentro de otra celda
+   cuando su columna se va. Tiene que cortar en los mismos 640px — con .only-mobile
+   (760px) el dato se veía DOS veces entre 641 y 760. */
+.only-mobile-cols { display: none; }
+@media (max-width: 640px) {
+  .only-mobile-cols { display: block; }
+}
 
 /* Fila de 3 tiles: 3 en desktop, apila en móvil (evita que se corte el 3º). */
 .tiles-3 { grid-template-columns: repeat(3, 1fr); }
@@ -1840,6 +1847,18 @@ button.ana-kpi:active { transform: translateY(1px); }
   border-left-color: var(--ds-color-yellow);
   background: color-mix(in srgb, var(--ds-color-yellow) 8%, var(--ds-tint-base));
 }
+/* Verde: la confirmación de que algo se VERIFICÓ y salió bien (el cotejo contra
+   Business Central). Hacía falta un "sí" con el mismo peso visual que el "no":
+   decir solo lo malo enseña a ignorar el aviso, no a mirarlo. */
+.ds-callout--green {
+  border-color: color-mix(in srgb, var(--ds-color-green-200) 26%, var(--ds-tint-base));
+  border-left-color: var(--ds-color-green-200);
+  background: color-mix(in srgb, var(--ds-color-green-200) 7%, var(--ds-tint-base));
+}
+/* El título va en el verde OSCURO (green-300): el 200 sobre el fondo claro del
+   callout da ~2,8:1 y no llega al mínimo de contraste. En modo oscuro el token
+   green-300 ya se remapea al verde claro (globals.css:112), así que sirve en los dos. */
+.ds-callout--green .ds-callout__icon, .ds-callout--green .ds-callout__title { color: var(--ds-color-green-300); }
 
 /* Aviso de "no se pudieron cargar los datos" (arriba del contenido de la página). */
 .carga-error { margin-bottom: var(--ds-space-4); align-items: center; }

@@ -195,6 +195,16 @@ export interface Orden {
   creadoPor?: string;       // quién generó la orden (para los reportes y la trazabilidad)
   bcNumber?: string;        // Nº del Pedido de compra en Business Central (CP-…)
   bcDeepLink?: string;      // link directo al Pedido en BC (editar / registrar / vista previa)
+  // Último cotejo de las líneas de la orden contra las del pedido en BC. Es un
+  // ESTADO, no un aviso: se guarda en SQL (sql/orden_chequeo_bc.sql) porque el
+  // toast que avisaba antes se lo llevó el viento y así fue como CP-005172 llegó
+  // hasta la factura del proveedor con una línea de menos. undefined = nunca se
+  // chequeó (órdenes viejas, o la migración todavía no está corrida).
+  bcCheck?: {
+    estado: "ok" | "desalineado" | "sin-pedido";
+    detalle?: string;       // las diferencias, una por línea
+    fecha?: string;         // ISO
+  };
   notas?: string;           // motivo de la última devolución/denegación (Aprobación → Proveeduría)
   // Observaciones que escribe Proveeduría al armar la orden: instrucciones para el
   // proveedor (horario de entrega, contacto, referencia de cotización…). SALEN EN EL

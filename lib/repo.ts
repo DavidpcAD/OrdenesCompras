@@ -617,6 +617,172 @@ async function ensureCargoCols(): Promise<boolean> {
   return cargoColsListas;
 }
 
+// ── Chequeo contra BC: ¿la orden y el pedido de allá tienen las mismas líneas? ──
+// Las columnas son OPCIONALES (sql/orden_chequeo_bc.sql). Sin ellas la app coteja
+// igual y lo muestra en el momento; lo que se pierde es la memoria entre visitas y
+// el reporte. Mismo criterio que ensureCargoCols: esta app NO le hace ALTER a una
+// tabla que comparte con Producción salvo que MIGRAR_ESQUEMA lo autorice.
+// El "no están" se recuerda solo un rato, a propósito: la migración se corre DESPUÉS
+// de desplegar, y con un caché definitivo el proceso de Azure se quedaba con
+// "no existen" hasta que alguien lo reiniciara — o sea, el cotejo no se guardaría en
+// todo el día sin que nadie entienda por qué. El "sí están" sí se recuerda para
+// siempre: una columna no se borra sola.
+let chequeoBcColsListas: boolean | null = null;
+let chequeoBcColsRevisadas = 0;
+const REINTENTO_COLS_MS = 5 * 60 * 1000;
+async function ensureChequeoBcCols(): Promise<boolean> {
+  if (chequeoBcColsListas === true) return true;
+  if (chequeoBcColsListas === false && Date.now() - chequeoBcColsRevisadas < REINTENTO_COLS_MS) return false;
+  chequeoBcColsRevisadas = Date.now();
+  try {
+    const pool = await getPool();
+    if (process.env.MIGRAR_ESQUEMA === "1") {
+      await pool.request().query(`
+        IF COL_LENGTH('dbo.OrdenCompra','bcCheckEstado') IS NULL
+          ALTER TABLE dbo.OrdenCompra ADD bcCheckEstado NVARCHAR(20) NULL;
+        IF COL_LENGTH('dbo.OrdenCompra','bcCheckDetalle') IS NULL
+          ALTER TABLE dbo.OrdenCompra ADD bcCheckDetalle NVARCHAR(MAX) NULL;
+        IF COL_LENGTH('dbo.OrdenCompra','bcCheckFecha') IS NULL
+          ALTER TABLE dbo.OrdenCompra ADD bcCheckFecha DATETIME2 NULL;`);
+    }
+    const r = await pool.request().query(
+      `SELECT COL_LENGTH('dbo.OrdenCompra','bcCheckEstado') AS a,
+              COL_LENGTH('dbo.OrdenCompra','bcCheckDetalle') AS b,
+              COL_LENGTH('dbo.OrdenCompra','bcCheckFecha') AS c`);
+    const f = r.recordset[0];
+    chequeoBcColsListas = f?.a != null && f?.b != null && f?.c != null;
+  } catch {
+    chequeoBcColsListas = false;
+  }
+  return chequeoBcColsListas;
+}
+
+// Los N.º de documento que BC devolvió al registrar las facturas de esta orden
+// (columna opcional RecepcionCompra.bcFacturaNo, sql/recepcion_bc_factura.sql).
+//
+// Sirven para cotejar una orden YA COMPLETADA: BC borra el pedido de compra cuando
+// se recibe y factura todo, así que lo único que queda allá para comparar son los
+// documentos registrados. Sin esto, la orden 46 no se podía verificar contra nada.
+export async function facturasBcDeOrden(idOrden: number): Promise<string[]> {
+  if (!(await colBcFacturaExiste())) return [];
+  try {
+    const pool = await getPool();
+    const r = await pool.request().input("id", sql.Int, idOrden).query(
+      `SELECT bcFacturaNo FROM dbo.RecepcionCompra
+        WHERE idOrdenCompra=@id AND esEliminada=0 AND bcFacturaNo IS NOT NULL AND LTRIM(RTRIM(bcFacturaNo)) <> ''`);
+    return [...new Set(r.recordset.map((x: any) => String(x.bcFacturaNo).trim()))];
+  } catch { return []; }
+}
+
+// Guarda en la orden la variante que la app RESOLVIÓ sola al mandar el pedido a BC.
+//
+// Hasta ahora esa variante viajaba a Business Central y no se guardaba en ningún lado:
+// `resolverVariantesRequeridas` la pone en el payload y `OrdenCompraDet.variantCode`
+// se quedaba vacío. O sea, la app y BC quedaban diciendo cosas distintas de la misma
+// línea desde el minuto cero — y después, al registrar, el codeunit filtra por
+// `Variant Code` y una línea que no calza se salta sin avisar. Es la forma alcanzable
+// de perder una línea que sí quedó demostrada (la orden 38 es una línea con variante).
+export async function guardarVariantesResueltas(
+  idOrden: number,
+  cambios: { idLinea: number; variantCode: string }[],
+): Promise<number> {
+  const utiles = (cambios ?? []).filter((c) => Number.isFinite(c.idLinea) && (c.variantCode ?? "").trim());
+  if (!utiles.length) return 0;
+  const pool = await getPool();
+  let n = 0;
+  for (const c of utiles) {
+    try {
+      const r = await pool.request()
+        .input("id", sql.Int, c.idLinea)
+        .input("oc", sql.Int, idOrden)
+        .input("v", sql.NVarChar(20), c.variantCode.trim())
+        // Solo si sigue vacía: si alguien ya eligió una variante a mano, la de la app
+        // no la pisa. Y se ata a la orden para no tocar una línea de otra por un id mal.
+        .query(`UPDATE dbo.OrdenCompraDet SET variantCode=@v
+                 WHERE idOrdenCompraDet=@id AND idOrdenCompra=@oc
+                   AND (variantCode IS NULL OR LTRIM(RTRIM(variantCode))='')`);
+      n += r.rowsAffected?.[0] ?? 0;
+    } catch { /* que no se pueda guardar la variante no puede frenar el envío */ }
+  }
+  return n;
+}
+
+// Guarda el N.º del pedido que BC acaba de crear, SIN tocar el estado de la orden.
+//
+// Existe porque el N.º se guardaba recién al final, junto con el cambio de estado
+// (setOrdenEstado): si entre medio algo fallaba —o si el cotejo contra BC frena el
+// envío, que es lo que hace ahora— el pedido quedaba creado en BC y la app no sabía
+// su número. Al siguiente intento se creaba OTRO, y el primero se quedaba ahí de
+// huérfano. Guardarlo apenas BC lo devuelve es lo único que garantiza que ese
+// documento no se pierda.
+export async function asignarBcNumber(id: number, bcNo: string, usuario: string, rol: Role, detalle?: string): Promise<void> {
+  const no = (bcNo ?? "").trim();
+  if (!no) return;
+  const pool = await getPool();
+  const prev = await pool.request().input("id", sql.Int, id)
+    .query("SELECT ordenNo, bcNo FROM dbo.OrdenCompra WHERE idOrdenCompra=@id");
+  if (!prev.recordset.length) return;
+  if (String(prev.recordset[0].bcNo ?? "").trim().toUpperCase() === no.toUpperCase()) return;
+  await pool.request().input("id", sql.Int, id).input("bcno", sql.NVarChar(20), no).input("u", sql.NVarChar(100), usuario)
+    .query("UPDATE dbo.OrdenCompra SET bcNo=@bcno, syncedToBc=1, fechaModificacion=getdate(), modificadoPor=@u WHERE idOrdenCompra=@id");
+  const tx = new sql.Transaction(pool);
+  await tx.begin();
+  try {
+    await logMov(tx, {
+      entidad: "orden", idEntidad: id, documentoNo: prev.recordset[0].ordenNo ?? "",
+      tipoMovimiento: "bc_creado", detalle: detalle || `Pedido ${no} creado en Business Central.`,
+      usuario, rol,
+    });
+    await tx.commit();
+  } catch { try { await tx.rollback(); } catch { /* el N.º ya quedó guardado, que es lo que importa */ } }
+}
+
+// Guarda el resultado del cotejo en la orden Y en la bitácora.
+//
+// En la bitácora va SIEMPRE que haya algo que contar (desalineado / sin pedido /
+// se arregló), aunque las columnas no existan: la bitácora es la que sobrevive a
+// todo y es donde se va a mirar dentro de un mes para saber desde cuándo esa orden
+// estaba mal. Un chequeo "ok" que repite otro "ok" no se registra: sería ruido.
+export async function guardarChequeoBc(
+  id: number,
+  estado: "ok" | "desalineado" | "sin-pedido",
+  detalle: string,
+  usuario: string,
+  rol: Role,
+): Promise<void> {
+  const pool = await getPool();
+  const prevQ = await pool.request().input("id", sql.Int, id)
+    .query(`SELECT ordenNo, bcNo${await ensureChequeoBcCols() ? ", bcCheckEstado" : ""} FROM dbo.OrdenCompra WHERE idOrdenCompra=@id`);
+  const prev = prevQ.recordset[0];
+  if (!prev) return;
+  if (await ensureChequeoBcCols()) {
+    await pool.request()
+      .input("id", sql.Int, id)
+      .input("e", sql.NVarChar(20), estado)
+      .input("d", sql.NVarChar(sql.MAX), detalle || null)
+      .query("UPDATE dbo.OrdenCompra SET bcCheckEstado=@e, bcCheckDetalle=@d, bcCheckFecha=getdate() WHERE idOrdenCompra=@id");
+  }
+  // Solo se anota cuando el estado CAMBIA. El reporte de conciliación puede correr
+  // todos los días sobre las mismas órdenes: sin esto, la bitácora de una orden
+  // descuadrada se llena de "bc_desalineado" idénticos y deja de servir para lo único
+  // que importa, que es saber DESDE CUÁNDO está así.
+  const antes = prev.bcCheckEstado ?? null;
+  if (antes === estado) return;
+  if (!antes && estado === "ok") return;   // primer chequeo y salió bien: no es noticia
+  const tipo = estado === "ok" ? "bc_alineado" : "bc_desalineado";
+  const tx = new sql.Transaction(pool);
+  await tx.begin();
+  try {
+    await logMov(tx, {
+      entidad: "orden", idEntidad: id, documentoNo: prev.ordenNo ?? "",
+      tipoMovimiento: tipo,
+      detalle: `${prev.bcNo ? `${prev.bcNo}: ` : ""}${detalle}`.slice(0, 3900),
+      usuario, rol,
+    });
+    await tx.commit();
+  } catch { try { await tx.rollback(); } catch { /* la bitácora no puede tumbar el chequeo */ } }
+}
+
 // El motivo del rechazo NO tiene columna en dbo.OrdenCompra: vive en el log de
 // movimientos (`detalle` = "Motivo: …" del movimiento de rechazo, que escribe la
 // app de Aprobación/Producción). Sin esto, Devoluciones mostraba el motivo "—".
@@ -709,6 +875,14 @@ function mapOrden(o: any, lineas: any[], motivoRechazo?: string, unidades: Recor
     // en mock, así que en producción el botón "Abrir en BC" nunca aparecía y el
     // "Volver a abrir" no abría nada (hacía window.open(undefined)).
     bcDeepLink: (o.bcNo && bcDeepLinkPedido(String(o.bcNo))) || undefined,
+    // Último cotejo contra BC (columnas opcionales: sql/orden_chequeo_bc.sql).
+    bcCheck: o.bcCheckEstado
+      ? {
+          estado: String(o.bcCheckEstado) as NonNullable<Orden["bcCheck"]>["estado"],
+          detalle: o.bcCheckDetalle || undefined,
+          fecha: o.bcCheckFecha?.toISOString?.() ?? undefined,
+        }
+      : undefined,
     lineas: lineas.map((l): OrdenLinea => ({
       id: String(l.idOrdenCompraDet), tipo: (l.tipoLinea === "cargo" ? "cargo" : "articulo"),
       articuloId: l.itemNo ?? undefined, variantCode: l.variantCode ?? undefined, pedidoLineaId: l.idPedidoCompraDet ? String(l.idPedidoCompraDet) : undefined,

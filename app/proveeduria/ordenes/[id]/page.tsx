@@ -74,7 +74,12 @@ export default function ProvOrdenDetallePage() {
       if (r?.bcAviso) { setAvisoBc(r.bcAviso); toast(r.bcAviso, "info"); }
       else { setAvisoBc(null); toast(msg, "success"); }
     } catch (e: any) {
-      toast(`No se pudo actualizar la orden: ${String(e?.message ?? e)}`, "error");
+      // El error se QUEDA en pantalla, no solo como toast. El corte por "BC no tiene
+      // lo mismo que la orden" trae el detalle línea por línea, y eso no se puede leer
+      // en tres segundos: es justamente lo que hay que ir a corregir.
+      const msg = String(e?.message ?? e);
+      setAvisoBc(msg);
+      toast(`No se pudo actualizar la orden: ${msg.split("\n")[0]}`, "error");
     } finally {
       setProcesando(false);
     }
@@ -300,7 +305,7 @@ export default function ProvOrdenDetallePage() {
             <span className="ds-callout__icon"><IconWarning size={18} /></span>
             <div style={{ flex: 1 }}>
               <div className="ds-callout__title">Business Central quedó desalineado</div>
-              <div className="ds-callout__body">{avisoBc}</div>
+              <div className="ds-callout__body" style={{ whiteSpace: "pre-wrap" }}>{avisoBc}</div>
             </div>
             <Button variant="outline" size="sm" onClick={() => setAvisoBc(null)}>Entendido</Button>
           </div>

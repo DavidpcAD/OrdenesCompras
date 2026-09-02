@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import { getOrden, setOrdenEstado, setOrdenBcNumber, updateOrden, descartarOrden, ordenTieneRecepciones, obrasDeLineasPedido, MSG_NO_REABRIR } from "@/lib/repo";
-import { bcReopenPedido, bcReplaceOrderLines, bcCrearPedidoAbierto, crearEnBcAlEnviar, lineasOrdenParaBc, obrasSinTarea, lineasSinUnidad, lineasSinAlmacen, resolverVariantesRequeridas, sanearObrasDeLineas, avisoDeSaneo, bcOrdenTotales, bcEstadoDelPedido } from "@/lib/bc";
+import { getOrden, setOrdenEstado, setOrdenBcNumber, updateOrden, descartarOrden, ordenTieneRecepciones, obrasDeLineasPedido, asignarBcNumber, guardarChequeoBc, guardarVariantesResueltas, MSG_NO_REABRIR } from "@/lib/repo";
+import { bcReopenPedido, bcReplaceOrderLines, bcCrearPedidoAbierto, crearEnBcAlEnviar, lineasOrdenParaBc, obrasSinTarea, lineasSinUnidad, lineasSinAlmacen, resolverVariantesRequeridas, sanearObrasDeLineas, avisoDeSaneo, bcOrdenTotales, bcEstadoDelPedido, chequearOrdenContraBc, lineasReplaceParaCotejo, lineasOrdenParaCotejo, paredAprobacionActiva } from "@/lib/bc";
 import { ordenLineaImporte } from "@/lib/helpers";
 import { actor } from "@/lib/actor";
 
@@ -136,6 +136,17 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
           error: `La orden NO se envió a aprobación: ${varRes.ambiguas.length} artículo(s) exigen variante y la línea no la trae — ${varRes.ambiguas.join("; ")}. Business Central no puede lanzar un pedido con una línea así.`,
         }, { status: 409 });
       }
+      // La variante que se acaba de resolver se GUARDA. `lineasOrdenParaBc` y
+      // `decidirVariantes` son map() 1:1 sin filtros, así que el índice i de lineasBc
+      // es la línea i de o.lineas — y esa correspondencia es lo único que ata las dos
+      // listas (BC no devuelve el id de la línea de la app). Si se rompiera ese 1:1,
+      // esto tiene que dejar de hacerse por índice.
+      const variantesNuevas = varRes.lineas
+        .map((l, i) => ({ idLinea: Number(o.lineas[i]?.id), variantCode: String(l.variantCode ?? "") }))
+        .filter((c, i) => c.variantCode && !String(o.lineas[i]?.variantCode ?? "").trim() && Number.isFinite(c.idLinea));
+      if (variantesNuevas.length) {
+        await guardarVariantesResueltas(id, variantesNuevas).catch(() => { /* no frena el envío */ });
+      }
       lineasBc = varRes.lineas;
       if (o.bcNumber) {
         // Reenvío de una orden rechazada/corregida: el pedido ya existe allá. Se le
@@ -158,6 +169,11 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
             lineas: lineasBc,
           });
           bcNo = r.number;
+          // El N.º se guarda YA, antes de cualquier otra cosa que pueda fallar (el
+          // cotejo de acá abajo puede frenar el envío). Si no, el pedido queda creado
+          // en BC y la app no sabe su número: al reintentar crea otro y el primero se
+          // queda de huérfano — que es justo como aparecen los CP fantasma.
+          try { await asignarBcNumber(id, r.number, a.usuario, a.rol); } catch { /* se reintenta al guardar el estado */ }
           const avisos = [
             r.omitidas.length ? `El pedido ${r.number} se creó en BC, pero sin ${r.omitidas.length} línea(s) — ${r.omitidas.join("; ")}.` : "",
             r.avisoCC ?? "",
@@ -167,6 +183,45 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
           return NextResponse.json({
             error: `La orden NO se envió a aprobación porque no se pudo crear el pedido en Business Central — ${String(e?.message ?? e)}`,
           }, { status: 502 });
+        }
+      }
+
+      // ── LA PARED ────────────────────────────────────────────────────────────
+      // Se relee de BC el pedido que se acaba de crear/reescribir y se cotejan las
+      // líneas contra las que se mandaron. Escribir y no volver a mirar es lo que
+      // dejó pasar CP-005172 (7 líneas acá, 6 allá, ₡22.820 que el proveedor
+      // facturó y BC nunca registró) y a la orden 38.
+      //
+      // Si no coinciden, la orden NO avanza: mismo criterio que "obra sin tarea" o
+      // "línea sin almacén" — se corta donde todavía es gratis, y no cuando el
+      // aprobador ya lanzó un pedido que no es el que se le mandó al proveedor.
+      // El N.º de BC ya quedó guardado, así que no se pierde nada y se puede
+      // reintentar corrigiendo.
+      const numeroBc = bcNo || o.bcNumber || "";
+      if (numeroBc) {
+        const chequeo = await chequearOrdenContraBc(numeroBc, lineasReplaceParaCotejo(lineasBc));
+        const detalle = (chequeo.cotejo?.diferencias ?? []).map((d) => `• ${d.texto}`).join("\n");
+        if (chequeo.estado === "desalineado" || chequeo.estado === "sin-pedido") {
+          await guardarChequeoBc(id, chequeo.estado, chequeo.mensaje, a.usuario, a.rol).catch(() => { /* el aviso importa más que guardarlo */ });
+          // Interruptor de emergencia (App Setting BC_PARED_APROBACION=0): si el cotejo
+          // diera un falso positivo en producción, Proveeduría se quedaría sin poder
+          // enviar NADA. Apagado, el cotejo igual se hace, se guarda y se avisa: lo
+          // único que se pierde es el corte.
+          if (paredAprobacionActiva()) {
+            return NextResponse.json({
+              error: `La orden NO se envió a aprobación: lo que quedó en Business Central NO es lo que dice la orden.\n\n${chequeo.mensaje}\n${detalle}\n\n`
+                + `El pedido ${numeroBc} existe en BC pero con esas diferencias. Corregí la orden y volvé a enviarla, o arreglá el pedido en BC. `
+                + `No se manda a aprobación algo que allá no está igual: así fue como una línea entera se perdió y se facturó de menos.`,
+              bcCheck: { estado: chequeo.estado, diferencias: chequeo.cotejo?.diferencias ?? [] },
+            }, { status: 409 });
+          }
+          bcAviso = [bcAviso, `OJO: ${chequeo.mensaje}${detalle ? ` ${detalle}` : ""}`].filter(Boolean).join(" · ");
+        } else if (chequeo.estado === "ok") {
+          await guardarChequeoBc(id, "ok", chequeo.mensaje, a.usuario, a.rol).catch(() => { /* no bloquea el envío */ });
+        } else {
+          // "sin-lectura" no frena nada (BC caído no puede trabar a Proveeduría) pero
+          // tampoco se guarda como "ok": no se afirma lo que no se pudo ver.
+          bcAviso = [bcAviso, `OJO: no se pudo verificar contra Business Central que el pedido ${numeroBc} tenga las mismas líneas que la orden (${chequeo.mensaje}). Verificalo antes de recibir.`].filter(Boolean).join(" · ");
         }
       }
       // El IVA% que se escribe en la orden NO viaja a BC: allá se calcula solo,
@@ -218,7 +273,8 @@ export async function PUT(req: Request, { params }: { params: { id: string } }) 
     // volver a guardarla).
     const saneo = Array.isArray(body?.lineas) ? await sanearObrasDeLineas(body.lineas) : null;
     if (saneo) body.lineas = saneo.lineas;
-    await updateOrden(id, { ...body, ...(await actor(body)) });
+    const a = await actor(body);
+    await updateOrden(id, { ...body, ...a });
 
     // El edit ya quedó en SQL. Si la orden VIVE EN BC hay que empujarle las líneas
     // nuevas: si no, Bodega recibe y Contabilidad factura contra las viejas (el
@@ -238,10 +294,26 @@ export async function PUT(req: Request, { params }: { params: { id: string } }) 
         // el edit le borraría a BC la obra de las líneas que van a stock.
         const obrasSolicitud = await obrasDeLineasPedido(
           o.lineas.map((l) => Number(l.pedidoLineaId)).filter((n) => Number.isFinite(n)));
-        const r = await bcReplaceOrderLines(o.bcNumber, lineasOrdenParaBc(o.lineas, obrasSolicitud));
+        const lineasBc = lineasOrdenParaBc(o.lineas, obrasSolicitud);
+        const r = await bcReplaceOrderLines(o.bcNumber, lineasBc);
         if (r.omitidas.length) avisos.push(`Guardado. OJO: BC no recibió ${r.omitidas.length} línea(s) — ${r.omitidas.join("; ")}.`);
+        // Se relee BC y se coteja. Acá NO se puede frenar nada (el SQL ya se
+        // guardó), pero el resultado deja de ser un toast: queda escrito en la
+        // orden y en la bitácora, y la pantalla lo muestra hasta que se arregle.
+        const chequeo = await chequearOrdenContraBc(o.bcNumber, lineasReplaceParaCotejo(lineasBc));
+        if (chequeo.estado !== "sin-lectura") {
+          await guardarChequeoBc(id, chequeo.estado, chequeo.mensaje, a.usuario, a.rol).catch(() => { /* no tumba el guardado */ });
+        }
+        if (chequeo.estado === "desalineado" || chequeo.estado === "sin-pedido") {
+          avisos.push(`${chequeo.mensaje} Business Central quedó DISTINTO de la orden: revisá el aviso rojo del detalle antes de que Bodega reciba.`);
+        }
       } catch (e: any) {
-        avisos.push(`Se guardó acá, pero el pedido ${o.bcNumber} en BC quedó con las líneas VIEJAS: ${String(e?.message ?? e)}. Volvé a guardar para reintentar.`);
+        const msg = `Se guardó acá, pero el pedido ${o.bcNumber} en BC quedó con las líneas VIEJAS: ${String(e?.message ?? e)}. Volvé a guardar para reintentar.`;
+        avisos.push(msg);
+        // El chequeo guardado NO puede seguir diciendo "ok" después de esto: la orden
+        // acaba de cambiar acá y en BC no. Si se deja el "ok" viejo, la pantalla se
+        // queda muda justo en el caso que hay que gritar.
+        await guardarChequeoBc(id, "desalineado", msg, a.usuario, a.rol).catch(() => { /* el aviso ya va en la respuesta */ });
       }
     }
     if (saneo) { const a = avisoDeSaneo(saneo); if (a) avisos.push(a); }

@@ -39,18 +39,28 @@ export default function ArchivoPage() {
     let aviso = "";
     try {
       if (o?.bcNumber && bcLineas.length) {
+        // Si BC dice que NO, acá se corta. Antes se guardaba igual: la recepción
+        // quedaba "facturada" en la app contra una factura que en BC no existe, y el
+        // aviso era un toast informativo que nadie volvía a ver. La factura tiene que
+        // entrar en los dos lados o en ninguno.
+        let error = "";
         try {
           const r = await fetch("/api/bc/facturar-recibido", {
             method: "POST", headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ orderNo: o.bcNumber, vendorInvoiceNo: numFac.trim(), lineas: bcLineas }),
           });
           const d = await r.json().catch(() => ({}));
-          aviso = r.ok ? ` · registrada en BC (${d.postedNo ?? "OK"})` : ` · NO se pudo registrar en BC: ${d.error ?? r.status}`;
-        } catch (e: any) { aviso = ` · BC no disponible: ${String(e?.message ?? e)}`; }
+          if (r.ok) aviso = ` · registrada en BC (${d.postedNo ?? "OK"})`;
+          else error = String(d.error ?? `BC ${r.status}`);
+        } catch (e: any) { error = `Business Central no está disponible (${String(e?.message ?? e)})`; }
+        if (error) {
+          toast(`NO se registró la factura ${numFac}: ${error}. La recepción queda en revisión para reintentar.`, "error");
+          setGuardando(false);
+          return;
+        }
       }
       await facturarRecepcion(rec.id, numFac.trim());
-      const fallo = aviso.includes("NO se pudo") || aviso.includes("no disponible");
-      toast(`Factura ${numFac} registrada${aviso}`, fallo ? "info" : "success");
+      toast(`Factura ${numFac} registrada${aviso}`, "success");
       setFacObj(null); setNumFac("");
     } catch (e: any) {
       toast(String(e?.message ?? e), "error");

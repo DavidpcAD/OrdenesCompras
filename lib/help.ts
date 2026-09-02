@@ -162,18 +162,36 @@ const REPORTES: HelpEntry = {
     "Si un material se compró en colones y en dólares, los totales se muestran por separado y los precios son solo de la moneda de la última compra.",
   ],
 };
+const CONCILIACION_BC: HelpEntry = {
+  titulo: "Conciliación con Business Central",
+  resumen: "Revisa orden por orden que las líneas de la app sean las mismas que hay en BC.",
+  detalle: [
+    "Existe porque puede pasar —y pasó— que una orden tenga 7 líneas acá y 6 en BC: el material llega a la bodega, el proveedor lo factura, y en BC se registra de menos sin que nadie se entere.",
+    "Si la orden todavía tiene su pedido en BC, se compara contra las líneas del pedido. Si ya se completó (BC borra el pedido cuando se recibe y factura todo), se compara contra lo que BC registró.",
+    "“No se pudo verificar” no es lo mismo que “está mal”: significa que BC no contestó o que no hay contra qué comparar.",
+  ],
+  pasos: [
+    "Elegí desde qué fecha querés revisar (mientras más atrás, más tarda: son una o dos consultas a BC por orden).",
+    "Dale “Revisar”. Va por tandas y muestra lo que va encontrando; podés pararlo cuando quieras.",
+    "Las órdenes que no cuadran salen con el detalle de qué línea falta y cuánta plata es. El número abre la orden.",
+  ],
+  tips: [
+    "Lo que se revisa queda guardado en la orden: el aviso rojo aparece después en su detalle aunque nadie esté mirando esta pantalla.",
+    "Si una orden dice que le falta una línea en BC, NO la recibas: primero hay que arreglar el pedido allá, o BC va a registrar de menos otra vez.",
+  ],
+};
 const NUEVA: HelpEntry = {
   titulo: "Armar orden de compra",
   resumen: "Revisá y ajustá lo que se va a enviar al proveedor.",
   detalle: [
     "Se arma tomando líneas de solicitudes de Ingeniería.",
     "El precio que pongas es el costo unitario que se manda a Business Central.",
-    "La columna Obra / tarea es el DESTINO de cada línea: arriba el almacén / centro de costo (a dónde entra el material) y, solo si es consumo directo, la obra con su tarea. Una compra para stock se queda con el almacén y ya: no pide tarea.",
+    "La columna Destino muestra UNA sola cosa por línea: si el ingeniero la pidió como consumo directo, la obra y su tarea (el material se carga a esa obra y no suma inventario); si la pidió a almacén, el almacén / centro de costo que eligió. Una compra para stock no pide tarea.",
   ],
   pasos: [
     "Confirmá el proveedor (hereda términos y moneda), la moneda y el almacén de recepción.",
     "Revisá las líneas que traés de la solicitud; ajustá las cantidades.",
-    "Mirá el destino: la obra y la tarea vienen de la solicitud (las pone quien pide el material). Si ves que una línea es consumo de una obra, tocá “Asignar obra” y elegí obra + tarea; con “Cambiar obra/tarea” corregís las que ya vienen.",
+    "Mirá el destino: lo trae la solicitud (lo pone quien pide el material). Si una línea muestra el almacén pero en realidad es consumo de una obra, tocá “Asignar obra” y elegí obra + tarea; con “Cambiar obra/tarea” corregís las que ya vienen con obra.",
     "Corregí los precios unitarios si difieren de lo cotizado.",
     "(Opcional) agregá un cargo de flete/transporte que se reparte entre las líneas.",
     "Hay DOS comentarios y no son lo mismo: “Observaciones para el proveedor” se imprimen en el PDF que él recibe; “Comentario para el aprobador” es interno y no sale en el PDF.",
@@ -194,7 +212,7 @@ const DIRECTA: HelpEntry = {
   pasos: [
     "Elegí el proveedor (hereda términos y moneda), la moneda y el almacén de recepción.",
     "Buscá un artículo del catálogo, poné la cantidad y el precio, y tocá “+ Agregar línea”.",
-    "Si esa línea va a una obra, elegí la obra y la tarea ANTES de agregarla (quedan puestas para las siguientes). Para corregirlas después, tocá “Cambiar” en la columna Obra / tarea.",
+    "Si esa línea va a una obra, elegí la obra y la tarea ANTES de agregarla (quedan puestas para las siguientes). Para corregirlas después, tocá “Cambiar” en la columna Destino.",
     "Repetí para cada material que necesites.",
     "(Opcional) activá el cargo de flete/transporte.",
     "Revisá Subtotal / IVA / Total y guardá como abierta o enviá a aprobación. Al enviarla se crea el pedido en Business Central, todavía sin lanzar.",
@@ -412,6 +430,7 @@ export function helpForPath(p: string): HelpEntry {
   if (p.startsWith("/proveeduria/devoluciones")) return DEVOLUCIONES;
   if (p.startsWith("/proveeduria/inventarios")) return INVENTARIOS;
   if (p.startsWith("/proveeduria/reportes")) return REPORTES;
+  if (p.startsWith("/proveeduria/conciliacion-bc")) return CONCILIACION_BC;
   if (p === "/proveeduria") return SOLICITUDES_LINEA;
   return GENERIC;
 }

@@ -117,6 +117,11 @@ export default function RegistrarFacturaPage() {
   // mismo que "BC no contesta": con esto, registrar va a fallar seguro, así que se
   // avisa ANTES de que Bodega llene todo. false mientras no se sepa.
   const [bcSinPedido, setBcSinPedido] = useState(false);
+  // El servidor comprobó contra BC que una o más líneas de esta factura NO se
+  // pueden registrar allá (el pedido no las tiene, la variante no calza, o no
+  // queda saldo). Es un aviso que se QUEDA: el codeunit de BC se salta esas líneas
+  // sin decir nada, y así se registró CP-005172 con ₡22.820 de menos.
+  const [frenoBc, setFrenoBc] = useState<null | { error: string; problemas: string[] }>(null);
   // Sonda al ABRIR: ¿está el pedido en BC? Si BC contesta que no lo tiene, registrar
   // va a fallar seguro — y es mejor decirlo antes de que Bodega cuente el camión
   // entero. "BC no contesta" NO cuenta como ausencia (eso se arregla solo), por eso
@@ -368,7 +373,13 @@ export default function RegistrarFacturaPage() {
     // guarda solo acá, como siempre.
     if (!orden!.bcNumber || !bcLineas.length) {
       await guardarLocal({
-        aviso: orden!.bcNumber ? "" : " · (la orden no tiene N.º de BC, no se registró en BC)",
+        // Los dos casos se ven MUY distinto y antes salían iguales: sin N.º de BC la
+        // orden no va a BC y punto; CON N.º de BC y sin líneas que mandar, lo que pasó
+        // es que ninguna línea recibida tiene artículo — y eso hay que decirlo, porque
+        // el registro queda solo acá y BC no se entera de nada.
+        aviso: orden!.bcNumber
+          ? " · OJO: NO se registró nada en BC (ninguna línea recibida tiene artículo). Quedó guardado solo en la app."
+          : " · (la orden no tiene N.º de BC, no se registró en BC)",
         bcOk: false, lineas, items, antes: {}, detalle,
       });
       return;
@@ -394,6 +405,15 @@ export default function RegistrarFacturaPage() {
         const posted = String(d.postedNo ?? "").trim();
         bcFacturaNo = posted && !/^(registrado|ok)$/i.test(posted) ? posted : "";
         aviso = ` · registrada en BC (${posted || "OK"})`; bcOk = true;
+      }
+      else if (d?.frenoLineas) {
+        // El servidor comprobó contra BC que estas líneas NO se pueden registrar
+        // (no están en el pedido, o no queda saldo). Esto NO se concilia ni se
+        // reintenta: hay que corregir. Va a un aviso que se queda en pantalla,
+        // porque es exactamente el error que se perdía en un toast de 3 segundos.
+        setFrenoBc({ error: String(d.error ?? ""), problemas: (d.problemas ?? []) as string[] });
+        setGuardando(false);
+        return;
       }
       else { aviso = ` · NO se pudo registrar en BC: ${d.error ?? r.status}`; diag = d as DiagBc; }
     } catch (e: any) { aviso = ` · BC no disponible: ${String(e?.message ?? e)}`; }
@@ -567,6 +587,26 @@ export default function RegistrarFacturaPage() {
             seguro, así que se dice acá arriba y no después de llenar todo. El botón
             NO se desactiva a propósito: si lo que pasó es que ya se registró allá,
             el intento es justo lo que abre el diálogo para conciliarlo. */}
+        {frenoBc && (
+          <div className="ds-callout ds-callout--red mb-4" role="alert">
+            <span className="ds-callout__icon"><IconWarning /></span>
+            <div>
+              <div className="ds-callout__title">NO se registró: Business Central no tiene estas líneas en el pedido {orden.bcNumber}</div>
+              <div className="ds-callout__body">
+                <ul style={{ margin: "6px 0 8px 18px" }}>
+                  {frenoBc.problemas.map((p, i) => <li key={i}>{p}</li>)}
+                </ul>
+                Si se registrara igual, BC saltaría esas líneas <span className="ds-strong">sin avisar</span>: la app diría
+                “recibido” y el material nunca entraría al inventario ni a la factura de compra. Corregí el
+                pedido en BC (o la orden con Proveeduría) y volvé a intentar. Nada se guardó.
+                <div className="mt-2">
+                  <Button variant="outline" size="sm" onClick={() => setFrenoBc(null)}>Entendido</Button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
         {bcSinPedido && (
           <div className="ds-callout ds-callout--red mb-4" role="status">
             <span className="ds-callout__icon"><IconWarning /></span>

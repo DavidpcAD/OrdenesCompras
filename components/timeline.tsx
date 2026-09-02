@@ -53,6 +53,11 @@ function etiqueta(m: Movimiento): string {
     // Cerrada a mano por Proveeduría (el proveedor no trajo el resto, se compró en
     // otro lado). El motivo va en el detalle del movimiento.
     if (m.tipoMovimiento === "cerrado") return "Orden cerrada por Proveeduría";
+    // Cotejo contra BC. Se guarda en la bitácora justamente para que dentro de un
+    // mes se pueda saber DESDE CUÁNDO una orden estaba descuadrada con BC.
+    if (m.tipoMovimiento === "bc_creado") return "Pedido creado en Business Central";
+    if (m.tipoMovimiento === "bc_desalineado") return "⚠ La orden y Business Central NO coinciden";
+    if (m.tipoMovimiento === "bc_alineado") return "La orden y Business Central coinciden";
   }
   if (m.entidad === "recepcion" && m.tipoMovimiento === "creado") return "Factura registrada";
   return LABEL[m.tipoMovimiento] ?? m.tipoMovimiento;
@@ -71,6 +76,9 @@ function colorPunto(m: Movimiento): string {
       case "rechazado": return "var(--ds-color-red-200)";    // rechazada · rojo
       case "cerrado": return "var(--ds-color-gray-400)";     // cerrada a mano · neutral
       case "bc_renumerado": return "var(--ds-color-yellow)";  // se re-apuntó a otro pedido de BC
+      case "bc_creado": return "var(--ds-color-gray-300)";   // el pedido nació en BC
+      case "bc_desalineado": return "var(--ds-color-red-200)"; // BC no tiene lo mismo · rojo
+      case "bc_alineado": return "var(--ds-color-green-200)";  // verificado y coincide
       case "eliminado": return "var(--ds-color-red-100)";
     }
   }
