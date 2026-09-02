@@ -575,8 +575,20 @@ export function StoreProvider({ children, useApi }: { children: React.ReactNode;
           currencyCode: input.currencyCode, almacenRecepcion: input.almacenRecepcion ?? o.almacenRecepcion,
           observaciones: input.observaciones ?? o.observaciones, notaInterna: input.notaInterna ?? o.notaInterna, lineas,
         } : o));
+        // Saldo de las solicitudes: se REVIERTE lo que consumían las líneas viejas y
+        // se aplica lo de las nuevas, igual que hace el server (`updateOrden` en
+        // lib/repo.ts). Sin esto, en modo demo la línea que se le suma a la orden
+        // desde el editor seguía figurando como pendiente en la solicitud, y editar
+        // una cantidad tampoco movía el saldo.
+        const delta = new Map<string, number>();
+        for (const l of prevo?.lineas ?? []) if (l.pedidoLineaId) delta.set(l.pedidoLineaId, (delta.get(l.pedidoLineaId) ?? 0) - l.cantidad);
+        for (const l of lineas) if (l.pedidoLineaId) delta.set(l.pedidoLineaId, (delta.get(l.pedidoLineaId) ?? 0) + l.cantidad);
+        const pedidos = delta.size === 0 ? d.pedidos : d.pedidos.map((p) =>
+          p.lineas.some((l) => delta.has(l.id))
+            ? { ...p, lineas: p.lineas.map((l) => (delta.has(l.id) ? { ...l, cantidadOrdenada: Math.max(0, l.cantidadOrdenada + delta.get(l.id)!) } : l)) }
+            : p);
         const mov = mkMov({ entidad: "orden", idEntidad: id, documentoNo: prevo?.numero ?? "", tipoMovimiento: "editado", detalle: `${lineas.filter((l) => l.tipo === "articulo").length} línea(s)` });
-        return { ...d, ordenes, movimientos: [mov, ...d.movimientos] };
+        return { ...d, ordenes, pedidos, movimientos: [mov, ...d.movimientos] };
       });
       return {};
     };
