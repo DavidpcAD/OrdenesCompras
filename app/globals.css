@@ -1185,11 +1185,17 @@ h1, h2, h3, h4, p { margin: 0; }
 /* Variante compacta para celdas de tabla (el padding grande del default no va ahí). */
 .empty--compact { padding: var(--ds-space-5) 0; }
 /* Estado vacío unificado (componente EmptyState del DS). */
-.ds-empty { display: flex; flex-direction: column; align-items: center; gap: var(--ds-space-2); text-align: center; padding: var(--ds-space-9) var(--ds-space-5); color: var(--ds-color-gray-500); }
+/* `--ds-space-9` NO existe (los tokens de espacio son 1..6 y 10), así que esta
+   declaración de padding era inválida y se caía entera: TODOS los estados vacíos
+   de la app estaban sin aire arriba y abajo. */
+.ds-empty { display: flex; flex-direction: column; align-items: center; gap: var(--ds-space-2); text-align: center; padding: var(--ds-space-6) var(--ds-space-5); color: var(--ds-color-gray-500); }
 .ds-empty__icon { display: inline-flex; align-items: center; justify-content: center; width: 52px; height: 52px; border-radius: 50%; background: var(--ds-color-gray-100); color: var(--ds-color-gray-400); margin-bottom: var(--ds-space-1); }
 .ds-empty__title { font-weight: var(--ds-font-weight-semibold); color: var(--ds-color-gray-500); }
 .ds-empty__hint { font-size: var(--ds-font-size-body-sm); color: var(--ds-color-gray-400); max-width: 48ch; line-height: 1.5; }
-.link-btn { background: none; border: 0; color: var(--ds-color-green-300); font-weight: 600; cursor: pointer; font-size: var(--ds-font-size-label); padding: 0; border-radius: var(--ds-radius-sm, 6px); }
+/* `font-family: inherit` porque un <button> NO hereda la tipografía: sin esto
+   todas las acciones de fila de la app ("Asignar obra", "+ otra variante",
+   "Quitar"…) salían en la letra por defecto del navegador y no en la del DS. */
+.link-btn { background: none; border: 0; color: var(--ds-color-green-300); font-family: inherit; font-weight: 600; cursor: pointer; font-size: var(--ds-font-size-label); padding: 0; border-radius: var(--ds-radius-sm, 6px); }
 /* Un link sin estado de hover no se lee como link: subraya y aclara al pasar. */
 .link-btn:hover { text-decoration: underline; text-underline-offset: 2px; color: var(--ds-color-green-200); }
 .link-btn:focus-visible { outline: 3px solid color-mix(in srgb, var(--ds-color-green-100) 60%, transparent); outline-offset: 2px; }
