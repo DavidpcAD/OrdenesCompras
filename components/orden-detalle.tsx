@@ -2,7 +2,7 @@
 
 import { Fragment, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Badge, Button, Card } from "@/components/ui";
+import { Badge, Button, Card, Textarea } from "@/components/ui";
 import { IconChevronDown, IconWarning } from "@/components/icons";
 import { OrderLinesTable } from "@/components/order-lines";
 import { Timeline } from "@/components/timeline";
@@ -40,7 +40,7 @@ export function OrdenDetalle({
   // que puede corregir la orden (Proveeduría); sin esto el aviso solo explica.
   onAlinearIva?: () => void | Promise<void>;
 }) {
-  const { proveedores, recepciones } = useStore();
+  const { proveedores, recepciones, role } = useStore();
   const router = useRouter();
   const [alineando, setAlineando] = useState(false);
   const [verFactura, setVerFactura] = useState<string | null>(null);
@@ -85,6 +85,30 @@ export function OrdenDetalle({
   const [chequeo, setChequeo] = useState<null | { estado: string; mensaje: string; diferencias: { texto: string }[] }>(null);
   // El cotejo guardado quedó viejo porque acabamos de verificar y ahora sí coincide.
   const [guardadoVencido, setGuardadoVencido] = useState(false);
+  // "Ya lo corregí en BC": la corrección de una orden vieja se registra en BC como un
+  // documento APARTE (una factura por la línea que faltó) que no cuelga del pedido, así
+  // que la app no la puede ver. Sin esta salida, esas órdenes quedan en rojo para
+  // siempre — y un aviso que no se puede apagar deja de leerse.
+  const [corrigiendo, setCorrigiendo] = useState(false);
+  const [motivoCorregido, setMotivoCorregido] = useState("");
+  async function marcarCorregida() {
+    if (motivoCorregido.trim().length < 5) return;
+    setVerificando(true);
+    try {
+      const r = await fetch(`/api/ordenes/${orden.id}/chequeo-bc`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ motivo: motivoCorregido.trim() }),
+      });
+      const d = await r.json().catch(() => ({} as any));
+      if (!r.ok) { setChequeo({ estado: "sin-lectura", mensaje: String(d?.error ?? `Error ${r.status}`), diferencias: [] }); return; }
+      setGuardadoVencido(true);
+      setCorrigiendo(false);
+      setChequeo({ estado: "ok", mensaje: `Marcada como corregida: ${motivoCorregido.trim()}`, diferencias: [] });
+      setMotivoCorregido("");
+    } catch (e: any) {
+      setChequeo({ estado: "sin-lectura", mensaje: String(e?.message ?? e), diferencias: [] });
+    } finally { setVerificando(false); }
+  }
 
   // El pedido que la app tiene apuntado no está en BC.
   //
@@ -191,11 +215,27 @@ export function OrdenDetalle({
                 Verificado {orden.bcCheck.fecha ? formatDate(orden.bcCheck.fecha) : "—"}. Mientras no coincidan, lo que Bodega
                 reciba y Contabilidad facture puede entrar de menos en BC (o no entrar).
               </div>
-              <div className="row gap-2 mt-2">
+              <div className="row gap-2 mt-2 wrap">
                 <Button variant="outline" size="sm" disabled={verificando} onClick={() => void verificarBc()}>
                   {verificando ? "Verificando…" : "Volver a verificar"}
                 </Button>
+                {/* Solo Proveeduría: es la que corrige en BC y la única que la API deja
+                    escribir sobre la orden. */}
+                {role === "proveeduria" && !corrigiendo && (
+                  <Button variant="outline" size="sm" onClick={() => setCorrigiendo(true)}>Ya lo corregí en BC</Button>
+                )}
               </div>
+              {corrigiendo && (
+                <div className="col gap-2 mt-2" style={{ maxWidth: 520 }}>
+                  <Textarea rows={2} value={motivoCorregido} maxLength={200} placeholder="¿Con qué se corrigió en BC? Ej.: se registró la factura CFR-009601 por la línea que faltaba."
+                    onChange={(e) => setMotivoCorregido(e.target.value)} />
+                  <div className="row gap-2">
+                    <Button size="sm" disabled={verificando || motivoCorregido.trim().length < 5} onClick={() => void marcarCorregida()}>Guardar</Button>
+                    <Button variant="outline" size="sm" onClick={() => { setCorrigiendo(false); setMotivoCorregido(""); }}>Cancelar</Button>
+                  </div>
+                  <span className="ds-body-sm ds-muted">Queda en la bitácora con tu nombre: dentro de un mes, “está en verde” tiene que poder explicarse.</span>
+                </div>
+              )}
             </div>
           </div>
         </div>
