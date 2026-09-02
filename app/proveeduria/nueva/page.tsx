@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Badge, Button, Card, EmptyState, Field, Input, Modal, Select, Textarea, useToast } from "@/components/ui";
+import { DestinoLinea } from "@/components/destino-linea";
 import { Combobox } from "@/components/combobox";
 import { IconCheck, IconWarning } from "@/components/icons";
 import { useStore } from "@/lib/store";
@@ -31,6 +32,7 @@ interface Row {
   descuento: string;
   proyecto: string;
   tarea: string;
+  tareaDescr?: string;      // "Enchapes": la trae la solicitud, para no esperar a BC
 }
 
 // Obra (Job) y tarea (Job Task) de BC. OJO con los dos campos de destino, que NO
@@ -165,7 +167,7 @@ export default function ArmarOrdenPage() {
       let info: Partial<Row> = { pedidoNumero: "", articuloId: "", variantCode: "", descripcion: "", unidad: "", almacen: "", proyecto: "", tarea: "" };
       for (const p of pedidos) {
         const l = p.lineas.find((x) => x.id === b.pedidoLineaId);
-        if (l) { info = { pedidoNumero: p.numero, articuloId: l.articuloId, variantCode: l.variantCode ?? "", descripcion: l.descripcion, unidad: l.unidad, unidadBase: l.unidadBase, factorCompra: l.factorCompra, almacen: l.almacen, proyecto: obraParaOrden(l), tarea: l.taskNo ?? "" }; break; }
+        if (l) { info = { pedidoNumero: p.numero, articuloId: l.articuloId, variantCode: l.variantCode ?? "", descripcion: l.descripcion, unidad: l.unidad, unidadBase: l.unidadBase, factorCompra: l.factorCompra, almacen: l.almacen, proyecto: obraParaOrden(l), tarea: l.taskNo ?? "", tareaDescr: l.taskDescr ?? "" }; break; }
       }
       return {
         key: filaUid(), pedidoLineaId: b.pedidoLineaId, ...info,
@@ -264,6 +266,8 @@ export default function ArmarOrdenPage() {
   const etiquetaObra = (o: Obra) => (o.codigo ? `${o.codigo} — ${o.nombre}` : o.nombre);
   const etiquetaTarea = (t: Tarea) => `${t.jobTaskNo} — ${t.descripcion}`;
   const nombreTarea = (jobNo: string, taskNo: string) => (tareasDe(jobNo) ?? []).find((t) => t.jobTaskNo === taskNo)?.descripcion ?? "";
+  const nombreObra = (jobNo: string) => obras.find((o) => o.codigo === jobNo)?.nombre ?? "";
+  const nombreAlmacen = (cod: string) => catAlm.find((a) => a.codigo === cod)?.nombre ?? "";
 
   // Unidades de los materiales de las líneas, una sola vez por material. Si BC no
   // las da, queda [] y la línea se queda con su unidad de siempre.
@@ -384,7 +388,7 @@ export default function ArmarOrdenPage() {
       key: filaUid(), pedidoNumero: p.numero, pedidoLineaId: l.id, articuloId: l.articuloId, variantCode: l.variantCode ?? "",
       descripcion: l.descripcion, unidad: l.unidad, unidadBase: l.unidadBase, factorCompra: l.factorCompra, almacen: l.almacen,
       cantidad: String(pend), precio: String(hist || 0), iva: "13", descuento: "0",
-      proyecto: obraParaOrden(l), tarea: l.taskNo ?? "",
+      proyecto: obraParaOrden(l), tarea: l.taskNo ?? "", tareaDescr: l.taskDescr ?? "",
     }]);
   }
 
@@ -699,7 +703,7 @@ export default function ArmarOrdenPage() {
             <table className="ds-table">
               <thead>
                 <tr>
-                  <th>Pedido</th><th>Artículo</th><th>Obra / tarea</th>
+                  <th>Pedido</th><th>Artículo</th><th>Destino</th>
                   <th className="ds-num">Cantidad</th><th className="ds-num">Precio</th><th className="ds-num">Desc%</th><th className="ds-num">IVA%</th>
                   <th className="ds-num">Importe</th><th></th>
                 </tr>
@@ -749,22 +753,16 @@ export default function ArmarOrdenPage() {
                         );
                       })()}
                     </td>
-                    {/* Destino de ESTA línea: el almacén (centro de costo) donde
-                        entra el material y, SOLO si es consumo directo, la obra y su
-                        tarea. La compra para stock se queda con el almacén y ya. La
-                        obra la trae la solicitud (la pone quien pide el material) y
-                        acá se puede corregir o asignar en un diálogo. */}
+                    {/* Destino de ESTA línea: UNA cosa sola. Si el ingeniero la pidió
+                        como CONSUMO DIRECTO (trae tarea), se ve la obra y la tarea; si
+                        la pidió a almacén, se ve el almacén que eligió y nada más. Ver
+                        components/destino-linea.tsx. La obra la trae la solicitud y acá
+                        se puede corregir o asignar en un diálogo. */}
                     <td className="ds-body-sm">
-                      <div className="ds-muted">{r.almacen || "—"}</div>
-                      {r.proyecto ? (
-                        <div className="ds-muted" title={nombreTarea(r.proyecto, r.tarea) || undefined}>
-                          Obra {r.proyecto} · {r.tarea
-                            ? <span className="ds-strong">tarea {r.tarea}</span>
-                            : <span className="ds-pending-text">sin tarea</span>}
-                        </div>
-                      ) : (
-                        <div className="ds-muted">Sin obra · entra al almacén</div>
-                      )}
+                      <DestinoLinea
+                        almacen={r.almacen} almacenNombre={nombreAlmacen(r.almacen)}
+                        obra={r.proyecto} obraNombre={nombreObra(r.proyecto)}
+                        tarea={r.tarea} tareaNombre={nombreTarea(r.proyecto, r.tarea) || r.tareaDescr} />
                       <button type="button" className="link-btn" onClick={() => { setEditObra(r); if (r.proyecto) cargarTareas(r.proyecto); }}>
                         {r.proyecto ? "Cambiar obra/tarea" : "Asignar obra"}
                       </button>
@@ -889,7 +887,7 @@ export default function ArmarOrdenPage() {
             <Button
               disabled={!!editObra.proyecto && (tareasDe(editObra.proyecto) ?? []).length > 0 && !editObra.tarea}
               onClick={() => {
-                setRow(editObra.key, { proyecto: editObra.proyecto || "", tarea: editObra.proyecto ? editObra.tarea : "" });
+                setRow(editObra.key, { proyecto: editObra.proyecto || "", tarea: editObra.proyecto ? editObra.tarea : "", tareaDescr: "" });
                 setEditObra(null);
               }}>Guardar</Button>
           </>}>
@@ -944,13 +942,14 @@ export default function ArmarOrdenPage() {
                     <tr key={l.id}>
                       <td className="ds-body-sm ds-strong">{p.numero}</td>
                       <td><div style={{ maxWidth: 380, minWidth: 220 }} title={`${l.articuloId} — ${l.descripcion}`}><div className="ds-strong ds-body-sm">{l.articuloId}</div><div className="ds-clamp-2">{l.descripcion}</div></div></td>
+                      {/* La tarea es lo que hace que la línea sea consumo de obra: con
+                          ella se muestra la obra y la tarea, sin ella el almacén al que
+                          va el material (la obra de la solicitud es apenas un dato). */}
                       <td className="ds-muted ds-body-sm">
-                        {l.almacen || p.obraCodigo || "—"}
-                        {/* La tarea es lo que hace que la línea sea consumo de obra:
-                            sin ella el material entra al almacén y la obra es un dato. */}
-                        {esConsumoDirecto(l)
-                          ? <div>Obra {l.proyecto} · tarea {l.taskNo}</div>
-                          : l.proyecto && <div>Para obra {l.proyecto} (a almacén)</div>}
+                        <DestinoLinea inline
+                          almacen={l.almacen || p.obraCodigo || ""}
+                          obra={esConsumoDirecto(l) ? l.proyecto : ""}
+                          tarea={l.taskNo} tareaNombre={l.taskDescr} />
                       </td>
                       <td className="ds-num">{pend} {l.unidad}</td>
                       <td className="ds-num"><Button variant="outline" size="sm" onClick={() => agregarDeSolicitud(p, l, pend)}>Agregar</Button></td>

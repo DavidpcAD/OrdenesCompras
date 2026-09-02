@@ -5,10 +5,11 @@ import { useMemo, useState } from "react";
 import type { ColumnDef } from "@tanstack/react-table";
 import { Badge, Button, Card, EmptyState, Modal, Select, useToast } from "@/components/ui";
 import { DataTable } from "@/components/data-table";
+import { DestinoLinea } from "@/components/destino-linea";
 import { VistaToggle } from "@/components/vista-toggle";
 import { IconEye, IconReceipt, IconList } from "@/components/icons";
 import { useStore } from "@/lib/store";
-import { destinoLabel, destinoCodigo, money, num, pedidoLineaPendiente, solicitudResumen, tipoSolicitudBadge, estadoDeDevolucion } from "@/lib/helpers";
+import { destinoLabel, destinoCodigo, esConsumoDirecto, money, num, obraParaOrden, pedidoLineaPendiente, solicitudResumen, tipoSolicitudBadge, estadoDeDevolucion } from "@/lib/helpers";
 import { useVariantes } from "@/lib/use-variantes";
 
 interface Row {
@@ -22,7 +23,13 @@ interface Row {
   variantCode: string;
   descripcion: string;
   unidad: string;
+  // Destino de la línea: o la OBRA que la consume (con su tarea) o el ALMACÉN al
+  // que entra. `proyecto` solo viene lleno si Ingeniería la pidió como consumo
+  // directo — ver components/destino-linea.tsx.
   almacen: string;
+  proyecto: string;
+  taskNo: string;
+  taskDescr: string;
   pendiente: number;
   incluir: boolean;
   cantidad: string;
@@ -58,6 +65,7 @@ export default function ProveeduriaMaterialesPage() {
           pedidoId: p.id, pedidoNumero: p.numero, destino: destinoLabel(p), solicitante: p.solicitante, tipo: p.tipoSolicitud,
           pedidoLineaId: l.id, articuloId: l.articuloId, variantCode: l.variantCode ?? "", descripcion: l.descripcion,
           unidad: l.unidad, almacen: l.almacen, pendiente: pend,
+          proyecto: obraParaOrden(l), taskNo: l.taskNo ?? "", taskDescr: l.taskDescr ?? "",
           incluir: false, cantidad: String(pend), precio: "0", iva: "13",
         });
       });
@@ -219,8 +227,17 @@ export default function ProveeduriaMaterialesPage() {
         );
         return <span className="ds-muted ds-body-sm">—</span>;
       } },
-    { id: "obra", header: "Destino", accessorFn: (r) => r.almacen || "—", meta: { label: "Destino" },
-      cell: (c) => <span className="ds-muted ds-body-sm">{c.getValue()}</span> },
+    // Destino: si la línea es consumo directo se ve la obra y su tarea; si es para
+    // almacén, el almacén que eligió el ingeniero. El accessor devuelve el MISMO
+    // texto que se ve para que el filtro y el orden de la columna coincidan.
+    { id: "obra", header: "Destino",
+      accessorFn: (r) => (r.proyecto ? `Obra ${r.proyecto}${r.taskNo ? ` · tarea ${r.taskNo}` : ""}` : r.almacen || "—"),
+      meta: { label: "Destino" },
+      cell: (c) => { const r = c.row.original; return (
+        <span className="ds-muted ds-body-sm">
+          <DestinoLinea inline almacen={r.almacen} obra={r.proyecto} tarea={r.taskNo} tareaNombre={r.taskDescr} />
+        </span>
+      ); } },
     { id: "pend", header: "Pend.", accessorFn: (r) => r.pendiente, meta: { label: "Pend.", num: true }, enableColumnFilter: false,
       cell: (c) => { const r = c.row.original; return <span className="ds-body-sm">{num.format(r.pendiente)} {r.unidad}</span>; } },
     { id: "aordenar", header: "A ordenar", accessorFn: (r) => r.cantidad, meta: { label: "A ordenar", num: true }, enableColumnFilter: false, enableSorting: false,
@@ -345,7 +362,10 @@ export default function ProveeduriaMaterialesPage() {
                 {preview.lineas.map((l) => (
                   <tr key={l.id}>
                     <td><div className="ds-clamp-2" title={l.descripcion} style={{ maxWidth: 320, minWidth: 200 }}>{l.descripcion}</div></td>
-                    <td className="ds-muted ds-body-sm">{l.almacen}</td>
+                    <td className="ds-muted ds-body-sm">
+                      <DestinoLinea inline almacen={l.almacen}
+                        obra={esConsumoDirecto(l) ? l.proyecto : ""} tarea={l.taskNo} tareaNombre={l.taskDescr} />
+                    </td>
                     <td className="ds-num">{num.format(l.cantidad)} {l.unidad}</td>
                     <td className="ds-num">{pedidoLineaPendiente(l) > 0 ? <span className="ds-pending-text">{num.format(pedidoLineaPendiente(l))}</span> : "0"}</td>
                   </tr>

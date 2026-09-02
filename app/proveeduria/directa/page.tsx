@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { Badge, Button, Card, Field, Input, Modal, Select, Textarea, useToast } from "@/components/ui";
+import { DestinoLinea } from "@/components/destino-linea";
 import { Combobox } from "@/components/combobox";
 import { IconCheck, IconWarning } from "@/components/icons";
 import { useStore } from "@/lib/store";
@@ -225,6 +226,7 @@ export default function OrdenDirectaPage() {
   const etiquetaTarea = (t: Tarea) => `${t.jobTaskNo} — ${t.descripcion}`;
   const nombreObra = (codigo: string) => obras.find((o) => o.codigo === codigo)?.nombre ?? "";
   const nombreTarea = (jobNo: string, taskNo: string) => tareasDe(jobNo).find((t) => t.jobTaskNo === taskNo)?.descripcion ?? "";
+  const nombreAlmacen = (cod: string) => catAlm.find((a) => a.codigo === cod)?.nombre ?? "";
   // Al cambiar la obra hay que soltar la tarea: una tarea pertenece a UNA obra y
   // dejarla puesta manda a BC un Job Task No. que no existe en la obra nueva.
   function elegirObra(codigo: string) { setQaObra(codigo); setQaTarea(""); if (codigo) cargarTareas(codigo); }
@@ -536,24 +538,21 @@ export default function OrdenDirectaPage() {
           )}
           <div className="ds-table-wrap" style={{ boxShadow: "none" }}>
             <table className="ds-table">
-              <thead><tr><th>Artículo</th><th>Obra / tarea</th><th className="ds-num">Cantidad</th><th className="ds-num">Precio</th><th className="ds-num">Desc%</th><th className="ds-num">IVA%</th><th className="ds-num">Importe</th><th></th></tr></thead>
+              <thead><tr><th>Artículo</th><th>Destino</th><th className="ds-num">Cantidad</th><th className="ds-num">Precio</th><th className="ds-num">Desc%</th><th className="ds-num">IVA%</th><th className="ds-num">Importe</th><th></th></tr></thead>
               <tbody>
                 {rows.length === 0 && <tr><td colSpan={8}><div className="empty">Sin líneas. Buscá un artículo del catálogo y agregalo.</div></td></tr>}
                 {rows.map((r) => (
                   <tr key={r.key}>
                     <td><div className="ds-clamp-2" title={r.descripcion} style={{ maxWidth: 380, minWidth: 240 }}>{r.descripcion}</div><div className="ds-body-sm ds-muted">{r.articuloId}{r.variantCode ? ` · var. ${r.variantCode}${r.variantNombre ? ` (${r.variantNombre})` : ""}` : ""}</div></td>
-                    {/* Obra y tarea de ESTA línea. Se corrige en un diálogo y no con
-                        dos selectores dentro de la celda: la tabla ya tiene seis
-                        campos editables y no le caben dos buscadores más. */}
-                    <td>
-                      {r.obra ? (
-                        <>
-                          <div className="ds-body-sm ds-strong" title={r.obraNombre || undefined}>{r.obra}</div>
-                          <div className="ds-body-sm ds-muted" title={r.tareaNombre || undefined}>{r.tarea ? `Tarea ${r.tarea}` : "Sin tarea"}</div>
-                        </>
-                      ) : (
-                        <div className="ds-body-sm ds-muted">Bodega</div>
-                      )}
+                    {/* Destino de ESTA línea: la obra que la consume (con su tarea) o
+                        el almacén al que entra, nunca las dos. Se corrige en un diálogo
+                        y no con dos selectores dentro de la celda: la tabla ya tiene
+                        seis campos editables y no le caben dos buscadores más. */}
+                    <td className="ds-body-sm">
+                      <DestinoLinea
+                        almacen={almacen} almacenNombre={nombreAlmacen(almacen)}
+                        obra={r.obra} obraNombre={r.obraNombre}
+                        tarea={r.tarea} tareaNombre={r.tareaNombre} />
                       <button type="button" className="link-btn" onClick={() => { setEditObra(r); if (r.obra) cargarTareas(r.obra); }}>
                         {r.obra ? "Cambiar" : "Asignar obra"}
                       </button>

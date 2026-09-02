@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { Badge } from "@/components/ui";
+import { DestinoLinea } from "@/components/destino-linea";
 import { money, num, ordenLineaImporte, ordenLineaPendiente } from "@/lib/helpers";
 import { codigoDeItem } from "@/lib/unidad";
 import { useVariantes } from "@/lib/use-variantes";
@@ -16,7 +17,7 @@ export function OrderLinesTable({ orden, showRecepcion = true, solicitudHref }: 
       <table className="ds-table">
         <thead>
           <tr>
-            <th className="hide-mobile">Tipo</th><th>Descripción</th><th className="hide-mobile">Almacén</th>
+            <th className="hide-mobile">Tipo</th><th>Descripción</th><th className="hide-mobile">Destino</th>
             <th className="ds-num">Cantidad</th>
             {showRecepcion && <th className="ds-num">Recibido</th>}
             {showRecepcion && <th className="ds-num">Pendiente</th>}
@@ -35,9 +36,18 @@ export function OrderLinesTable({ orden, showRecepcion = true, solicitudHref }: 
                   {l.variantCode && (
                     <div className="ds-body-sm ds-muted">Variante {variantes.etiqueta(l.articuloId, l.variantCode)}</div>
                   )}
+                  {/* En móvil la columna Destino se oculta: el destino se repite acá
+                      en una línea para no perderlo. */}
+                  {l.tipo === "articulo" && (
+                    <div className="ds-body-sm ds-muted only-mobile-cols">
+                      <DestinoLinea inline almacen={l.almacen} obra={l.proyecto} tarea={l.taskNo} avisarSinTarea={false} />
+                    </div>
+                  )}
                   <div className="ds-body-sm ds-muted">
                     {(() => {
-                      const rest = [l.proyecto && `Proy. ${l.proyecto}`, l.taskNo && `Tarea ${l.taskNo}`, l.descuentoPct ? `−${l.descuentoPct}%` : null].filter(Boolean).join(" · ");
+                      // La obra/tarea NO va acá: vive en la columna Destino, que es
+                      // o la obra que consume el material o el almacén al que entra.
+                      const rest = l.descuentoPct ? `−${l.descuentoPct}%` : "";
                       const href = l.pedidoNumero ? solicitudHref?.(l) : null;
                       // El CÓDIGO del material va primero: es con lo que Proveeduría
                       // confirma que la línea es la que se pidió y con lo que se busca
@@ -58,7 +68,11 @@ export function OrderLinesTable({ orden, showRecepcion = true, solicitudHref }: 
                     })()}
                   </div>
                 </td>
-                <td className="ds-muted hide-mobile">{l.almacen}</td>
+                {/* Destino: la obra que consume el material (consumo directo) o el
+                    almacén al que entra. Nunca las dos. */}
+                <td className="ds-body-sm hide-mobile">
+                  <DestinoLinea almacen={l.almacen} obra={l.proyecto} tarea={l.taskNo} avisarSinTarea={false} />
+                </td>
                 <td className="ds-num">{num.format(l.cantidad)} {l.unidad}</td>
                 {showRecepcion && <td className="ds-num">{num.format(l.cantidadRecibida)}</td>}
                 {showRecepcion && (
