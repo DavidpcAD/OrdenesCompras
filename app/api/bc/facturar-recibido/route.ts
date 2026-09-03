@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { bcFacturarRecibido, verificarLineasPosteables, frenoRegistroActivo } from "@/lib/bc";
+import { bcFacturarRecibido, verificarLineasPosteables, frenoRegistroActivo, conflictoDeDimensiones, explicarConflictoDimensiones } from "@/lib/bc";
 import { frenarPorEncabezado } from "@/lib/freno-encabezado";
 
 export const runtime = "nodejs";
@@ -8,8 +8,11 @@ export const dynamic = "force-dynamic";
 // MODO 2 — Registrar la factura de lo YA recibido (Kattya, tras revisar).
 // body: { orderNo, vendorInvoiceNo, lineas: [{itemNo, qty}] }
 export async function POST(req: Request) {
+  // El body se lee FUERA del try porque el catch necesita el `orderNo` para poder
+  // decir de qué pedido habla el error (adentro quedaba fuera de alcance).
+  const cuerpo = await req.json().catch(() => ({} as any));
+  const { orderNo, vendorInvoiceNo, lineas, ordenId, vendorNo } = cuerpo ?? {};
   try {
-    const { orderNo, vendorInvoiceNo, lineas, ordenId, vendorNo } = await req.json();
     // FRENO 1 — el ENCABEZADO del pedido en BC: mismo proveedor y LANZADO allá
     // (ver lib/freno-encabezado.ts). Acá es lo último que queda antes de que la
     // cuenta por pagar se mueva: si algo del encabezado no calza, no se factura.
@@ -35,6 +38,17 @@ export async function POST(req: Request) {
     const postedNo = await bcFacturarRecibido(orderNo, vendorInvoiceNo, lineas ?? []);
     return NextResponse.json({ ok: true, postedNo });
   } catch (e: any) {
-    return NextResponse.json({ ok: false, error: String(e?.message ?? e) }, { status: 502 });
+    const error = String(e?.message ?? e);
+    // Choque de DIMENSIONES (el CC que el almacén amarra en BC): no se reintenta —
+    // cada intento da el mismo error— y BC no registró nada. Se explica y se corta.
+    // Ver conflictoDeDimensiones en lib/bc.ts.
+    const dim = conflictoDeDimensiones(error);
+    if (dim) {
+      return NextResponse.json({
+        ok: false, error: `NO se facturó: ${explicarConflictoDimensiones(dim, String(orderNo ?? ""))}`,
+        frenoDimensiones: true, dimensiones: dim,
+      }, { status: 409 });
+    }
+    return NextResponse.json({ ok: false, error }, { status: 502 });
   }
 }

@@ -1875,6 +1875,99 @@ export function clasificarFalloBc(textoDelError: string): FalloRegistroBc {
   return "reintentable";
 }
 
+// ---- El "no" por DIMENSIONES (el CC amarrado al almacén) -------------------
+//
+// CP-005293, 3 sep 2026. BC rechazó el registro con:
+//
+//   "The dimensions used in Order CP-005293, line no. 10000 are invalid.
+//    The Dimension Value Code must be F-MUEBLES for Dimension Code CC for
+//    Location F-MUEBLES. Currently it's VN-L.34."
+//
+// Traducido: la UBICACIÓN F-MUEBLES tiene en BC una dimensión predeterminada
+// CC = F-MUEBLES con registro de valores "Igual código", o sea que toda línea que
+// entre a ese almacén está obligada a llevar ESE valor de CC y ningún otro. La app
+// le manda el CC de la OBRA (ver dimensionDeLinea), y los dos no pueden convivir.
+//
+// Lo caro no es el rechazo: es CUÁNDO llega. BC no valida esa combinación al crear
+// la línea ni al lanzar el pedido, solo AL REGISTRAR — el pedido se creó bien,
+// Aprobación lo lanzó bien, y el "no" le aparece a Bodega con el camión en la puerta.
+//
+// Y contra este "no" REINTENTAR NO SIRVE NUNCA: no es un parpadeo de BC ni un dato
+// de la factura, es configuración de dimensiones. Cada reintento da exactamente el
+// mismo error. Por eso se detecta y se explica en vez de caer en "la orden queda por
+// recibir para reintentar", que era lo único que la pantalla sabía decir.
+const BC_DIMENSIONES_INVALIDAS =
+  /dimensions used in .{0,120}?\bare invalid|dimensiones (?:utilizadas|usadas) en .{0,120}?no son v[áa]lidas/i;
+
+// Lo que BC alcanzó a decir del choque. Los campos van vacíos cuando el texto no se
+// pudo desarmar (BC contesta en el idioma de la sesión del web service, así que el
+// mensaje llega en inglés o en español según quién pregunte): el aviso tiene que
+// servir igual, aunque sea sin los detalles.
+export type ConflictoDimensiones = {
+  lineNo: string;     // "10000"    — la línea DEL PEDIDO EN BC, no la de la app
+  dimension: string;  // "CC"       — qué dimensión choca
+  debeSer: string;    // "F-MUEBLES"— el valor que BC exige
+  actual: string;     // "VN-L.34"  — el que lleva la línea (el de la obra)
+  porQue: string;     // "Location F-MUEBLES" — quién impone la obligación
+};
+
+// El "for <algo>" y el "Currently it's <valor>" se cortan con `. ` y no con el
+// primer punto: hay códigos CON punto adentro (la obra VN-L.34, la bodega VN-M.28),
+// y cortar en el punto los partía a la mitad.
+const DIM_LINEA = /(?:line no\.?\s*|n\.?[ºo°]?\s*de l[íi]nea\s*|l[íi]nea n\.?[ºo°]?\s*)(\d+)/i;
+const DIM_DEBE = /must be\s+(\S+?)\s+for\s+Dimension\s+Code\s+(\S+?)\s+for\s+(.+?)\.\s*(?:Currently|CorrelationId|$)/i;
+const DIM_DEBE_ES = /debe ser\s+(\S+?)\s+para (?:el )?c[óo]digo de dimensi[óo]n\s+(\S+?)\s+para\s+(.+?)\.\s*(?:Actualmente|CorrelationId|$)/i;
+const DIM_ACTUAL = /(?:Currently it'?s|Actualmente es)\s+([^\s.]+(?:\.[^\s.]+)*)/i;
+
+/**
+ * ¿El "no" de BC es un choque de dimensiones? Devuelve lo que se le pudo sacar al
+ * mensaje, o null si es otra cosa. (cubierto por tests)
+ */
+export function conflictoDeDimensiones(textoDelError: string): ConflictoDimensiones | null {
+  const t = textoDelError ?? "";
+  if (!BC_DIMENSIONES_INVALIDAS.test(t)) return null;
+  const debe = DIM_DEBE.exec(t) ?? DIM_DEBE_ES.exec(t);
+  return {
+    lineNo: DIM_LINEA.exec(t)?.[1] ?? "",
+    dimension: debe?.[2] ?? "",
+    debeSer: debe?.[1] ?? "",
+    actual: DIM_ACTUAL.exec(t)?.[1] ?? "",
+    porQue: (debe?.[3] ?? "").trim(),
+  };
+}
+
+// BC nombra al culpable con su propia palabra y en su propio idioma ("Location
+// F-MUEBLES"). Acá se dice en castellano: el aviso lo lee Bodega, no un consultor.
+const QUIEN_OBLIGA: [RegExp, string][] = [
+  [/^(?:Location|Ubicaci[óo]n)\s+/i, "el almacén "],
+  [/^(?:Item|Art[íi]culo)\s+/i, "el artículo "],
+  [/^(?:Vendor|Proveedor)\s+/i, "el proveedor "],
+  [/^(?:Job|Proyecto|Obra)\s+/i, "la obra "],
+];
+
+/**
+ * El choque contado para quien está en la pantalla: qué no le gustó a BC y qué hay
+ * que hacer (que NO es reintentar). Sin el verbo del principio — ese lo pone cada
+ * ruta, porque no es lo mismo "NO se recibió" que "NO se facturó". (cubierto por tests)
+ */
+export function explicarConflictoDimensiones(c: ConflictoDimensiones, orderNo = ""): string {
+  const donde = [
+    c.lineNo ? `la línea ${c.lineNo}` : "una línea",
+    orderNo ? `del pedido ${orderNo}` : "",
+  ].filter(Boolean).join(" ");
+  let quien = c.porQue;
+  for (const [en, es] of QUIEN_OBLIGA) if (en.test(quien)) { quien = quien.replace(en, es); break; }
+  const choque = c.dimension && c.debeSer
+    ? `${quien || "su almacén"} obliga a que la dimensión ${c.dimension} sea ${c.debeSer}`
+      + (c.actual ? `, y la línea lleva ${c.actual}` : "")
+    : "las dimensiones de la línea no son las que exige su almacén";
+  return `Business Central no acepta las dimensiones de ${donde}: ${choque}.\n\n`
+    + `Esto NO se arregla reintentando: es configuración de dimensiones en Business Central, `
+    + `y cada intento va a dar el mismo error. Se corrige allá — o quitándole el "Igual código" `
+    + `a la dimensión predeterminada que lo obliga, o dejando en la línea el valor que BC exige. `
+    + `Avisale a Proveeduría. Nada se guardó.`;
+}
+
 export type BcPedidoEstado = "existe" | "no-existe" | "sin-respuesta";
 
 // ¿Existe el pedido de compra en BC? Distingue "no está" de "BC no contesta",

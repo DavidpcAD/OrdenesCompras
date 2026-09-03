@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { bcRegistrarFactura, diagnosticarFalloBc, verificarLineasPosteables, frenoRegistroActivo } from "@/lib/bc";
+import { bcRegistrarFactura, diagnosticarFalloBc, verificarLineasPosteables, frenoRegistroActivo, conflictoDeDimensiones, explicarConflictoDimensiones } from "@/lib/bc";
 import { frenarPorEncabezado } from "@/lib/freno-encabezado";
 
 export const runtime = "nodejs";
@@ -51,6 +51,16 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: true, postedNo });
   } catch (e: any) {
     const error = String(e?.message ?? e);
+    // Choque de DIMENSIONES (el CC que el almacén amarra en BC): no se reintenta y
+    // no hay nada que conciliar —BC no registró nada—, así que no se le vuelve a
+    // preguntar a BC: se explica y se corta. Ver conflictoDeDimensiones en lib/bc.ts.
+    const dim = conflictoDeDimensiones(error);
+    if (dim) {
+      return NextResponse.json({
+        ok: false, error: `NO se registró: ${explicarConflictoDimensiones(dim, String(orderNo ?? ""))}`,
+        frenoDimensiones: true, dimensiones: dim,
+      }, { status: 409 });
+    }
     // El diagnóstico habla con BC otra vez: si eso también falla, se responde el
     // error de siempre (nunca se pierde el motivo original por sondear).
     const diag = await diagnosticarFalloBc(error, String(orderNo ?? ""), String(vendorInvoiceNo ?? ""), String(vendorNo ?? ""))

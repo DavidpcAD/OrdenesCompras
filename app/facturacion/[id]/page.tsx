@@ -123,9 +123,10 @@ export default function RegistrarFacturaPage() {
   // sin decir nada, y así se registró CP-005172 con ₡22.820 de menos.
   // Los tres frenos que el servidor comprueba contra BC antes de mover un peso:
   // "lineas" (no están en el pedido o no hay saldo), "proveedor" (el pedido de allá
-  // es de otro proveedor) y "no-lanzado" (en BC sigue Abierto). Los tres se muestran
-  // en el MISMO aviso que se queda en pantalla: ninguno se arregla reintentando.
-  const [frenoBc, setFrenoBc] = useState<null | { error: string; problemas: string[]; tipo: "lineas" | "proveedor" | "no-lanzado" }>(null);
+  // es de otro proveedor), "no-lanzado" (en BC sigue Abierto) y "dimensiones" (el CC
+  // de la línea choca con el que su almacén amarra en BC). Los cuatro se muestran en
+  // el MISMO aviso que se queda en pantalla: ninguno se arregla reintentando.
+  const [frenoBc, setFrenoBc] = useState<null | { error: string; problemas: string[]; tipo: "lineas" | "proveedor" | "no-lanzado" | "dimensiones" }>(null);
   // Sonda al ABRIR: ¿está el pedido en BC? Si BC contesta que no lo tiene, registrar
   // va a fallar seguro — y es mejor decirlo antes de que Bodega cuente el camión
   // entero. "BC no contesta" NO cuenta como ausencia (eso se arregla solo), por eso
@@ -414,7 +415,7 @@ export default function RegistrarFacturaPage() {
         bcFacturaNo = posted && !/^(registrado|ok)$/i.test(posted) ? posted : "";
         aviso = ` · registrada en BC (${posted || "OK"})`; bcOk = true;
       }
-      else if (d?.frenoLineas || d?.frenoEncabezado) {
+      else if (d?.frenoLineas || d?.frenoEncabezado || d?.frenoDimensiones) {
         // El servidor comprobó contra BC que esto NO se puede registrar: las líneas
         // no están en el pedido / no queda saldo, el pedido de allá es de OTRO
         // proveedor, o todavía no está lanzado en BC. Ninguno se concilia ni se
@@ -422,7 +423,7 @@ export default function RegistrarFacturaPage() {
         // exactamente el error que se perdía en un toast de 3 segundos.
         setFrenoBc({
           error: String(d.error ?? ""), problemas: (d.problemas ?? []) as string[],
-          tipo: d?.frenoNoLanzado ? "no-lanzado" : d?.frenoProveedor ? "proveedor" : "lineas",
+          tipo: d?.frenoDimensiones ? "dimensiones" : d?.frenoNoLanzado ? "no-lanzado" : d?.frenoProveedor ? "proveedor" : "lineas",
         });
         setGuardando(false);
         return;
@@ -541,12 +542,12 @@ export default function RegistrarFacturaPage() {
           });
           const d = await r.json().catch(() => ({}));
           if (r.ok) { aviso = ` · recibido en BC (${d.receiptNo ?? "OK"})`; bcOk = true; }
-          else if ((d as any)?.frenoLineas || (d as any)?.frenoEncabezado) {
+          else if ((d as any)?.frenoLineas || (d as any)?.frenoEncabezado || (d as any)?.frenoDimensiones) {
             // Mismo tratamiento que al registrar: esto no se reintenta, se corrige.
             // Va al aviso que se queda en pantalla y no se guarda nada.
             setFrenoBc({
               error: String((d as any).error ?? ""), problemas: ((d as any).problemas ?? []) as string[],
-              tipo: (d as any).frenoNoLanzado ? "no-lanzado" : (d as any).frenoProveedor ? "proveedor" : "lineas",
+              tipo: (d as any).frenoDimensiones ? "dimensiones" : (d as any).frenoNoLanzado ? "no-lanzado" : (d as any).frenoProveedor ? "proveedor" : "lineas",
             });
             setGuardando(false);
             return;
@@ -618,6 +619,8 @@ export default function RegistrarFacturaPage() {
                   ? <>El pedido {orden.bcNumber} en Business Central es de OTRO proveedor</>
                   : frenoBc.tipo === "no-lanzado"
                   ? <>El pedido {orden.bcNumber} todavía no está lanzado en Business Central</>
+                  : frenoBc.tipo === "dimensiones"
+                  ? <>Business Central rechazó las dimensiones del pedido {orden.bcNumber}</>
                   : <>NO se registró: Business Central no tiene estas líneas en el pedido {orden.bcNumber}</>}
               </div>
               <div className="ds-callout__body">
@@ -628,6 +631,14 @@ export default function RegistrarFacturaPage() {
                     y eso después solo se deshace con una nota de crédito. Avisale a Proveeduría: hay que ver
                     si al pedido le cambiaron el proveedor en BC o si la orden quedó apuntando al pedido
                     equivocado. Nada se guardó.
+                  </>
+                ) : frenoBc.tipo === "dimensiones" ? (
+                  <>
+                    <div style={{ margin: "6px 0 8px", whiteSpace: "pre-line" }}>{frenoBc.error}</div>
+                    El centro de costo que lleva la línea y el que su almacén exige en BC no pueden convivir, y eso
+                    BC lo revisa <span className="ds-strong">solo al registrar</span>: por eso el pedido se creó y se
+                    lanzó sin chistar, y el “no” aparece recién acá. Reintentar va a dar exactamente el mismo error —
+                    esto se corrige en Business Central. Nada se guardó.
                   </>
                 ) : frenoBc.tipo === "no-lanzado" ? (
                   <>

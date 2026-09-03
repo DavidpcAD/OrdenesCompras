@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { bcRecibir, diagnosticarFalloBc, verificarLineasPosteables, frenoRegistroActivo } from "@/lib/bc";
+import { bcRecibir, diagnosticarFalloBc, verificarLineasPosteables, frenoRegistroActivo, conflictoDeDimensiones, explicarConflictoDimensiones } from "@/lib/bc";
 import { frenarPorEncabezado } from "@/lib/freno-encabezado";
 
 export const runtime = "nodejs";
@@ -42,6 +42,16 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: true, receiptNo });
   } catch (e: any) {
     const error = String(e?.message ?? e);
+    // Choque de DIMENSIONES (el CC que el almacén amarra en BC): no se reintenta y
+    // no hay nada que conciliar —BC no registró nada—, así que no se le vuelve a
+    // preguntar a BC: se explica y se corta. Ver conflictoDeDimensiones en lib/bc.ts.
+    const dim = conflictoDeDimensiones(error);
+    if (dim) {
+      return NextResponse.json({
+        ok: false, error: `NO se recibió: ${explicarConflictoDimensiones(dim, String(orderNo ?? ""))}`,
+        frenoDimensiones: true, dimensiones: dim,
+      }, { status: 409 });
+    }
     const diag = await diagnosticarFalloBc(error, String(orderNo ?? "")).catch(() => null);
     return NextResponse.json({ ok: false, error, ...(diag ?? {}) }, { status: 502 });
   }

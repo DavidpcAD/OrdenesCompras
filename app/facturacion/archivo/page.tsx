@@ -44,6 +44,10 @@ export default function ArchivoPage() {
         // aviso era un toast informativo que nadie volvía a ver. La factura tiene que
         // entrar en los dos lados o en ninguno.
         let error = "";
+        // Un FRENO (dimensiones, encabezado, líneas) no es un fallo pasajero: ya viene
+        // con su propio "NO se facturó: …" y con qué hacer, y contra él reintentar no
+        // sirve. Se muestra tal cual y sin el "queda en revisión para reintentar".
+        let freno = false;
         try {
           const r = await fetch("/api/bc/facturar-recibido", {
             method: "POST", headers: { "Content-Type": "application/json" },
@@ -51,10 +55,10 @@ export default function ArchivoPage() {
           });
           const d = await r.json().catch(() => ({}));
           if (r.ok) aviso = ` · registrada en BC (${d.postedNo ?? "OK"})`;
-          else error = String(d.error ?? `BC ${r.status}`);
+          else { error = String(d.error ?? `BC ${r.status}`); freno = !!(d.frenoDimensiones || d.frenoEncabezado || d.frenoLineas); }
         } catch (e: any) { error = `Business Central no está disponible (${String(e?.message ?? e)})`; }
         if (error) {
-          toast(`NO se registró la factura ${numFac}: ${error}. La recepción queda en revisión para reintentar.`, "error");
+          toast(freno ? error : `NO se registró la factura ${numFac}: ${error}. La recepción queda en revisión para reintentar.`, "error");
           setGuardando(false);
           return;
         }

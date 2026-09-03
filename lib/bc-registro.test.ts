@@ -9,7 +9,7 @@
 //   npm test
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { clasificarFalloBc, cotejoProveedor, estadoLanzamientoBc } from "./bc.ts";
+import { clasificarFalloBc, cotejoProveedor, estadoLanzamientoBc, conflictoDeDimensiones, explicarConflictoDimensiones } from "./bc.ts";
 
 const envuelto = (mensaje: string) =>
   `BC registrar 400: {"error":{"code":"Application_DialogException","message":"${mensaje} CorrelationId: 5ad0cc6c-2ef8-49b6-8f26-c9893727c69f."}}`;
@@ -126,4 +126,68 @@ test("sin estado no se inventa uno: es 'desconocido', y desconocido NO frena", (
   assert.equal(estadoLanzamientoBc(""), "desconocido");
   assert.equal(estadoLanzamientoBc("   "), "desconocido");
   assert.equal(estadoLanzamientoBc("Pending Prepayment"), "desconocido");
+});
+
+// ── EL CHOQUE DE DIMENSIONES (CP-005293, 3 sep 2026) ─────────────────────────
+// El CC de la obra (VN-L.34) contra el que la ubicación F-MUEBLES amarra en BC con
+// "Igual código". BC no revisa esa combinación al crear la línea ni al lanzar el
+// pedido, solo AL REGISTRAR: el pedido se creó bien, Aprobación lo lanzó bien, y el
+// "no" le salió a Bodega con el camión afuera. Texto REAL, tal como llegó.
+const DIM_REAL = envuelto(
+  "The dimensions used in Order CP-005293, line no. 10000 are invalid "
+  + "The Dimension Value Code must be F-MUEBLES for Dimension Code CC for Location F-MUEBLES. "
+  + "Currently it's VN-L.34.",
+);
+
+test("el choque de dimensiones se reconoce, y el mensaje se desarma entero", () => {
+  const c = conflictoDeDimensiones(DIM_REAL);
+  assert.ok(c, "no lo reconoció como choque de dimensiones");
+  assert.equal(c.lineNo, "10000");
+  assert.equal(c.dimension, "CC");
+  assert.equal(c.debeSer, "F-MUEBLES");
+  // El punto del código NO parte el valor: las obras (VN-L.34) y las bodegas de
+  // obra (VN-M.28) llevan punto adentro.
+  assert.equal(c.actual, "VN-L.34");
+  assert.equal(c.porQue, "Location F-MUEBLES");
+});
+
+test("lo mismo con BC contestando en español", () => {
+  const c = conflictoDeDimensiones(envuelto(
+    "Las dimensiones utilizadas en Pedido CP-005293, n.º de línea 10000 no son válidas "
+    + "El código de valor de dimensión debe ser F-MUEBLES para el código de dimensión CC "
+    + "para Ubicación F-MUEBLES. Actualmente es VN-L.34.",
+  ));
+  assert.ok(c, "no lo reconoció en español");
+  assert.equal(c.lineNo, "10000");
+  assert.equal(c.dimension, "CC");
+  assert.equal(c.debeSer, "F-MUEBLES");
+  assert.equal(c.actual, "VN-L.34");
+});
+
+test("cualquier otro 'no' de BC no es un choque de dimensiones", () => {
+  assert.equal(conflictoDeDimensiones(envuelto("Purchase Invoice 586265 already exists for this vendor.")), null);
+  assert.equal(conflictoDeDimensiones(envuelto("Pedido de compra CP-005148 no encontrado en BC.")), null);
+  assert.equal(conflictoDeDimensiones(""), null);
+});
+
+// Esto es lo que NO puede pasar: si el choque de dimensiones se clasificara como
+// "ya está hecho allá", la pantalla abriría el diálogo de conciliación y Bodega
+// podría guardar acá una recepción que en BC NO existe. BC no registró nada.
+test("el choque de dimensiones NO se cuela por el camino de la conciliación", () => {
+  assert.equal(clasificarFalloBc(DIM_REAL), "reintentable");
+});
+
+test("el aviso dice qué chocó, con qué, y que reintentar no sirve", () => {
+  const texto = explicarConflictoDimensiones(conflictoDeDimensiones(DIM_REAL)!, "CP-005293");
+  for (const esperado of ["línea 10000", "CP-005293", "CC", "F-MUEBLES", "VN-L.34", "NO se arregla reintentando"]) {
+    assert.ok(texto.includes(esperado), `el aviso no menciona ${esperado}: ${texto}`);
+  }
+});
+
+test("si el mensaje de BC no se puede desarmar, el aviso sirve igual", () => {
+  const c = conflictoDeDimensiones(envuelto("The dimensions used in Order CP-005293 are invalid."));
+  assert.ok(c, "tiene que reconocerlo aunque no traiga los detalles");
+  const texto = explicarConflictoDimensiones(c, "CP-005293");
+  assert.ok(texto.includes("CP-005293"));
+  assert.ok(texto.includes("NO se arregla reintentando"));
 });
