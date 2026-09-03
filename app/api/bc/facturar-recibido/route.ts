@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { bcFacturarRecibido, verificarLineasPosteables, frenoRegistroActivo, conflictoDeDimensiones, explicarConflictoDimensiones } from "@/lib/bc";
 import { frenarPorEncabezado } from "@/lib/freno-encabezado";
+import { actor } from "@/lib/actor";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -35,7 +36,10 @@ export async function POST(req: Request) {
         problemas: freno.problemas,
       }, { status: 409 });
     }
-    const postedNo = await bcFacturarRecibido(orderNo, vendorInvoiceNo, lineas ?? []);
+    // Quién factura, de la cookie firmada (ver lib/actor.ts): sobrescribe en el pedido
+    // el nombre que dejó la recepción, porque es este registro el que crea el consumo.
+    const { usuario } = await actor(cuerpo);
+    const postedNo = await bcFacturarRecibido(orderNo, vendorInvoiceNo, lineas ?? [], "", usuario);
     return NextResponse.json({ ok: true, postedNo });
   } catch (e: any) {
     const error = String(e?.message ?? e);

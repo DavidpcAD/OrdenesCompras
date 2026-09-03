@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { bcRecibir, diagnosticarFalloBc, verificarLineasPosteables, frenoRegistroActivo, conflictoDeDimensiones, explicarConflictoDimensiones } from "@/lib/bc";
 import { frenarPorEncabezado } from "@/lib/freno-encabezado";
+import { actor } from "@/lib/actor";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -38,7 +39,10 @@ export async function POST(req: Request) {
         problemas: freno.problemas,
       }, { status: 409 });
     }
-    const receiptNo = await bcRecibir(orderNo, lineas ?? [], postingDate ?? "");
+    // Quién recibe, de la cookie firmada (ver lib/actor.ts): queda sellado en el
+    // pedido de BC y firma el movimiento de la obra si la factura se registra después.
+    const { usuario } = await actor(cuerpo);
+    const receiptNo = await bcRecibir(orderNo, lineas ?? [], postingDate ?? "", usuario);
     return NextResponse.json({ ok: true, receiptNo });
   } catch (e: any) {
     const error = String(e?.message ?? e);

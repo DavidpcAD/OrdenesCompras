@@ -9,7 +9,7 @@
 //   npm test
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { clasificarFalloBc, cotejoProveedor, estadoLanzamientoBc, conflictoDeDimensiones, explicarConflictoDimensiones } from "./bc.ts";
+import { clasificarFalloBc, cotejoProveedor, estadoLanzamientoBc, conflictoDeDimensiones, explicarConflictoDimensiones, nombreRealizadoPor } from "./bc.ts";
 
 const envuelto = (mensaje: string) =>
   `BC registrar 400: {"error":{"code":"Application_DialogException","message":"${mensaje} CorrelationId: 5ad0cc6c-2ef8-49b6-8f26-c9893727c69f."}}`;
@@ -190,4 +190,12 @@ test("si el mensaje de BC no se puede desarmar, el aviso sirve igual", () => {
   const texto = explicarConflictoDimensiones(c, "CP-005293");
   assert.ok(texto.includes("CP-005293"));
   assert.ok(texto.includes("NO se arregla reintentando"));
+});
+
+// "Realizado por" en BC es Text[50]: el nombre se recorta ACÁ para que el tope no
+// viva solo del otro lado (BC lo cortaría igual, pero sin decirlo).
+test("el nombre que firma el movimiento en BC se limpia y se recorta a 50", () => {
+  assert.equal(nombreRealizadoPor("  Jessie Corrales  "), "Jessie Corrales");
+  assert.equal(nombreRealizadoPor(undefined), "");
+  assert.equal(nombreRealizadoPor("A".repeat(80)).length, 50);
 });

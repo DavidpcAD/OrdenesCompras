@@ -2659,6 +2659,47 @@ async function bcPostear(procedimiento: string, etiqueta: string, orderNo: strin
   return String(d?.value ?? "");
 }
 
+// "Realizado por": el nombre de la persona de la app tal como BC lo puede guardar.
+// El campo de BC es Text[50], así que se recorta acá (mandar más largo lo recortaría
+// igual del otro lado, pero entonces el tope viviría solo en AL).
+export function nombreRealizadoPor(nombre: unknown): string {
+  return String(nombre ?? "").trim().slice(0, 50);
+}
+
+// Deja escrito en el PEDIDO de BC quién va a registrar, ANTES de postear. Sirve para
+// que el consumo directo de la obra (línea con obra/tarea) salga en los Movs. proyecto
+// con "Realizado por" = la persona de la app, y no en blanco: el "Id. usuario" de BC
+// es siempre la cuenta de servicio S2S y no dice nada. El nombre viaja pedido →
+// Job Journal Line → Mov. proyecto (codeunit 50245 en la extensión).
+//
+// NUNCA tumba el registro: si la extensión de BC todavía no tiene el procedure (o el
+// pedido no se deja tocar), se pierde el nombre y se sigue. Registrar la factura del
+// proveedor importa mucho más que la firma del movimiento.
+export async function bcSellarRealizadoPor(orderNo: string, realizadoPor: string): Promise<boolean> {
+  const quien = nombreRealizadoPor(realizadoPor);
+  // "Sistema" es el relleno de lib/actor.ts cuando no hay a quién creerle (sin sesión).
+  // En la bitácora de la app significa algo; en BC sería una firma inventada, y ahí es
+  // mejor el campo vacío que un nombre que no es de nadie.
+  if (!orderNo || !quien || quien.toLowerCase() === "sistema") return false;
+  try {
+    const cid = await getStdCompanyId();
+    const url = `${odataRoot()}/AdelantePO_SetRealizadoPor?company=${encodeURIComponent(cid)}`;
+    const res = await bcFetch(url, {
+      method: "POST", cache: "no-store",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ orderNo, realizadoPor: quien }),
+    });
+    if (!res.ok) {
+      console.warn(`BC "Realizado por" en ${orderNo} no se pudo sellar (${res.status}): ${(await res.text()).slice(0, 200)}`);
+      return false;
+    }
+    return true;
+  } catch (e) {
+    console.warn(`BC "Realizado por" en ${orderNo} no se pudo sellar:`, e);
+    return false;
+  }
+}
+
 // Registra (Recibir + Facturar) una factura parcial del pedido en BC con todos sus
 // movimientos contables, vía el web service custom AdelantePO_PostInvoice.
 // lines = cantidades recibidas en ESTA factura por item ({itemNo, qty}).
@@ -2670,9 +2711,13 @@ export async function bcRegistrarFactura(
   // Cargo de transporte de ESTA factura/viaje (opcional). Se agrega a la OC y se
   // reparte entre lo que se recibe en este registro, según `metodo`.
   cargo?: { itemChargeNo: string; descripcion?: string; monto: number; metodo?: string },
+  // Quién registra (nombre de la app). Se sella en el pedido antes de postear para que
+  // el consumo de la obra salga firmado en los Movs. proyecto. Ver bcSellarRealizadoPor.
+  realizadoPor = "",
 ): Promise<string> {
   if (!orderNo) throw new Error("Falta el número de pedido de BC.");
   if (!vendorInvoiceNo) throw new Error("Falta el N.º de factura del proveedor.");
+  await bcSellarRealizadoPor(orderNo, realizadoPor);
   // Cargo de transporte por viaje: se agrega la línea de Cargo (Prod.) a la OC y se
   // asigna con el método elegido ANTES de registrar (para que quede repartido en
   // esta factura sobre lo recibido). Debe ir antes del PostInvoice.
@@ -2688,8 +2733,12 @@ export async function bcRegistrarFactura(
 // MODO 2 — Solo RECEPCIÓN (material llega bien, la factura queda en revisión).
 // Registra la recepción en BC (Receive=true, Invoice=false) vía AdelantePO_PostReceipt.
 // Mueve inventario/cantidad recibida sin tocar la factura ni el ledger del proveedor.
-export async function bcRecibir(orderNo: string, lines: { itemNo: string; qty: number; variantCode?: string }[], postingDate = ""): Promise<string> {
+export async function bcRecibir(orderNo: string, lines: { itemNo: string; qty: number; variantCode?: string }[], postingDate = "", realizadoPor = ""): Promise<string> {
   if (!orderNo) throw new Error("Falta el número de pedido de BC.");
+  // La recepción sola no genera el consumo de la obra (eso lo hace la factura), pero el
+  // nombre queda sellado en el pedido: si nadie lo vuelve a sellar al facturar, el
+  // movimiento sale con el de quien recibió el material.
+  await bcSellarRealizadoPor(orderNo, realizadoPor);
   return (await bcPostear("AdelantePO_PostReceipt", "recibir", orderNo,
     { orderNo, linesJson: JSON.stringify(lines), postingDate })) || "Recibido";
 }
@@ -2697,9 +2746,10 @@ export async function bcRecibir(orderNo: string, lines: { itemNo: string; qty: n
 // MODO 2 — Solo FACTURA de lo ya recibido (Kattya revisa y registra después).
 // Factura en BC lo que estaba recibido-no-facturado (Receive=false, Invoice=true)
 // vía AdelantePO_PostInvoiceOfReceived.
-export async function bcFacturarRecibido(orderNo: string, vendorInvoiceNo: string, lines: { itemNo: string; qty: number; variantCode?: string }[], postingDate = ""): Promise<string> {
+export async function bcFacturarRecibido(orderNo: string, vendorInvoiceNo: string, lines: { itemNo: string; qty: number; variantCode?: string }[], postingDate = "", realizadoPor = ""): Promise<string> {
   if (!orderNo) throw new Error("Falta el número de pedido de BC.");
   if (!vendorInvoiceNo) throw new Error("Falta el N.º de factura del proveedor.");
+  await bcSellarRealizadoPor(orderNo, realizadoPor);
   return (await bcPostear("AdelantePO_PostInvoiceOfReceived", "facturar", orderNo,
     { orderNo, vendorInvoiceNo, linesJson: JSON.stringify(lines), postingDate })) || "Facturado";
 }
