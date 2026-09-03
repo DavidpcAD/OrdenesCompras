@@ -25,6 +25,14 @@ export function OrderLinesTable({ orden, showRecepcion = true, solicitudHref }: 
           </tr>
         </thead>
         <tbody>
+          {/* Una tabla con solo los encabezados negros se lee como que algo falló.
+              Una orden se queda sin líneas cuando su material volvió al ingeniero
+              (ver `ordenEsperaCorreccion`), y eso hay que decirlo acá. */}
+          {orden.lineas.length === 0 && (
+            <tr><td colSpan={9}><div className="empty empty--compact">
+              Sin líneas: el material volvió al ingeniero para que lo corrija. Cuando lo devuelva, agregalo desde “Editar”.
+            </div></td></tr>
+          )}
           {orden.lineas.map((l) => {
             const pend = ordenLineaPendiente(l);
             const pendiente = showRecepcion && pend > 0 && l.tipo === "articulo";

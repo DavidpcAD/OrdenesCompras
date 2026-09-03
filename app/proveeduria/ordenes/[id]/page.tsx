@@ -317,8 +317,9 @@ export default function ProvOrdenDetallePage() {
               <div className="ds-callout__body">
                 Todo el material volvió al ingeniero, pero la orden NO se descartó: conserva su N.º <span className="ds-strong">{orden.bcNumber}</span>.
                 Cuando el ingeniero devuelva el material corregido, agregalo desde <span className="ds-strong">Editar → “+ De solicitudes”</span> y volvé a
-                enviarla a aprobación: al reenviarla, ese mismo pedido de Business Central se limpia y le caen las líneas
-                nuevas (no se crea otro pedido). Mientras esperás, allá siguen las viejas: no lo recibas ni lo lances.
+                enviarla a aprobación. Al pedido de Business Central no se le agregan líneas: se le REESCRIBEN todas, así que
+                ese mismo pedido se limpia y le caen las nuevas en el mismo movimiento (no se crea otro). Mientras esperás,
+                allá siguen las viejas: no lo recibas ni lo lances.
               </div>
             </div>
           </div>

@@ -210,25 +210,6 @@ export function OrdenDetalle({
           (no es un toast) y se queda hasta que alguien lo arregle: la orden 46
           (CP-005172) llegó a la factura del proveedor con una línea de menos porque
           el aviso duraba tres segundos. */}
-      {/* La orden que ESPERA la corrección del ingeniero está descuadrada a propósito:
-          acá se le quitó el material (volvió al ingeniero) y en BC el pedido puede
-          seguir con las líneas viejas. El cotejo genérico lo reporta como "alguien
-          agregó en BC", que además de sonar a acusación es falso: lo hizo esta app. Se
-          explica y se ofrece la salida. */}
-      {espera && orden.bcCheck && orden.bcCheck.estado !== "ok" && !guardadoVencido && (
-        <div className="ds-callout ds-callout--yellow mb-4" role="status">
-          <span className="ds-callout__icon"><IconWarning size={18} /></span>
-          <div style={{ flex: 1 }}>
-            <div className="ds-callout__title">El pedido en Business Central todavía tiene las líneas viejas</div>
-            <div className="ds-callout__body">
-              No lo agregó nadie allá: son las líneas de esta orden, que volvieron al ingeniero para que las corrija.
-              Se van solas al reenviar la orden — el pedido no se le agregan líneas, se le REESCRIBEN todas: se limpia
-              y le caen las nuevas en el mismo movimiento. Mientras esperás, no recibas ni lances ese pedido en BC.
-            </div>
-          </div>
-        </div>
-      )}
-
       {!espera && orden.bcCheck && orden.bcCheck.estado !== "ok" && !guardadoVencido && !(orden.bcCheck.estado === "sin-pedido" && ordenCerrada) && (
         <div className="ds-callout ds-callout--red mb-4" role="alert">
           <span className="ds-callout__icon"><IconWarning size={18} /></span>
@@ -359,7 +340,12 @@ export function OrdenDetalle({
 
       <div className="row mt-6" style={{ justifyContent: "flex-end" }}>
         <div className="totals" style={{ minWidth: 320 }}>
-          {bcTot ? (
+          {/* Con la orden esperando la corrección, los totales de BC son de las
+              líneas VIEJAS del pedido (las que volvieron al ingeniero), así que
+              mostrarlos es decir que una orden sin material vale ₡72.300. Se muestra
+              lo que esta orden tiene hoy: nada. Los de BC vuelven en cuanto se le
+              agregue el material corregido y se reenvíe. */}
+          {bcTot && !espera ? (
             <>
               <div className="totals__row"><span>Subtotal (excl. IVA)</span><span>{money(bcTot.subtotal, bcTot.currencyCode || orden.currencyCode)}</span></div>
               <div className="totals__row"><span>IVA</span><span>{money(bcTot.iva, bcTot.currencyCode || orden.currencyCode)}</span></div>
@@ -379,7 +365,9 @@ export function OrdenDetalle({
               <div className="totals__row totals__row--grand" style={{ gridColumn: "1 / -1" }}><span>Total orden</span><span>{money(subtotal + flete + iva, orden.currencyCode)}</span></div>
               {orden.bcNumber && (
                 <div style={{ gridColumn: "1 / -1" }} className="ds-body-sm ds-muted">
-                  {pedidoFantasma ? `Estimado local · BC no tiene el pedido ${orden.bcNumber}.` : "Estimado local · los totales definitivos los calcula BC."}
+                  {espera
+                    ? "Sin material: volvió al ingeniero. El total sale de cero cuando se le agregue el corregido."
+                    : pedidoFantasma ? `Estimado local · BC no tiene el pedido ${orden.bcNumber}.` : "Estimado local · los totales definitivos los calcula BC."}
                 </div>
               )}
             </>
@@ -390,7 +378,7 @@ export function OrdenDetalle({
       {/* Por qué el total de BC no es el de la orden. Sin esto el número aparecía
           cambiado y no había a qué agarrarse: el IVA% de la orden es solo para la
           cuenta de acá. */}
-      {hayDifBc && (
+      {hayDifBc && !espera && (
         <div className="ds-callout ds-callout--yellow mt-4" role="status">
           <span className="ds-callout__icon"><IconWarning size={18} /></span>
           <div>
