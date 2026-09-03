@@ -35,7 +35,8 @@ export default function ProveeduriaPedidoDetallePage() {
       const r = await retomarOrden(numero);
       if (r.bcAviso) toast(r.bcAviso, "info");
       else toast(`${numero} retomada: agregale el material corregido con “+ De solicitudes” y volvé a enviarla a aprobación.`, "success");
-      router.push(`/proveeduria/ordenes/${r.id}`);
+      // Al EDITOR: allá el material corregido ya viene puesto y solo falta guardar.
+      router.push(`/proveeduria/ordenes/${r.id}/editar`);
     } catch (e: any) {
       // El servidor dice por qué no se puede (nunca llegó a BC, tiene recepciones, no
       // existe): es información para decidir, no una falla.
@@ -165,7 +166,7 @@ export default function ProveeduriaPedidoDetallePage() {
               <p style={{ margin: "4px 0 0" }}>
                 {corregida
                   ? <>El ingeniero ya corrigió lo que devolviste{fecha ? <> el <span className="ds-strong">{formatDate(fecha)}</span></> : ""}{quien ? <> ({quien})</> : ""}. {origen
-                      ? <>Revisá las líneas y devolvé el material a <span className="ds-strong">{numeroOrden(origen)}</span>, la orden de la que salió.</>
+                      ? <>El material vuelve a <span className="ds-strong">{numeroOrden(origen)}</span>, la orden de la que salió.</>
                       : <>Revisá las líneas y armá la orden.</>}</>
                   : <>Esperando al ingeniero. La(s) línea(s) devuelta(s) quedan bloqueadas hasta que las corrija en Producción.</>}
               </p>
@@ -173,11 +174,14 @@ export default function ProveeduriaPedidoDetallePage() {
                   reescriben las líneas y se re-envía a aprobación con su número. */}
               {corregida && origen && (
                 <div className="row gap-3 wrap mt-4">
-                  <Button onClick={() => router.push(`/proveeduria/ordenes/${origen.id}`)}>
-                    Volver a {numeroOrden(origen)} →
+                  {/* Directo a EDITARLA, no al detalle: allá el material corregido ya
+                      viene puesto y lo único que falta es revisar y guardar. Un paso
+                      menos, que era la queja. */}
+                  <Button onClick={() => router.push(`/proveeduria/ordenes/${origen.id}/editar`)}>
+                    Seguir con {numeroOrden(origen)} →
                   </Button>
-                  <span className="ds-body-sm ds-muted" style={{ alignSelf: "center" }}>
-                    Agregá el material con “+ De solicitudes” al editarla y volvé a enviarla a aprobación.
+                  <span className="ds-body-sm ds-muted" style={{ alignSelf: "center", flex: "1 1 240px" }}>
+                    Se abre con el material corregido puesto y su precio: revisá y guardá.
                   </span>
                 </div>
               )}

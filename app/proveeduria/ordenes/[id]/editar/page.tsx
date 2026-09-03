@@ -279,6 +279,45 @@ export default function EditarOrdenPage() {
     });
   }
   const [qaRef, setQaRef] = useState<{ precio: number; unidad: string; moneda: string; factor?: number } | null>(null);
+
+  // PRECIOS QUE LA ORDEN YA TENÍA, leídos del pedido en Business Central.
+  //
+  // Cuando el material vuelve al ingeniero, las líneas salen de la orden y con ellas
+  // se van los precios que ya estaban negociados con el proveedor — pero el pedido de
+  // BC las conserva. Al reponer el material corregido hay que ponerle ESE precio y no
+  // "el último precio de compra del artículo", que puede ser de otra obra, otra
+  // cantidad u otro año: en CP-005294 el histórico daba ₡85.283 contra los ₡63.983
+  // que el pedido tenía de verdad.
+  //
+  // `null` = todavía no se sabe; `{}` = BC no contestó (ahí se cae al histórico).
+  const [preciosBc, setPreciosBc] = useState<Record<string, { precio: number; unidad: string }> | null>(null);
+  useEffect(() => {
+    const bc = (orden?.bcNumber ?? "").trim();
+    // Solo hace falta cuando la orden se quedó sin material: es el único caso donde
+    // hay que recuperar precios que la orden ya no tiene.
+    const sinMaterial = !!orden && !orden.lineas.some((l) => l.tipo === "articulo");
+    if (!bc || !sinMaterial) return;
+    let vivo = true;
+    fetch(`/api/ordenes/${orden!.id}/lineas-bc`, { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : { lineas: [] }))
+      .then((d) => {
+        if (!vivo) return;
+        const m: Record<string, { precio: number; unidad: string }> = {};
+        for (const l of (d?.lineas ?? []) as { itemNo: string; variantCode?: string; unidad?: string; precioUnitario?: number }[]) {
+          const precio = Number(l.precioUnitario) || 0;
+          if (!l.itemNo || precio <= 0) continue;
+          const unidad = String(l.unidad ?? "");
+          // Con variante y sin variante: la línea corregida puede traer otra variante
+          // y el precio del artículo sigue sirviendo.
+          m[`${l.itemNo}|${(l.variantCode ?? "").trim().toUpperCase()}`] = { precio, unidad };
+          m[l.itemNo] ??= { precio, unidad };
+        }
+        setPreciosBc(m);
+      })
+      .catch(() => { if (vivo) setPreciosBc({}); });
+    return () => { vivo = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [orden?.id, orden?.bcNumber]);
   const calcImporte = (r: Row) => Number(r.cantidad) * Number(r.precio) * (1 - (Number(r.descuento) || 0) / 100);
   const subtotal = useMemo(() => rows.reduce((s, r) => s + calcImporte(r), 0), [rows]);
   const ivaLineas = useMemo(() => rows.reduce((s, r) => s + calcImporte(r) * ((Number(r.iva) || 0) / 100), 0), [rows]);
@@ -355,10 +394,18 @@ export default function EditarOrdenPage() {
     // La obra viaja SOLO si la línea es consumo directo (trae tarea): un Job No. sin
     // tarea lo rechaza BC, y la obra de una compra para stock es informativa.
     const obra = obraParaOrden(l);
-    // Precio de arranque: lo último que se le pagó a ESTE proveedor por el material
-    // según el historial de la app. Queda en 0 si no hay, para que Proveeduría
-    // escriba lo acordado; abajo se pisa con el de BC si se puede convertir.
-    const hist = provSel ? ultimoPrecioProveedor(ordenes, l.articuloId, provSel.code) : null;
+    // Precio de arranque. Manda EL DE LA ORDEN: si el pedido en BC todavía tiene esa
+    // línea (el material salió de acá y volvió corregido), su precio es el que se le
+    // cotizó al proveedor para esta compra. Solo si no está se cae al último precio
+    // pagado a ESTE proveedor según el historial de la app, y si tampoco hay queda en
+    // 0 para que Proveeduría escriba lo acordado.
+    const deBc = preciosBc?.[`${l.articuloId}|${(l.variantCode ?? "").trim().toUpperCase()}`] ?? preciosBc?.[l.articuloId];
+    // El precio de BC es por SU unidad: si la línea corregida viene en otra (se pidió
+    // en metros y el pedido estaba en rollos), no se copia — un precio en la unidad
+    // equivocada es peor que ninguno (ver `precioEnUnidad`).
+    const mismaUnidad = !!deBc && (deBc.unidad ?? "").trim().toUpperCase() === (l.unidad ?? "").trim().toUpperCase();
+    const hist = mismaUnidad ? deBc!.precio
+      : provSel ? ultimoPrecioProveedor(ordenes, l.articuloId, provSel.code) : null;
     const key = `s-${uid()}`;
     setRows((rs) => [...rs, {
       key, articuloId: l.articuloId, variantCode: l.variantCode ?? "", descripcion: l.descripcion,
@@ -395,6 +442,20 @@ export default function EditarOrdenPage() {
   // repone de un clic. Es el caso normal cuando Proveeduría sigue con la misma orden.
   const corregidas = lineasCorregidasDeOrden(pedidos, orden).filter(({ l }) => !yaEnOrden.has(l.id));
   const traerCorregidas = () => { for (const { p, l, pend } of corregidas) agregarDeSolicitud(p, l, pend); };
+  // Y viene PUESTO al abrir: si la orden espera la corrección y el material ya volvió,
+  // que Proveeduría tenga que apretar un botón para que aparezca es un paso de más —
+  // no hay ninguna otra cosa que pueda querer hacer acá. Una sola vez por visita: si
+  // después quita una línea a mano, no se la vuelve a meter.
+  const precargado = useRef(false);
+  if (!precargado.current && espera && rows.length === 0 && corregidas.length > 0
+      // Se espera a saber los precios del pedido de BC (o a que BC diga que no
+      // contesta): traerlas antes sería ponerles el precio histórico y después tener
+      // dos verdades en pantalla.
+      && preciosBc !== null) {
+    precargado.current = true;
+    // En un microtask: `setRows` durante el render tira el warning de React.
+    Promise.resolve().then(traerCorregidas);
+  }
 
   async function guardar() {
     if (!proveedorId) { toast("Seleccioná un proveedor.", "error"); return; }
@@ -615,7 +676,7 @@ export default function EditarOrdenPage() {
               <span className="ds-body-sm ds-muted" style={{ flex: "1 1 320px" }}>
                 {espera ? (
                   corregidas.length > 0 ? (
-                    <>El ingeniero ya corrigió <span className="ds-strong">{corregidas.length} línea(s)</span> de esta orden. Tocá <span className="ds-strong">“Traer el material corregido”</span>, revisá cantidad y precio y guardá: al reenviarla se le reescriben las líneas a <span className="ds-strong">ese mismo pedido</span> de Business Central ({orden.bcNumber}), no se crea otro.</>
+                    <>Este es el material que el ingeniero corrigió, ya puesto con el precio que la orden tenía en Business Central. Revisá cantidad y precio y guardá: al reenviarla se le reescriben las líneas a <span className="ds-strong">ese mismo pedido</span> ({orden.bcNumber}), no se crea otro.</>
                   ) : (
                     <>Esta orden conserva su N.º de Business Central (<span className="ds-strong">{orden.bcNumber}</span>) y espera el material corregido. Cuando el ingeniero lo devuelva va a aparecer acá para traerlo de un clic; si no, buscalo con “+ De solicitudes”.</>
                   )

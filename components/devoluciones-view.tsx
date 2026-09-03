@@ -6,7 +6,7 @@ import type { ColumnDef } from "@tanstack/react-table";
 import { Badge, Card } from "@/components/ui";
 import { DataTable } from "@/components/data-table";
 import { useStore } from "@/lib/store";
-import { correccionDeSolicitud, destinoLabel, devolucionesDeRol, formatDate, motivoDevolucion, numeroOrden, pedidoLineaPendiente } from "@/lib/helpers";
+import { correccionDeSolicitud, destinoLabel, devolucionesDeRol, formatDate, motivoDevolucion, numeroOrden, pedidoLineaPendiente, ordenDeDevolucion } from "@/lib/helpers";
 import type { Role } from "@/lib/types";
 
 type Dev = {
@@ -49,15 +49,22 @@ export function DevolucionesView({ role }: { role: Role }) {
 
     const solicitudCorregida = (p: (typeof pedidos)[number]): Dev => {
       const { fecha, quien } = correccionDeSolicitud(p);
+      // Si el material salió de una orden que sigue viva, la bandeja lleva DIRECTO a
+      // esa orden (a editarla, con el material corregido ya puesto): es lo que hay que
+      // hacer con esta fila, y pasar por la solicitud era un salto de más.
+      const origen = role === "proveeduria" ? ordenDeDevolucion(ordenes, p) : null;
       return {
-        id: p.id, tipo: "Solicitud", numero: p.numero, contra: destinoLabel(p),
+        id: p.id, tipo: "Solicitud", numero: p.numero,
         motivo: motivoDevolucion(p.notas),
         fecha: p.devolucion?.fecha ?? p.fecha,
         que: pendienteDe(p),
         // Sin la edición en la bitácora igual se sabe que está corregida (la línea ya
         // no está marcada), pero no la fecha: se dice lo que se sabe.
         estado: fecha ? `Corregida ${formatDate(fecha)}${quien ? ` · ${quien}` : ""}` : "Corregida",
-        href: `/proveeduria/solicitudes/${p.id}`,
+        // El destino de la fila: seguir con la orden de la que salió, o —si no salió
+        // de ninguna orden viva— la solicitud, para armarle una.
+        href: origen ? `/proveeduria/ordenes/${origen.id}/editar` : `/proveeduria/solicitudes/${p.id}`,
+        contra: origen ? `${destinoLabel(p)} · sigue en ${numeroOrden(origen)}` : destinoLabel(p),
       };
     };
 
