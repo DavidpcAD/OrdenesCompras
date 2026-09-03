@@ -7,8 +7,13 @@ import { OrdenesLista } from "@/components/ordenes-lista";
 import { VistaToggle } from "@/components/vista-toggle";
 import { IconReceipt, IconList } from "@/components/icons";
 import { useStore } from "@/lib/store";
+import { ordenEsperaCorreccion } from "@/lib/helpers";
 
-type Filtro = "todas" | "abierto" | "rechazado" | "lanzado" | "completado";
+// "espera" no es un estado de la orden en la base: es la orden que se quedó SIN
+// material porque todo volvió al ingeniero y que conserva su N.º de BC. Se filtra como
+// un panel más porque es donde hay trabajo detenido esperando a otra persona, y sin
+// esto se leía como una Abierta cualquiera en ₡0 (o, peor, se perdía de vista).
+type Filtro = "todas" | "abierto" | "espera" | "rechazado" | "lanzado" | "completado";
 
 export default function OrdenesPage() {
   const { ordenes, pedidos } = useStore();
@@ -29,15 +34,24 @@ export default function OrdenesPage() {
     setTimeout(() => listaRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
   }
 
-  const abiertas = ordenes.filter((o) => o.estado === "abierto").length;
+  // Las que esperan corrección salen del panel de Abiertas: están abiertas, pero no
+  // hay nada que hacer con ellas hasta que el ingeniero devuelva el material.
+  const esperan = ordenes.filter(ordenEsperaCorreccion);
+  const abiertas = ordenes.filter((o) => o.estado === "abierto" && !ordenEsperaCorreccion(o)).length;
   const rechazadas = ordenes.filter((o) => o.estado === "rechazado").length;
   const lanzadas = ordenes.filter((o) => o.estado === "lanzado").length;
   const completas = ordenes.filter((o) => o.estado === "completado").length;
 
-  const lista = ordenes.filter((o) => (filtro === "todas" ? true : o.estado === filtro));
+  const lista = ordenes.filter((o) => {
+    if (filtro === "todas") return true;
+    if (filtro === "espera") return ordenEsperaCorreccion(o);
+    if (filtro === "abierto") return o.estado === "abierto" && !ordenEsperaCorreccion(o);
+    return o.estado === filtro;
+  });
   const etiqueta: Record<Filtro, string> = {
     todas: "Todas las órdenes",
     abierto: "Órdenes abiertas (borrador)",
+    espera: "Órdenes esperando la corrección del ingeniero",
     rechazado: "Órdenes rechazadas (corregir y reenviar)",
     lanzado: "Órdenes lanzadas",
     completado: "Órdenes completadas",
@@ -62,6 +76,10 @@ export default function OrdenesPage() {
         <div className="tiles mt-2">
           <Tile value={ordenes.length} label="Órdenes totales" onClick={() => seleccionar("todas")} active={filtro === "todas"} />
           <Tile value={abiertas} label="Abiertas (borrador)" accent="var(--ds-color-gray-300)" onClick={() => seleccionar("abierto")} active={filtro === "abierto"} />
+          {/* Solo si hay: un panel en 0 permanente es ruido. */}
+          {esperan.length > 0 && (
+            <Tile value={esperan.length} label="Esperando corrección" accent="var(--ds-color-yellow)" onClick={() => seleccionar("espera")} active={filtro === "espera"} />
+          )}
           <Tile value={rechazadas} label="Rechazadas" accent="var(--ds-color-red-200)" onClick={() => seleccionar("rechazado")} active={filtro === "rechazado"} />
           <Tile value={lanzadas} label="Lanzadas" accent="var(--ds-color-green-100)" onClick={() => seleccionar("lanzado")} active={filtro === "lanzado"} />
           <Tile value={completas} label="Completadas" accent="var(--ds-color-green-200)" onClick={() => seleccionar("completado")} active={filtro === "completado"} />

@@ -17,13 +17,32 @@ export default function ProveeduriaPedidoDetallePage() {
   // volver = pantalla anterior, con su filtro (el rótulo se ajusta solo)
   const { volver, etiqueta: volverTexto } = useVolver("/proveeduria/solicitudes", "Volver a solicitudes");
   const toast = useToast();
-  const { pedidos, ordenes, setBorrador, devolverPedido, cargando } = useStore();
+  const { pedidos, ordenes, setBorrador, devolverPedido, retomarOrden, cargando } = useStore();
   const [devolverOpen, setDevolverOpen] = useState(false);
   const [motivo, setMotivo] = useState("");
   const [devolviendo, setDevolviendo] = useState(false);
+  const [retomando, setRetomando] = useState(false);
   // Líneas marcadas para devolver. La devolución es POR LÍNEA: lo que ya tiene orden
   // de compra no se puede devolver (el material ya se le pidió al proveedor).
   const [sel, setSel] = useState<Record<string, boolean>>({});
+
+  // Volver a usar la orden de la que salió este material, cuando la devolución vieja
+  // la había descartado. La orden vuelve SIN material (el corregido se le agrega al
+  // editarla) y con su pedido de Business Central intacto, que es el punto.
+  async function retomar(numero: string) {
+    setRetomando(true);
+    try {
+      const r = await retomarOrden(numero);
+      if (r.bcAviso) toast(r.bcAviso, "info");
+      else toast(`${numero} retomada: agregale el material corregido con “+ De solicitudes” y volvé a enviarla a aprobación.`, "success");
+      router.push(`/proveeduria/ordenes/${r.id}`);
+    } catch (e: any) {
+      // El servidor dice por qué no se puede (nunca llegó a BC, tiene recepciones, no
+      // existe): es información para decidir, no una falla.
+      toast(String(e?.message ?? e), "error");
+      setRetomando(false);
+    }
+  }
 
   const pedido = pedidos.find((p) => p.id === id);
   // Variantes de los materiales de esta solicitud (el grado, la medida, la talla):
@@ -162,12 +181,20 @@ export default function ProveeduriaPedidoDetallePage() {
                   </span>
                 </div>
               )}
-              {/* La orden ya no está (devoluciones viejas, cuando la devolución total
-                  la descartaba): se dice el número, sin enlace que no lleva a nada. */}
+              {/* La orden no aparece en la app porque la devolución vieja la
+                  DESCARTABA (antes del arreglo). Pero en SQL nunca se borró de verdad
+                  y su pedido sigue en Business Central, así que no se manda a armar
+                  una orden nueva —eso sería un segundo pedido en BC por el mismo
+                  material—: se la RETOMA y se sigue trabajando en ella. */}
               {corregida && !origen && dev?.orden && (
-                <p className="ds-body-sm ds-muted" style={{ margin: "6px 0 0" }}>
-                  Salió de la orden <span className="ds-strong">{dev.orden}</span>, que ya no está en la app: armá una orden nueva con este material.
-                </p>
+                <div className="row gap-3 wrap mt-4">
+                  <Button disabled={retomando} onClick={() => retomar(dev.orden!)}>
+                    {retomando ? "Retomando…" : `Seguir con ${dev.orden} →`}
+                  </Button>
+                  <span className="ds-body-sm ds-muted" style={{ alignSelf: "center", flex: "1 1 240px" }}>
+                    El material salió de esa orden y su pedido sigue en Business Central: seguí con ELLA en vez de crear otra.
+                  </span>
+                </div>
               )}
               {(dev?.lineas || dev?.motivo) && (
                 <p className="ds-body-sm ds-muted" style={{ margin: "6px 0 0" }}>

@@ -88,6 +88,10 @@ export const api = {
     fetch(`/api/ordenes/${id}/cerrar`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }).then(jsonOrThrow),
   nuevaOrdenConPendiente: (id: string, body: unknown) =>
     fetch(`/api/ordenes/${id}/nueva-con-pendiente`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }).then(jsonOrThrow),
+  // Retomar la orden que se había descartado al devolver todo su material (su pedido
+  // sigue en BC): devuelve su id para poder abrirla.
+  retomarOrden: (body: unknown): Promise<{ id: number; ordenNo: string; bcNo: string; yaEstaba: boolean; bcAviso?: string }> =>
+    fetch(`/api/ordenes/retomar`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }).then(jsonOrThrow),
   // Descartar un borrador de orden (vuelve el saldo a la solicitud).
   descartarOrden: (id: string, body: unknown): Promise<{ numero: string; saldoDevuelto: number }> =>
     fetch(`/api/ordenes/${id}`, { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }).then(jsonOrThrow),

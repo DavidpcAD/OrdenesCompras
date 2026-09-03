@@ -8,7 +8,7 @@ import { DataTable } from "@/components/data-table";
 import { IconChevronDown } from "@/components/icons";
 import { useStore } from "@/lib/store";
 import { useSoloMias } from "@/lib/use-solo-mias";
-import { money, formatDate, ordenAlmacenes, ordenAvance, ordenBadge, ordenObras, ordenRecibidoPct, ordenSubtotal, ordenPedidos, ordenEsDirecta, ordenLineaImporte, proveedorLabel, num, numeroOrden, tieneBc, ordenEsperaCorreccion } from "@/lib/helpers";
+import { money, formatDate, ordenAlmacenes, ordenAvance, ordenBadge, ordenBadgeDe, ordenObras, ordenRecibidoPct, ordenSubtotal, ordenPedidos, ordenEsDirecta, ordenLineaImporte, proveedorLabel, num, numeroOrden, tieneBc, ordenEsperaCorreccion } from "@/lib/helpers";
 import type { Orden } from "@/lib/types";
 
 // N.º de solicitud de origen. Con link es un botón que abre esa solicitud (y no
@@ -125,7 +125,7 @@ export function OrdenesLista({
         return <ProgressBar compact value={ordenAvance(o).recibida} total={ordenAvance(o).total} />;
       },
     },
-    { id: "estado", header: "Estado", accessorFn: (o) => ordenBadge(o.estado).label, meta: { label: "Estado" }, cell: (c) => { const b = ordenBadge(c.row.original.estado); return <Badge tone={b.tone}>{b.label}</Badge>; } },
+    { id: "estado", header: "Estado", accessorFn: (o) => ordenBadgeDe(o).label, meta: { label: "Estado" }, cell: (c) => { const b = ordenBadgeDe(c.row.original); return <Badge tone={b.tone}>{b.label}</Badge>; } },
     // Quién generó la OC (creadoPor). Además de leerse, da el filtro por persona del
     // encabezado: cada quien puede quedarse con las suyas o ver las de un compañero.
     { id: "creadaPor", header: "Creada por", accessorFn: (o) => o.creadoPor ?? "", meta: { label: "Creada por" }, cell: (c) => c.getValue() || <span className="ds-muted">—</span> },
@@ -226,7 +226,7 @@ export function OrdenesLista({
                       </thead>
                       <tbody>
                         {g.ords.map((o) => {
-                          const peds = ordenPedidos(o); const espera = ordenEsperaCorreccion(o); const dir = ordenEsDirecta(o) && !espera; const b = ordenBadge(o.estado);
+                          const peds = ordenPedidos(o); const espera = ordenEsperaCorreccion(o); const dir = ordenEsDirecta(o) && !espera; const b = ordenBadgeDe(o);
                           return (
                             <tr key={o.id} className="is-clickable" onClick={() => router.push(hrefDetalle(o.id))} style={{ cursor: "pointer" }}
                               tabIndex={0} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); router.push(hrefDetalle(o.id)); } }}>

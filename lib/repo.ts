@@ -1303,6 +1303,58 @@ export const MSG_NO_REABRIR = "La orden ya tiene facturas/recepciones registrada
 // Condiciones (estrictas a propósito): sin N.º de BC —o sea, el pedido nunca se
 // creó allá— y sin recepciones. Lo que ya existe en Business Central no se descarta
 // desde acá: eso se reabre o se cierra, que es lo que deja rastro en los dos lados.
+// RETOMAR una orden que se descartó al devolverle todo el material al ingeniero.
+//
+// Existe por las que ya pasaron: hasta el arreglo de `devolverLineasDeOrden`, devolver
+// TODO el material marcaba la orden como eliminada aunque viviera en Business Central.
+// La fila no se borra de verdad (`esEliminada=1`), así que el pedido de BC y el número
+// siguen ahí — lo único que hacía falta era poder volver a usarlos, en vez de armarle
+// al mismo material una orden nueva y un SEGUNDO pedido en BC.
+//
+// No revive nada más: la orden vuelve tal como estaba (su estado, su proveedor, su
+// cargo) y SIN material, o sea "esperando la corrección". El material corregido se le
+// agrega desde la pantalla de edición.
+export async function retomarOrdenDescartada(
+  ref: string, usuario: string, rol: Role,
+): Promise<{ id: number; ordenNo: string; bcNo: string; yaEstaba: boolean }> {
+  const n = (ref ?? "").trim();
+  if (!n) throw new Error("No se dijo qué orden retomar.");
+  const pool = await getPool();
+  // La viva primero: si la orden nunca se descartó no hay nada que hacer (`yaEstaba`).
+  // Y de las descartadas, la más reciente, por si el mismo N.º de BC quedó en dos.
+  const r = await pool.request().input("n", sql.NVarChar(50), n).query(
+    `SELECT TOP 1 idOrdenCompra, ordenNo, bcNo, esEliminada
+       FROM dbo.OrdenCompra
+      WHERE bcNo = @n OR ordenNo = @n
+      ORDER BY esEliminada ASC, idOrdenCompra DESC`);
+  if (!r.recordset.length) throw new Error(`No hay ninguna orden con el número ${n} en la app.`);
+  const row = r.recordset[0];
+  const id = Number(row.idOrdenCompra);
+  const ordenNo = String(row.ordenNo ?? "");
+  const bcNo = String(row.bcNo ?? "").trim();
+  if (!Number(row.esEliminada)) return { id, ordenNo, bcNo, yaEstaba: true };
+  // Sin N.º de BC no hay nada que reusar: una orden que nunca llegó a BC es un
+  // borrador, y armar otra es exactamente lo mismo pero sin resucitar una fila.
+  if (!bcNo) {
+    throw new Error(`La orden ${ordenNo} nunca llegó a Business Central, así que no hay pedido que reusar: armá una orden nueva con este material.`);
+  }
+  if (await ordenTieneRecepciones(id)) {
+    throw new Error(`La orden ${bcNo} tiene recepciones registradas: no se retoma (ese material ya llegó).`);
+  }
+  await pool.request().input("id", sql.Int, id).input("u", sql.NVarChar(100), usuario)
+    .query("UPDATE dbo.OrdenCompra SET esEliminada=0, fechaModificacion=getdate(), modificadoPor=@u WHERE idOrdenCompra=@id");
+  const tx = new sql.Transaction(pool); await tx.begin();
+  try {
+    await logMov(tx, {
+      entidad: "orden", idEntidad: id, documentoNo: ordenNo, tipoMovimiento: "reabierto",
+      detalle: `Orden retomada: se había descartado al devolverle todo el material al ingeniero, pero su pedido ${bcNo} sigue en Business Central. Se le vuelve a agregar el material corregido en vez de crear otro pedido.`,
+      usuario, rol,
+    });
+    await tx.commit();
+  } catch (e) { await tx.rollback(); throw e; }
+  return { id, ordenNo, bcNo, yaEstaba: false };
+}
+
 export async function descartarOrden(
   id: number, motivo: string, usuario: string, rol: Role,
 ): Promise<{ numero: string; saldoDevuelto: number }> {

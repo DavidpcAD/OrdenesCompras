@@ -7,7 +7,7 @@ import { IconChevronDown, IconWarning } from "@/components/icons";
 import { OrderLinesTable } from "@/components/order-lines";
 import { Timeline } from "@/components/timeline";
 import { useStore } from "@/lib/store";
-import { money, num, formatDate, ordenBadge, proveedorLabel, ordenLineaImporte, ordenRecibidoPct, ordenPedidos, ordenEsDirecta, numeroOrden, tieneBc, destinoDeRecepcion, ordenEsperaCorreccion } from "@/lib/helpers";
+import { money, num, formatDate, ordenBadgeDe, proveedorLabel, ordenLineaImporte, ordenRecibidoPct, ordenPedidos, ordenEsDirecta, numeroOrden, tieneBc, destinoDeRecepcion, ordenEsperaCorreccion } from "@/lib/helpers";
 import { ChipPedido } from "@/components/ordenes-lista";
 import { useVolver } from "@/lib/use-volver";
 import type { Orden } from "@/lib/types";
@@ -121,7 +121,7 @@ export function OrdenDetalle({
   const pedidoFantasma = !!orden.bcNumber && bcMotivo === "no-existe" && !ordenCerrada;
 
   const prov = proveedores.find((p) => p.id === orden.proveedorId);
-  const b = ordenBadge(orden.estado);
+  const b = ordenBadgeDe(orden);
   // Volver = pantalla anterior (con su filtro), no una ruta fija.
   const { volver, etiqueta: volverTexto } = useVolver(volverHref, volverLabel);
   const peds = ordenPedidos(orden);
@@ -165,7 +165,6 @@ export function OrdenDetalle({
             <h1 className="ds-heading" title={`N.º interno de la app: ${orden.numero}`}>{numeroOrden(orden)}</h1>
             <Badge tone={b.tone}>{b.label}</Badge>
             {esDirecta && <Badge tone="yellow">Directa</Badge>}
-            {espera && <Badge tone="yellow">Esperando corrección</Badge>}
           </div>
           <p className="ds-muted">{orden.proveedorNo ?? prov?.code} · {proveedorLabel(orden, proveedores)} · emitida {formatDate(orden.fecha)} · recibido {ordenRecibidoPct(orden)}%{tieneBc(orden) ? "" : " · todavía no está en Business Central"}</p>
           {orden.almacenRecepcion && <p className="ds-body-sm ds-muted">Recepción en almacén <span className="ds-strong">{orden.almacenRecepcion}</span></p>}

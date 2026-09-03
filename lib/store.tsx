@@ -124,6 +124,10 @@ interface StoreShape {
   // Descartar un borrador de orden (Abierta y sin N.º de BC): la orden desaparece y
   // su material vuelve a quedar pendiente en la solicitud.
   descartarOrden: (id: string, motivo: string) => Promise<{ numero: string; saldoDevuelto: number }>;
+  // Retomar la orden de la que salió un material devuelto, cuando esa orden se había
+  // descartado (las devoluciones anteriores al arreglo la borraban aunque viviera en
+  // BC). Devuelve el id para abrirla y el aviso si su pedido ya no está en BC.
+  retomarOrden: (orden: string) => Promise<{ id: string; bcAviso?: string }>;
   // Cierra la orden y arma una nueva (abierta) con lo que quedó pendiente.
   nuevaOrdenConPendiente: (id: string, motivo: string) => Promise<{ id: string; numero: string }>;
 
@@ -631,6 +635,19 @@ export function StoreProvider({ children, useApi }: { children: React.ReactNode;
     // saldo de la solicitud: sin esto, una orden armada por error dejaba ese material
     // "ordenado" para siempre (no se puede borrar, ni dejar sin líneas, y "Cerrar
     // orden" es solo para las lanzadas) y tampoco se podía devolver al ingeniero.
+    const retomarOrden: StoreShape["retomarOrden"] = async (orden) => {
+      if (USE_API) {
+        const r = await api.retomarOrden({ orden, usuario: persona, rol: rolActual });
+        await refreshFromApi();
+        return { id: String(r?.id ?? ""), bcAviso: r?.bcAviso };
+      }
+      // En modo demo no hay órdenes descartadas (el store las saca del arreglo), así
+      // que retomar es simplemente encontrarla por su número.
+      const o = data.ordenes.find((x) => x.bcNumber === orden || x.numero === orden);
+      if (!o) throw new Error(`No hay ninguna orden con el número ${orden} en la app.`);
+      return { id: o.id };
+    };
+
     const descartarOrden: StoreShape["descartarOrden"] = async (id, motivo) => {
       if (USE_API) {
         const r = await api.descartarOrden(id, { motivo, usuario: persona, rol: rolActual });
@@ -1017,7 +1034,7 @@ export function StoreProvider({ children, useApi }: { children: React.ReactNode;
       maquinas: seed.maquinas, almacenes: seed.almacenes,
       pedidos: data.pedidos, ordenes: data.ordenes, recepciones: data.recepciones, movimientos: data.movimientos,
       addPedido, editPedido, setPedidoEstado, deletePedido,
-      createOrden, updateOrden, setOrdenEstado, corregirBcNumber, cerrarOrden, descartarOrden, nuevaOrdenConPendiente, registrarRecepcion, guardarFotosRecepcion, facturarRecepcion, devolverPedido, devolverLineasOrden, alinearIvaConBc, devolverOrden, reset,
+      createOrden, updateOrden, setOrdenEstado, corregirBcNumber, cerrarOrden, descartarOrden, retomarOrden, nuevaOrdenConPendiente, registrarRecepcion, guardarFotosRecepcion, facturarRecepcion, devolverPedido, devolverLineasOrden, alinearIvaConBc, devolverOrden, reset,
       notasCredito, marcarNotasCredito, cargarNotasCredito, resolverNotaCredito,
       notificaciones: data.notificaciones, marcarNotifsLeidas, marcarNotifLeida,
       borrador, setBorrador,

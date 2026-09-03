@@ -748,6 +748,15 @@ export function ordenBadge(estado: Orden["estado"]): { label: string; tone: stri
   }
 }
 
+// El estado TAL COMO SE LEE en pantalla. La base solo guarda Abierto/Rechazado/…, y
+// una orden que se quedó sin material esperando la corrección del ingeniero se leía
+// como una "Abierta" cualquiera en ₡0 — que es justo lo que hace que a nadie le quede
+// claro por qué está parada y de quién es la próxima jugada.
+export function ordenBadgeDe(o: Pick<Orden, "estado" | "bcNumber" | "lineas">): { label: string; tone: string } {
+  if (ordenEsperaCorreccion(o)) return { label: "Esperando corrección", tone: "yellow" };
+  return ordenBadge(o.estado);
+}
+
 // Distribución proporcional de un cargo (flete) por importe de las líneas de artículo
 export function distribuirCargo(monto: number, lineas: OrdenLinea[]): Record<string, number> {
   const articulos = lineas.filter((l) => l.tipo === "articulo");
