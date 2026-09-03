@@ -47,7 +47,7 @@ export default function ArchivoPage() {
         try {
           const r = await fetch("/api/bc/facturar-recibido", {
             method: "POST", headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ orderNo: o.bcNumber, vendorInvoiceNo: numFac.trim(), lineas: bcLineas }),
+            body: JSON.stringify({ orderNo: o.bcNumber, vendorInvoiceNo: numFac.trim(), lineas: bcLineas, ordenId: o.id, vendorNo: o.proveedorNo || o.proveedorId }),
           });
           const d = await r.json().catch(() => ({}));
           if (r.ok) aviso = ` · registrada en BC (${d.postedNo ?? "OK"})`;

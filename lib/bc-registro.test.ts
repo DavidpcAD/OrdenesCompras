@@ -9,7 +9,7 @@
 //   npm test
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { clasificarFalloBc } from "./bc.ts";
+import { clasificarFalloBc, cotejoProveedor, estadoLanzamientoBc } from "./bc.ts";
 
 const envuelto = (mensaje: string) =>
   `BC registrar 400: {"error":{"code":"Application_DialogException","message":"${mensaje} CorrelationId: 5ad0cc6c-2ef8-49b6-8f26-c9893727c69f."}}`;
@@ -65,4 +65,65 @@ test("periodo contable cerrado: reintentable (se cambia la fecha y va)", () => {
 test("sin mensaje no se inventa un motivo", () => {
   assert.equal(clasificarFalloBc(""), "reintentable");
   assert.equal(clasificarFalloBc(undefined as unknown as string), "reintentable");
+});
+
+// ── EL PROVEEDOR DEL PEDIDO ──────────────────────────────────────────────────
+// El caso real: CP-005183. La orden era de FERRETERIA EPA S.A (PROV-000522) y para
+// cuando Bodega recibió, el pedido en BC había pasado a PROV-000163 (Corazón de
+// Papel). Nadie lo comparó y la factura 15403 de EPA quedó cargada a otro proveedor.
+// Estas pruebas fijan las tres respuestas que importan: calza, NO calza, y "no se
+// pudo mirar" — que NO es lo mismo que "está bien", pero tampoco frena.
+test("el proveedor del pedido de BC calza con el de la orden", () => {
+  const r = cotejoProveedor("CP-005183", { vendorNo: "PROV-000522", vendorName: "FERRETERIA EPA S.A" }, "PROV-000522");
+  assert.equal(r.ok, true);
+  assert.equal(r.verificado, true);
+});
+
+test("no calza: frena y dice los dos proveedores por su nombre", () => {
+  const r = cotejoProveedor("CP-005183", { vendorNo: "PROV-000163", vendorName: "3-101-739774 Sociedad Anonima/Corazón de Papel" }, "PROV-000522");
+  assert.equal(r.ok, false);
+  assert.equal(r.verificado, true);
+  assert.match(r.mensaje ?? "", /PROV-000163/);
+  assert.match(r.mensaje ?? "", /Corazón de Papel/);
+  assert.match(r.mensaje ?? "", /PROV-000522/);
+});
+
+test("mayúsculas y espacios no son un desajuste", () => {
+  const r = cotejoProveedor("CP-005183", { vendorNo: " prov-000522 ", vendorName: "" }, "PROV-000522");
+  assert.equal(r.ok, true);
+});
+
+test("BC no contestó (o el pedido ya no está): no se frena, pero queda sin verificar", () => {
+  const r = cotejoProveedor("CP-005183", null, "PROV-000522");
+  assert.equal(r.ok, true);
+  assert.equal(r.verificado, false);
+});
+
+test("sin proveedor en la orden no hay nada que cotejar", () => {
+  const r = cotejoProveedor("CP-005183", { vendorNo: "PROV-000163", vendorName: "" }, "");
+  assert.equal(r.ok, true);
+  assert.equal(r.verificado, false);
+});
+
+// ── EL ESTADO DEL PEDIDO EN BC ───────────────────────────────────────────────
+// CP-005143: la app decía "lanzado" y en BC el pedido seguía Abierto, porque quien
+// lanza es la app de Aprobación. `Format(PurchHeader.Status)` viaja en el IDIOMA DE
+// LA SESIÓN del web service, así que el estado llega en inglés o en español según
+// quién pregunte: comparar contra un solo texto era un freno con fecha de
+// vencimiento. La API estándar no sirve para esto (devuelve "Open" hasta para los
+// lanzados); el único que dice la verdad es AdelantePO_GetOrderLines.
+test("el estado de BC se entiende en los dos idiomas", () => {
+  assert.equal(estadoLanzamientoBc("Open"), "abierto");
+  assert.equal(estadoLanzamientoBc("Abierto"), "abierto");
+  assert.equal(estadoLanzamientoBc("Released"), "lanzado");
+  assert.equal(estadoLanzamientoBc("Lanzado"), "lanzado");
+  assert.equal(estadoLanzamientoBc("Pending Approval"), "pendiente-aprobacion");
+  assert.equal(estadoLanzamientoBc("Pendiente de aprobación"), "pendiente-aprobacion");
+});
+
+test("sin estado no se inventa uno: es 'desconocido', y desconocido NO frena", () => {
+  assert.equal(estadoLanzamientoBc(undefined), "desconocido");
+  assert.equal(estadoLanzamientoBc(""), "desconocido");
+  assert.equal(estadoLanzamientoBc("   "), "desconocido");
+  assert.equal(estadoLanzamientoBc("Pending Prepayment"), "desconocido");
 });

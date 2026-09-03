@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { bcFacturarRecibido, verificarLineasPosteables, frenoRegistroActivo } from "@/lib/bc";
+import { frenarPorEncabezado } from "@/lib/freno-encabezado";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -8,7 +9,12 @@ export const dynamic = "force-dynamic";
 // body: { orderNo, vendorInvoiceNo, lineas: [{itemNo, qty}] }
 export async function POST(req: Request) {
   try {
-    const { orderNo, vendorInvoiceNo, lineas } = await req.json();
+    const { orderNo, vendorInvoiceNo, lineas, ordenId, vendorNo } = await req.json();
+    // FRENO 1 — el ENCABEZADO del pedido en BC: mismo proveedor y LANZADO allá
+    // (ver lib/freno-encabezado.ts). Acá es lo último que queda antes de que la
+    // cuenta por pagar se mueva: si algo del encabezado no calza, no se factura.
+    const frenoProv = await frenarPorEncabezado(orderNo, ordenId, vendorNo, "facturar");
+    if (frenoProv) return NextResponse.json(frenoProv, { status: 409 });
     // Acá el saldo que importa es lo RECIBIDO SIN FACTURAR: el codeunit filtra por
     // "Qty. Rcd. Not Invoiced" y, si no calza, se salta la línea sin decir nada.
     // BC_FRENO_REGISTRO=0 lo apaga desde Azure: si el chequeo diera un falso

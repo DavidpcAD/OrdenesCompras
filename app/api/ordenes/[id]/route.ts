@@ -231,7 +231,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
       // reintentar corrigiendo.
       const numeroBc = bcNo || o.bcNumber || "";
       if (numeroBc && !escrituraFallo) {
-        const chequeo = await chequearOrdenContraBc(numeroBc, lineasReplaceParaCotejo(lineasBc));
+        const chequeo = await chequearOrdenContraBc(numeroBc, lineasReplaceParaCotejo(lineasBc), o.proveedorNo || o.proveedorId);
         const detalle = (chequeo.cotejo?.diferencias ?? []).map((d) => `• ${d.texto}`).join("\n");
         // La diferencia de UNIDAD se avisa pero NO frena. Pasa cuando el ítem en BC no
         // tiene registrada la unidad con la que se guardó la línea (una solicitud en UND
@@ -346,7 +346,7 @@ export async function PUT(req: Request, { params }: { params: { id: string } }) 
         // Se relee BC y se coteja. Acá NO se puede frenar nada (el SQL ya se
         // guardó), pero el resultado deja de ser un toast: queda escrito en la
         // orden y en la bitácora, y la pantalla lo muestra hasta que se arregle.
-        const chequeo = await chequearOrdenContraBc(o.bcNumber, lineasReplaceParaCotejo(lineasBc));
+        const chequeo = await chequearOrdenContraBc(o.bcNumber, lineasReplaceParaCotejo(lineasBc), o.proveedorNo || o.proveedorId);
         if (chequeo.estado !== "sin-lectura") {
           await guardarChequeoBc(id, chequeo.estado, chequeo.mensaje, a.usuario, a.rol).catch(() => { /* no tumba el guardado */ });
         }

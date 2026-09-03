@@ -880,7 +880,27 @@ export async function bcOrdenTotales(orderNo: string): Promise<BcOrdenTotales | 
 //   null en `lineas` → no se pudo leer (BC caído, API no publicada, pedido que ya
 //                no existe). NUNCA se devuelve [] en ese caso: una lista vacía
 //                significaría "BC no tiene nada" y eso sí sería una acusación.
-export type BcLineasPedido = { lineas: LineaBc[]; fuente: "custom" | "estandar"; };
+// `status` y `vendorNo` solo vienen por el codeunit (AdelantePO_GetOrderLines): son
+// el ESTADO REAL del pedido y su Buy-from Vendor No., que ninguna otra lectura da.
+// Van acá porque llegan GRATIS en la misma respuesta con la que se cotejan las
+// líneas — hasta el 3 sep 2026 se descartaban al parsear, y por eso la app nunca
+// supo que un pedido seguía Abierto en BC (CP-005143) ni que había cambiado de
+// proveedor (CP-005183). Quedan opcionales: los otros dos caminos no los traen.
+export type BcLineasPedido = { lineas: LineaBc[]; fuente: "custom" | "estandar"; status?: string; vendorNo?: string; };
+
+// El Status del pedido, normalizado. `Format(PurchHeader.Status)` viaja en el
+// IDIOMA DE LA SESIÓN del web service (igual que el tipo de línea, ver abajo), así
+// que llega "Open" o "Abierto" según quién pregunte: comparar contra un solo texto
+// sería un freno que funciona hoy y se rompe el día que cambie el idioma.
+export type EstadoBcPedido = "abierto" | "lanzado" | "pendiente-aprobacion" | "desconocido";
+export function estadoLanzamientoBc(status?: string): EstadoBcPedido {
+  const s = (status ?? "").trim().toLowerCase();
+  if (!s) return "desconocido";
+  if (s.startsWith("open") || s.startsWith("abierto")) return "abierto";
+  if (s.startsWith("released") || s.startsWith("lanzado")) return "lanzado";
+  if (s.includes("approval") || s.includes("aprobaci")) return "pendiente-aprobacion";
+  return "desconocido";
+}
 
 // El tipo de línea llega de tres fuentes distintas y ninguna promete el mismo texto:
 // la API estándar manda "Item"/"Charge", la custom manda el enum formateado y el
@@ -968,6 +988,10 @@ export async function bcLineasPedido(orderNo: string): Promise<BcLineasPedido | 
       }
       return {
         fuente: "custom",
+        // Los dos datos del ENCABEZADO que solo este canal entrega. Antes se perdían
+        // acá mismo: el JSON los traía y el parseo se quedaba con `lines`.
+        status: String(payload?.status ?? "").trim() || undefined,
+        vendorNo: String(payload?.vendorNo ?? "").trim() || undefined,
         lineas: (payload?.lines ?? []).map((r: any) => {
           const cantidad = Number(r.quantity ?? 0) || 0;
           const recibida = Number(r.quantityReceived ?? 0) || 0;
@@ -1935,6 +1959,11 @@ export type ChequeoBc = {
   estado: EstadoChequeoBc;
   fuente?: "custom" | "estandar";
   cotejo?: Cotejo;
+  // El cotejo del ENCABEZADO: ¿el pedido de allá sigue siendo del mismo proveedor?
+  // `verificado:false` = no se pudo mirar (no es que esté bien).
+  proveedor?: FrenoProveedor;
+  // El estado REAL del pedido en BC ("desconocido" si la lectura no lo trajo).
+  estadoBc?: EstadoBcPedido;
   mensaje: string;
   // Fecha en que se hizo (la pone quien lo guarda; acá no se inventan relojes).
 };
@@ -1975,7 +2004,7 @@ export function lineasReplaceParaCotejo(lineas: LineaReplaceBc[]): LineaApp[] {
   }));
 }
 
-export async function chequearOrdenContraBc(orderNo: string, lineas: LineaApp[]): Promise<ChequeoBc> {
+export async function chequearOrdenContraBc(orderNo: string, lineas: LineaApp[], proveedorNo = "", estadoOrden = ""): Promise<ChequeoBc> {
   const no = (orderNo ?? "").trim();
   if (!no) return { estado: "sin-lectura", mensaje: "La orden no tiene N.º de Business Central." };
   const bc = await bcLineasPedido(no);
@@ -1995,17 +2024,54 @@ export async function chequearOrdenContraBc(orderNo: string, lineas: LineaApp[])
     ignorarVariante: bc.fuente === "estandar",
     soloArticulos: true,
   });
+  // El ENCABEZADO también se coteja. Una orden puede tener las líneas perfectas y
+  // estar apuntando a un pedido que allá es de otro proveedor — y eso es más grave
+  // que cualquier diferencia de cantidades, porque la plata termina en otra cuenta
+  // por pagar. Por eso manda sobre el resultado de las líneas y abre el mensaje.
+  // El proveedor sale del MISMO llamado que trajo las líneas cuando ese canal lo
+  // entrega; solo si no vino se le pregunta aparte a la API estándar.
+  // El encabezado (proveedor + estado) puede venir con las líneas o no, según por
+  // cuál de los tres caminos las haya leído `bcLineasPedido`: la página API
+  // `purchaseLines` devuelve líneas y nada más. Cuando no vino, se pregunta aparte
+  // — no se da por bueno lo que no se miró.
+  const enc = bc.status || bc.vendorNo ? bc : (await bcEncabezadoPedido(no)) ?? {};
+  const prov = enc.vendorNo
+    ? cotejoProveedor(no, { vendorNo: enc.vendorNo, vendorName: "" }, proveedorNo)
+    : await verificarProveedorDelPedido(no, proveedorNo);
+  const sinVariante = bc.fuente === "estandar" ? " (Verificado sin variante: la API de líneas de Adelante no contestó.)" : "";
+  // Y el ESTADO: la orden puede figurar aprobada acá y el pedido seguir Abierto en
+  // BC, porque quien lanza es la app de Aprobación. Con las líneas y el proveedor
+  // bien, esto es lo único que separa a Bodega de un error crudo de BC.
+  const estadoBc = estadoLanzamientoBc(enc.status);
+  const appDiceLanzada = estadoOrden === "lanzado" || estadoOrden === "completado";
+  if (appDiceLanzada && (estadoBc === "abierto" || estadoBc === "pendiente-aprobacion")) {
+    const comoEsta = estadoBc === "abierto" ? "Abierto" : "Pendiente de aprobación";
+    return {
+      estado: "desalineado", fuente: bc.fuente, cotejo, proveedor: prov, estadoBc,
+      mensaje: `SIN LANZAR EN BC — la orden figura ${estadoOrden} acá, pero el pedido ${no} está ${comoEsta} en Business Central. `
+        + `Bodega no va a poder recibir hasta que Aprobación lo lance allá.`
+        + (cotejo.ok ? "" : ` Además: ${cotejo.resumen}`) + sinVariante,
+    };
+  }
+  if (!prov.ok) {
+    return {
+      estado: "desalineado", fuente: bc.fuente, cotejo, proveedor: prov, estadoBc,
+      mensaje: `PROVEEDOR DISTINTO — ${prov.mensaje}.`
+        + (cotejo.ok ? ` (Las ${cotejo.lineasApp} línea(s) sí coinciden.)` : ` Además: ${cotejo.resumen}`)
+        + sinVariante,
+    };
+  }
   if (cotejo.ok) {
     return {
-      estado: "ok", fuente: bc.fuente, cotejo,
-      mensaje: `${no}: las ${cotejo.lineasApp} línea(s) de la orden están en Business Central.`
-        + (bc.fuente === "estandar" ? " (Verificado sin variante: la API de líneas de Adelante no contestó.)" : ""),
+      estado: "ok", fuente: bc.fuente, cotejo, proveedor: prov, estadoBc,
+      mensaje: `${no}: las ${cotejo.lineasApp} línea(s) de la orden están en Business Central`
+        + (prov.verificado ? ` y el pedido es del proveedor ${prov.bc?.vendorNo}, como acá.` : ".")
+        + sinVariante,
     };
   }
   return {
-    estado: "desalineado", fuente: bc.fuente, cotejo,
-    mensaje: `${no}: ${cotejo.resumen}`
-      + (bc.fuente === "estandar" ? " (Verificado sin variante: la API de líneas de Adelante no contestó.)" : ""),
+    estado: "desalineado", fuente: bc.fuente, cotejo, proveedor: prov, estadoBc,
+    mensaje: `${no}: ${cotejo.resumen}` + sinVariante,
   };
 }
 
@@ -2123,6 +2189,171 @@ export function paredAprobacionActiva(): boolean {
 export function frenoRegistroActivo(): boolean {
   const v = (process.env.BC_FRENO_REGISTRO ?? "").trim().toLowerCase();
   return !(v === "0" || v === "false" || v === "no");
+}
+export function frenoProveedorActivo(): boolean {
+  const v = (process.env.BC_FRENO_PROVEEDOR ?? "").trim().toLowerCase();
+  return !(v === "0" || v === "false" || v === "no");
+}
+
+// ── EL PROVEEDOR DEL PEDIDO EN BC ────────────────────────────────────────────
+// La app le manda el proveedor a BC UNA sola vez: al crear el pedido. De ahí en
+// adelante todo lo que hace —reescribir líneas al editar, lanzar, recibir,
+// facturar— identifica el pedido SOLO por su número. El "Comprar a" del
+// encabezado no se vuelve a leer nunca, y el nombre que muestran las pantallas
+// sale de NUESTRA base (OrdenCompra.proveedorNombre), congelado el día que se
+// creó la orden. O sea: si allá le cambian el proveedor al pedido, acá no se nota.
+//
+// Eso fue CP-005183 (25 ago 2026): la orden decía FERRETERIA EPA S.A
+// (PROV-000522) —y en BC ese código SÍ es EPA—, pero para el 28 el pedido en BC
+// había pasado a PROV-000163 (Corazón de Papel). Bodega recibió contra el número,
+// BC registró contra el proveedor que el pedido tenía ese día, y la factura 15403
+// de EPA (₡425.034,36) quedó en la cuenta por pagar de otro proveedor. En BC no
+// quedó rastro de quién lo cambió: el registro de cambios está apagado.
+//
+// Se lee por la API estándar v2.0, la MISMA con la que la app crea el pedido, así
+// que si crear funciona, leer también.
+export type ProveedorBc = { vendorNo: string; vendorName: string };
+export async function bcProveedorDePedido(orderNo: string): Promise<ProveedorBc | null> {
+  const no = (orderNo ?? "").trim();
+  if (!no) return null;
+  try {
+    const cid = await getStdCompanyId();
+    const filtro = `$filter=${encodeURIComponent(`number eq '${odataStr(no)}'`)}&$top=1`;
+    const pedir = async (select: string) =>
+      bcFetch(`${stdRoot()}/companies(${cid})/purchaseOrders?${filtro}${select}`, { cache: "no-store" });
+    // Con $select la respuesta es mínima; pero si algún día BC renombra un campo, un
+    // $select inválido devuelve 400 y este freno se quedaría CIEGO sin que nadie se
+    // entere — que es justo el modo de falla que vino a tapar. Por eso reintenta sin
+    // $select antes de rendirse, y si igual falla lo dice en el log.
+    let res = await pedir("&$select=number,vendorNumber,vendorName");
+    if (!res.ok) res = await pedir("");
+    if (!res.ok) {
+      console.warn(`No se pudo leer el proveedor del pedido ${no} en BC (${res.status}): el freno de proveedor queda sin verificar.`);
+      return null;
+    }
+    const d: any = await res.json().catch(() => ({}));
+    const row = (d?.value ?? [])[0];
+    // Sin fila: el pedido no existe allá (o ya se registró del todo y BC lo borró).
+    // No hay proveedor que cotejar, y eso NO es un desajuste.
+    if (!row) return null;
+    return { vendorNo: String(row.vendorNumber ?? "").trim(), vendorName: String(row.vendorName ?? "").trim() };
+  } catch {
+    return null;
+  }
+}
+
+export type FrenoProveedor = { ok: boolean; verificado: boolean; mensaje?: string; bc?: ProveedorBc };
+
+// ── EL ENCABEZADO COMPLETO: PROVEEDOR + ESTADO ───────────────────────────────
+// Las dos preguntas que hay que hacerle a BC antes de registrar, en UNA sola
+// lectura (AdelantePO_GetOrderLines devuelve las dos cosas junto con las líneas):
+//
+//   1. ¿Sigue siendo del mismo proveedor?   → CP-005183
+//   2. ¿Está LANZADO?                       → CP-005143
+//
+// El caso 2: quien aprueba y lanza el pedido en BC es la app de Aprobación
+// (produccion.adelante.cr). Esta app solo se entera de que "quedó aprobada", y
+// hasta ahora se lo creía: marcaba `lanzado` en su base sin preguntarle a BC. Si
+// el lanzamiento de allá no pasó, el pedido se queda Abierto y Bodega lo descubre
+// contra la pared, con el error crudo de BC ("must be approved and released").
+// De 113 órdenes lanzadas, dos quedaron así: CP-005143 y CP-005180.
+//
+// Como siempre: si no se pudo leer, NO se frena (`verificado:false`).
+export type ProblemaEncabezado = "proveedor" | "no-lanzado";
+export type FrenoEncabezado = {
+  ok: boolean; verificado: boolean; problema?: ProblemaEncabezado; mensaje?: string;
+  bcVendorNo?: string; bcVendorName?: string; bcEstado?: EstadoBcPedido;
+};
+
+// El ENCABEZADO por el canal que dice la verdad. Va DIRECTO al codeunit y no por
+// `bcLineasPedido`, a propósito: esa función prueba primero la página API
+// `purchaseLines`, que devuelve las líneas pero NO el encabezado. Si el freno se
+// colgara de ella, en el entorno donde esa página contesta el estado llegaría
+// siempre vacío y el freno no frenaría nunca — sin que nadie se entere, que es
+// justo el modo de falla que vinimos a tapar.
+export async function bcEncabezadoPedido(orderNo: string): Promise<{ status?: string; vendorNo?: string } | null> {
+  const no = (orderNo ?? "").trim();
+  if (!no) return null;
+  try {
+    const cid = await getStdCompanyId();
+    const res = await bcFetch(`${odataRoot()}/AdelantePO_GetOrderLines?company=${encodeURIComponent(cid)}`, {
+      method: "POST", cache: "no-store",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ orderNo: no }),
+    });
+    if (!res.ok) return null;
+    const d: any = await res.json().catch(() => ({}));
+    const payload = JSON.parse(String(d?.value ?? "{}"));
+    return {
+      status: String(payload?.status ?? "").trim() || undefined,
+      vendorNo: String(payload?.vendorNo ?? "").trim() || undefined,
+    };
+  } catch {
+    return null;
+  }
+}
+
+export async function verificarEncabezadoDelPedido(orderNo: string, proveedorNoOrden: string): Promise<FrenoEncabezado> {
+  const no = (orderNo ?? "").trim();
+  if (!no) return { ok: true, verificado: false };
+  const bc = await bcEncabezadoPedido(no);
+  const bcEstado = estadoLanzamientoBc(bc?.status);
+
+  // 1) PROVEEDOR. Se prefiere el `vendorNo` que vino con las líneas (mismo canal por
+  //    el que la app escribe); si esa lectura no lo trajo, se pregunta por la API
+  //    estándar antes de dar el tema por verificado.
+  const prov = bc?.vendorNo
+    ? cotejoProveedor(no, { vendorNo: bc.vendorNo, vendorName: "" }, proveedorNoOrden)
+    : await verificarProveedorDelPedido(no, proveedorNoOrden).catch(() => ({ ok: true, verificado: false }) as FrenoProveedor);
+  if (!prov.ok) {
+    return {
+      ok: false, verificado: true, problema: "proveedor", mensaje: prov.mensaje,
+      bcVendorNo: prov.bc?.vendorNo, bcVendorName: prov.bc?.vendorName, bcEstado,
+    };
+  }
+
+  // 2) ESTADO. Solo frena lo que BC afirmó: "desconocido" es no haber podido leer.
+  if (bcEstado === "abierto" || bcEstado === "pendiente-aprobacion") {
+    const comoEsta = bcEstado === "abierto" ? "ABIERTO" : "PENDIENTE DE APROBACIÓN";
+    return {
+      ok: false, verificado: true, problema: "no-lanzado", bcEstado,
+      mensaje: `el pedido ${no} está ${comoEsta} en Business Central, no lanzado. `
+        + `Business Central no deja recibir ni facturar contra un pedido sin lanzar. `
+        + `La orden figura aprobada acá, pero en BC el lanzamiento todavía no entró: `
+        + `tiene que lanzarlo Aprobación desde su app`,
+    };
+  }
+  return { ok: true, verificado: bcEstado === "lanzado" || prov.verificado, bcEstado, bcVendorNo: prov.bc?.vendorNo };
+}
+
+// ¿El pedido de BC sigue siendo del proveedor de esta orden? Se usa como freno
+// antes de recibir/facturar y como parte del cotejo de "Verificar contra BC".
+//
+// Igual que el freno de líneas: si NO se pudo leer, no se frena (`verificado:false`).
+// Trabar a Bodega por una consulta que falló sería peor que el problema; y si BC no
+// contesta, el registro tampoco va a entrar y el error sale por su propio camino.
+// Se frena SOLO cuando BC contestó y dijo otro proveedor.
+export async function verificarProveedorDelPedido(orderNo: string, proveedorNoOrden: string): Promise<FrenoProveedor> {
+  const esperado = (proveedorNoOrden ?? "").trim();
+  if (!esperado || !(orderNo ?? "").trim()) return { ok: true, verificado: false };
+  return cotejoProveedor(orderNo, await bcProveedorDePedido(orderNo), esperado);
+}
+
+// La decisión, sin red: separada para poder probarla. `bc` en null es "no se pudo
+// leer o el pedido ya no está allá" — las dos cosas se tratan igual, como
+// "no verificado", porque ninguna de las dos afirma que haya un desajuste.
+export function cotejoProveedor(orderNo: string, bc: ProveedorBc | null, proveedorNoOrden: string): FrenoProveedor {
+  const esperado = (proveedorNoOrden ?? "").trim();
+  if (!esperado) return { ok: true, verificado: false };
+  if (!bc || !bc.vendorNo.trim()) return { ok: true, verificado: false };
+  if (bc.vendorNo.trim().toUpperCase() === esperado.toUpperCase()) return { ok: true, verificado: true, bc };
+  return {
+    ok: false, verificado: true, bc,
+    mensaje: `el pedido ${orderNo} en Business Central es del proveedor ${bc.vendorNo}`
+      + `${bc.vendorName ? ` (${bc.vendorName})` : ""}, pero esta orden es de ${esperado}. `
+      + `O le cambiaron el proveedor al pedido en BC, o la orden quedó apuntando al pedido equivocado. `
+      + `Registrarlo así le carga esta compra a la cuenta de otro proveedor`,
+  };
 }
 
 export type ModoRegistro = "recibir" | "facturar-recibido";

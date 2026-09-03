@@ -57,7 +57,7 @@ export async function chequearOrdenAFondo(
   }
 
   // 1) Contra el PEDIDO (mientras exista allá).
-  const chequeo = await chequearOrdenContraBc(orden.bcNumber, lineasOrdenParaCotejo(orden.lineas));
+  const chequeo = await chequearOrdenContraBc(orden.bcNumber, lineasOrdenParaCotejo(orden.lineas), orden.proveedorNo || orden.proveedorId, orden.estado);
   if (chequeo.estado === "ok" || chequeo.estado === "desalineado") {
     await guardar(chequeo.estado, chequeo.mensaje);
     return {

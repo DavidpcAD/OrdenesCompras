@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { bcRecibir, diagnosticarFalloBc, verificarLineasPosteables, frenoRegistroActivo } from "@/lib/bc";
+import { frenarPorEncabezado } from "@/lib/freno-encabezado";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -12,8 +13,14 @@ export const dynamic = "force-dynamic";
 // sola ya evita mandar a Bodega a reintentar contra una pared.
 export async function POST(req: Request) {
   const cuerpo = await req.json().catch(() => ({} as any));
-  const { orderNo, lineas, postingDate } = cuerpo ?? {};
+  const { orderNo, lineas, postingDate, ordenId, vendorNo } = cuerpo ?? {};
   try {
+    // FRENO 1 — el ENCABEZADO del pedido en BC: mismo proveedor y LANZADO allá
+    // (ver lib/freno-encabezado.ts). Recibir contra el pedido de otro le mete el
+    // material al inventario a nombre equivocado; y contra uno sin lanzar, BC
+    // rechaza con un error crudo que Bodega no puede interpretar.
+    const frenoProv = await frenarPorEncabezado(orderNo, ordenId, vendorNo, "recibir");
+    if (frenoProv) return NextResponse.json(frenoProv, { status: 409 });
     // Mismo freno que en /api/bc/registrar: el codeunit ignora sin avisar la línea
     // que no encuentra en el pedido, y la app la marcaría recibida igual.
     // BC_FRENO_REGISTRO=0 lo apaga desde Azure: si el chequeo diera un falso

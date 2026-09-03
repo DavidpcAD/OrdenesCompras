@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { bcRegistrarFactura, diagnosticarFalloBc, verificarLineasPosteables, frenoRegistroActivo } from "@/lib/bc";
+import { frenarPorEncabezado } from "@/lib/freno-encabezado";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -16,8 +17,14 @@ export const dynamic = "force-dynamic";
 // y mostrarle a Bodega cuál es.
 export async function POST(req: Request) {
   const cuerpo = await req.json().catch(() => ({} as any));
-  const { orderNo, vendorInvoiceNo, vendorNo, lineas, postingDate, cargo } = cuerpo ?? {};
+  const { orderNo, vendorInvoiceNo, vendorNo, ordenId, lineas, postingDate, cargo } = cuerpo ?? {};
   try {
+    // FRENO 1 — el ENCABEZADO del pedido en BC: que siga siendo del mismo proveedor
+    // y que esté LANZADO allá. Va ANTES que el de líneas porque es lo más caro de
+    // deshacer: una línea mal registrada se corrige, una factura cargada al proveedor
+    // equivocado hay que anularla con nota de crédito. Ver lib/freno-encabezado.ts.
+    const frenoProv = await frenarPorEncabezado(orderNo, ordenId, vendorNo, "registrar");
+    if (frenoProv) return NextResponse.json(frenoProv, { status: 409 });
     // FRENO: antes de mover un peso, se comprueba que cada línea exista en el pedido
     // de BC con saldo suficiente. Los procedures del codeunit se saltan en silencio
     // la línea que no calzan (FindFirst sin else) y devuelven el N.º de la factura
