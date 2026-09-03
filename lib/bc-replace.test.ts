@@ -6,7 +6,7 @@
 //   npm test
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { payloadReplaceLines, sinObrasInexistentes, avisoDeSaneo, lineasOrdenParaBc, obrasSinTarea, lineasSinUnidad, lineasSinAlmacen, centroCostoDeOrden, centroCostoDeLinea, decidirVariantes, crearEnBcAlEnviar, bcPideAbierto, type LineaReplaceBc } from "./bc.ts";
+import { payloadReplaceLines, sinObrasInexistentes, avisoDeSaneo, lineasOrdenParaBc, obrasSinTarea, lineasSinUnidad, lineasSinAlmacen, centroCostoDeOrden, centroCostoDeLinea, decidirVariantes, crearEnBcAlEnviar, bcPideAbierto, ccForzadoDelAlmacen, type LineaReplaceBc } from "./bc.ts";
 import type { OrdenLinea } from "./types.ts";
 
 const item = (p: Partial<LineaReplaceBc> = {}): LineaReplaceBc => ({
@@ -434,4 +434,51 @@ test("el encabezado toma un CC y avisa cuando la orden mezcla obras", () => {
   assert.equal(varias.cc, "VN-K.26");                   // el primero: dispara el workflow
   assert.deepEqual(varias.mezcla, ["VN-K.26", "VB-5.01"]);
   assert.equal(centroCostoDeOrden([item({})]).cc, "");
+});
+
+// ── ALMACENES CON EL CC AMARRADO (CP-005293) ─────────────────────────────────
+// La ubicación F-MUEBLES tiene en BC una dimensión predeterminada CC = F-MUEBLES
+// con "Igual código": la línea que entre ahí NO puede llevar el CC de la obra, y BC
+// se da cuenta recién al registrar. Cuál almacén amarra qué es configuración de BC
+// —la API estándar no la expone— así que se declara con BC_CC_POR_ALMACEN.
+// Vacía (el default) = no se fuerza nada.
+test("BC_CC_POR_ALMACEN: sin la env, ningún almacén fuerza nada", () => {
+  delete process.env.BC_CC_POR_ALMACEN;
+  assert.equal(ccForzadoDelAlmacen("F-MUEBLES"), "");
+  assert.equal(ccForzadoDelAlmacen(""), "");
+  assert.equal(ccForzadoDelAlmacen(undefined), "");
+});
+
+test("BC_CC_POR_ALMACEN: mapea almacén → valor forzado, y el atajo repite el código", () => {
+  process.env.BC_CC_POR_ALMACEN = "F-MUEBLES=F-MUEBLES,VN-M.28";
+  try {
+    assert.equal(ccForzadoDelAlmacen("F-MUEBLES"), "F-MUEBLES");
+    assert.equal(ccForzadoDelAlmacen(" f-muebles "), "F-MUEBLES");   // no importa cómo venga escrito
+    assert.equal(ccForzadoDelAlmacen("VN-M.28"), "VN-M.28");         // atajo: sin "=", el valor es el mismo código
+    assert.equal(ccForzadoDelAlmacen("ALM-GRAL"), "");               // el resto sigue igual
+  } finally { delete process.env.BC_CC_POR_ALMACEN; }
+});
+
+test("en un almacén con CC amarrado, gana el CC del almacén y no el de la obra", () => {
+  process.env.BC_CC_POR_ALMACEN = "F-MUEBLES=F-MUEBLES";
+  try {
+    const { lines } = payloadReplaceLines([
+      item({ locationCode: "F-MUEBLES", centroCosto: "VN-L.34" }),
+      item({ locationCode: "ALM-GRAL", centroCosto: "VN-L.34" }),
+    ]);
+    // La línea que va a F-MUEBLES viaja con el valor que BC exige: mandarle el de la
+    // obra hace que el pedido se cree y se lance bien y reviente AL REGISTRAR.
+    assert.equal(lines[0].ccValue, "F-MUEBLES");
+    // El almacén que no amarra nada sigue llevando el CC de la obra, como siempre.
+    assert.equal(lines[1].ccValue, "VN-L.34");
+  } finally { delete process.env.BC_CC_POR_ALMACEN; }
+});
+
+test("el almacén amarrado pone el CC incluso si la línea no traía ninguno", () => {
+  process.env.BC_CC_POR_ALMACEN = "F-MUEBLES";
+  try {
+    const { lines } = payloadReplaceLines([item({ locationCode: "F-MUEBLES" })]);
+    assert.equal(lines[0].ccValue, "F-MUEBLES");
+    assert.equal(lines[0].ccCode, "CC");
+  } finally { delete process.env.BC_CC_POR_ALMACEN; }
 });

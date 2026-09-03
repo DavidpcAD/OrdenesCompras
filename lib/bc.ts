@@ -1497,6 +1497,34 @@ export type LineaReplaceBc = {
   chargeNo?: string; chargeMethod?: string; descripcion?: string;
 };
 
+// Almacenes que tienen el CC AMARRADO en BC (dimensión predeterminada con registro
+// de valores "Igual código"). Para sus líneas el CC no es negociable: mandarle el de
+// la obra hace que el pedido se cree bien, se lance bien y REVIENTE al registrar,
+// con Bodega mirando el camión (CP-005293 y el almacén F-MUEBLES, 3 sep 2026).
+//
+// Cuál almacén amarra qué es CONFIGURACIÓN DE BC, y la app no tiene por dónde
+// leerla: la API estándar no expone las dimensiones predeterminadas de una
+// ubicación. Así que se declara por env, y se puede cambiar desde Azure sin esperar
+// un despliegue:
+//
+//   BC_CC_POR_ALMACEN="F-MUEBLES=F-MUEBLES,VN-M.28=VN-M.28"
+//   BC_CC_POR_ALMACEN="F-MUEBLES"        ← atajo: el valor forzado es el mismo código
+//
+// VACÍO (el default) = no se fuerza nada y todo sigue como siempre. Es un parche
+// para poder registrar cuando BC no se puede tocar, no la solución: la línea pierde
+// EN BC el centro de costo de la obra (acá se conserva). Si en BC se le cambia el
+// "Igual código" por "Código obligatorio", esta env se deja vacía y ya.
+export function ccForzadoDelAlmacen(locationCode?: string): string {
+  const loc = (locationCode ?? "").trim().toUpperCase();
+  if (!loc) return "";
+  for (const par of (process.env.BC_CC_POR_ALMACEN ?? "").split(/[,;]/)) {
+    const [alm, cc] = par.split("=");
+    const almacen = (alm ?? "").trim().toUpperCase();
+    if (almacen && almacen === loc) return ((cc ?? "").trim() || almacen);
+  }
+  return "";
+}
+
 // Traduce las líneas de la app al JSON que espera AdelantePO_ReplaceOrderLines.
 // Está separado y exportado porque acá se decide QUÉ CANTIDAD y QUÉ PRECIO quedan
 // en BC — o sea, contra qué van a recibir Bodega y facturar Contabilidad. Cubierto
@@ -1508,7 +1536,9 @@ export type LineaReplaceBc = {
 // pone sola por el ítem o el almacén (mismo error que se pagó con la unidad y la
 // variante en CP-003884).
 function dimensionDeLinea(l: LineaReplaceBc): Record<string, string> {
-  const valor = (l.centroCosto ?? "").trim();
+  // Si el almacén de la línea tiene el CC amarrado en BC, gana el suyo: el de la
+  // obra no lo dejaría registrar (ver ccForzadoDelAlmacen).
+  const valor = ccForzadoDelAlmacen(l.locationCode) || (l.centroCosto ?? "").trim();
   return valor ? { ccCode: codigoDimensionCC(), ccValue: valor } : {};
 }
 
