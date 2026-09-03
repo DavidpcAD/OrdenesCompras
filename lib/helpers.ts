@@ -278,6 +278,42 @@ export function repartoDeLineaSolicitud(
   return { total, pendiente: comparable ? pedidoLineaPendiente(linea) : null, unidad: linea.unidad };
 }
 
+// De qué ORDEN salió una línea devuelta, leído del detalle del movimiento que escribe
+// `devolverLineasDeOrden` ("… · Devuelta desde la orden CP-005337 · Motivo: …").
+//
+// Se lee del texto porque ES lo que hay: la fila que llevaba el vínculo
+// (OrdenCompraDet) se borra en la misma transacción en que la línea vuelve al
+// ingeniero. La ventaja de leerlo y no de agregar una columna es que funciona para las
+// devoluciones que YA pasaron; el precio es que si algún día cambia ese texto, hay que
+// cambiar este regex con él (por eso está acá, con su test, y no suelto en una query).
+export function ordenDeDetalleDevolucion(detalle: string): string | undefined {
+  const m = /desde la orden\s+([A-Za-z0-9._/-]+)/i.exec(detalle ?? "");
+  return m ? m[1].trim() || undefined : undefined;
+}
+
+// Una orden que se quedó SIN MATERIAL porque todo volvió al ingeniero, pero que sigue
+// viva porque ya existe en Business Central: está esperando la corrección.
+//
+// Es derivado y no una columna a propósito: la ÚNICA forma de que una orden quede sin
+// líneas de artículo es esa devolución (guardar una orden sin líneas está prohibido en
+// el server y en la pantalla). Mientras está así no se puede enviar a aprobación —no
+// hay nada que aprobar— y en BC su pedido conserva las líneas viejas hasta que se
+// vuelva a enviar.
+export function ordenEsperaCorreccion(o: Pick<Orden, "bcNumber" | "lineas">): boolean {
+  return !!(o.bcNumber ?? "").trim() && !o.lineas.some((l) => l.tipo === "articulo");
+}
+
+// La orden a la que hay que devolverle el material que el ingeniero acaba de corregir.
+// `null` si la solicitud no salió de ninguna orden, o si esa orden ya no está en la
+// app (devoluciones viejas, cuando la devolución total la descartaba): ahí la pantalla
+// muestra el número como texto y no un enlace roto.
+export function ordenDeDevolucion(ordenes: Orden[], p: Pick<Pedido, "devolucion">): Orden | null {
+  const n = (p.devolucion?.orden ?? "").trim().toUpperCase();
+  if (!n) return null;
+  const igual = (v?: string) => (v ?? "").trim().toUpperCase() === n;
+  return ordenes.find((o) => igual(o.bcNumber) || igual(o.numero)) ?? null;
+}
+
 // ¿Se puede devolver esta línea al ingeniero? Solo lo que Proveeduría todavía no
 // comprometió: con orden de compra hecha, el material ya está pedido al proveedor
 // y devolver la línea dejaría a Ingeniería creyendo que no se compró.

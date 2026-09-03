@@ -1,7 +1,7 @@
 import { getAuthPool, getPool, sql } from "./db";
 import { bcDeepLinkPedido, bcDeepLinkFacturaRegistrada, bcUnidadesDeCompra, sanearObrasDeLineas } from "./bc";
 import { unidadCorregida, codigoDeItem } from "./unidad";
-import { etiquetaInterna, esTipoDevolucion, esTipoEdicion } from "./helpers";
+import { etiquetaInterna, esTipoDevolucion, esTipoEdicion, ordenDeDetalleDevolucion } from "./helpers";
 import type { UnidadCompraItem } from "./bc";
 import type { DevolucionSolicitud, Orden, OrdenLinea, Pedido, PedidoLinea, Recepcion, RecepcionFoto, RecepcionLinea, Role, NotaCreditoLinea } from "./types";
 
@@ -140,6 +140,13 @@ async function devolucionesDeSolicitudes(): Promise<Map<string, DevolucionSolici
         motivo: motivo || undefined,
         lineas: lineas || undefined,
         usuario: m.usuario ?? undefined,
+        // De qué ORDEN salió el material. Ya venía escrito en el detalle desde que
+        // existe la devolución por línea ("Devuelta desde la orden CP-005337", lo pone
+        // `devolverLineasDeOrden`), pero nadie lo leía: se perdía el único dato que
+        // dice a qué orden hay que volver cuando el ingeniero corrige. Se lee del
+        // texto y no de una columna nueva a propósito: así funciona RETROACTIVO para
+        // las devoluciones que ya pasaron.
+        orden: ordenDeDetalleDevolucion(detalle),
       });
     }
     if (!out.size) return out;
@@ -1364,7 +1371,7 @@ export async function descartarOrden(
 // poder decirlo. Borrar un pedido en BC no es algo que la app pueda decidir sola.
 export async function devolverLineasDeOrden(
   idOrden: number, lineaIds: number[], motivo: string, usuario: string, rol: Role,
-): Promise<{ ordenNo: string; bcNo: string; devueltas: number; nombres: string[]; ordenDescartada: boolean; pedidos: string[] }> {
+): Promise<{ ordenNo: string; bcNo: string; devueltas: number; nombres: string[]; ordenDescartada: boolean; ordenVacia: boolean; pedidos: string[] }> {
   if (!lineaIds?.length) throw new Error("No se eligió ninguna línea para devolver.");
   if (!String(motivo ?? "").trim()) throw new Error("Escribí el motivo: es lo que el ingeniero va a leer para saber qué corregir.");
   if (!(await ensureLineaEstado())) throw new Error("La base todavía no tiene la columna dbo.PedidoCompraDet.idEstado, que es donde se marca la línea devuelta.");
@@ -1410,10 +1417,23 @@ export async function devolverLineasDeOrden(
   }
   const ids = aDevolver.map((l) => Number(l.idOrdenCompraDet));
   const nombres = aDevolver.map((l) => String(l.descripcion || `Línea ${l.idOrdenCompraDet}`));
-  // ¿Queda material en la orden? Si no, no tiene sentido dejarla viva: una orden sin
-  // artículos no se puede guardar ni enviar, y en BC quedaría un pedido vacío.
+  // ¿Queda material en la orden?
+  //
+  // Sin material y SIN N.º de BC es un borrador que no le sirve a nadie: se descarta.
+  // Pero si la orden YA VIVE EN BC no se descarta, y esto no es un gusto: es la misma
+  // regla que la app ya tiene escrita en el otro camino de baja (`descartarOrden`
+  // PROHÍBE descartar una orden con bcNo, más abajo). Que la devolución sí la borrara
+  // era una incoherencia, y tenía dos costos: el pedido de BC quedaba huérfano allá, y
+  // cuando el ingeniero corregía el material había que armarle una orden NUEVA — o
+  // sea un segundo pedido en BC por el mismo material.
+  //
+  // Se queda Abierta/Rechazada y con cero líneas, que es exactamente "esperando la
+  // corrección del ingeniero" (`ordenEsperaCorreccion` en lib/helpers.ts lo deriva de
+  // ahí: no hace falta una columna, porque la ÚNICA forma de que una orden quede sin
+  // artículos es esta devolución — guardar con cero líneas está prohibido).
   const quedan = det.recordset.filter((l: any) => l.tipoLinea === "articulo" && !ids.includes(Number(l.idOrdenCompraDet)));
-  const ordenDescartada = quedan.length === 0;
+  const ordenVacia = quedan.length === 0 && !!bcNo;
+  const ordenDescartada = quedan.length === 0 && !bcNo;
 
   // Líneas de solicitud agrupadas por solicitud: la devolución se escribe POR PEDIDO
   // (su nota, su estado, su movimiento), y una orden puede mezclar varias.
@@ -1478,6 +1498,15 @@ export async function devolverLineasDeOrden(
         entidad: "orden", idEntidad: idOrden, documentoNo: ordenNo, tipoMovimiento: "eliminado",
         estadoAnterior: estado, detalle: `Orden descartada · ${detalleOrden}`, usuario, rol,
       });
+    } else if (ordenVacia) {
+      // Se queda esperando el material corregido, con su N.º de BC intacto.
+      await new sql.Request(tx).input("id", sql.Int, idOrden).input("u", sql.NVarChar(100), usuario)
+        .query("UPDATE dbo.OrdenCompra SET fechaModificacion=getdate(), modificadoPor=@u WHERE idOrdenCompra=@id");
+      await logMov(tx, {
+        entidad: "orden", idEntidad: idOrden, documentoNo: ordenNo, tipoMovimiento: "editado",
+        detalle: `Orden sin material: espera la corrección del ingeniero (conserva el N.º ${bcNo}) · ${detalleOrden}`,
+        usuario, rol,
+      });
     } else {
       await new sql.Request(tx).input("id", sql.Int, idOrden).input("u", sql.NVarChar(100), usuario)
         .query("UPDATE dbo.OrdenCompra SET fechaModificacion=getdate(), modificadoPor=@u WHERE idOrdenCompra=@id");
@@ -1490,7 +1519,7 @@ export async function devolverLineasDeOrden(
   } catch (e) { await tx.rollback(); throw e; }
 
   return {
-    ordenNo, bcNo, devueltas: aDevolver.length, nombres, ordenDescartada,
+    ordenNo, bcNo, devueltas: aDevolver.length, nombres, ordenDescartada, ordenVacia,
     pedidos: [...porPedido.keys()].map(String),
   };
 }

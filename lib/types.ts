@@ -123,6 +123,12 @@ export interface DevolucionSolicitud {
   motivo?: string;
   lineas?: string;           // qué se devolvió, tal como se llamaba entonces
   usuario?: string;          // quién la devolvió (Proveeduría)
+  // N.º de la ORDEN de la que salió el material (el de BC si lo tenía). Es a la que
+  // hay que volver cuando el ingeniero corrija, en vez de armar una orden nueva —y
+  // con ella un segundo pedido en BC— por el mismo material. Sale del texto del
+  // movimiento, así que puede no estar: las devoluciones hechas desde la SOLICITUD
+  // (material que ninguna orden se había llevado) no tienen orden de origen.
+  orden?: string;
   // Edición del ingeniero POSTERIOR a la devolución. `undefined` = todavía no la tocó.
   corregida?: { fecha: string; usuario?: string; rol?: string };
 }

@@ -97,6 +97,16 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
       // a STOCK. Las de consumo directo ya lo llevan en su propia obra (el Job No.).
       const obrasSolicitud = await obrasDeLineasPedido(
         o.lineas.map((l) => Number(l.pedidoLineaId)).filter((n) => Number.isFinite(n)));
+      // Orden SIN MATERIAL: no hay nada que aprobar. Pasa cuando todo su material
+      // volvió al ingeniero y la orden se quedó esperando la corrección (conserva su
+      // N.º de BC, ver `devolverLineasDeOrden`). Se corta acá porque los guards de
+      // abajo son POR LÍNEA: con cero líneas los pasa todos y el error se lo llevaría
+      // BC, que rechaza el reemplazo con una lista vacía.
+      if (!o.lineas.some((l) => l.tipo === "articulo")) {
+        return NextResponse.json({
+          error: "La orden NO se envió a aprobación: no tiene material. Está esperando la corrección del ingeniero — cuando la devuelva, agregá la línea con «+ De solicitudes» al editar la orden y volvé a enviarla.",
+        }, { status: 409 });
+      }
       let lineasBc = lineasOrdenParaBc(o.lineas, obrasSolicitud);
       // ¿La escritura de líneas a BC llegó a entrar? Si no, el cotejo de abajo sobra:
       // el pedido tiene las viejas y ya se sabe por qué.

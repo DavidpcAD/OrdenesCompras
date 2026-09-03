@@ -7,7 +7,7 @@ import { IconChevronDown, IconWarning } from "@/components/icons";
 import { OrderLinesTable } from "@/components/order-lines";
 import { Timeline } from "@/components/timeline";
 import { useStore } from "@/lib/store";
-import { money, num, formatDate, ordenBadge, proveedorLabel, ordenLineaImporte, ordenRecibidoPct, ordenPedidos, ordenEsDirecta, numeroOrden, tieneBc, destinoDeRecepcion } from "@/lib/helpers";
+import { money, num, formatDate, ordenBadge, proveedorLabel, ordenLineaImporte, ordenRecibidoPct, ordenPedidos, ordenEsDirecta, numeroOrden, tieneBc, destinoDeRecepcion, ordenEsperaCorreccion } from "@/lib/helpers";
 import { ChipPedido } from "@/components/ordenes-lista";
 import { useVolver } from "@/lib/use-volver";
 import type { Orden } from "@/lib/types";
@@ -125,7 +125,12 @@ export function OrdenDetalle({
   // Volver = pantalla anterior (con su filtro), no una ruta fija.
   const { volver, etiqueta: volverTexto } = useVolver(volverHref, volverLabel);
   const peds = ordenPedidos(orden);
-  const esDirecta = ordenEsDirecta(orden);
+  // Una orden que se quedó sin material esperando la corrección del ingeniero tiene
+  // CERO líneas, y `ordenEsDirecta` se fija justamente en si alguna línea trae
+  // solicitud: sin la excepción se leía "Directa · sin solicitud de origen", que es
+  // lo contrario de lo que pasó (salió de una solicitud y el material volvió a ella).
+  const espera = ordenEsperaCorreccion(orden);
+  const esDirecta = ordenEsDirecta(orden) && !espera;
   const recs = recepciones.filter((r) => r.ordenId === orden.id);
   const subtotal = orden.lineas.filter((l) => l.tipo === "articulo").reduce((s, l) => s + ordenLineaImporte(l), 0);
   const iva = orden.lineas.filter((l) => l.tipo === "articulo").reduce((s, l) => s + ordenLineaImporte(l) * ((l.ivaPct || 0) / 100), 0);
@@ -160,11 +165,14 @@ export function OrdenDetalle({
             <h1 className="ds-heading" title={`N.º interno de la app: ${orden.numero}`}>{numeroOrden(orden)}</h1>
             <Badge tone={b.tone}>{b.label}</Badge>
             {esDirecta && <Badge tone="yellow">Directa</Badge>}
+            {espera && <Badge tone="yellow">Esperando corrección</Badge>}
           </div>
           <p className="ds-muted">{orden.proveedorNo ?? prov?.code} · {proveedorLabel(orden, proveedores)} · emitida {formatDate(orden.fecha)} · recibido {ordenRecibidoPct(orden)}%{tieneBc(orden) ? "" : " · todavía no está en Business Central"}</p>
           {orden.almacenRecepcion && <p className="ds-body-sm ds-muted">Recepción en almacén <span className="ds-strong">{orden.almacenRecepcion}</span></p>}
           <div className="row gap-2 wrap mt-2">
-            {esDirecta ? (
+            {espera ? (
+              <span className="ds-muted ds-body-sm">Su material volvió al ingeniero: la orden espera la corrección</span>
+            ) : esDirecta ? (
               <span className="ds-muted ds-body-sm">Compra directa · sin solicitud de origen</span>
             ) : (
               <>

@@ -8,7 +8,7 @@ import { DataTable } from "@/components/data-table";
 import { IconChevronDown } from "@/components/icons";
 import { useStore } from "@/lib/store";
 import { useSoloMias } from "@/lib/use-solo-mias";
-import { money, formatDate, ordenAlmacenes, ordenAvance, ordenBadge, ordenObras, ordenRecibidoPct, ordenSubtotal, ordenPedidos, ordenEsDirecta, ordenLineaImporte, proveedorLabel, num, numeroOrden, tieneBc } from "@/lib/helpers";
+import { money, formatDate, ordenAlmacenes, ordenAvance, ordenBadge, ordenObras, ordenRecibidoPct, ordenSubtotal, ordenPedidos, ordenEsDirecta, ordenLineaImporte, proveedorLabel, num, numeroOrden, tieneBc, ordenEsperaCorreccion } from "@/lib/helpers";
 import type { Orden } from "@/lib/types";
 
 // N.º de solicitud de origen. Con link es un botón que abre esa solicitud (y no
@@ -101,8 +101,10 @@ export function OrdenesLista({
     {
       id: "solic", header: "Solicitudes", accessorFn: (o) => (ordenEsDirecta(o) ? "Directa" : ordenPedidos(o).join(" ")), meta: { label: "Solicitudes" },
       cell: (c) => {
-        const o = c.row.original; const peds = ordenPedidos(o); const dir = ordenEsDirecta(o);
-        return <div className="row gap-2 wrap">{dir && <Badge tone="yellow">Directa</Badge>}{peds.slice(0, 2).map((n) => <ChipPedido key={n} numero={n} href={pedidoHref?.(n) ?? null} />)}{peds.length > 2 && <span className="ds-muted ds-body-sm">+{peds.length - 2}</span>}</div>;
+        // Sin líneas y con N.º de BC, la orden no es "Directa": está esperando el
+        // material que volvió al ingeniero (ver `ordenEsperaCorreccion`).
+        const o = c.row.original; const peds = ordenPedidos(o); const espera = ordenEsperaCorreccion(o); const dir = ordenEsDirecta(o) && !espera;
+        return <div className="row gap-2 wrap">{espera && <Badge tone="yellow">Esperando corrección</Badge>}{dir && <Badge tone="yellow">Directa</Badge>}{peds.slice(0, 2).map((n) => <ChipPedido key={n} numero={n} href={pedidoHref?.(n) ?? null} />)}{peds.length > 2 && <span className="ds-muted ds-body-sm">+{peds.length - 2}</span>}</div>;
       },
     },
     // A dónde entra el material (locationCode) + la obra si es consumo de obra.
@@ -224,12 +226,12 @@ export function OrdenesLista({
                       </thead>
                       <tbody>
                         {g.ords.map((o) => {
-                          const peds = ordenPedidos(o); const dir = ordenEsDirecta(o); const b = ordenBadge(o.estado);
+                          const peds = ordenPedidos(o); const espera = ordenEsperaCorreccion(o); const dir = ordenEsDirecta(o) && !espera; const b = ordenBadge(o.estado);
                           return (
                             <tr key={o.id} className="is-clickable" onClick={() => router.push(hrefDetalle(o.id))} style={{ cursor: "pointer" }}
                               tabIndex={0} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); router.push(hrefDetalle(o.id)); } }}>
                               <td className="ds-strong">{numeroOrden(o)}</td>
-                              <td><div className="row gap-2 wrap">{dir && <Badge tone="yellow">Directa</Badge>}{peds.slice(0, 2).map((n) => <ChipPedido key={n} numero={n} href={pedidoHref?.(n) ?? null} />)}{peds.length > 2 && <span className="ds-muted ds-body-sm">+{peds.length - 2}</span>}</div></td>
+                              <td><div className="row gap-2 wrap">{espera && <Badge tone="yellow">Esperando corrección</Badge>}{dir && <Badge tone="yellow">Directa</Badge>}{peds.slice(0, 2).map((n) => <ChipPedido key={n} numero={n} href={pedidoHref?.(n) ?? null} />)}{peds.length > 2 && <span className="ds-muted ds-body-sm">+{peds.length - 2}</span>}</div></td>
                               <td className="ds-body-sm"><CeldaDestino orden={o} /></td>
                               <td className="ds-body-sm">{formatDate(o.fecha)}</td>
                               <td className="ds-num ds-strong">{money(ordenSubtotal(o), o.currencyCode)}</td>

@@ -375,7 +375,11 @@ export default function ArmarOrdenPage() {
   const [addOpen, setAddOpen] = useState(false);
   const yaEnOrden = new Set(rows.map((r) => r.pedidoLineaId));
   const lineasDisponibles = pedidos
-    .filter((p) => p.estado === "aprobado" || p.estado === "en_orden")
+    // También el pedido cuya CABECERA quedó en "devuelto": si la app de Producción
+    // corrige las líneas y no le regresa el encabezado a Aprobado, el material
+    // corregido no aparecería en ninguna parte y no habría cómo devolvérselo a la
+    // orden. Las líneas que siguen devueltas no se cuelan: su pendiente es 0.
+    .filter((p) => p.estado === "aprobado" || p.estado === "en_orden" || p.estado === "devuelto")
     .flatMap((p) => p.lineas
       .filter((l) => pedidoLineaPendiente(l) > 0 && !yaEnOrden.has(l.id))
       .map((l) => ({ p, l, pend: pedidoLineaPendiente(l) })))

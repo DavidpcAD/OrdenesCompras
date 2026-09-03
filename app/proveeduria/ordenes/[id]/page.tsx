@@ -6,7 +6,7 @@ import { Button, Checkbox, EmptyState, Field, Input, Modal, Select, Skeleton, Te
 import { IconWarning } from "@/components/icons";
 import { OrdenDetalle } from "@/components/orden-detalle";
 import { useStore } from "@/lib/store";
-import { num, ordenPendienteResumen, numeroOrden, etiquetaInterna, ordenAdmiteDevolucion, puedeDevolverLineaOrden, motivoNoDevolverLineaOrden, ordenQuedaSinMaterial } from "@/lib/helpers";
+import { num, ordenPendienteResumen, numeroOrden, etiquetaInterna, ordenAdmiteDevolucion, puedeDevolverLineaOrden, motivoNoDevolverLineaOrden, ordenQuedaSinMaterial, ordenEsperaCorreccion } from "@/lib/helpers";
 
 export default function ProvOrdenDetallePage() {
   const { id } = useParams<{ id: string }>();
@@ -211,14 +211,21 @@ export default function ProvOrdenDetallePage() {
     }
   }
 
+  // Todo su material volvió al ingeniero y la orden se quedó esperando la corrección
+  // (conserva su N.º de BC). No hay nada que aprobar hasta que el material vuelva, así
+  // que el botón de enviar no se ofrece: el server igual lo frena con un 409.
+  const espera = ordenEsperaCorreccion(orden);
+
   const acciones = (
     <>
       {orden.estado === "abierto" && (
         <>
           <Button variant="outline" onClick={() => router.push(`/proveeduria/ordenes/${orden.id}/editar`)}>Editar</Button>
-          <Button disabled={procesando} onClick={() => act("pendiente_aprobacion", `${numeroOrden(orden)} enviada a aprobación`)}>
-            {procesando ? "Enviando…" : "Enviar a aprobación"}
-          </Button>
+          {!espera && (
+            <Button disabled={procesando} onClick={() => act("pendiente_aprobacion", `${numeroOrden(orden)} enviada a aprobación`)}>
+              {procesando ? "Enviando…" : "Enviar a aprobación"}
+            </Button>
+          )}
         </>
       )}
       {/* Devolver al ingeniero: la salida para lo que Proveeduría NO decide (la
@@ -250,9 +257,11 @@ export default function ProvOrdenDetallePage() {
       {orden.estado === "rechazado" && (
         <>
           <Button variant="outline" onClick={() => router.push(`/proveeduria/ordenes/${orden.id}/editar`)}>Editar</Button>
-          <Button disabled={procesando} onClick={() => act("pendiente_aprobacion", `${numeroOrden(orden)} corregida y reenviada a aprobación`)}>
-            {procesando ? "Reenviando…" : "Reenviar a aprobación"}
-          </Button>
+          {!espera && (
+            <Button disabled={procesando} onClick={() => act("pendiente_aprobacion", `${numeroOrden(orden)} corregida y reenviada a aprobación`)}>
+              {procesando ? "Reenviando…" : "Reenviar a aprobación"}
+            </Button>
+          )}
         </>
       )}
       {/* Reabrir = des-lanzar también el pedido en BC (lo hace el server): con el
@@ -300,7 +309,20 @@ export default function ProvOrdenDetallePage() {
       <OrdenDetalle orden={orden} volverHref="/proveeduria/ordenes" volverLabel="Volver a órdenes" acciones={acciones} solicitudHref={solicitudHref}
         onAlinearIva={() => usarIvaDeBc()}
         pedidoHref={(n) => { const p = pedidos.find((x) => x.numero === n); return p ? `/proveeduria/solicitudes/${p.id}` : null; }}
-        aviso={avisoBc ? (
+        aviso={espera ? (
+          <div className="ds-callout ds-callout--yellow mb-4" role="status">
+            <span className="ds-callout__icon"><IconWarning size={18} /></span>
+            <div style={{ flex: 1 }}>
+              <div className="ds-callout__title">Esperando la corrección del ingeniero</div>
+              <div className="ds-callout__body">
+                Todo el material volvió al ingeniero, pero la orden NO se descartó: conserva su N.º <span className="ds-strong">{orden.bcNumber}</span>.
+                Cuando el ingeniero devuelva el material corregido, agregalo desde <span className="ds-strong">Editar → “+ De solicitudes”</span> y volvé a
+                enviarla a aprobación: se le reescriben las líneas a ese mismo pedido de Business Central, no se crea otro.
+                Mientras tanto ese pedido allá sigue con las líneas viejas — no lo recibas ni lo lances en BC.
+              </div>
+            </div>
+          </div>
+        ) : avisoBc ? (
           <div className="ds-callout ds-callout--yellow mb-4" role="alert">
             <span className="ds-callout__icon"><IconWarning size={18} /></span>
             <div style={{ flex: 1 }}>

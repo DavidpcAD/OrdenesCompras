@@ -8,7 +8,7 @@ import { AgregarLineasSolicitud } from "@/components/agregar-lineas-solicitud";
 import { IconWarning } from "@/components/icons";
 import { Combobox } from "@/components/combobox";
 import { useStore } from "@/lib/store";
-import { money, num, ordenEsDirecta, ordenPedidos, almacenesParaRecepcion, esAlmacenFisico, repartoDeLineaSolicitud, pedidoLineaPendiente, obraParaOrden, ultimoPrecioProveedor, monedaApp, numeroOrden } from "@/lib/helpers";
+import { money, num, ordenEsDirecta, ordenEsperaCorreccion, ordenPedidos, almacenesParaRecepcion, esAlmacenFisico, repartoDeLineaSolicitud, pedidoLineaPendiente, obraParaOrden, ultimoPrecioProveedor, monedaApp, numeroOrden } from "@/lib/helpers";
 import { precioEnUnidad, precioEntreUnidades, cantidadEntreUnidades, equivalencia, equivalenciaDeUnidad, mismaMoneda, codigoDeItem, opcionesDeUnidad, type UnidadDeItem } from "@/lib/unidad";
 import { useVariantes } from "@/lib/use-variantes";
 import type { OrdenLinea } from "@/lib/types";
@@ -316,7 +316,13 @@ export default function EditarOrdenPage() {
   // Una orden nacida de una solicitud NO permite agregar artículos sueltos: sus
   // líneas deben corresponder a lo pedido por Ingeniería. Para compras libres se
   // usa una "orden directa". En las directas sí se muestra el buscador de artículos.
-  const esDirecta = ordenEsDirecta(orden);
+  // OJO con la orden que se quedó ESPERANDO LA CORRECCIÓN: no tiene líneas, así que
+  // `ordenEsDirecta` la da por directa (se fija en si alguna línea trae solicitud) y
+  // la pantalla le ofrecía el buscador de artículos sueltos en vez de "+ De
+  // solicitudes", que es justo lo único que necesita. La excepción va acá y no en el
+  // helper: la lista y el detalle sí la tratan bien.
+  const espera = ordenEsperaCorreccion(orden);
+  const esDirecta = ordenEsDirecta(orden) && !espera;
   const peds = ordenPedidos(orden);
 
   // ---- Sumarle líneas de solicitud a una orden que sigue Abierta ---------------
@@ -336,7 +342,11 @@ export default function EditarOrdenPage() {
   const yaEnOrden = new Set(rows.map((r) => r.pedidoLineaId));
   const esOrigen = new Set(peds);
   const lineasDisponibles = pedidos
-    .filter((p) => p.estado === "aprobado" || p.estado === "en_orden")
+    // También el pedido cuya CABECERA quedó en "devuelto": si la app de Producción
+    // corrige las líneas y no le regresa el encabezado a Aprobado, el material
+    // corregido no aparecería en ninguna parte y no habría cómo devolvérselo a la
+    // orden. Las líneas que siguen devueltas no se cuelan: su pendiente es 0.
+    .filter((p) => p.estado === "aprobado" || p.estado === "en_orden" || p.estado === "devuelto")
     .flatMap((p) => p.lineas
       .filter((l) => pedidoLineaPendiente(l) > 0 && !yaEnOrden.has(l.id))
       .map((l) => ({ p, l, pend: pedidoLineaPendiente(l), origen: esOrigen.has(p.numero) })))
@@ -596,7 +606,11 @@ export default function EditarOrdenPage() {
           ) : (
             <div className="row wrap gap-3" style={{ alignItems: "center", justifyContent: "space-between", padding: "12px 16px", borderBottom: "1.5px solid var(--ds-color-gray-100)", background: "color-mix(in srgb, var(--ds-color-green-100) 6%, var(--ds-tint-base))" }}>
               <span className="ds-body-sm ds-muted" style={{ flex: "1 1 320px" }}>
-                Las líneas provienen de la solicitud ({peds.join(", ")}). Podés ajustar cantidad, precio y descuento, quitar líneas y sumar las que quedaron pendientes por ordenar. Artículos sueltos no: para compras libres usá una <span className="ds-strong">orden directa</span>.
+                {espera ? (
+                  <>Esta orden conserva su N.º de Business Central (<span className="ds-strong">{orden.bcNumber}</span>) y está esperando el material corregido. Agregalo con “+ De solicitudes” y volvé a enviarla a aprobación: se le reescriben las líneas a <span className="ds-strong">ese mismo pedido</span>, no se crea otro.</>
+                ) : (
+                  <>Las líneas provienen de la solicitud ({peds.join(", ")}). Podés ajustar cantidad, precio y descuento, quitar líneas y sumar las que quedaron pendientes por ordenar. Artículos sueltos no: para compras libres usá una <span className="ds-strong">orden directa</span>.</>
+                )}
               </span>
               <Button variant="outline" onClick={() => setAddOpen(true)} disabled={lineasDisponibles.length === 0}
                 title={lineasDisponibles.length

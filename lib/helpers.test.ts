@@ -19,6 +19,7 @@ import {
   lineasACotizar, observacionesParaProveedor, motivoDevolucion, devolucionesDeRol,
   estadoDeDevolucion, devolucionesPendientes, correccionDeSolicitud,
   esTipoDevolucion, esTipoEdicion,
+  ordenDeDetalleDevolucion, ordenEsperaCorreccion, ordenDeDevolucion,
 } from "./helpers.ts";
 import type { Orden, OrdenLinea, Pedido, PedidoLinea } from "./types.ts";
 
@@ -729,4 +730,53 @@ test("lineasACotizar: sin pendiente cotiza el resto, nunca lo devuelto", () => {
   const r = lineasACotizar(ped);
   assert.equal(r.length, 1);
   assert.equal(r[0].linea.id, "a");
+});
+
+// ── Devolver el material corregido a LA MISMA orden ───────────────────────────
+// Proveeduría devuelve al ingeniero el material de una orden que ya vive en BC; el
+// ingeniero lo corrige; ese material tiene que volver a ESA orden (mismo pedido en
+// BC), no a una nueva.
+
+test("ordenDeDetalleDevolucion: saca la orden del detalle que escribe la devolución", () => {
+  // El texto real que arma `devolverLineasDeOrden` (lib/repo.ts).
+  const detalle = "Devuelta(s) 1 línea(s): ROLLO SARAN NEGRO · Devuelta desde la orden CP-005337 · Motivo: La confusión de almacén y liquidación directa";
+  assert.equal(ordenDeDetalleDevolucion(detalle), "CP-005337");
+});
+
+test("ordenDeDetalleDevolucion: una devolución hecha desde la SOLICITUD no trae orden", () => {
+  // Ahí el material no lo tenía ninguna orden, así que no hay a dónde volver.
+  assert.equal(ordenDeDetalleDevolucion("Devuelta(s) 2 línea(s): ARENA; CEMENTO · Motivo: no se ocupa"), undefined);
+  assert.equal(ordenDeDetalleDevolucion(""), undefined);
+});
+
+test("ordenDeDetalleDevolucion: también con el rótulo interno, no solo con el N.º de BC", () => {
+  assert.equal(ordenDeDetalleDevolucion("Devuelta desde la orden CP-000210 · Motivo: x"), "CP-000210");
+});
+
+test("ordenEsperaCorreccion: en BC y sin material = esperando al ingeniero", () => {
+  assert.equal(ordenEsperaCorreccion({ bcNumber: "CP-005337", lineas: [] }), true);
+  // Con un cargo (flete) suelto sigue sin material: el flete no es material.
+  assert.equal(ordenEsperaCorreccion({ bcNumber: "CP-005337", lineas: [{ tipo: "cargo" } as OrdenLinea] }), true);
+});
+
+test("ordenEsperaCorreccion: con material, o sin N.º de BC, NO espera nada", () => {
+  assert.equal(ordenEsperaCorreccion({ bcNumber: "CP-005337", lineas: [{ tipo: "articulo" } as OrdenLinea] }), false);
+  // Sin N.º de BC una orden sin material no existe: la devolución la descarta.
+  assert.equal(ordenEsperaCorreccion({ bcNumber: "", lineas: [] }), false);
+  assert.equal(ordenEsperaCorreccion({ lineas: [] }), false);
+});
+
+test("ordenDeDevolucion: encuentra la orden por su N.º de BC y por el interno", () => {
+  const ords = [ordenConLinea({ id: "1", bcNumber: "CP-005337" }, "pl1"), ordenConLinea({ id: "2", numero: "CP-000210" }, "pl2")];
+  assert.equal(ordenDeDevolucion(ords, { devolucion: { fecha: "2026-09-03", orden: "CP-005337" } })?.id, "1");
+  assert.equal(ordenDeDevolucion(ords, { devolucion: { fecha: "2026-09-03", orden: " cp-000210 " } })?.id, "2");
+});
+
+test("ordenDeDevolucion: null si no hay orden de origen o si ya no está en la app", () => {
+  const ords = [ordenConLinea({ id: "1", bcNumber: "CP-005337" }, "pl1")];
+  assert.equal(ordenDeDevolucion(ords, { devolucion: { fecha: "2026-09-03" } }), null);
+  assert.equal(ordenDeDevolucion(ords, {}), null);
+  // Devolución vieja: la orden se había descartado, así que la pantalla muestra el
+  // número como texto en vez de un enlace roto.
+  assert.equal(ordenDeDevolucion(ords, { devolucion: { fecha: "2026-09-03", orden: "CP-004000" } }), null);
 });

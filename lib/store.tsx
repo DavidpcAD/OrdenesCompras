@@ -914,7 +914,11 @@ export function StoreProvider({ children, useApi }: { children: React.ReactNode;
         if (!vanVolver.length) return d;
         const quedan = o.lineas.filter((l) => !ids.has(l.id));
         const sinMaterial = !quedan.some((l) => l.tipo === "articulo");
-        out = { devueltas: vanVolver.length, ordenDescartada: sinMaterial, bcAviso: undefined };
+        // Igual que el server (`devolverLineasDeOrden`): sin material se descarta SOLO
+        // si la orden todavía no existe en BC. Si ya vive allá se queda esperando la
+        // corrección del ingeniero, con su N.º intacto.
+        const descartada = sinMaterial && !(o.bcNumber ?? "").trim();
+        out = { devueltas: vanVolver.length, ordenDescartada: descartada, bcAviso: undefined };
         // El saldo vuelve a la solicitud SOLO por lo que se va (se arma una orden
         // "fantasma" con esas líneas y se reusa la misma función del descarte).
         const pedidosConSaldo = devolverPendienteAPedidos(d.pedidos, { ...o, lineas: vanVolver.map((l) => ({ ...l, cantidadRecibida: 0 })) });
@@ -926,17 +930,19 @@ export function StoreProvider({ children, useApi }: { children: React.ReactNode;
           const todo = lineas.every((pl) => pl.devuelta);
           return {
             ...p, lineas,
-            devolucion: { fecha: new Date().toISOString(), motivo, lineas: nombres.join("; "), usuario: persona },
+            // De qué orden salió: es lo que después ofrece volver a ESA orden en
+            // vez de armar una nueva (en modo API sale del texto del movimiento).
+            devolucion: { fecha: new Date().toISOString(), motivo, lineas: nombres.join("; "), usuario: persona, orden: o.bcNumber || o.numero },
             ...(todo ? { estado: "devuelto" as Pedido["estado"] } : {}),
             notas: `↩ Devuelta(s): ${nombres.join("; ")} — ${motivo}${p.notas ? ` · ${p.notas}` : ""}`,
           };
         });
         const movs = [mkMov({ entidad: "orden", idEntidad: idOrden, documentoNo: o.numero,
-          tipoMovimiento: sinMaterial ? "eliminado" : "editado", estadoAnterior: o.estado,
-          detalle: `${sinMaterial ? "Orden descartada · " : ""}${nombres.length} línea(s) devuelta(s) al ingeniero: ${nombres.join("; ")} · Motivo: ${motivo}` })];
+          tipoMovimiento: descartada ? "eliminado" : "editado", estadoAnterior: o.estado,
+          detalle: `${descartada ? "Orden descartada · " : sinMaterial ? `Orden sin material: espera la corrección del ingeniero (conserva el N.º ${o.bcNumber}) · ` : ""}${nombres.length} línea(s) devuelta(s) al ingeniero: ${nombres.join("; ")} · Motivo: ${motivo}` })];
         return {
           ...d,
-          ordenes: sinMaterial ? d.ordenes.filter((x) => x.id !== idOrden)
+          ordenes: descartada ? d.ordenes.filter((x) => x.id !== idOrden)
             : d.ordenes.map((x) => (x.id === idOrden ? { ...x, lineas: quedan } : x)),
           pedidos,
           movimientos: [...movs, ...d.movimientos],

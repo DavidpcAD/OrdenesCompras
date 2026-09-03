@@ -9,7 +9,7 @@ import { useStore } from "@/lib/store";
 import { useVolver } from "@/lib/use-volver";
 import { useVariantes } from "@/lib/use-variantes";
 import { codigoDeItem } from "@/lib/unidad";
-import { formatDate, num, pedidoBadge, pedidoLineaPendiente, recibidoDeLineaPedido, destinoCodigo, destinoLabel, tipoSolicitudBadge, esConsumoDirecto, puedeDevolverLinea, motivoNoDevolver, ordenesDeLineaPedido, estadoDeDevolucion, correccionDeSolicitud } from "@/lib/helpers";
+import { formatDate, num, pedidoBadge, pedidoLineaPendiente, recibidoDeLineaPedido, destinoCodigo, destinoLabel, tipoSolicitudBadge, esConsumoDirecto, puedeDevolverLinea, motivoNoDevolver, ordenesDeLineaPedido, estadoDeDevolucion, correccionDeSolicitud, ordenDeDevolucion, numeroOrden } from "@/lib/helpers";
 
 export default function ProveeduriaPedidoDetallePage() {
   const { id } = useParams<{ id: string }>();
@@ -133,6 +133,11 @@ export default function ProveeduriaPedidoDetallePage() {
           const { fecha, quien } = correccionDeSolicitud(pedido);
           const dev = pedido.devolucion;
           const corregida = estado === "corregida";
+          // La orden de la que SALIÓ este material. Si sigue viva, el material vuelve
+          // a ELLA: es el mismo pedido de Business Central, con su número y su
+          // historia. Armar una orden nueva significa un segundo pedido en BC por el
+          // mismo material, y eso era lo único que la app ofrecía.
+          const origen = ordenDeDevolucion(ordenes, pedido);
           return (
             <Card className="mt-2" style={{ background: corregida
               ? "color-mix(in srgb, var(--ds-color-green-100) 10%, var(--ds-tint-base))"
@@ -140,9 +145,30 @@ export default function ProveeduriaPedidoDetallePage() {
               <span className="ds-label ds-muted">{corregida ? "Devolución corregida" : "Devuelta al ingeniero"}</span>
               <p style={{ margin: "4px 0 0" }}>
                 {corregida
-                  ? <>El ingeniero ya corrigió lo que devolviste{fecha ? <> el <span className="ds-strong">{formatDate(fecha)}</span></> : ""}{quien ? <> ({quien})</> : ""}. Revisá las líneas y armá la orden.</>
+                  ? <>El ingeniero ya corrigió lo que devolviste{fecha ? <> el <span className="ds-strong">{formatDate(fecha)}</span></> : ""}{quien ? <> ({quien})</> : ""}. {origen
+                      ? <>Revisá las líneas y devolvé el material a <span className="ds-strong">{numeroOrden(origen)}</span>, la orden de la que salió.</>
+                      : <>Revisá las líneas y armá la orden.</>}</>
                   : <>Esperando al ingeniero. La(s) línea(s) devuelta(s) quedan bloqueadas hasta que las corrija en Producción.</>}
               </p>
+              {/* Volver a LA MISMA orden, que en BC es el mismo pedido: se le
+                  reescriben las líneas y se re-envía a aprobación con su número. */}
+              {corregida && origen && (
+                <div className="row gap-3 wrap mt-4">
+                  <Button onClick={() => router.push(`/proveeduria/ordenes/${origen.id}`)}>
+                    Volver a {numeroOrden(origen)} →
+                  </Button>
+                  <span className="ds-body-sm ds-muted" style={{ alignSelf: "center" }}>
+                    Agregá el material con “+ De solicitudes” al editarla y volvé a enviarla a aprobación.
+                  </span>
+                </div>
+              )}
+              {/* La orden ya no está (devoluciones viejas, cuando la devolución total
+                  la descartaba): se dice el número, sin enlace que no lleva a nada. */}
+              {corregida && !origen && dev?.orden && (
+                <p className="ds-body-sm ds-muted" style={{ margin: "6px 0 0" }}>
+                  Salió de la orden <span className="ds-strong">{dev.orden}</span>, que ya no está en la app: armá una orden nueva con este material.
+                </p>
+              )}
               {(dev?.lineas || dev?.motivo) && (
                 <p className="ds-body-sm ds-muted" style={{ margin: "6px 0 0" }}>
                   {dev?.fecha ? `Devuelta el ${formatDate(dev.fecha)}` : "Devuelta"}
