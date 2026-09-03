@@ -1567,37 +1567,6 @@ export async function bcReplaceOrderLines(orderNo: string, lineas: LineaReplaceB
   return { resultado: String(d?.value ?? "Líneas reescritas en BC."), omitidas };
 }
 
-// VACIAR las líneas del pedido en BC. Es el mismo codeunit, con la lista vacía.
-//
-// Hace falta cuando Proveeduría le devuelve al ingeniero TODO el material de una orden
-// que ya vive en BC: acá la orden se queda sin líneas esperando la corrección, y si
-// allá el pedido conserva las viejas, cualquiera lo puede recibir o lanzar y estaría
-// recibiendo material que esta app ya devolvió. Vaciarlo es dejar los dos lados
-// diciendo lo mismo: por ahora no hay nada que comprar con ese pedido.
-//
-// Va aparte de `bcReplaceOrderLines` a propósito: ahí el corte de "ninguna línea
-// válida" es una RED (una orden con líneas que no se pudieron traducir no puede
-// terminar vaciando el pedido sin que nadie se entere), y acá vaciar es la intención
-// explícita. Si el codeunit no acepta la lista vacía, quien llama se queda con el
-// pedido intacto y lo AVISA: no se finge que quedó sincronizado.
-export async function bcVaciarLineasPedido(orderNo: string): Promise<{ resultado: string }> {
-  if (!orderNo) throw new Error("Falta el número de pedido de BC.");
-  const cid = await getStdCompanyId();
-  const url = `${odataRoot()}/AdelantePO_ReplaceOrderLines?company=${encodeURIComponent(cid)}`;
-  const res = await bcFetch(url, {
-    method: "POST", cache: "no-store",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ orderNo, linesJson: JSON.stringify({ lines: [] }) }),
-  });
-  if (!res.ok) {
-    const txt = (await res.text()).slice(0, 400);
-    if (res.status === 404) throw new Error("el web service AdelantePO_ReplaceOrderLines no está publicado en Business Central");
-    throw new Error(`BC ${res.status}: ${txt}`);
-  }
-  const d: any = await res.json().catch(() => ({}));
-  return { resultado: String(d?.value ?? "Pedido vaciado en BC.") };
-}
-
 // Traduce las líneas de una orden de la app (las que devuelve `getOrden`) a las
 // que entiende el codeunit. Estaba escrito dos veces —al editar y al enviar a
 // aprobación— y los dos caminos TIENEN que mandar exactamente lo mismo: si no,

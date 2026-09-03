@@ -80,27 +80,6 @@ export function OrdenDetalle({
       setChequeo({ estado: "sin-lectura", mensaje: String(e?.message ?? e), diferencias: [] });
     } finally { setVerificando(false); }
   }
-  // Vaciar el pedido en BC de una orden que espera la corrección. Hace falta para las
-  // que se devolvieron ANTES de que la devolución lo vaciara sola (y como reintento si
-  // BC no contestó en ese momento): mientras allá queden las líneas viejas, cualquiera
-  // puede recibir o lanzar material que esta app ya devolvió al ingeniero.
-  const [vaciando, setVaciando] = useState(false);
-  async function vaciarEnBc() {
-    setVaciando(true);
-    try {
-      const r = await fetch(`/api/ordenes/${orden.id}/vaciar-bc`, { method: "POST" });
-      const d = await r.json().catch(() => ({} as any));
-      if (!r.ok) { setChequeo({ estado: "sin-lectura", mensaje: String(d?.error ?? `Error ${r.status}`), diferencias: [] }); return; }
-      setGuardadoVencido(true);
-      const ch = d?.chequeo;
-      setChequeo(ch
-        ? { estado: String(ch.estado ?? "ok"), mensaje: String(ch.mensaje ?? ""), diferencias: ch.diferencias ?? [] }
-        : { estado: "ok", mensaje: `El pedido ${orden.bcNumber} quedó vacío en Business Central, igual que la orden.`, diferencias: [] });
-    } catch (e: any) {
-      setChequeo({ estado: "sin-lectura", mensaje: String(e?.message ?? e), diferencias: [] });
-    } finally { setVaciando(false); }
-  }
-
   // Resultado de la verificación pedida desde esta pantalla (el guardado viene en
   // `orden.bcCheck` y se sigue mostrando aunque nadie apriete nada).
   const [chequeo, setChequeo] = useState<null | { estado: string; mensaje: string; diferencias: { texto: string }[] }>(null);
@@ -243,13 +222,8 @@ export function OrdenDetalle({
             <div className="ds-callout__title">El pedido en Business Central todavía tiene las líneas viejas</div>
             <div className="ds-callout__body">
               No lo agregó nadie allá: son las líneas de esta orden, que volvieron al ingeniero para que las corrija.
-              Vaciá el pedido para que los dos lados digan lo mismo mientras esperás — cuando el material corregido
-              vuelva y reenviés la orden, se le escriben las líneas nuevas a ese mismo pedido.
-              <div className="mt-2">
-                <Button variant="outline" size="sm" disabled={vaciando} onClick={() => void vaciarEnBc()}>
-                  {vaciando ? "Vaciando…" : `Vaciar el pedido ${orden.bcNumber} en BC`}
-                </Button>
-              </div>
+              Se van solas al reenviar la orden — el pedido no se le agregan líneas, se le REESCRIBEN todas: se limpia
+              y le caen las nuevas en el mismo movimiento. Mientras esperás, no recibas ni lances ese pedido en BC.
             </div>
           </div>
         </div>
@@ -311,13 +285,11 @@ export function OrdenDetalle({
                 </ul>
               )}
               {/* Mientras la orden espera la corrección, lo que sobra en BC son SUS
-                  líneas viejas: la salida es vaciar ese pedido, no ir a BC a borrarlas
-                  a mano. */}
+                  líneas viejas, y no hay que ir a borrarlas a mano: al reenviar la
+                  orden el pedido se reescribe completo. */}
               {espera && chequeo.estado !== "ok" && (
-                <div className="mt-2">
-                  <Button variant="outline" size="sm" disabled={vaciando} onClick={() => void vaciarEnBc()}>
-                    {vaciando ? "Vaciando…" : `Vaciar el pedido ${orden.bcNumber} en BC`}
-                  </Button>
+                <div className="ds-body-sm ds-muted mt-2">
+                  Son las líneas que volvieron al ingeniero. Se limpian solas cuando reenviés esta orden.
                 </div>
               )}
               <div className="mt-2">
