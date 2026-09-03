@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { devolverLineasDeOrden, getOrden, obrasDeLineasPedido } from "@/lib/repo";
-import { bcReplaceOrderLines, lineasOrdenParaBc, bcDeepLinkPedido } from "@/lib/bc";
+import { bcReplaceOrderLines, bcVaciarLineasPedido, lineasOrdenParaBc, bcDeepLinkPedido } from "@/lib/bc";
 import { actor } from "@/lib/actor";
 
 export const runtime = "nodejs";
@@ -35,12 +35,19 @@ export async function POST(req: Request, { params }: { params: { id: string } })
     if (r.bcNo) {
       if (r.ordenVacia) {
         // La orden se quedó sin material pero NO se descarta: vive en BC, así que
-        // conserva su N.º y espera el material corregido. Lo que sí hay que decir es
-        // que el pedido de allá queda con las líneas VIEJAS hasta el re-envío: no se
-        // le pueden borrar (el codeunit de reemplazo no acepta una lista vacía) y si
-        // alguien recibe o lanza ese pedido en BC mientras tanto, recibe lo que la app
-        // ya devolvió al ingeniero.
-        avisos.push(`El material volvió al ingeniero. La orden NO se descartó: conserva su N.º ${r.bcNo} y espera la corrección — cuando el ingeniero devuelva el material, agregalo con "+ De solicitudes" al editar esta misma orden y volvé a enviarla a aprobación. OJO: en Business Central el pedido ${r.bcNo} todavía tiene las líneas VIEJAS hasta ese re-envío; no lo recibas ni lo lances allá mientras tanto: ${bcDeepLinkPedido(r.bcNo)}`);
+        // conserva su N.º y espera el material corregido. Y el pedido de allá también
+        // se VACÍA: si conservara las líneas viejas, cualquiera podría recibirlo o
+        // lanzarlo en BC y estaría recibiendo material que esta app ya devolvió al
+        // ingeniero. Los dos lados quedan diciendo lo mismo: por ahora, nada.
+        const base = `El material volvió al ingeniero. La orden NO se descartó: conserva su N.º ${r.bcNo} y espera la corrección — cuando el ingeniero devuelva el material, agregalo con "+ De solicitudes" al editar esta misma orden y volvé a enviarla a aprobación.`;
+        try {
+          await bcVaciarLineasPedido(r.bcNo);
+          avisos.push(`${base} El pedido ${r.bcNo} en Business Central quedó vacío, esperando esas líneas.`);
+        } catch (e: any) {
+          // BC no pudo vaciarlo (o el codeunit no acepta la lista vacía): NO se finge
+          // que quedó sincronizado. Se dice qué pasó y qué no hay que hacer allá.
+          avisos.push(`${base} OJO: no se pudo vaciar el pedido ${r.bcNo} en Business Central (${String(e?.message ?? e)}), así que allá todavía tiene las líneas VIEJAS: no lo recibas ni lo lances hasta que la orden se vuelva a enviar — ${bcDeepLinkPedido(r.bcNo)}`);
+        }
       } else if (r.ordenDescartada) {
         // No hay forma de borrar el pedido en BC desde acá (y no debería decidirlo la
         // app): se dice cuál es, para cerrarlo allá y que no quede fantasma.

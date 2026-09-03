@@ -277,7 +277,11 @@ export function cotejarLineas(
       precioApp: 0, precioBc: precioDe(b),
       unidadApp: "", unidadBc: b.unidad,
       importe: b.importe,
-      texto: `${nombre} (${conVariante}): BC tiene ${cant(b.cantidad)} y la orden no lo lleva — ₡${money(b.importe)} que alguien agregó en BC.`,
+      // "que alguien agregó en BC" era una acusación, y encima falsa la mitad de las
+      // veces: la línea también sobra en BC cuando fue la APP la que se la quitó a la
+      // orden (devolverle el material al ingeniero es el caso). Se dice el hecho —está
+      // en BC y no en la orden— y quien mira decide.
+      texto: `${nombre} (${conVariante}): BC tiene ${cant(b.cantidad)} y la orden no lo lleva — ₡${money(b.importe)} de más en BC.`,
     });
   }
 

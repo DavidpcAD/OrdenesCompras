@@ -80,6 +80,27 @@ export function OrdenDetalle({
       setChequeo({ estado: "sin-lectura", mensaje: String(e?.message ?? e), diferencias: [] });
     } finally { setVerificando(false); }
   }
+  // Vaciar el pedido en BC de una orden que espera la corrección. Hace falta para las
+  // que se devolvieron ANTES de que la devolución lo vaciara sola (y como reintento si
+  // BC no contestó en ese momento): mientras allá queden las líneas viejas, cualquiera
+  // puede recibir o lanzar material que esta app ya devolvió al ingeniero.
+  const [vaciando, setVaciando] = useState(false);
+  async function vaciarEnBc() {
+    setVaciando(true);
+    try {
+      const r = await fetch(`/api/ordenes/${orden.id}/vaciar-bc`, { method: "POST" });
+      const d = await r.json().catch(() => ({} as any));
+      if (!r.ok) { setChequeo({ estado: "sin-lectura", mensaje: String(d?.error ?? `Error ${r.status}`), diferencias: [] }); return; }
+      setGuardadoVencido(true);
+      const ch = d?.chequeo;
+      setChequeo(ch
+        ? { estado: String(ch.estado ?? "ok"), mensaje: String(ch.mensaje ?? ""), diferencias: ch.diferencias ?? [] }
+        : { estado: "ok", mensaje: `El pedido ${orden.bcNumber} quedó vacío en Business Central, igual que la orden.`, diferencias: [] });
+    } catch (e: any) {
+      setChequeo({ estado: "sin-lectura", mensaje: String(e?.message ?? e), diferencias: [] });
+    } finally { setVaciando(false); }
+  }
+
   // Resultado de la verificación pedida desde esta pantalla (el guardado viene en
   // `orden.bcCheck` y se sigue mostrando aunque nadie apriete nada).
   const [chequeo, setChequeo] = useState<null | { estado: string; mensaje: string; diferencias: { texto: string }[] }>(null);
@@ -210,7 +231,31 @@ export function OrdenDetalle({
           (no es un toast) y se queda hasta que alguien lo arregle: la orden 46
           (CP-005172) llegó a la factura del proveedor con una línea de menos porque
           el aviso duraba tres segundos. */}
-      {orden.bcCheck && orden.bcCheck.estado !== "ok" && !guardadoVencido && !(orden.bcCheck.estado === "sin-pedido" && ordenCerrada) && (
+      {/* La orden que ESPERA la corrección del ingeniero está descuadrada a propósito:
+          acá se le quitó el material (volvió al ingeniero) y en BC el pedido puede
+          seguir con las líneas viejas. El cotejo genérico lo reporta como "alguien
+          agregó en BC", que además de sonar a acusación es falso: lo hizo esta app. Se
+          explica y se ofrece la salida. */}
+      {espera && orden.bcCheck && orden.bcCheck.estado !== "ok" && !guardadoVencido && (
+        <div className="ds-callout ds-callout--yellow mb-4" role="status">
+          <span className="ds-callout__icon"><IconWarning size={18} /></span>
+          <div style={{ flex: 1 }}>
+            <div className="ds-callout__title">El pedido en Business Central todavía tiene las líneas viejas</div>
+            <div className="ds-callout__body">
+              No lo agregó nadie allá: son las líneas de esta orden, que volvieron al ingeniero para que las corrija.
+              Vaciá el pedido para que los dos lados digan lo mismo mientras esperás — cuando el material corregido
+              vuelva y reenviés la orden, se le escriben las líneas nuevas a ese mismo pedido.
+              <div className="mt-2">
+                <Button variant="outline" size="sm" disabled={vaciando} onClick={() => void vaciarEnBc()}>
+                  {vaciando ? "Vaciando…" : `Vaciar el pedido ${orden.bcNumber} en BC`}
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {!espera && orden.bcCheck && orden.bcCheck.estado !== "ok" && !guardadoVencido && !(orden.bcCheck.estado === "sin-pedido" && ordenCerrada) && (
         <div className="ds-callout ds-callout--red mb-4" role="alert">
           <span className="ds-callout__icon"><IconWarning size={18} /></span>
           <div>
@@ -264,6 +309,16 @@ export function OrdenDetalle({
                 <ul style={{ margin: "6px 0 0 18px" }}>
                   {chequeo.diferencias.map((d, i) => <li key={i}>{d.texto}</li>)}
                 </ul>
+              )}
+              {/* Mientras la orden espera la corrección, lo que sobra en BC son SUS
+                  líneas viejas: la salida es vaciar ese pedido, no ir a BC a borrarlas
+                  a mano. */}
+              {espera && chequeo.estado !== "ok" && (
+                <div className="mt-2">
+                  <Button variant="outline" size="sm" disabled={vaciando} onClick={() => void vaciarEnBc()}>
+                    {vaciando ? "Vaciando…" : `Vaciar el pedido ${orden.bcNumber} en BC`}
+                  </Button>
+                </div>
               )}
               <div className="mt-2">
                 <Button variant="outline" size="sm" onClick={() => setChequeo(null)}>Cerrar</Button>
