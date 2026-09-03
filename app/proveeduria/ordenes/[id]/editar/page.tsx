@@ -8,7 +8,7 @@ import { AgregarLineasSolicitud } from "@/components/agregar-lineas-solicitud";
 import { IconWarning } from "@/components/icons";
 import { Combobox } from "@/components/combobox";
 import { useStore } from "@/lib/store";
-import { money, num, ordenEsDirecta, ordenEsperaCorreccion, ordenPedidos, almacenesParaRecepcion, esAlmacenFisico, repartoDeLineaSolicitud, pedidoLineaPendiente, obraParaOrden, ultimoPrecioProveedor, monedaApp, numeroOrden } from "@/lib/helpers";
+import { money, num, ordenEsDirecta, ordenEsperaCorreccion, lineasCorregidasDeOrden, ordenPedidos, almacenesParaRecepcion, esAlmacenFisico, repartoDeLineaSolicitud, pedidoLineaPendiente, obraParaOrden, ultimoPrecioProveedor, monedaApp, numeroOrden } from "@/lib/helpers";
 import { precioEnUnidad, precioEntreUnidades, cantidadEntreUnidades, equivalencia, equivalenciaDeUnidad, mismaMoneda, codigoDeItem, opcionesDeUnidad, type UnidadDeItem } from "@/lib/unidad";
 import { useVariantes } from "@/lib/use-variantes";
 import type { OrdenLinea } from "@/lib/types";
@@ -389,6 +389,13 @@ export default function EditarOrdenPage() {
       .catch(() => {});
   }
 
+  // El material que salió de ESTA orden y el ingeniero ya corrigió. No hay que ir a
+  // buscarlo entre las líneas de todas las solicitudes: la devolución dejó escrito de
+  // qué orden salió cada línea, así que la app sabe exactamente cuáles son y las
+  // repone de un clic. Es el caso normal cuando Proveeduría sigue con la misma orden.
+  const corregidas = lineasCorregidasDeOrden(pedidos, orden).filter(({ l }) => !yaEnOrden.has(l.id));
+  const traerCorregidas = () => { for (const { p, l, pend } of corregidas) agregarDeSolicitud(p, l, pend); };
+
   async function guardar() {
     if (!proveedorId) { toast("Seleccioná un proveedor.", "error"); return; }
     // Un cargo SIN tipo lo rechaza BC (necesita un Item Charge real): la línea se
@@ -607,17 +614,32 @@ export default function EditarOrdenPage() {
             <div className="row wrap gap-3" style={{ alignItems: "center", justifyContent: "space-between", padding: "12px 16px", borderBottom: "1.5px solid var(--ds-color-gray-100)", background: "color-mix(in srgb, var(--ds-color-green-100) 6%, var(--ds-tint-base))" }}>
               <span className="ds-body-sm ds-muted" style={{ flex: "1 1 320px" }}>
                 {espera ? (
-                  <>Esta orden conserva su N.º de Business Central (<span className="ds-strong">{orden.bcNumber}</span>) y está esperando el material corregido. Agregalo con “+ De solicitudes” y volvé a enviarla a aprobación: se le reescriben las líneas a <span className="ds-strong">ese mismo pedido</span>, no se crea otro.</>
+                  corregidas.length > 0 ? (
+                    <>El ingeniero ya corrigió <span className="ds-strong">{corregidas.length} línea(s)</span> de esta orden. Tocá <span className="ds-strong">“Traer el material corregido”</span>, revisá cantidad y precio y guardá: al reenviarla se le reescriben las líneas a <span className="ds-strong">ese mismo pedido</span> de Business Central ({orden.bcNumber}), no se crea otro.</>
+                  ) : (
+                    <>Esta orden conserva su N.º de Business Central (<span className="ds-strong">{orden.bcNumber}</span>) y espera el material corregido. Cuando el ingeniero lo devuelva va a aparecer acá para traerlo de un clic; si no, buscalo con “+ De solicitudes”.</>
+                  )
                 ) : (
                   <>Las líneas provienen de la solicitud ({peds.join(", ")}). Podés ajustar cantidad, precio y descuento, quitar líneas y sumar las que quedaron pendientes por ordenar. Artículos sueltos no: para compras libres usá una <span className="ds-strong">orden directa</span>.</>
                 )}
               </span>
-              <Button variant="outline" onClick={() => setAddOpen(true)} disabled={lineasDisponibles.length === 0}
-                title={lineasDisponibles.length
-                  ? "Sumar a esta orden líneas de solicitud que todavía no se ordenaron"
-                  : "No quedan líneas de solicitud pendientes por ordenar"}>
-                + De solicitudes{lineasDisponibles.length ? ` (${lineasDisponibles.length})` : ""}
-              </Button>
+              <span className="row gap-2 wrap">
+                {/* Lo que salió de ESTA orden entra de un clic. Buscarlo a mano entre
+                    las líneas de todas las solicitudes era trabajo tonto y encima
+                    fácil de errar. */}
+                {corregidas.length > 0 && (
+                  <Button onClick={traerCorregidas}
+                    title="Agrega a esta orden el material que volvió al ingeniero y ya corrigió">
+                    Traer el material corregido ({corregidas.length})
+                  </Button>
+                )}
+                <Button variant="outline" onClick={() => setAddOpen(true)} disabled={lineasDisponibles.length === 0}
+                  title={lineasDisponibles.length
+                    ? "Sumar a esta orden líneas de solicitud que todavía no se ordenaron"
+                    : "No quedan líneas de solicitud pendientes por ordenar"}>
+                  + De solicitudes{lineasDisponibles.length ? ` (${lineasDisponibles.length})` : ""}
+                </Button>
+              </span>
             </div>
           )}
           <div className="ds-table-wrap" style={{ boxShadow: "none" }}>

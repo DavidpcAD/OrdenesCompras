@@ -19,7 +19,7 @@ import {
   lineasACotizar, observacionesParaProveedor, motivoDevolucion, devolucionesDeRol,
   estadoDeDevolucion, devolucionesPendientes, correccionDeSolicitud,
   esTipoDevolucion, esTipoEdicion,
-  ordenDeDetalleDevolucion, ordenEsperaCorreccion, ordenDeDevolucion,
+  ordenDeDetalleDevolucion, ordenEsperaCorreccion, ordenDeDevolucion, lineasCorregidasDeOrden,
 } from "./helpers.ts";
 import type { Orden, OrdenLinea, Pedido, PedidoLinea } from "./types.ts";
 
@@ -779,4 +779,52 @@ test("ordenDeDevolucion: null si no hay orden de origen o si ya no está en la a
   // Devolución vieja: la orden se había descartado, así que la pantalla muestra el
   // número como texto en vez de un enlace roto.
   assert.equal(ordenDeDevolucion(ords, { devolucion: { fecha: "2026-09-03", orden: "CP-004000" } }), null);
+});
+
+// ── Traer de vuelta a la orden el material que el ingeniero corrigió ──────────
+const pedDevuelto = (over: Partial<Pedido> = {}, lineas?: PedidoLinea[]): Pedido => ({
+  id: "pd", numero: "PED-000132", tipoSolicitud: "material", solicitante: "Ana",
+  fecha: "2026-09-01", estado: "aprobado", prioridad: "normal",
+  devolucion: { fecha: "2026-09-03T15:00:00Z", orden: "CP-005294", motivo: "almacén" },
+  lineas: lineas ?? [lineaPed({ id: "pl1", cantidad: 1, cantidadOrdenada: 0 })],
+  ...over,
+});
+const ordenVacia = { numero: "CP-000172", bcNumber: "CP-005294" };
+
+test("lineasCorregidasDeOrden: trae lo que salió de ESTA orden y sigue pendiente", () => {
+  const r = lineasCorregidasDeOrden([pedDevuelto()], ordenVacia);
+  assert.equal(r.length, 1);
+  assert.equal(r[0].l.id, "pl1");
+  assert.equal(r[0].pend, 1);
+});
+
+test("lineasCorregidasDeOrden: no trae material de otra orden", () => {
+  const otra = pedDevuelto({ devolucion: { fecha: "2026-09-03T15:00:00Z", orden: "CP-009999" } });
+  assert.deepEqual(lineasCorregidasDeOrden([otra], ordenVacia), []);
+});
+
+test("lineasCorregidasDeOrden: la línea que el ingeniero NO liberó no vuelve…", () => {
+  // Sigue marcada devuelta y la solicitud no trae corrección: el material está en
+  // manos del ingeniero, no de Proveeduría.
+  const p = pedDevuelto({}, [lineaPed({ id: "pl1", cantidad: 1, cantidadOrdenada: 0, devuelta: true })]);
+  assert.deepEqual(lineasCorregidasDeOrden([p], ordenVacia), []);
+});
+
+test("…pero sí vuelve si el pedido ya trae la corrección del ingeniero", () => {
+  // La marca la levanta la app de Producción al corregir. Si allá no la levantan, el
+  // material corregido quedaría escondido para siempre: manda la corrección.
+  const p = pedDevuelto(
+    { devolucion: { fecha: "2026-09-03T15:00:00Z", orden: "CP-005294", corregida: { fecha: "2026-09-03T17:33:00Z" } } },
+    [lineaPed({ id: "pl1", cantidad: 1, cantidadOrdenada: 0, devuelta: true })]);
+  assert.equal(lineasCorregidasDeOrden([p], ordenVacia).length, 1);
+});
+
+test("lineasCorregidasDeOrden: lo que ya se ordenó completo no vuelve", () => {
+  const p = pedDevuelto({}, [lineaPed({ id: "pl1", cantidad: 5, cantidadOrdenada: 5 })]);
+  assert.deepEqual(lineasCorregidasDeOrden([p], ordenVacia), []);
+});
+
+test("lineasCorregidasDeOrden: también matchea por el N.º interno de la orden", () => {
+  const p = pedDevuelto({ devolucion: { fecha: "2026-09-03T15:00:00Z", orden: "cp-000172" } });
+  assert.equal(lineasCorregidasDeOrden([p], ordenVacia).length, 1);
 });

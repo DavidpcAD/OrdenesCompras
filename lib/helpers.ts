@@ -314,6 +314,39 @@ export function ordenDeDevolucion(ordenes: Orden[], p: Pick<Pedido, "devolucion"
   return ordenes.find((o) => igual(o.bcNumber) || igual(o.numero)) ?? null;
 }
 
+// El material que salió de ESTA orden, volvió al ingeniero y ya está corregido: las
+// líneas que la orden tiene que recuperar.
+//
+// Es lo que hace que "seguir con la misma orden" no sea trabajo a mano. La app sabe
+// exactamente cuáles son: la devolución dejó escrito de qué orden salió cada línea
+// (`devolucion.orden`), así que no hay que buscarlas entre las de todas las
+// solicitudes ni adivinar.
+//
+// Una línea cuenta si le queda cantidad sin ordenar. La marca de "devuelta" no la
+// descalifica cuando el pedido ya trae la corrección del ingeniero: esa marca la pone
+// esta app al devolver y la levanta la app de Producción al corregir, y si allá no la
+// levantan, el material corregido quedaría escondido para siempre. La corrección
+// —una edición del ingeniero POSTERIOR a la devolución— es la señal que manda.
+export function lineasCorregidasDeOrden(
+  pedidos: Pedido[], orden: Pick<Orden, "numero" | "bcNumber">,
+): { p: Pedido; l: PedidoLinea; pend: number }[] {
+  const nums = [orden.bcNumber, orden.numero].map((n) => (n ?? "").trim().toUpperCase()).filter(Boolean);
+  if (!nums.length) return [];
+  const out: { p: Pedido; l: PedidoLinea; pend: number }[] = [];
+  for (const p of pedidos) {
+    const salioDeAca = nums.includes((p.devolucion?.orden ?? "").trim().toUpperCase());
+    if (!salioDeAca) continue;
+    const corregida = !!p.devolucion?.corregida;
+    for (const l of p.lineas) {
+      const pend = Math.max(0, l.cantidad - (l.cantidadOrdenada ?? 0));
+      if (pend <= 0) continue;
+      if (l.devuelta && !corregida) continue;   // el ingeniero todavía no la liberó
+      out.push({ p, l, pend });
+    }
+  }
+  return out;
+}
+
 // ¿Se puede devolver esta línea al ingeniero? Solo lo que Proveeduría todavía no
 // comprometió: con orden de compra hecha, el material ya está pedido al proveedor
 // y devolver la línea dejaría a Ingeniería creyendo que no se compró.

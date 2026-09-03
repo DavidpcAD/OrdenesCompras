@@ -6,7 +6,7 @@ import { Button, Checkbox, EmptyState, Field, Input, Modal, Select, Skeleton, Te
 import { IconWarning } from "@/components/icons";
 import { OrdenDetalle } from "@/components/orden-detalle";
 import { useStore } from "@/lib/store";
-import { num, ordenPendienteResumen, numeroOrden, etiquetaInterna, ordenAdmiteDevolucion, puedeDevolverLineaOrden, motivoNoDevolverLineaOrden, ordenQuedaSinMaterial, ordenEsperaCorreccion } from "@/lib/helpers";
+import { num, ordenPendienteResumen, numeroOrden, etiquetaInterna, ordenAdmiteDevolucion, puedeDevolverLineaOrden, motivoNoDevolverLineaOrden, ordenQuedaSinMaterial, ordenEsperaCorreccion, lineasCorregidasDeOrden } from "@/lib/helpers";
 
 export default function ProvOrdenDetallePage() {
   const { id } = useParams<{ id: string }>();
@@ -215,6 +215,9 @@ export default function ProvOrdenDetallePage() {
   // (conserva su N.º de BC). No hay nada que aprobar hasta que el material vuelva, así
   // que el botón de enviar no se ofrece: el server igual lo frena con un 409.
   const espera = ordenEsperaCorreccion(orden);
+  // ¿El ingeniero ya devolvió el material corregido? Si sí, esta pantalla tiene que
+  // decirlo y llevar a traerlo, no dejar a Proveeduría esperando algo que ya llegó.
+  const corregidas = espera ? lineasCorregidasDeOrden(pedidos, orden) : [];
 
   const acciones = (
     <>
@@ -313,13 +316,25 @@ export default function ProvOrdenDetallePage() {
           <div className="ds-callout ds-callout--yellow mb-4" role="status">
             <span className="ds-callout__icon"><IconWarning size={18} /></span>
             <div style={{ flex: 1 }}>
-              <div className="ds-callout__title">Esperando la corrección del ingeniero</div>
+              <div className="ds-callout__title">{corregidas.length > 0 ? "El material corregido ya está listo" : "Esperando la corrección del ingeniero"}</div>
               <div className="ds-callout__body">
-                Todo el material volvió al ingeniero, pero la orden NO se descartó: conserva su N.º <span className="ds-strong">{orden.bcNumber}</span>.
-                Cuando el ingeniero devuelva el material corregido, agregalo desde <span className="ds-strong">Editar → “+ De solicitudes”</span> y volvé a
-                enviarla a aprobación. Al pedido de Business Central no se le agregan líneas: se le REESCRIBEN todas, así que
-                ese mismo pedido se limpia y le caen las nuevas en el mismo movimiento (no se crea otro). Mientras esperás,
-                allá siguen las viejas: no lo recibas ni lo lances.
+                {corregidas.length > 0 ? (
+                  <>
+                    <span className="ds-strong">El ingeniero ya corrigió {corregidas.length} línea(s)</span> y están listas para volver a esta
+                    orden, que conserva su N.º <span className="ds-strong">{orden.bcNumber}</span>. Entrá a <span className="ds-strong">Editar</span> y
+                    tocá <span className="ds-strong">“Traer el material corregido”</span>: entran con su pendiente y el último precio. Al guardar y
+                    reenviar, a ese mismo pedido de Business Central se le REESCRIBEN todas las líneas — se limpia y le caen las
+                    nuevas en el mismo movimiento, no se crea otro.
+                  </>
+                ) : (
+                  <>
+                    Todo el material volvió al ingeniero, pero la orden NO se descartó: conserva su N.º <span className="ds-strong">{orden.bcNumber}</span>.
+                    En cuanto el ingeniero lo corrija, esta pantalla lo va a decir y se trae de un clic desde <span className="ds-strong">Editar</span>.
+                    Al pedido de Business Central no se le agregan líneas: se le REESCRIBEN todas, así que al reenviar la orden ese
+                    mismo pedido se limpia y le caen las nuevas (no se crea otro). Mientras esperás, allá siguen las viejas: no lo
+                    recibas ni lo lances.
+                  </>
+                )}
               </div>
             </div>
           </div>
