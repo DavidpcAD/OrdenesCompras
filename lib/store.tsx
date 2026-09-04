@@ -121,9 +121,10 @@ interface StoreShape {
   // `devolverSaldo` (default true) lo no recibido vuelve a las solicitudes para
   // poder comprarlo de nuevo; si no, esas unidades quedan consumidas para siempre.
   cerrarOrden: (id: string, motivo: string, devolverSaldo?: boolean) => Promise<{ pendienteDevuelto: number }>;
-  // Descartar un borrador de orden (Abierta y sin N.º de BC): la orden desaparece y
-  // su material vuelve a quedar pendiente en la solicitud.
-  descartarOrden: (id: string, motivo: string) => Promise<{ numero: string; saldoDevuelto: number }>;
+  // Descartar un borrador de orden (Abierta/Rechazada): la orden desaparece y su
+  // material vuelve a quedar pendiente en la solicitud. Con N.º de BC es ANULAR: el
+  // pedido de allá se borra y `bcBaja` cuenta cómo quedó.
+  descartarOrden: (id: string, motivo: string) => Promise<{ numero: string; saldoDevuelto: number; bcBaja?: string }>;
   // Retomar la orden de la que salió un material devuelto, cuando esa orden se había
   // descartado (las devoluciones anteriores al arreglo la borraban aunque viviera en
   // BC). Devuelve el id para abrirla y el aviso si su pedido ya no está en BC.
@@ -652,7 +653,7 @@ export function StoreProvider({ children, useApi }: { children: React.ReactNode;
       if (USE_API) {
         const r = await api.descartarOrden(id, { motivo, usuario: persona, rol: rolActual });
         await refreshFromApi();
-        return { numero: String(r?.numero ?? ""), saldoDevuelto: Number(r?.saldoDevuelto ?? 0) };
+        return { numero: String(r?.numero ?? ""), saldoDevuelto: Number(r?.saldoDevuelto ?? 0), bcBaja: r?.bcBaja ? String(r.bcBaja) : undefined };
       }
       let out = { numero: "", saldoDevuelto: 0 };
       setData((d) => {

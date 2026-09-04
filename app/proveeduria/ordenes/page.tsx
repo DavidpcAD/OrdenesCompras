@@ -13,7 +13,7 @@ import { ordenEsperaCorreccion } from "@/lib/helpers";
 // material porque todo volvió al ingeniero y que conserva su N.º de BC. Se filtra como
 // un panel más porque es donde hay trabajo detenido esperando a otra persona, y sin
 // esto se leía como una Abierta cualquiera en ₡0 (o, peor, se perdía de vista).
-type Filtro = "todas" | "abierto" | "espera" | "rechazado" | "lanzado" | "completado";
+type Filtro = "todas" | "abierto" | "espera" | "pendiente_aprobacion" | "rechazado" | "lanzado" | "completado";
 
 export default function OrdenesPage() {
   const { ordenes, pedidos } = useStore();
@@ -38,6 +38,9 @@ export default function OrdenesPage() {
   // hay nada que hacer con ellas hasta que el ingeniero devuelva el material.
   const esperan = ordenes.filter(ordenEsperaCorreccion);
   const abiertas = ordenes.filter((o) => o.estado === "abierto" && !ordenEsperaCorreccion(o)).length;
+  // Las que ya están en BC esperando que Aprobación las lance. Faltaba el panel: la
+  // ayuda de la pantalla lo prometía y Proveeduría lo pidió (4 sep 2026).
+  const pendientes = ordenes.filter((o) => o.estado === "pendiente_aprobacion").length;
   const rechazadas = ordenes.filter((o) => o.estado === "rechazado").length;
   const lanzadas = ordenes.filter((o) => o.estado === "lanzado").length;
   const completas = ordenes.filter((o) => o.estado === "completado").length;
@@ -52,6 +55,7 @@ export default function OrdenesPage() {
     todas: "Todas las órdenes",
     abierto: "Órdenes abiertas (borrador)",
     espera: "Órdenes esperando la corrección del ingeniero",
+    pendiente_aprobacion: "Órdenes pendientes de aprobación (ya están en Business Central, esperando que Aprobación las lance)",
     rechazado: "Órdenes rechazadas (corregir y reenviar)",
     lanzado: "Órdenes lanzadas",
     completado: "Órdenes completadas",
@@ -80,6 +84,7 @@ export default function OrdenesPage() {
           {esperan.length > 0 && (
             <Tile value={esperan.length} label="Esperando corrección" accent="var(--ds-color-yellow)" onClick={() => seleccionar("espera")} active={filtro === "espera"} />
           )}
+          <Tile value={pendientes} label="Pendientes de aprobación" accent="var(--ds-color-yellow)" onClick={() => seleccionar("pendiente_aprobacion")} active={filtro === "pendiente_aprobacion"} />
           <Tile value={rechazadas} label="Rechazadas" accent="var(--ds-color-red-200)" onClick={() => seleccionar("rechazado")} active={filtro === "rechazado"} />
           <Tile value={lanzadas} label="Lanzadas" accent="var(--ds-color-green-100)" onClick={() => seleccionar("lanzado")} active={filtro === "lanzado"} />
           <Tile value={completas} label="Completadas" accent="var(--ds-color-green-200)" onClick={() => seleccionar("completado")} active={filtro === "completado"} />

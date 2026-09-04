@@ -744,6 +744,29 @@ export async function asignarBcNumber(id: number, bcNo: string, usuario: string,
   } catch { try { await tx.rollback(); } catch { /* el N.º ya quedó guardado, que es lo que importa */ } }
 }
 
+// El proveedor o la moneda del pedido en BC cambiaron DESDE LA APP (al guardar o
+// reenviar una orden que ya vivía allá). Va a la bitácora porque decide a qué cuenta
+// por pagar termina la compra, y dentro de un mes nadie se acuerda de que el pedido
+// nació a nombre de otro proveedor.
+export async function anotarEncabezadoBc(id: number, detalle: string, usuario: string, rol: Role): Promise<void> {
+  const pool = await getPool();
+  const prev = await pool.request().input("id", sql.Int, id)
+    .query("SELECT ordenNo, bcNo FROM dbo.OrdenCompra WHERE idOrdenCompra=@id");
+  const row = prev.recordset[0];
+  if (!row) return;
+  const tx = new sql.Transaction(pool);
+  await tx.begin();
+  try {
+    await logMov(tx, {
+      entidad: "orden", idEntidad: id, documentoNo: row.ordenNo ?? "",
+      tipoMovimiento: "bc_encabezado",
+      detalle: `${row.bcNo ? `${row.bcNo}: ` : ""}${detalle}`.slice(0, 3900),
+      usuario, rol,
+    });
+    await tx.commit();
+  } catch { try { await tx.rollback(); } catch { /* el cambio en BC ya está hecho; la bitácora no lo deshace */ } }
+}
+
 // Guarda el resultado del cotejo en la orden Y en la bitácora.
 //
 // En la bitácora va SIEMPRE que haya algo que contar (desalineado / sin pedido /
@@ -1357,6 +1380,10 @@ export async function retomarOrdenDescartada(
 
 export async function descartarOrden(
   id: number, motivo: string, usuario: string, rol: Role,
+  // ANULAR una orden que ya vive en BC: quien llama ya dio de baja el pedido allá
+  // (bcBorrarPedidoAbierto) y acá dice cómo quedó, para la bitácora. Sin esto, una
+  // orden con N.º de BC no se descarta: el rastro tiene que quedar en los dos lados.
+  opts?: { bcBaja?: string },
 ): Promise<{ numero: string; saldoDevuelto: number }> {
   await ensureEstados();
   const pool = await getPool();
@@ -1368,7 +1395,7 @@ export async function descartarOrden(
   if (estado !== "abierto" && estado !== "rechazado") {
     throw new Error(`Solo se descarta una orden Abierta o Rechazada; esta está ${estado === "pendiente_aprobacion" ? "esperando aprobación (cancelá el envío primero)" : estado}.`);
   }
-  if (bcNo) throw new Error(`Esta orden ya existe en Business Central como ${bcNo}: no se descarta desde acá. Reabrila o cerrala para que quede el rastro en los dos lados.`);
+  if (bcNo && !opts?.bcBaja) throw new Error(`Esta orden ya existe en Business Central como ${bcNo}: no se descarta desde acá. Usá "Anular orden" (borra el pedido allá) o cerrala, para que quede el rastro en los dos lados.`);
   if (await ordenTieneRecepciones(id)) throw new Error("La orden ya tiene recepciones registradas: no se puede descartar.");
 
   const tx = new sql.Transaction(pool); await tx.begin();
@@ -1397,7 +1424,7 @@ export async function descartarOrden(
     await logMov(tx, {
       entidad: "orden", idEntidad: id, documentoNo: head.recordset[0].ordenNo ?? "",
       tipoMovimiento: "eliminado", estadoAnterior: estado,
-      detalle: `Borrador descartado${motivo ? ` · Motivo: ${motivo}` : ""}${saldoDevuelto > 0 ? ` · ${saldoDevuelto} u. volvieron a la solicitud` : ""}`,
+      detalle: `${opts?.bcBaja ? "Orden anulada" : "Borrador descartado"}${motivo ? ` · Motivo: ${motivo}` : ""}${saldoDevuelto > 0 ? ` · ${saldoDevuelto} u. volvieron a la solicitud` : ""}${opts?.bcBaja ? ` · ${opts.bcBaja}` : ""}`,
       usuario, rol,
     });
     await tx.commit();

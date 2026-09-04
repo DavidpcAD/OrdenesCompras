@@ -1,11 +1,12 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import type { ColumnDef } from "@tanstack/react-table";
 import { DataTable } from "@/components/data-table";
 import { IconWarning } from "@/components/icons";
 import { useStore } from "@/lib/store";
-import { money, num } from "@/lib/helpers";
+import { comprasDeInsumo, formatDate, money, num, ordenBadge } from "@/lib/helpers";
 
 type Row = { code: string; descripcion: string; unidad: string; precioReferencia: number; recibido: number };
 type ItemLite = { code: string; descripcion: string; unidad: string; lastDirectCost?: number };
@@ -38,7 +39,7 @@ const esFisico = (codigo: string) => codigo.toUpperCase().startsWith("ALM-");
 //      almacenes de bodega (ALM-*), que es lo que la gente viene a ver,
 //   3. al volver a la pestaña se re-barre en silencio, para que esté al día.
 // Compartido por Ingeniería y Proveeduría (cambia solo el AppShell que lo envuelve).
-export function InventariosView({ tablaKey = "inventarios" }: { tablaKey?: string }) {
+export function InventariosView({ tablaKey = "inventarios", hrefOrden = (id) => `/proveeduria/ordenes/${id}` }: { tablaKey?: string; hrefOrden?: (id: string) => string }) {
   const { articulos, ordenes } = useStore();
 
   // Liveness por GENERACIÓN, no por un booleano: cada carga se queda con su número
@@ -275,31 +276,40 @@ export function InventariosView({ tablaKey = "inventarios" }: { tablaKey?: strin
     ...(angosto ? [] : [{ id: "recibido", header: "Recibido (app)", accessorFn: (a: Row) => a.recibido, meta: { label: "Recibido (app)", num: true }, enableColumnFilter: false, cell: (c: any) => num.format(c.getValue()) }]),
   ], [stock, stockError, parcial, tituloParcial, angosto]);
 
-  // Desglose por almacén/variante al expandir la fila (solo ubicaciones con stock).
+  // Al expandir la fila: el desglose por almacén/variante (solo ubicaciones con
+  // stock) y, debajo, el movimiento de compras del insumo.
   const renderExpanded = (a: Row) => {
-    if (stockError) return <div className="ds-body-sm" style={{ padding: "6px 2px", color: "var(--ds-color-red-200)" }}>No se pudo cargar el stock de BC. Puede que <code>inventoryByLocation</code> no esté publicado o no haya conexión.</div>;
-    const info = stock[a.code];
-    if (!info && parcial) return <div className="ds-muted ds-body-sm" style={{ padding: "6px 2px" }}>Buscando existencias… ({avance!.hechos} de {avance!.total} almacenes)</div>;
-    const det = (info?.detalle ?? []).filter((e) => Number(e.cantidad) !== 0).sort((x, y) => y.cantidad - x.cantidad);
-    if (!det.length) return <div className="ds-muted ds-body-sm" style={{ padding: "6px 2px" }}>Sin existencias en ninguna ubicación.{parcial ? " (todavía sumando almacenes)" : ""}</div>;
+    const existencias = (() => {
+      if (stockError) return <div className="ds-body-sm" style={{ padding: "6px 2px", color: "var(--ds-color-red-200)" }}>No se pudo cargar el stock de BC. Puede que <code>inventoryByLocation</code> no esté publicado o no haya conexión.</div>;
+      const info = stock[a.code];
+      if (!info && parcial) return <div className="ds-muted ds-body-sm" style={{ padding: "6px 2px" }}>Buscando existencias… ({avance!.hechos} de {avance!.total} almacenes)</div>;
+      const det = (info?.detalle ?? []).filter((e) => Number(e.cantidad) !== 0).sort((x, y) => y.cantidad - x.cantidad);
+      if (!det.length) return <div className="ds-muted ds-body-sm" style={{ padding: "6px 2px" }}>Sin existencias en ninguna ubicación.{parcial ? " (todavía sumando almacenes)" : ""}</div>;
+      return (
+        <div className="ds-table-wrap" style={{ boxShadow: "none" }}>
+          <table className="ds-table">
+            <thead>
+              <tr><th>Almacén</th><th>Variante</th><th className="ds-num">Disponible</th><th>Unidad</th></tr>
+            </thead>
+            <tbody>
+              {det.map((e, i) => (
+                <tr key={`${e.locationCode}-${e.variantCode}-${i}`}>
+                  <td className="ds-strong">{e.locationCode || "—"}</td>
+                  <td>{e.variantCode || "(sin variante)"}</td>
+                  <td className="ds-num ds-strong" style={{ color: "var(--ds-color-green-300)" }}>{num.format(e.cantidad)}</td>
+                  <td className="ds-muted">{e.unidad || a.unidad}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      );
+    })();
     return (
-      <div className="ds-table-wrap" style={{ boxShadow: "none" }}>
-        <table className="ds-table">
-          <thead>
-            <tr><th>Almacén</th><th>Variante</th><th className="ds-num">Disponible</th><th>Unidad</th></tr>
-          </thead>
-          <tbody>
-            {det.map((e, i) => (
-              <tr key={`${e.locationCode}-${e.variantCode}-${i}`}>
-                <td className="ds-strong">{e.locationCode || "—"}</td>
-                <td>{e.variantCode || "(sin variante)"}</td>
-                <td className="ds-num ds-strong" style={{ color: "var(--ds-color-green-300)" }}>{num.format(e.cantidad)}</td>
-                <td className="ds-muted">{e.unidad || a.unidad}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      <>
+        {existencias}
+        <ComprasInsumo code={a.code} unidad={a.unidad} hrefOrden={hrefOrden} />
+      </>
     );
   };
 
@@ -353,5 +363,102 @@ export function InventariosView({ tablaKey = "inventarios" }: { tablaKey?: strin
           vacio="Sin artículos en el catálogo." />
       </div>
     </main>
+  );
+}
+
+// ── EL MOVIMIENTO DE COMPRAS DEL INSUMO ──────────────────────────────────────
+// Dos fuentes, cada una con su nombre: lo que Business Central tiene REGISTRADO
+// (recepciones de compra, incluidas las anteriores a esta app) y las órdenes de esta
+// app (también las que van en camino: abiertas, en aprobación, lanzadas). Pedido de
+// Proveeduría del 4 sep 2026: "poder ver el movimiento de compras de cada insumo".
+// Se consulta a BC solo al expandir la fila: son 5000 artículos y la mayoría nadie
+// los abre.
+type CompraBcFila = {
+  fecha: string; documentNo: string; vendorNo: string; locationCode: string; variantCode: string;
+  cantidad: number; unidad: string; costoUnitario: number; importe: number;
+};
+const MAX_FILAS_COMPRAS = 10;
+
+function ComprasInsumo({ code, unidad, hrefOrden }: { code: string; unidad: string; hrefOrden: (id: string) => string }) {
+  const { ordenes, proveedores } = useStore();
+  const [bc, setBc] = useState<{ compras: CompraBcFila[]; error?: string } | null>(null);
+  useEffect(() => {
+    let vivo = true;
+    setBc(null);
+    fetch(`/api/bc/compras-insumo?item=${encodeURIComponent(code)}`)
+      .then((r) => r.json())
+      .then((d) => { if (vivo) setBc({ compras: Array.isArray(d?.compras) ? d.compras : [], error: d?.error ? String(d.error) : undefined }); })
+      .catch((e) => { if (vivo) setBc({ compras: [], error: String(e?.message ?? e) }); });
+    return () => { vivo = false; };
+  }, [code]);
+  const app = useMemo(() => comprasDeInsumo(ordenes, code), [ordenes, code]);
+  // El movimiento de BC trae el CÓDIGO del proveedor; el nombre está en el catálogo.
+  const nombreProv = (codigo: string) => proveedores.find((p) => p.code === codigo)?.nombre || codigo || "—";
+  const demas = (n: number) => (n > MAX_FILAS_COMPRAS
+    ? <div className="ds-muted ds-body-sm" style={{ padding: "4px 2px" }}>y {num.format(n - MAX_FILAS_COMPRAS)} más (se muestran las {MAX_FILAS_COMPRAS} más recientes)</div>
+    : null);
+
+  return (
+    <div style={{ display: "grid", gap: 12, marginTop: 12 }}>
+      <div>
+        <div className="ds-label ds-muted" style={{ marginBottom: 6 }}>Compras registradas en Business Central</div>
+        {bc === null ? (
+          <div className="ds-muted ds-body-sm" style={{ padding: "4px 2px" }}>Buscando en Business Central…</div>
+        ) : !bc.compras.length && bc.error ? (
+          <div className="ds-body-sm" style={{ padding: "4px 2px", color: "var(--ds-color-red-200)" }}>No se pudo leer el historial de compras de BC ({bc.error}).</div>
+        ) : !bc.compras.length ? (
+          <div className="ds-muted ds-body-sm" style={{ padding: "4px 2px" }}>Business Central no tiene compras registradas de este artículo.</div>
+        ) : (
+          <div className="ds-table-wrap" style={{ boxShadow: "none" }}>
+            <table className="ds-table">
+              <thead>
+                <tr><th>Fecha</th><th>Recepción</th><th>Proveedor</th><th>Almacén</th><th className="ds-num">Cantidad</th><th className="ds-num">Costo unit.</th></tr>
+              </thead>
+              <tbody>
+                {bc.compras.slice(0, MAX_FILAS_COMPRAS).map((c, i) => (
+                  <tr key={`${c.documentNo}-${i}`}>
+                    <td className="ds-body-sm">{c.fecha ? formatDate(c.fecha) : "—"}</td>
+                    <td className="ds-strong">{c.documentNo || "—"}</td>
+                    <td className="ds-body-sm"><div className="ds-clamp-2" style={{ maxWidth: 260 }}>{nombreProv(c.vendorNo)}</div></td>
+                    <td className="ds-body-sm ds-muted">{c.locationCode || "—"}{c.variantCode ? ` · var. ${c.variantCode}` : ""}</td>
+                    <td className="ds-num ds-strong">{num.format(c.cantidad)} {c.unidad || unidad}</td>
+                    <td className="ds-num">{c.costoUnitario > 0 ? money(c.costoUnitario, "CRC") : <span className="ds-muted">—</span>}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {demas(bc.compras.length)}
+          </div>
+        )}
+      </div>
+      <div>
+        <div className="ds-label ds-muted" style={{ marginBottom: 6 }}>Órdenes de compra en esta app</div>
+        {!app.length ? (
+          <div className="ds-muted ds-body-sm" style={{ padding: "4px 2px" }}>Ninguna orden de esta app lleva este artículo.</div>
+        ) : (
+          <div className="ds-table-wrap" style={{ boxShadow: "none" }}>
+            <table className="ds-table">
+              <thead>
+                <tr><th>Orden</th><th>Fecha</th><th>Proveedor</th><th>Estado</th><th className="ds-num">Cantidad</th><th className="ds-num">Precio</th><th className="ds-num">Recibido</th></tr>
+              </thead>
+              <tbody>
+                {app.slice(0, MAX_FILAS_COMPRAS).map((c, i) => (
+                  <tr key={`${c.ordenId}-${i}`}>
+                    <td><Link href={hrefOrden(c.ordenId)} className="ds-strong">{c.orden}</Link></td>
+                    <td className="ds-body-sm">{c.fecha ? formatDate(c.fecha) : "—"}</td>
+                    <td className="ds-body-sm"><div className="ds-clamp-2" style={{ maxWidth: 260 }}>{c.proveedor || "—"}</div></td>
+                    <td className="ds-body-sm ds-muted">{ordenBadge(c.estado).label}</td>
+                    <td className="ds-num ds-strong">{num.format(c.cantidad)} {c.unidad}{c.variantCode ? <span className="ds-muted"> · {c.variantCode}</span> : null}</td>
+                    <td className="ds-num">{c.precioUnitario > 0 ? money(c.precioUnitario, c.moneda) : <span className="ds-muted">—</span>}</td>
+                    <td className="ds-num ds-body-sm">{num.format(c.recibida)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {demas(app.length)}
+          </div>
+        )}
+      </div>
+    </div>
   );
 }

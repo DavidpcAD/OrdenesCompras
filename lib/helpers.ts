@@ -827,3 +827,30 @@ export function almacenesParaRecepcion<T extends { codigo: string }>(list: T[]):
     Number(esAlmacenFisico(b.codigo)) - Number(esAlmacenFisico(a.codigo)) ||
     a.codigo.localeCompare(b.codigo, "es"));
 }
+
+// Las compras de UN insumo según las órdenes de esta app: una fila por línea de orden
+// con ese artículo, de la más reciente a la más vieja. Inventarios lo muestra al
+// expandir la fila junto con el historial de BC: allá está lo que ENTRÓ (recepciones
+// registradas); acá también lo que está en camino (abierta, en aprobación, lanzada).
+export type CompraInsumo = {
+  ordenId: string; orden: string; fecha: string; proveedor: string; estado: Orden["estado"];
+  cantidad: number; unidad: string; precioUnitario: number; moneda: string; recibida: number; variantCode?: string;
+};
+export function comprasDeInsumo(ordenes: Orden[], code: string): CompraInsumo[] {
+  const c = (code ?? "").trim().toUpperCase();
+  if (!c) return [];
+  const out: CompraInsumo[] = [];
+  for (const o of ordenes) {
+    for (const l of o.lineas) {
+      if (l.tipo !== "articulo" || (l.articuloId ?? "").trim().toUpperCase() !== c) continue;
+      out.push({
+        ordenId: o.id, orden: numeroOrden(o), fecha: o.fecha,
+        proveedor: o.proveedorNombre || o.proveedorNo || o.proveedorId,
+        estado: o.estado, cantidad: l.cantidad, unidad: l.unidad,
+        precioUnitario: l.precioUnitario, moneda: o.currencyCode || "CRC",
+        recibida: l.cantidadRecibida ?? 0, variantCode: l.variantCode || undefined,
+      });
+    }
+  }
+  return out.sort((a, b) => (b.fecha ?? "").localeCompare(a.fecha ?? ""));
+}

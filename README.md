@@ -32,6 +32,11 @@ auditoría.
    (encabezado por la API estándar + líneas por `AdelantePO_ReplaceOrderLines`) y guarda su
    N.º en `bcNo`. Si BC no lo puede crear, la orden **no** se envía y el aviso dice por qué.
    La orden queda `pendiente_aprobacion` y el pedido, abierto y editable en BC.
+   Si después la orden se **edita** (o se reenvía), a ese mismo pedido se le reescriben las
+   líneas **y** el encabezado: proveedor y moneda. Antes solo iban las líneas, y una orden que
+   cambiaba de proveedor dejaba el pedido a nombre del otro (CP-005295).
+   Una orden que ya está en BC y **no va a salir** se **anula**: el pedido se borra allá (solo
+   Abierto y sin recepciones; BC deja un documento en ₡0,00) y el material vuelve a la solicitud.
 3. **Aprobación** (app de Producción) aprueba y **lanza** el pedido que ya existe → `lanzado`.
    **Lanzar es solo de esa app**: esta no lo hace ni lo reintenta. Lo que Angie puede es
    *volver a abrir* una orden lanzada y reenviarla a aprobación.

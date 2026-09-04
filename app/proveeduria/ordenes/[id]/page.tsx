@@ -108,10 +108,10 @@ export default function ProvOrdenDetallePage() {
     try {
       const r = await descartarOrden(orden!.id, motivoDescarte.trim());
       setDescartando(false);
-      toast(`${numeroOrden(orden!)} descartada${r.saldoDevuelto > 0 ? ` · ${num.format(r.saldoDevuelto)} u. volvieron a la solicitud` : ""}`, "success");
+      toast(`${numeroOrden(orden!)} ${orden!.bcNumber ? "anulada" : "descartada"}${r.saldoDevuelto > 0 ? ` · ${num.format(r.saldoDevuelto)} u. volvieron a la solicitud` : ""}${r.bcBaja ? ` · ${r.bcBaja}` : ""}`, "success");
       router.push("/proveeduria/ordenes");
     } catch (e: any) {
-      toast(`No se pudo descartar: ${String(e?.message ?? e)}`, "error");
+      toast(`No se pudo ${orden!.bcNumber ? "anular" : "descartar"}: ${String(e?.message ?? e)}`, "error");
     } finally {
       setProcesando(false);
     }
@@ -242,13 +242,17 @@ export default function ProvOrdenDetallePage() {
           Devolver al ingeniero
         </Button>
       )}
-      {/* Descartar: solo lo que NO existe en BC. Lo que ya está allá se reabre o se
-          cierra, para que el rastro quede en los dos lados. */}
-      {(orden.estado === "abierto" || orden.estado === "rechazado") && !orden.bcNumber && (
+      {/* Descartar / Anular: la orden que NO va a salir. Sin N.º de BC es un borrador
+          y se descarta. Con N.º de BC se ANULA: el pedido de allá se borra (si sigue
+          Abierto y sin recepciones) y el material vuelve a la solicitud. Antes esto no
+          existía y una orden atorada en BC no tenía cómo morirse (CP-005295). */}
+      {(orden.estado === "abierto" || orden.estado === "rechazado") && (
         <Button variant="outline" disabled={procesando}
-          title="Descarta este borrador y devuelve el material a la solicitud, para poder ordenarlo distinto o devolvérselo al ingeniero"
+          title={orden.bcNumber
+            ? `Anula esta orden: borra el pedido ${orden.bcNumber} en Business Central y devuelve el material a la solicitud, para ordenarlo distinto`
+            : "Descarta este borrador y devuelve el material a la solicitud, para poder ordenarlo distinto o devolvérselo al ingeniero"}
           onClick={() => { setMotivoDescarte(""); setDescartando(true); }}>
-          Descartar borrador
+          {orden.bcNumber ? "Anular orden" : "Descartar borrador"}
         </Button>
       )}
       {orden.estado === "pendiente_aprobacion" && (
@@ -388,26 +392,36 @@ export default function ProvOrdenDetallePage() {
       )}
 
       {descartando && (
-        <Modal title={`Descartar ${numeroOrden(orden)}`} onClose={() => setDescartando(false)} footer={
+        <Modal title={`${orden.bcNumber ? "Anular" : "Descartar"} ${numeroOrden(orden)}`} onClose={() => setDescartando(false)} footer={
           <>
             <Button variant="outline" onClick={() => setDescartando(false)} disabled={procesando}>Cancelar</Button>
-            <Button variant="red" onClick={() => void confirmarDescarte()} disabled={procesando}>
-              {procesando ? "Descartando…" : "Descartar borrador"}
+            <Button variant="red" onClick={() => void confirmarDescarte()} disabled={procesando || (!!orden.bcNumber && !motivoDescarte.trim())}>
+              {procesando ? (orden.bcNumber ? "Anulando…" : "Descartando…") : (orden.bcNumber ? "Anular orden" : "Descartar borrador")}
             </Button>
           </>
         }>
           <p className="ds-body-sm" style={{ marginTop: 0 }}>
             Esta orden se arma sobre material de una solicitud, y mientras exista ese material figura como
-            <span className="ds-strong"> ya ordenado</span>. Al descartarla vuelve a quedar
+            <span className="ds-strong"> ya ordenado</span>. Al {orden.bcNumber ? "anularla" : "descartarla"} vuelve a quedar
             <span className="ds-strong"> pendiente en la solicitud</span>: se puede volver a ordenar (a otro proveedor, por ejemplo)
             o devolvérselo al ingeniero.
           </p>
-          <p className="ds-body-sm ds-muted">
-            La orden desaparece del listado y queda el registro en el historial. No existe en Business Central, así que allá no hay nada que deshacer.
-          </p>
-          <Field label="Motivo (opcional)" help="Queda en el historial: dentro de un mes explica por qué se descartó.">
+          {orden.bcNumber ? (
+            <p className="ds-body-sm ds-pending-text">
+              Ya existe en Business Central como <span className="ds-strong">{orden.bcNumber}</span>: ese pedido se <span className="ds-strong">borra</span> allá
+              (BC deja un documento en ₡0,00 para no romper la numeración: es normal). Solo se anula si el pedido sigue Abierto y sin
+              recepciones; si ya está lanzado o en aprobación, la app no lo toca y te lo dice.
+            </p>
+          ) : (
+            <p className="ds-body-sm ds-muted">
+              La orden desaparece del listado y queda el registro en el historial. No existe en Business Central, así que allá no hay nada que deshacer.
+            </p>
+          )}
+          <Field label={orden.bcNumber ? "Motivo" : "Motivo (opcional)"}
+            help={orden.bcNumber ? "Obligatorio: se borra un pedido en Business Central y dentro de un mes hay que poder explicar por qué." : "Queda en el historial: dentro de un mes explica por qué se descartó."}>
             <Textarea rows={2} value={motivoDescarte} maxLength={200}
-              onChange={(e) => setMotivoDescarte(e.target.value)} placeholder="Ej. se armó con el proveedor equivocado" />
+              onChange={(e) => setMotivoDescarte(e.target.value)}
+              placeholder={orden.bcNumber ? "Ej. se va a comprar a otro proveedor; este pedido quedó con el proveedor equivocado" : "Ej. se armó con el proveedor equivocado"} />
           </Field>
         </Modal>
       )}

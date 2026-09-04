@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import { getOrden, setOrdenEstado, setOrdenBcNumber, updateOrden, descartarOrden, ordenTieneRecepciones, obrasDeLineasPedido, asignarBcNumber, guardarChequeoBc, guardarVariantesResueltas, MSG_NO_REABRIR } from "@/lib/repo";
-import { bcReopenPedido, bcReplaceOrderLines, bcCrearPedidoAbierto, crearEnBcAlEnviar, lineasOrdenParaBc, obrasSinTarea, lineasSinUnidad, lineasSinAlmacen, resolverVariantesRequeridas, sanearObrasDeLineas, avisoDeSaneo, bcOrdenTotales, bcEstadoDelPedido, chequearOrdenContraBc, lineasReplaceParaCotejo, lineasOrdenParaCotejo, paredAprobacionActiva, itemsBloqueadosDeLineas } from "@/lib/bc";
+import { getOrden, setOrdenEstado, setOrdenBcNumber, updateOrden, descartarOrden, ordenTieneRecepciones, obrasDeLineasPedido, asignarBcNumber, guardarChequeoBc, guardarVariantesResueltas, anotarEncabezadoBc, MSG_NO_REABRIR } from "@/lib/repo";
+import { bcReopenPedido, bcReplaceOrderLines, bcCrearPedidoAbierto, crearEnBcAlEnviar, lineasOrdenParaBc, obrasSinTarea, lineasSinUnidad, lineasSinAlmacen, resolverVariantesRequeridas, sanearObrasDeLineas, avisoDeSaneo, bcOrdenTotales, bcEstadoDelPedido, chequearOrdenContraBc, lineasReplaceParaCotejo, lineasOrdenParaCotejo, paredAprobacionActiva, itemsBloqueadosDeLineas, bcSincronizarEncabezado, bcBorrarPedidoAbierto } from "@/lib/bc";
 import { ordenLineaImporte } from "@/lib/helpers";
 import { actor } from "@/lib/actor";
 
@@ -175,19 +175,35 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
         await guardarVariantesResueltas(id, variantesNuevas).catch(() => { /* no frena el envío */ });
       }
       lineasBc = varRes.lineas;
+      // Si el encabezado (proveedor/moneda) no se pudo dejar como la orden, el motivo
+      // real va en el mensaje de la pared, que es la que lo va a frenar.
+      let fallaEncabezado: string | undefined;
       if (o.bcNumber) {
-        // Reenvío de una orden rechazada/corregida: el pedido ya existe allá. Se le
-        // vuelven a empujar las líneas por si un edit no llegó a BC. Que esto falle
-        // NO frena el envío (el pedido existe y se puede lanzar): va como aviso.
+        // Reenvío de una orden rechazada/corregida: el pedido ya existe allá. Primero
+        // el ENCABEZADO: si la orden cambió de proveedor o de moneda, el pedido tiene
+        // que cambiar también — si no, la pared de abajo frena con "PROVEEDOR
+        // DISTINTO" y manda a corregir acá algo que acá ya está bien (CP-005295).
+        // Después las líneas, por si un edit no llegó a BC. Que las líneas fallen NO
+        // frena el envío (el pedido existe y se puede lanzar): va como aviso.
+        try {
+          const sync = await bcSincronizarEncabezado(o.bcNumber, { vendorNo: o.proveedorNo || o.proveedorId, currencyCode: o.currencyCode, lineas: lineasBc });
+          if (sync.estado === "cambiado") {
+            const texto = [`Al pedido ${o.bcNumber} en Business Central se le cambió ${sync.cambios.join(" y ")}, como dice la orden.`, sync.aviso].filter(Boolean).join(" ");
+            bcAviso = texto;
+            await anotarEncabezadoBc(id, texto, a.usuario, a.rol).catch(() => { /* el cambio en BC ya está hecho */ });
+          }
+        } catch (e: any) {
+          fallaEncabezado = String(e?.message ?? e);
+        }
         try {
           const r = await bcReplaceOrderLines(o.bcNumber, lineasBc);
-          if (r.omitidas.length) bcAviso = `Enviada a aprobación. OJO: BC no recibió ${r.omitidas.length} línea(s) — ${r.omitidas.join("; ")}.`;
+          if (r.omitidas.length) bcAviso = [bcAviso, `Enviada a aprobación. OJO: BC no recibió ${r.omitidas.length} línea(s) — ${r.omitidas.join("; ")}.`].filter(Boolean).join(" · ");
           // El grupo de IVA que Contabilidad puso a mano en BC (una importación en
           // EXENTO-BIENES) sobrevive a la reescritura; si no se pudo, se dice.
           if (r.ivaRestaurado.length) bcAviso = [bcAviso, `Las líneas conservan el grupo de IVA que tenían en BC (${r.ivaRestaurado.join(", ")}).`].filter(Boolean).join(" · ");
           if (r.avisoIva) bcAviso = [bcAviso, r.avisoIva].filter(Boolean).join(" · ");
         } catch (e: any) {
-          bcAviso = `Se envió a aprobación, pero el pedido ${o.bcNumber} en BC quedó con las líneas VIEJAS: ${String(e?.message ?? e)}`;
+          bcAviso = [bcAviso, `Se envió a aprobación, pero el pedido ${o.bcNumber} en BC quedó con las líneas VIEJAS: ${String(e?.message ?? e)}`].filter(Boolean).join(" · ");
           // Si la reescritura no entró, ya SABEMOS por qué BC va a estar distinto, y el
           // motivo real (típico: "el pedido debe estar Abierto" — hay que reabrirlo en
           // BC) es más útil que el cotejo. Cotejar acá convertiría este aviso deliberado
@@ -253,10 +269,19 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
           // enviar NADA. Apagado, el cotejo igual se hace, se guarda y se avisa: lo
           // único que se pierde es el corte.
           if (paredAprobacionActiva()) {
+            // Con el PROVEEDOR distinto, "corregí la orden acá" NO es la salida: el
+            // proveedor del pedido se cambia solo al reenviar, así que si se llegó
+            // hasta acá es porque BC no lo dejó (o no se pudo leer). Se dice el motivo
+            // real y las dos salidas que sí existen.
+            const provDistinto = !!chequeo.proveedor && !chequeo.proveedor.ok;
+            const salida = provDistinto
+              ? `Al reenviar, la app le cambia el proveedor al pedido en BC para que quede como la orden, y esta vez no se pudo${fallaEncabezado ? ` — ${fallaEncabezado}` : ""}. `
+                + `Cambiáselo en Business Central a mano (el pedido tiene que estar Abierto) y reintentá, o volvé a poner en la orden, con Editar, el proveedor que tiene BC (${chequeo.proveedor?.bc?.vendorNo ?? "?"}). `
+              : `Corregí la orden acá y volvé a enviarla —se le reescriben las líneas a ese mismo pedido— o arreglá el pedido en BC. `;
             return NextResponse.json({
               error: `La orden NO se envió a aprobación: lo que quedó en Business Central NO es lo que dice la orden.\n\n${chequeo.mensaje}\n${detalle}\n\n`
                 + `El pedido ${numeroBc} YA quedó creado en Business Central (con esas diferencias) y la orden guardó su número: no se creó nada de más ni hay que borrarlo. `
-                + `Corregí la orden acá y volvé a enviarla —se le reescriben las líneas a ese mismo pedido— o arreglá el pedido en BC. `
+                + salida
                 + `No se manda a aprobación algo que allá no está igual: así fue como una línea entera se perdió y se facturó de menos.`,
               bcCheck: { estado: chequeo.estado, diferencias: chequeo.cotejo?.diferencias ?? [] },
             }, { status: 409 });
@@ -345,6 +370,21 @@ export async function PUT(req: Request, { params }: { params: { id: string } }) 
         const obrasSolicitud = await obrasDeLineasPedido(
           o.lineas.map((l) => Number(l.pedidoLineaId)).filter((n) => Number.isFinite(n)));
         const lineasBc = lineasOrdenParaBc(o.lineas, obrasSolicitud);
+        // El ENCABEZADO primero. Proveedor y moneda viven ahí, y reescribir líneas no
+        // los toca: una orden que cambiaba de proveedor acá dejaba el pedido a nombre
+        // del otro allá, y la pared del reenvío la trababa sin salida (CP-005295).
+        // Si BC se niega, se sigue con las líneas igual: el cotejo de abajo lo deja
+        // escrito en la orden con el motivo real.
+        try {
+          const sync = await bcSincronizarEncabezado(o.bcNumber, { vendorNo: o.proveedorNo || o.proveedorId, currencyCode: o.currencyCode, lineas: lineasBc });
+          if (sync.estado === "cambiado") {
+            const texto = [`Al pedido ${o.bcNumber} en Business Central se le cambió ${sync.cambios.join(" y ")}, como quedó en la orden.`, sync.aviso].filter(Boolean).join(" ");
+            avisos.push(texto);
+            await anotarEncabezadoBc(id, texto, a.usuario, a.rol).catch(() => { /* el cambio en BC ya está hecho */ });
+          }
+        } catch (e: any) {
+          avisos.push(`Se guardó acá, pero al pedido ${o.bcNumber} en BC NO se le pudo cambiar el encabezado (proveedor/moneda): ${String(e?.message ?? e)}.`);
+        }
         const r = await bcReplaceOrderLines(o.bcNumber, lineasBc);
         if (r.omitidas.length) avisos.push(`Guardado. OJO: BC no recibió ${r.omitidas.length} línea(s) — ${r.omitidas.join("; ")}.`);
         if (r.ivaRestaurado.length) avisos.push(`Las líneas conservan el grupo de IVA que tenían en BC (${r.ivaRestaurado.join(", ")}).`);
@@ -377,14 +417,37 @@ export async function PUT(req: Request, { params }: { params: { id: string } }) 
 }
 
 // DESCARTAR un borrador de orden: la orden se elimina (lógico) y el material vuelve
-// a quedar pendiente en la solicitud. Solo Abierta/Rechazada y SIN N.º de BC — las
-// condiciones las revalida el repo, que es el que sabe.
+// a quedar pendiente en la solicitud. Solo Abierta/Rechazada — las condiciones las
+// revalida el repo, que es el que sabe.
+//
+// Con N.º de BC es ANULAR: el pedido de allá se borra PRIMERO (Abierto y sin
+// recepciones) y recién después se descarta acá. En ese orden a propósito: si el
+// borrado falla, la orden se queda como está y nadie pierde nada; al revés
+// —descartar acá y no poder borrar allá— dejaría un pedido Abierto en BC que nadie
+// ve desde la app y que Aprobación podría lanzar. Es la salida que faltaba para la
+// orden que no va a salir (CP-005295).
 export async function DELETE(req: Request, { params }: { params: { id: string } }) {
   try {
     const body = await req.json().catch(() => ({}));
     const a = await actor(body);
-    const r = await descartarOrden(Number(params.id), String(body?.motivo ?? "").trim(), a.usuario, a.rol);
-    return NextResponse.json({ ok: true, ...r });
+    const id = Number(params.id);
+    const motivo = String(body?.motivo ?? "").trim();
+    let bcBaja: string | undefined;
+    const o = await getOrden(id);
+    if (o?.bcNumber && (o.estado === "abierto" || o.estado === "rechazado")) {
+      if (!motivo) {
+        return NextResponse.json({ error: "Poné el motivo: se va a borrar un pedido en Business Central y tiene que quedar explicado en el historial." }, { status: 409 });
+      }
+      if (await ordenTieneRecepciones(id)) {
+        return NextResponse.json({ error: "La orden ya tiene recepciones registradas: no se puede anular." }, { status: 409 });
+      }
+      const baja = await bcBorrarPedidoAbierto(o.bcNumber);
+      bcBaja = baja.estado === "borrado"
+        ? `El pedido ${o.bcNumber} se borró en Business Central.`
+        : `El pedido ${o.bcNumber} ya no existía en Business Central.`;
+    }
+    const r = await descartarOrden(id, motivo, a.usuario, a.rol, bcBaja ? { bcBaja } : undefined);
+    return NextResponse.json({ ok: true, ...r, bcBaja });
   } catch (e: any) {
     // Regla de negocio (estado que no corresponde, ya está en BC, tiene recepciones)
     // → 409: la pantalla lo muestra tal cual y no parece que se cayó el servidor.

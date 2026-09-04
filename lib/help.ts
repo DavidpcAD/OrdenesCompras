@@ -107,8 +107,10 @@ const ORDEN_DET: HelpEntry = {
     "Si ya está lanzada/recibida, consultá sus recepciones y facturas asociadas.",
     "Con “Imprimir” generás el PDF de la orden (se habilita cuando ya está aprobada).",
     "Si está Lanzada: “Volver a abrir” la corrige (también la des-lanza en Business Central) y “Cerrar orden” la da por terminada aunque falte material.",
+    "Si la orden NO va a salir: “Descartar borrador” (sin N.º de BC) o “Anular orden” (con N.º de BC: borra el pedido allá). En los dos casos el material vuelve a quedar pendiente en la solicitud para ordenarlo distinto.",
   ],
   tips: [
+    "“Anular orden” solo funciona si el pedido sigue Abierto en Business Central y sin recepciones. Si ya está lanzado, primero “Volver a abrir”. BC deja un documento en ₡0,00 al borrar un pedido: es normal, no hay que anularlo.",
     "“Cerrar orden” es para cuando el proveedor no va a traer el resto. Pide el motivo y, por defecto, devuelve lo no recibido a las solicitudes para poder volver a comprarlo.",
     "Si el resto se lo vas a comprar a otro, marcá “Crear una orden nueva con lo pendiente”: cierra esta y te deja la nueva armada y abierta.",
     "Una orden con facturas registradas ya no se puede volver a abrir: lo que llegó mal va por devolución.",
@@ -131,6 +133,7 @@ const ORDEN_EDITAR: HelpEntry = {
   ],
   tips: [
     "Si la línea va a una obra, la tarea es obligatoria: Business Central no acepta un Job No. sin Job Task No.",
+    "Si la orden ya tiene pedido en Business Central y le cambiás el proveedor o la moneda, al guardar el pedido de allá cambia igual, y sus líneas se reescriben.",
     "Artículos SUELTOS no se pueden agregar a una orden nacida de solicitud (solo líneas de solicitudes): para una compra libre está la orden directa.",
   ],
 };
@@ -245,10 +248,12 @@ const INVENTARIOS: HelpEntry = {
   detalle: [
     "Consultá cuánto hay de cada artículo y en qué ubicación, leído en vivo de Business Central.",
     "Sirve para saber si hace falta comprar antes de armar una orden.",
+    "Al expandir un artículo también ves su movimiento de compras: las recepciones registradas en Business Central (con proveedor, fecha y costo) y las órdenes de esta app que lo llevan, incluidas las que van en camino.",
   ],
   pasos: [
     "Buscá el artículo por nombre o código.",
     "Mirá la existencia por ubicación/almacén.",
+    "Expandí la fila para ver a quién se le compró, cuándo y a qué precio, y qué órdenes lo tienen pendiente.",
     "Si aparece “s/d”, Business Central no respondió en ese momento — reintentá.",
   ],
 };

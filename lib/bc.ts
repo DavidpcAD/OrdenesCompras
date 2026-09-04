@@ -2455,6 +2455,247 @@ export async function bcProveedorDePedido(orderNo: string): Promise<ProveedorBc 
   }
 }
 
+// ── EL ENCABEZADO TAMBIÉN SE SINCRONIZA ──────────────────────────────────────
+// Editar una orden que ya vive en BC le reescribía las LÍNEAS al pedido y nada más.
+// El proveedor y la moneda están en el ENCABEZADO, y nadie los tocaba: la orden
+// cambiaba de proveedor acá, el pedido seguía siendo del otro allá, y la pared de
+// "PROVEEDOR DISTINTO" frenaba el reenvío mandando a "corregir la orden acá" — que
+// era justo lo que ya se había hecho y no servía para nada. Caso real: CP-005295
+// (4 sep 2026), PROV-000522 en BC y PROV-000101 en la orden, sin salida.
+//
+// Se cambia por la API estándar, la misma que crea el encabezado. Va ANTES de
+// reescribir las líneas, a propósito: al cambiar de proveedor BC recrea las líneas
+// con los precios del proveedor nuevo y vuelve a armar las dimensiones del
+// encabezado desde las del proveedor. Las líneas las vuelve a poner el codeunit
+// después; el Centro de Costo del encabezado —el que mete el pedido al workflow de
+// aprobación— se vuelve a poner acá.
+
+export type EncabezadoStd = { id: string; vendorNo: string; vendorName: string; currencyCode: string; status: string };
+
+// La moneda local es "" en la app y "CRC" en la API estándar de BC. Se comparan con
+// el mismo nombre.
+export function monedaBc(code?: string): string {
+  return (code ?? "").trim().toUpperCase() || "CRC";
+}
+
+export type CambioEncabezado = { campo: "proveedor" | "moneda"; body: Record<string, unknown>; texto: string };
+
+// Qué le falta al encabezado de BC para decir lo que dice la orden. Sin red, para
+// probarlo. Vienen en el ORDEN en que hay que mandarlos: el proveedor primero,
+// porque BC le pone al pedido la moneda del proveedor nuevo y, si la orden dice
+// otra, se corrige después de releer.
+export function cambiosDeEncabezado(
+  bc: { vendorNo: string; currencyCode: string },
+  deseado: { vendorNo: string; currencyCode?: string },
+): CambioEncabezado[] {
+  const out: CambioEncabezado[] = [];
+  const provOrden = (deseado.vendorNo ?? "").trim().toUpperCase();
+  const provBc = (bc.vendorNo ?? "").trim().toUpperCase();
+  if (provOrden && provOrden !== provBc) {
+    out.push({ campo: "proveedor", body: { vendorNumber: provOrden }, texto: `el proveedor (de ${provBc || "ninguno"} a ${provOrden})` });
+  }
+  const monOrden = monedaBc(deseado.currencyCode);
+  const monBc = monedaBc(bc.currencyCode);
+  if (monOrden !== monBc) {
+    out.push({ campo: "moneda", body: { currencyCode: monOrden }, texto: `la moneda (de ${monBc} a ${monOrden})` });
+  }
+  return out;
+}
+
+export type SyncEncabezado =
+  | { estado: "igual" }
+  | { estado: "cambiado"; cambios: string[]; aviso?: string }
+  | { estado: "sin-pedido" }
+  | { estado: "sin-lectura"; motivo: string };
+
+async function bcLeerEncabezadoStd(cid: string, no: string): Promise<EncabezadoStd | null> {
+  const filtro = `$filter=${encodeURIComponent(`number eq '${odataStr(no)}'`)}&$top=1`;
+  const pedir = (select: string) =>
+    bcFetch(`${stdRoot()}/companies(${cid})/purchaseOrders?${filtro}${select}`, { cache: "no-store" });
+  // Mismo criterio que bcProveedorDePedido: si el $select se volviera inválido, se
+  // reintenta sin él antes de rendirse.
+  let res = await pedir("&$select=id,number,vendorNumber,vendorName,currencyCode,status");
+  if (!res.ok) res = await pedir("");
+  if (!res.ok) throw new Error(`BC ${res.status} al leer el encabezado del pedido ${no}`);
+  const d: any = await res.json().catch(() => ({}));
+  const row = (d?.value ?? [])[0];
+  if (!row) return null;
+  return {
+    id: String(row.id ?? ""),
+    vendorNo: String(row.vendorNumber ?? "").trim(),
+    vendorName: String(row.vendorName ?? "").trim(),
+    currencyCode: String(row.currencyCode ?? "").trim(),
+    status: String(row.status ?? "").trim(),
+  };
+}
+
+// Deja el encabezado del pedido como dice la orden: proveedor y moneda. Si el
+// proveedor cambió, vuelve a poner el Centro de Costo del encabezado (BC lo rearma
+// desde el proveedor nuevo y lo pierde).
+//
+// No tira error por no poder LEER (BC caído no puede trabar el guardado; el cotejo
+// de después lo va a decir). SÍ tira error cuando BC contestó y se negó a cambiar
+// el encabezado: eso es un hecho sobre el pedido, y quien llama decide qué hacer.
+export async function bcSincronizarEncabezado(
+  orderNo: string,
+  deseado: { vendorNo: string; currencyCode?: string; lineas?: LineaReplaceBc[] },
+): Promise<SyncEncabezado> {
+  const no = (orderNo ?? "").trim();
+  if (!no) return { estado: "sin-lectura", motivo: "la orden no tiene N.º de Business Central" };
+  if (!(deseado.vendorNo ?? "").trim()) return { estado: "sin-lectura", motivo: "la orden no tiene el código de proveedor de BC (PROV-…)" };
+  let cid: string;
+  let enc: EncabezadoStd | null;
+  try {
+    cid = await getStdCompanyId();
+    enc = await bcLeerEncabezadoStd(cid, no);
+  } catch (e: any) {
+    return { estado: "sin-lectura", motivo: String(e?.message ?? e) };
+  }
+  if (!enc) return { estado: "sin-pedido" };
+  const poId = enc.id;
+  const estadoLeido = enc.status;
+  const patch = async (body: Record<string, unknown>) => {
+    const res = await bcFetch(`${stdRoot()}/companies(${cid})/purchaseOrders(${poId})`, {
+      method: "PATCH", cache: "no-store",
+      headers: { "Content-Type": "application/json", "If-Match": "*" },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) {
+      const txt = (await res.text()).slice(0, 400);
+      // El encabezado de un pedido Lanzado no se toca: es el mismo "reabrilo" que ya
+      // conoce ReplaceOrderLines, dicho en el idioma de la pantalla.
+      if (BC_PIDE_ABIERTO.test(txt) || /Status must be|El estado debe ser/i.test(txt)) {
+        throw new Error(`el pedido ${no} no está Abierto en Business Central (está ${estadoLeido || "lanzado"}) y así no se le puede cambiar el encabezado: reabrilo primero`);
+      }
+      throw new Error(`BC ${res.status}: ${txt}`);
+    }
+  };
+  const cambios: string[] = [];
+  let proveedorCambio = false;
+  // Un cambio por vuelta y se relee entre uno y otro: después de cambiar el
+  // proveedor, la moneda del pedido ya no es la que se había leído.
+  for (let vuelta = 0; vuelta < 3; vuelta++) {
+    const pendientes = cambiosDeEncabezado(enc, deseado);
+    if (!pendientes.length) break;
+    const c = pendientes[0];
+    await patch(c.body);
+    cambios.push(c.texto);
+    if (c.campo === "proveedor") proveedorCambio = true;
+    try { enc = (await bcLeerEncabezadoStd(cid, no)) ?? enc; }
+    catch { break; /* lo principal ya cambió; lo que falte lo dice el cotejo */ }
+  }
+  if (!cambios.length) return { estado: "igual" };
+  let aviso: string | undefined;
+  if (proveedorCambio) {
+    const { cc: obra } = centroCostoDeOrden(deseado.lineas ?? []);
+    if (obra) {
+      const err = await asegurarCentroCosto(cid, poId, obra);
+      if (err) aviso = `OJO: al cambiar de proveedor, BC rearmó las dimensiones del encabezado y NO se le pudo volver a poner el Centro de Costo ${obra} (${err}). Sin él, el pedido ${no} no entra al circuito de aprobación de BC: revisalo allá.`;
+    }
+  }
+  return { estado: "cambiado", cambios, aviso };
+}
+
+// El Centro de Costo del encabezado, puesto o corregido según haga falta. Distinto
+// de `ponerCentroCosto` (que solo inserta, para un pedido recién nacido): acá el
+// encabezado ya tiene dimensiones —las que BC armó desde el proveedor nuevo— y la
+// del CC puede estar, no estar, o estar con otro valor.
+async function asegurarCentroCosto(cid: string, poId: string, obra: string): Promise<string | null> {
+  const code = codigoDimensionCC();
+  try {
+    const base = `${stdRoot()}/companies(${cid})/purchaseOrders(${poId})/dimensionSetLines`;
+    const res = await bcFetch(base, { cache: "no-store" });
+    if (!res.ok) return `BC ${res.status} al leer las dimensiones del encabezado`;
+    const d: any = await res.json().catch(() => ({}));
+    const actual = (d?.value ?? []).find((x: any) => String(x?.code ?? "").trim().toUpperCase() === code.toUpperCase());
+    if (!actual) return ponerCentroCosto(cid, poId, obra);
+    if (String(actual.valueCode ?? "").trim().toUpperCase() === obra.toUpperCase()) return null;
+    const r = await bcFetch(`${base}(${actual.id})`, {
+      method: "PATCH", cache: "no-store",
+      headers: { "Content-Type": "application/json", "If-Match": "*" },
+      body: JSON.stringify({ valueCode: obra }),
+    });
+    if (!r.ok) return `BC ${r.status}: ${(await r.text()).slice(0, 200)}`;
+    return null;
+  } catch (e: any) {
+    return String(e?.message ?? e);
+  }
+}
+
+// ── DAR DE BAJA EL PEDIDO EN BC (anular una orden que no va a salir) ─────────
+// La orden que ya tiene N.º de BC no se podía descartar: la salida era "reabrila o
+// cerrala", pero una orden Abierta que simplemente NO va a salir (se va a comprar
+// distinto, o quedó atorada) no tenía cómo morirse, y su material se quedaba "ya
+// ordenado" en la solicitud. CP-005295 (4 sep 2026): Angie quería soltar la línea y
+// armar otra OC, y no había botón para eso.
+//
+// Se borra por la API estándar. En BC, borrar un pedido de compra deja un documento
+// en ₡0,00 (la localización CR lo registra para no romper la numeración fiscal): es
+// lo esperado y no hay que anularlo. Solo se borra lo que está Abierto: un pedido
+// lanzado ya está en manos del proveedor, y uno en aprobación es de Aprobación.
+export type BajaPedidoBc = { estado: "borrado" } | { estado: "no-existia" };
+
+export async function bcBorrarPedidoAbierto(orderNo: string): Promise<BajaPedidoBc> {
+  const no = (orderNo ?? "").trim();
+  if (!no) throw new Error("la orden no tiene N.º de Business Central");
+  let cid: string;
+  let enc: EncabezadoStd | null;
+  try {
+    cid = await getStdCompanyId();
+    enc = await bcLeerEncabezadoStd(cid, no);
+  } catch (e: any) {
+    throw new Error(`no se pudo consultar el pedido ${no} en Business Central (${String(e?.message ?? e)}). Reintentá en un momento: la orden no se anula sin saber qué quedó allá.`);
+  }
+  if (!enc) return { estado: "no-existia" };
+  // El estado REAL sale del codeunit: la API estándar dice "Open" hasta para los
+  // lanzados (ver bcOrdenTotales). Si el codeunit no contesta se sigue igual: BC
+  // mismo se niega a borrar lo que tenga recepciones.
+  const real = await bcEncabezadoPedido(no);
+  const estadoBc = estadoLanzamientoBc(real?.status);
+  if (estadoBc === "lanzado") {
+    throw new Error(`el pedido ${no} está LANZADO en Business Central: no se anula una orden cuyo pedido ya salió al proveedor. Usá "Volver a abrir" primero, o cerrala.`);
+  }
+  if (estadoBc === "pendiente-aprobacion") {
+    throw new Error(`el pedido ${no} está en aprobación en Business Central: cancelá esa aprobación allá (o esperá la respuesta) antes de anular la orden.`);
+  }
+  const res = await bcFetch(`${stdRoot()}/companies(${cid})/purchaseOrders(${enc.id})`, {
+    method: "DELETE", cache: "no-store", headers: { "If-Match": "*" },
+  });
+  if (!res.ok) {
+    const txt = (await res.text()).slice(0, 400);
+    throw new Error(`Business Central no dejó borrar el pedido ${no} (BC ${res.status}): ${txt}`);
+  }
+  return { estado: "borrado" };
+}
+
+// ── EL MOVIMIENTO DE COMPRAS DE UN ARTÍCULO, SEGÚN BC ────────────────────────
+// Sus recepciones de compra registradas (Item Ledger Entry de compra con cantidad
+// > 0), por la misma API custom que alimenta la columna "Última compra" de
+// Inventarios. Es el movimiento REAL del insumo, incluidas las compras anteriores
+// a esta app. Pedido de Proveeduría (4 sep 2026): "ver el movimiento de compras de
+// cada insumo".
+export type CompraBcItem = {
+  fecha: string; documentNo: string; vendorNo: string; locationCode: string; variantCode: string;
+  cantidad: number; unidad: string; costoUnitario: number; importe: number;
+};
+export async function bcComprasDeItem(itemNo: string, top = 100): Promise<CompraBcItem[]> {
+  const no = (itemNo ?? "").trim();
+  if (!no) return [];
+  const rows = await listCustom("purchasing",
+    `lastPurchasePrices?$filter=${encodeURIComponent(`itemNo eq '${odataStr(no)}'`)}&$orderby=postingDate desc,entryNo desc&$top=${top}`);
+  return rows.map((r) => ({
+    fecha: String(r.postingDate ?? ""),
+    documentNo: String(r.documentNo ?? ""),
+    vendorNo: String(r.vendorNo ?? ""),
+    locationCode: String(r.locationCode ?? ""),
+    variantCode: String(r.variantCode ?? ""),
+    cantidad: Number(r.quantity ?? 0) || 0,
+    unidad: String(r.unitOfMeasureCode ?? ""),
+    costoUnitario: Number(r.unitCost ?? 0) || 0,
+    importe: Number(r.costAmountActual ?? 0) || 0,
+  }));
+}
+
 export type FrenoProveedor = { ok: boolean; verificado: boolean; mensaje?: string; bc?: ProveedorBc };
 
 // ── EL ENCABEZADO COMPLETO: PROVEEDOR + ESTADO ───────────────────────────────

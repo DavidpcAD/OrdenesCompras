@@ -93,7 +93,7 @@ export const api = {
   retomarOrden: (body: unknown): Promise<{ id: number; ordenNo: string; bcNo: string; yaEstaba: boolean; bcAviso?: string }> =>
     fetch(`/api/ordenes/retomar`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }).then(jsonOrThrow),
   // Descartar un borrador de orden (vuelve el saldo a la solicitud).
-  descartarOrden: (id: string, body: unknown): Promise<{ numero: string; saldoDevuelto: number }> =>
+  descartarOrden: (id: string, body: unknown): Promise<{ numero: string; saldoDevuelto: number; bcBaja?: string }> =>
     fetch(`/api/ordenes/${id}`, { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }).then(jsonOrThrow),
   updateOrden: (id: string, body: unknown) =>
     fetch(`/api/ordenes/${id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }).then(jsonOrThrow),

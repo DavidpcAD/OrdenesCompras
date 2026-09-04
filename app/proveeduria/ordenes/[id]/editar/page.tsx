@@ -541,6 +541,12 @@ export default function EditarOrdenPage() {
     } catch (e: any) { toast(String(e?.message ?? e), "error"); setGuardando(false); }
   }
 
+  // Con la orden ya en BC, cambiar el proveedor cambia también el del pedido de allá
+  // al guardar (antes solo se reescribían las líneas y el pedido quedaba a nombre del
+  // otro: CP-005295). Se dice ANTES de guardar, en el campo, no después en un toast.
+  const provActualBc = (orden.proveedorNo || orden.proveedorId || "").trim().toUpperCase();
+  const cambiaProveedorBc = !!orden.bcNumber && !!provSel && (provSel.code ?? "").trim().toUpperCase() !== provActualBc;
+
   return (
     <>
       <main className="page page--wide" style={{ paddingBottom: 120 }}>
@@ -563,7 +569,9 @@ export default function EditarOrdenPage() {
         <Card>
           <h3 className="ds-subtitle" style={{ marginBottom: 16 }}>Datos de la orden</h3>
           <div className="grid-3">
-            <Field label="Proveedor" help="Hereda términos y moneda">
+            <Field label="Proveedor" help={cambiaProveedorBc
+              ? `Al guardar, el pedido ${orden.bcNumber} en Business Central también pasa a este proveedor (hoy es de ${provActualBc}).`
+              : "Hereda términos y moneda"}>
               <Combobox items={catProv} value={provSel?.id ?? proveedorId} onChange={(k) => { setProveedorId(k); const p = catProv.find((x) => x.id === k); if (p) setCurrency(monedaApp(p.currencyCode)); }}
                 getKey={(p) => p.id} getLabel={(p) => `${p.code} — ${p.nombre}`} getSearch={(p) => `${p.code} ${p.nombre}`} placeholder="Buscar proveedor…" />
             </Field>

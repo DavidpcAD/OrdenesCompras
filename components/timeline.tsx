@@ -56,6 +56,7 @@ function etiqueta(m: Movimiento): string {
     // Cotejo contra BC. Se guarda en la bitácora justamente para que dentro de un
     // mes se pueda saber DESDE CUÁNDO una orden estaba descuadrada con BC.
     if (m.tipoMovimiento === "bc_creado") return "Pedido creado en Business Central";
+    if (m.tipoMovimiento === "bc_encabezado") return "El pedido en Business Central cambió de proveedor o moneda";
     if (m.tipoMovimiento === "bc_desalineado") return "⚠ La orden y Business Central NO coinciden";
     if (m.tipoMovimiento === "bc_alineado") return "La orden y Business Central coinciden";
   }
@@ -77,6 +78,7 @@ function colorPunto(m: Movimiento): string {
       case "cerrado": return "var(--ds-color-gray-400)";     // cerrada a mano · neutral
       case "bc_renumerado": return "var(--ds-color-yellow)";  // se re-apuntó a otro pedido de BC
       case "bc_creado": return "var(--ds-color-gray-300)";   // el pedido nació en BC
+      case "bc_encabezado": return "var(--ds-color-yellow)";  // cambió el proveedor/moneda del pedido
       case "bc_desalineado": return "var(--ds-color-red-200)"; // BC no tiene lo mismo · rojo
       case "bc_alineado": return "var(--ds-color-green-200)";  // verificado y coincide
       case "eliminado": return "var(--ds-color-red-100)";
