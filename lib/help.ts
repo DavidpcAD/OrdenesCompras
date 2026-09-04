@@ -127,6 +127,7 @@ const ORDEN_EDITAR: HelpEntry = {
     "Cambiá el proveedor y/o el almacén de recepción si hace falta.",
     "Agregá o quitá líneas y corregí cantidades y precios.",
     "Con “+ De solicitudes” le sumás a esta orden líneas de solicitud que quedaron pendientes por ordenar (la que faltó de esta misma solicitud, o material de otra que se le pueda sumar al proveedor).",
+    "Con “Agregar artículo suelto” metés un material del catálogo que nadie solicitó (la orden se reabrió y le falta una línea, por ejemplo). Esa línea queda marcada como Manual y no descuenta saldo de ninguna solicitud.",
     "En la columna Destino, tocá “Cambiar obra/tarea” (o “Asignar obra”) para corregir a qué obra se carga la línea y con qué tarea. Con obra, el material se consume en la obra; sin obra entra al almacén.",
     "Revisá el total; guardá los cambios.",
     "Cuando esté lista, enviala a aprobación.",
@@ -134,7 +135,7 @@ const ORDEN_EDITAR: HelpEntry = {
   tips: [
     "Si la línea va a una obra, la tarea es obligatoria: Business Central no acepta un Job No. sin Job Task No.",
     "Si la orden ya tiene pedido en Business Central y le cambiás el proveedor o la moneda, al guardar el pedido de allá cambia igual, y sus líneas se reescriben.",
-    "Artículos SUELTOS no se pueden agregar a una orden nacida de solicitud (solo líneas de solicitudes): para una compra libre está la orden directa.",
+    "La línea suelta (Manual) no se puede devolver al ingeniero porque no tiene solicitud de origen: si sobra, se quita editando la orden.",
   ],
 };
 const ORDEN_IMPRIMIR: HelpEntry = {

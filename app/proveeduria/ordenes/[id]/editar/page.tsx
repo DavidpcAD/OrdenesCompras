@@ -139,8 +139,12 @@ export default function EditarOrdenPage() {
   function agregarLinea() {
     const it = itemsBc.find((x) => x.code === qaCode);
     if (!it || !(Number(qaQty) > 0)) { toast("Elegí un artículo y una cantidad.", "error"); return; }
-    setRows((rs) => [...rs, { key: `m-${uid()}`, articuloId: it.code, descripcion: it.descripcion, unidad: it.unidad, unidadBase: it.unidadBase, factorCompra: it.factorCompra, almacen, cantidad: String(Number(qaQty)), precio: String(Number(qaPrecio) || 0), iva: "13", descuento: "0", pedidoNumero: "Manual" }]);
-    setQaCode(""); setQaQty(""); setQaPrecio("");
+    // Almacén de la línea nueva: el de la orden. Si la orden tiene varios (el campo
+    // de arriba queda en blanco), el de la primera línea que tenga uno: una línea sin
+    // almacén la rechaza el envío a aprobación, y acá hay con qué rellenarla.
+    const almLinea = almacen || rows.find((r) => (r.almacen ?? "").trim())?.almacen || "";
+    setRows((rs) => [...rs, { key: `m-${uid()}`, articuloId: it.code, descripcion: it.descripcion, unidad: it.unidad, unidadBase: it.unidadBase, factorCompra: it.factorCompra, almacen: almLinea, cantidad: String(Number(qaQty)), precio: String(Number(qaPrecio) || 0), iva: "13", descuento: "0", pedidoNumero: "Manual" }]);
+    setQaCode(""); setQaQty(""); setQaPrecio(""); setQaRef(null);
   }
 
   // Unidad de medida del artículo elegido en "Agregar artículo" (la de compra).
@@ -352,14 +356,19 @@ export default function EditarOrdenPage() {
     </main></>;
   }
 
-  // Una orden nacida de una solicitud NO permite agregar artículos sueltos: sus
-  // líneas deben corresponder a lo pedido por Ingeniería. Para compras libres se
-  // usa una "orden directa". En las directas sí se muestra el buscador de artículos.
+  // El buscador de artículos del catálogo se ofrece en TODA orden Abierta, nazca de
+  // una solicitud o no. Antes solo lo tenían las directas: una orden de solicitud
+  // solo podía sumar líneas de OTRAS solicitudes, y para "un material más que ocupo
+  // yo" había que armarle al mismo proveedor una orden directa aparte (CP-005353 se
+  // reabrió por un material mal puesto y no había cómo meterle la línea que
+  // faltaba). La línea suelta viaja con pedidoNumero "Manual": no descuenta saldo de
+  // ninguna solicitud, no se puede devolver al ingeniero (se quita editando) y la
+  // orden sigue contando como "de solicitud" (ver `ordenPedidos`).
+  // `esDirecta` decide solo si se muestran "+ De solicitudes" y el material corregido.
   // OJO con la orden que se quedó ESPERANDO LA CORRECCIÓN: no tiene líneas, así que
   // `ordenEsDirecta` la da por directa (se fija en si alguna línea trae solicitud) y
-  // la pantalla le ofrecía el buscador de artículos sueltos en vez de "+ De
-  // solicitudes", que es justo lo único que necesita. La excepción va acá y no en el
-  // helper: la lista y el detalle sí la tratan bien.
+  // se quedaría sin "+ De solicitudes", que es justo lo que necesita. La excepción va
+  // acá y no en el helper: la lista y el detalle sí la tratan bien.
   const espera = ordenEsperaCorreccion(orden);
   const esDirecta = ordenEsDirecta(orden) && !espera;
   const peds = ordenPedidos(orden);
@@ -376,8 +385,8 @@ export default function EditarOrdenPage() {
   // Se ofrecen las líneas pendientes de CUALQUIER solicitud viva (no solo las de
   // origen de la orden), igual que al armarla: si al proveedor se le puede sumar
   // material de otra solicitud, mejor una orden que dos. Las de la propia orden van
-  // primero. Artículos SUELTOS siguen fuera de una orden nacida de solicitud: para
-  // eso está la orden directa.
+  // primero. Y el artículo SUELTO (sin solicitud) entra por el buscador del
+  // catálogo, igual que en una orden directa.
   const yaEnOrden = new Set(rows.map((r) => r.pedidoLineaId));
   const esOrigen = new Set(peds);
   const lineasDisponibles = pedidos
@@ -536,7 +545,9 @@ export default function EditarOrdenPage() {
       // Si BC no quedó sincronizado, ese aviso manda: el pedido allá tendría las
       // líneas viejas y Bodega recibiría contra ellas.
       if (r?.bcAviso) toast(r.bcAviso, "info");
-      else toast(`Orden ${numeroOrden(orden!)} actualizada`, "success");
+      // Sin "Orden" delante: `numeroOrden` ya dice "CP-005353" o, si todavía no está
+      // en BC, "Orden en armado" (y salía "Orden Orden en armado actualizada").
+      else toast(`${numeroOrden(orden!)} actualizada`, "success");
       router.push(`/proveeduria/ordenes/${orden!.id}`);
     } catch (e: any) { toast(String(e?.message ?? e), "error"); setGuardando(false); }
   }
@@ -637,59 +648,20 @@ export default function EditarOrdenPage() {
         </Card>
 
         <Card className="mt-4" style={{ padding: 0, overflow: "hidden" }}>
-          {esDirecta ? (
-            <div className="row wrap gap-2" style={{ alignItems: "flex-end", padding: "12px 16px", borderBottom: "1.5px solid var(--ds-color-gray-100)", background: "color-mix(in srgb, var(--ds-color-green-100) 6%, var(--ds-tint-base))" }}>
-              <div style={{ flex: "1 1 280px", minWidth: 220 }}>
-                <label className="ds-label ds-muted" style={{ display: "block", marginBottom: 4 }}>Agregar artículo</label>
-                <Combobox items={itemsBc} value={qaCode} onChange={(k) => {
-                    setQaCode(k); setQaPrecio(""); setQaRef(null);
-                    const it = itemsBc.find((x) => x.code === k);
-                    if (!k) return;
-                    fetch(`/api/bc/lastprice?item=${encodeURIComponent(k)}&vendor=${encodeURIComponent(provSel?.code ?? "")}`)
-                      .then((r) => r.json()).then((d) => {
-                        if (!(typeof d.precio === "number" && d.precio > 0)) return;
-                        const ref = { precio: d.precio, unidad: String(d.unidad ?? ""), moneda: String(d.moneda ?? ""), factor: d.factor };
-                        setQaRef(ref);
-                        // Solo se prellena si el precio corresponde a esta unidad y moneda.
-                        const p = mismaMoneda(ref.moneda, currency)
-                          ? precioEnUnidad(ref, it?.unidad ?? ref.unidad, it?.unidadBase ?? ref.unidad)
-                          : null;
-                        if (p != null) setQaPrecio(String(p));
-                      }).catch(() => {});
-                  }} getKey={(i) => i.code} getLabel={(i) => `${i.code} — ${i.descripcion}`}
-                  // La UNIDAD a la par de cada opción: se elige el material sabiendo si
-                  // va por SACO, M3 o UND, sin tener que elegirlo para averiguarlo.
-                  // `.combo__item` es flex, así que el margin-left:auto la manda a la
-                  // derecha y queda en columna, alineada entre filas.
-                  renderItem={(i) => <>{`${i.code} — ${i.descripcion}`}<small style={{ marginLeft: "auto", paddingLeft: 12, whiteSpace: "nowrap" }}
-                    title={equivalencia({ base: i.unidadBase ?? "", compra: i.unidad, factor: i.factorCompra }) ?? undefined}>{i.unidad}</small></>}
-                  // También se puede buscar por unidad ("saco", "m3").
-                  getSearch={(i) => `${i.code} ${i.descripcion} ${i.unidad}`} minChars={2} placeholder="Buscar artículo del catálogo…" />
-              </div>
-              <div>
-                <label className="ds-label ds-muted" style={{ display: "block", marginBottom: 4 }}>Cantidad</label>
-                {/* Íd. que en compra directa: la unidad del artículo elegido al lado
-                    del campo, para no escribir una cantidad a ciegas. */}
-                <span className="row gap-2" style={{ alignItems: "center" }}>
-                  <Input type="number" min={0} value={qaQty} onChange={(e) => setQaQty(e.target.value)} placeholder="0" style={{ width: 90 }} />
-                  {qaUnidad && <span className="ds-body-sm ds-muted" style={{ whiteSpace: "nowrap" }} title={qaEquiv ?? undefined}>{qaUnidad}</span>}
-                </span>
-                {qaEquiv && <div className="ds-body-sm ds-muted" style={{ marginTop: 2 }}>{qaEquiv}</div>}
-              </div>
-              <div><label className="ds-label ds-muted" style={{ display: "block", marginBottom: 4 }}>Precio</label><Input type="number" min={0} value={qaPrecio} onChange={(e) => setQaPrecio(e.target.value)} placeholder="0" style={{ width: 110 }} />{qaRef ? <div className="ds-body-sm ds-muted" style={{ marginTop: 2 }}>últ. compra {money(qaRef.precio, monedaApp(qaRef.moneda))}{qaRef.unidad ? ` / ${qaRef.unidad}` : ""}</div> : null}</div>
-              <Button variant="outline" onClick={agregarLinea} disabled={!qaCode || !(Number(qaQty) > 0)}>+ Agregar línea</Button>
-            </div>
-          ) : (
+          {/* Arriba, SOLO si la orden nació de una solicitud: qué es esta orden, el
+              material corregido y "+ De solicitudes". Abajo, para toda orden, el
+              buscador del catálogo para meter un artículo suelto (Manual). */}
+          {!esDirecta && (
             <div className="row wrap gap-3" style={{ alignItems: "center", justifyContent: "space-between", padding: "12px 16px", borderBottom: "1.5px solid var(--ds-color-gray-100)", background: "color-mix(in srgb, var(--ds-color-green-100) 6%, var(--ds-tint-base))" }}>
               <span className="ds-body-sm ds-muted" style={{ flex: "1 1 320px" }}>
                 {espera ? (
                   corregidas.length > 0 ? (
                     <>Este es el material que el ingeniero corrigió, ya puesto con el precio que la orden tenía en Business Central. Revisá cantidad y precio y guardá: al reenviarla se le reescriben las líneas a <span className="ds-strong">ese mismo pedido</span> ({orden.bcNumber}), no se crea otro.</>
                   ) : (
-                    <>Esta orden conserva su N.º de Business Central (<span className="ds-strong">{orden.bcNumber}</span>) y espera el material corregido. Cuando el ingeniero lo devuelva va a aparecer acá para traerlo de un clic; si no, buscalo con “+ De solicitudes”.</>
+                    <>Esta orden conserva su N.º de Business Central (<span className="ds-strong">{orden.bcNumber}</span>) y espera el material corregido. Cuando el ingeniero lo devuelva va a aparecer acá para traerlo de un clic; si no, buscalo con “+ De solicitudes” o agregá el artículo del catálogo abajo.</>
                   )
                 ) : (
-                  <>Las líneas provienen de la solicitud ({peds.join(", ")}). Podés ajustar cantidad, precio y descuento, quitar líneas y sumar las que quedaron pendientes por ordenar. Artículos sueltos no: para compras libres usá una <span className="ds-strong">orden directa</span>.</>
+                  <>Las líneas provienen de la solicitud ({peds.join(", ")}). Podés ajustar cantidad, precio y descuento, quitar líneas y sumar las que quedaron pendientes por ordenar. Si ocupás un material que nadie solicitó, agregalo del catálogo abajo: esa línea queda como <span className="ds-strong">Manual</span> y no descuenta saldo de ninguna solicitud.</>
                 )}
               </span>
               <span className="row gap-2 wrap">
@@ -711,6 +683,49 @@ export default function EditarOrdenPage() {
               </span>
             </div>
           )}
+          <div className="row wrap gap-2" style={{ alignItems: "flex-end", padding: "12px 16px", borderBottom: "1.5px solid var(--ds-color-gray-100)", background: "color-mix(in srgb, var(--ds-color-green-100) 6%, var(--ds-tint-base))" }}>
+            <div style={{ flex: "1 1 280px", minWidth: 220 }}>
+              {/* En una orden de solicitud se dice qué es: un artículo que NADIE pidió,
+                  para que no se confunda con "+ De solicitudes". */}
+              <label className="ds-label ds-muted" style={{ display: "block", marginBottom: 4 }}>{esDirecta ? "Agregar artículo" : "Agregar artículo suelto (sin solicitud)"}</label>
+              <Combobox items={itemsBc} value={qaCode} onChange={(k) => {
+                  setQaCode(k); setQaPrecio(""); setQaRef(null);
+                  const it = itemsBc.find((x) => x.code === k);
+                  if (!k) return;
+                  fetch(`/api/bc/lastprice?item=${encodeURIComponent(k)}&vendor=${encodeURIComponent(provSel?.code ?? "")}`)
+                    .then((r) => r.json()).then((d) => {
+                      if (!(typeof d.precio === "number" && d.precio > 0)) return;
+                      const ref = { precio: d.precio, unidad: String(d.unidad ?? ""), moneda: String(d.moneda ?? ""), factor: d.factor };
+                      setQaRef(ref);
+                      // Solo se prellena si el precio corresponde a esta unidad y moneda.
+                      const p = mismaMoneda(ref.moneda, currency)
+                        ? precioEnUnidad(ref, it?.unidad ?? ref.unidad, it?.unidadBase ?? ref.unidad)
+                        : null;
+                      if (p != null) setQaPrecio(String(p));
+                    }).catch(() => {});
+                }} getKey={(i) => i.code} getLabel={(i) => `${i.code} — ${i.descripcion}`}
+                // La UNIDAD a la par de cada opción: se elige el material sabiendo si
+                // va por SACO, M3 o UND, sin tener que elegirlo para averiguarlo.
+                // `.combo__item` es flex, así que el margin-left:auto la manda a la
+                // derecha y queda en columna, alineada entre filas.
+                renderItem={(i) => <>{`${i.code} — ${i.descripcion}`}<small style={{ marginLeft: "auto", paddingLeft: 12, whiteSpace: "nowrap" }}
+                  title={equivalencia({ base: i.unidadBase ?? "", compra: i.unidad, factor: i.factorCompra }) ?? undefined}>{i.unidad}</small></>}
+                // También se puede buscar por unidad ("saco", "m3").
+                getSearch={(i) => `${i.code} ${i.descripcion} ${i.unidad}`} minChars={2} placeholder="Buscar artículo del catálogo…" />
+            </div>
+            <div>
+              <label className="ds-label ds-muted" style={{ display: "block", marginBottom: 4 }}>Cantidad</label>
+              {/* Íd. que en compra directa: la unidad del artículo elegido al lado
+                  del campo, para no escribir una cantidad a ciegas. */}
+              <span className="row gap-2" style={{ alignItems: "center" }}>
+                <Input type="number" min={0} value={qaQty} onChange={(e) => setQaQty(e.target.value)} placeholder="0" style={{ width: 90 }} />
+                {qaUnidad && <span className="ds-body-sm ds-muted" style={{ whiteSpace: "nowrap" }} title={qaEquiv ?? undefined}>{qaUnidad}</span>}
+              </span>
+              {qaEquiv && <div className="ds-body-sm ds-muted" style={{ marginTop: 2 }}>{qaEquiv}</div>}
+            </div>
+            <div><label className="ds-label ds-muted" style={{ display: "block", marginBottom: 4 }}>Precio</label><Input type="number" min={0} value={qaPrecio} onChange={(e) => setQaPrecio(e.target.value)} placeholder="0" style={{ width: 110 }} />{qaRef ? <div className="ds-body-sm ds-muted" style={{ marginTop: 2 }}>últ. compra {money(qaRef.precio, monedaApp(qaRef.moneda))}{qaRef.unidad ? ` / ${qaRef.unidad}` : ""}</div> : null}</div>
+            <Button variant="outline" onClick={agregarLinea} disabled={!qaCode || !(Number(qaQty) > 0)}>+ Agregar línea</Button>
+          </div>
           <div className="ds-table-wrap" style={{ boxShadow: "none" }}>
             <table className="ds-table">
               <thead><tr><th>Artículo</th><th>Solicitud</th><th>Destino</th><th className="ds-num">Cantidad</th><th className="ds-num">Precio</th><th className="ds-num">Desc%</th><th className="ds-num">IVA%</th><th className="ds-num">Importe</th><th></th></tr></thead>
