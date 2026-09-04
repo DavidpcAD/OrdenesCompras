@@ -482,3 +482,30 @@ test("el almacén amarrado pone el CC incluso si la línea no traía ninguno", (
     assert.equal(lines[0].ccCode, "CC");
   } finally { delete process.env.BC_CC_POR_ALMACEN; }
 });
+
+// ── El grupo de IVA de las líneas sobrevive a la reescritura ─────────────────
+// Contabilidad deja una importación en EXENTO-BIENES a mano en BC; el codeunit recrea
+// las líneas con el grupo del artículo (IVA13%-BIENES) y el 13% volvía (CP-005339).
+import { lineasARestaurarIva } from "./bc.ts";
+
+test("vuelve a poner el grupo de IVA solo a las líneas que quedaron con otro", () => {
+  const antes = { "M20-1088": "EXENTO-BIENES", "M20-1089": "EXENTO-BIENES", "M20-1090": "IVA13%-BIENES" };
+  const despues = [
+    { id: "a", code: "M20-1088", taxCode: "IVA13%-BIENES" },  // la pisó: se restaura
+    { id: "b", code: "M20-1089", taxCode: "EXENTO-BIENES" },  // quedó igual: nada
+    { id: "c", code: "M20-1090", taxCode: "IVA13%-BIENES" },  // igual: nada
+    { id: "d", code: "M20-1094", taxCode: "IVA13%-BIENES" },  // línea nueva, sin historia: nada
+  ];
+  assert.deepEqual(lineasARestaurarIva(antes, despues), [{ id: "a", code: "M20-1088", taxCode: "EXENTO-BIENES" }]);
+});
+
+test("el código se compara sin importar mayúsculas/espacios y las líneas sin id o sin grupo previo se saltan", () => {
+  const antes = { "M20-1088": "EXENTO-BIENES", "M20-1089": "" };
+  const despues = [
+    { id: "a", code: " m20-1088 ", taxCode: "iva13%-bienes" },
+    { id: "", code: "M20-1088", taxCode: "IVA13%-BIENES" },
+    { id: "b", code: "M20-1089", taxCode: "IVA13%-BIENES" },
+  ];
+  assert.deepEqual(lineasARestaurarIva(antes, despues), [{ id: "a", code: "M20-1088", taxCode: "EXENTO-BIENES" }]);
+  assert.deepEqual(lineasARestaurarIva({}, despues), []);
+});

@@ -182,6 +182,10 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
         try {
           const r = await bcReplaceOrderLines(o.bcNumber, lineasBc);
           if (r.omitidas.length) bcAviso = `Enviada a aprobación. OJO: BC no recibió ${r.omitidas.length} línea(s) — ${r.omitidas.join("; ")}.`;
+          // El grupo de IVA que Contabilidad puso a mano en BC (una importación en
+          // EXENTO-BIENES) sobrevive a la reescritura; si no se pudo, se dice.
+          if (r.ivaRestaurado.length) bcAviso = [bcAviso, `Las líneas conservan el grupo de IVA que tenían en BC (${r.ivaRestaurado.join(", ")}).`].filter(Boolean).join(" · ");
+          if (r.avisoIva) bcAviso = [bcAviso, r.avisoIva].filter(Boolean).join(" · ");
         } catch (e: any) {
           bcAviso = `Se envió a aprobación, pero el pedido ${o.bcNumber} en BC quedó con las líneas VIEJAS: ${String(e?.message ?? e)}`;
           // Si la reescritura no entró, ya SABEMOS por qué BC va a estar distinto, y el
@@ -291,7 +295,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
             const dif = bcT.total - estimado;
             if (Math.abs(dif) > 0.01) {
               const fmt = (n: number) => n.toLocaleString("es-CR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-              bcAviso = [bcAviso, `OJO con el total: BC calculó ${fmt(bcT.total)} (IVA ${fmt(bcT.iva)}) y el estimado de la orden era ${fmt(estimado)} — BC cobra ${fmt(Math.abs(dif))} ${dif > 0 ? "más" : "menos"}. El IVA lo pone BC según el grupo de IVA del proveedor y del artículo, no el IVA% de la orden. Si el de BC no corresponde, hay que corregirlo EN BC (y volver a enviar la orden para que reescriba las líneas).`]
+              bcAviso = [bcAviso, `OJO con el total: BC calculó ${fmt(bcT.total)} (IVA ${fmt(bcT.iva)}) y el estimado de la orden era ${fmt(estimado)} — BC cobra ${fmt(Math.abs(dif))} ${dif > 0 ? "más" : "menos"}. El IVA lo pone BC según el grupo de IVA del proveedor y del artículo, no el IVA% de la orden. Si el de BC no corresponde (una importación va sin IVA), Contabilidad lo corrige EN BC: grupo de IVA del proveedor y del encabezado a EXTRANJERO y el de las líneas a EXENTO-BIENES; la app conserva ese grupo aunque reescriba las líneas. El PDF al proveedor usa el IVA de la orden, no el de BC.`]
                 .filter(Boolean).join(" · ");
             }
           }
@@ -343,6 +347,8 @@ export async function PUT(req: Request, { params }: { params: { id: string } }) 
         const lineasBc = lineasOrdenParaBc(o.lineas, obrasSolicitud);
         const r = await bcReplaceOrderLines(o.bcNumber, lineasBc);
         if (r.omitidas.length) avisos.push(`Guardado. OJO: BC no recibió ${r.omitidas.length} línea(s) — ${r.omitidas.join("; ")}.`);
+        if (r.ivaRestaurado.length) avisos.push(`Las líneas conservan el grupo de IVA que tenían en BC (${r.ivaRestaurado.join(", ")}).`);
+        if (r.avisoIva) avisos.push(r.avisoIva);
         // Se relee BC y se coteja. Acá NO se puede frenar nada (el SQL ya se
         // guardó), pero el resultado deja de ser un toast: queda escrito en la
         // orden y en la bitácora, y la pantalla lo muestra hasta que se arregle.

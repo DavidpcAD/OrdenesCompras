@@ -387,9 +387,11 @@ export function OrdenDetalle({
               La diferencia es <span className="ds-strong">IVA</span>: el IVA lo calcula Business Central cruzando el grupo de
               IVA del <span className="ds-strong">proveedor</span> con el del <span className="ds-strong">artículo</span> — el IVA% que se
               escribe en la orden es solo para el estimado de esta pantalla, no viaja a BC.
-              El que se contabiliza es el de BC. Si no corresponde (una compra del exterior, por ejemplo, donde el impuesto de
-              aduana va en su propia línea de cargo), hay que corregir el grupo de IVA <span className="ds-strong">en BC</span> y
-              volver a enviar la orden a aprobación: así la app le reescribe las líneas y BC recalcula.
+              El que se contabiliza es el de BC. Si no corresponde (una compra del exterior, por ejemplo, que va sin IVA porque
+              el impuesto se paga en aduana), Contabilidad lo corrige <span className="ds-strong">en BC</span>: el grupo de IVA del
+              proveedor y del encabezado del pedido a EXTRANJERO, y el de las líneas a EXENTO-BIENES. BC recalcula al momento y
+              esta pantalla lo refleja al recargar; la app conserva ese grupo si después reescribe las líneas.
+              El PDF al proveedor usa el IVA de la orden, no el de BC.
             </div>
             {/* Y si el que vale es el de BC —lo normal—, esto lo copia a las líneas de
                 una vez: el total de la orden, el del PDF del proveedor y el que ve
@@ -397,7 +399,7 @@ export function OrdenDetalle({
             {onAlinearIva && (
               <div className="mt-2">
                 <Button variant="outline" size="sm" disabled={alineando}
-                  title="Copia a cada línea el IVA% que Business Central va a contabilizar. No toca BC."
+                  title="Copia a cada línea el IVA% que Business Central va a contabilizar. No toca BC. En una importación NO lo uses hasta que BC esté corregido: copiarías el 13% al PDF del proveedor."
                   onClick={async () => { setAlineando(true); try { await onAlinearIva(); } finally { setAlineando(false); } }}>
                   {alineando ? "Alineando…" : "Usar el IVA de BC"}
                 </Button>

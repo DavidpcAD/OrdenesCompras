@@ -1599,11 +1599,77 @@ export function payloadReplaceLines(lineas: LineaReplaceBc[]): { lines: Record<s
 // parcial garantizado, y encima se traga las líneas de Item Charge sin avisar. El
 // codeunit lo hace todo-o-nada y él mismo se niega si el pedido está lanzado o si ya
 // tiene recepciones registradas.
-export async function bcReplaceOrderLines(orderNo: string, lineas: LineaReplaceBc[]): Promise<{ resultado: string; omitidas: string[] }> {
+// ── EL GRUPO DE IVA DE LAS LÍNEAS SOBREVIVE A LA REESCRITURA ─────────────────
+// El codeunit borra y recrea las líneas, y cada línea nueva nace con el grupo de IVA
+// del ARTÍCULO. Si Contabilidad había puesto otro a mano en BC —una importación va
+// con EXENTO-BIENES para que no cobre 13%; con el grupo del artículo (IVA13%-BIENES)
+// cobra 13% aunque el proveedor sea EXTRANJERO (CP-005339, PRECISE FORMS INC, 4 sep
+// 2026)— la reescritura lo pisaba y el IVA volvía sin que nadie lo viera desde la app.
+//
+// Acá se lee el grupo que tenía cada artículo ANTES de reescribir y se vuelve a poner
+// DESPUÉS en las líneas de ese artículo que quedaron con otro. Va por la API estándar:
+// en `purchaseOrderLines`, `taxCode` ES el VAT Prod. Posting Group (la compañía
+// trabaja con IVA, no con sales tax). Es mejor esfuerzo: si no se puede leer o
+// restaurar, la reescritura igual vale y se avisa. Efecto secundario asumido: un
+// cambio del grupo en la ficha del ARTÍCULO no entra al pedido por una reescritura
+// (se conserva el que tenían las líneas) — es el caso raro; el otro costaba plata.
+export type LineaIvaBc = { id: string; code: string; taxCode: string };
+
+export function lineasARestaurarIva(antes: Record<string, string>, despues: LineaIvaBc[]): { id: string; code: string; taxCode: string }[] {
+  const out: { id: string; code: string; taxCode: string }[] = [];
+  for (const l of despues ?? []) {
+    const code = String(l?.code ?? "").trim().toUpperCase();
+    const previo = String(antes?.[code] ?? "").trim();
+    const actual = String(l?.taxCode ?? "").trim();
+    if (!l?.id || !code || !previo) continue;
+    if (previo.toUpperCase() === actual.toUpperCase()) continue;
+    out.push({ id: String(l.id), code, taxCode: previo });
+  }
+  return out;
+}
+
+// Las líneas del pedido con su grupo de IVA, por la API estándar. null si no se pudo.
+async function bcLineasIvaDePedido(cid: string, orderNo: string): Promise<{ poId: string; lineas: LineaIvaBc[] } | null> {
+  const filtro = `$filter=${encodeURIComponent(`number eq '${odataStr(orderNo)}'`)}&$select=id&$top=1`;
+  const res = await bcFetch(`${stdRoot()}/companies(${cid})/purchaseOrders?${filtro}`, { cache: "no-store" });
+  if (!res.ok) return null;
+  const poId = ((await res.json())?.value ?? [])[0]?.id;
+  if (!poId) return null;
+  const resL = await bcFetch(
+    `${stdRoot()}/companies(${cid})/purchaseOrders(${poId})/purchaseOrderLines?$select=id,lineObjectNumber,taxCode`,
+    { cache: "no-store" });
+  if (!resL.ok) return null;
+  const lineas: LineaIvaBc[] = (((await resL.json())?.value ?? []) as any[])
+    .map((l) => ({
+      id: String(l?.id ?? ""),
+      code: String(l?.lineObjectNumber ?? "").trim().toUpperCase(),
+      taxCode: String(l?.taxCode ?? "").trim(),
+    }))
+    .filter((l) => l.id && l.code);
+  return { poId, lineas };
+}
+
+export type ResultadoReplace = {
+  resultado: string;
+  omitidas: string[];
+  // Líneas a las que se les volvió a poner el grupo de IVA que tenían en BC ("M20-1088 → EXENTO-BIENES").
+  ivaRestaurado: string[];
+  // Cuando NO se pudo conservar ese grupo: el IVA del pedido pudo cambiar en BC.
+  avisoIva?: string;
+};
+
+export async function bcReplaceOrderLines(orderNo: string, lineas: LineaReplaceBc[]): Promise<ResultadoReplace> {
   if (!orderNo) throw new Error("Falta el número de pedido de BC.");
   const { lines, omitidas } = payloadReplaceLines(lineas);
   if (!lines.length) throw new Error("Ninguna línea de la orden es válida para BC.");
   const cid = await getStdCompanyId();
+  // El grupo de IVA por artículo ANTES de reescribir (ver lineasARestaurarIva). Si BC
+  // no lo da, se sigue igual: reescribir importa más que conservar el grupo.
+  const ivaAntes: Record<string, string> = {};
+  try {
+    const prev = await bcLineasIvaDePedido(cid, orderNo);
+    for (const l of prev?.lineas ?? []) if (l.taxCode) ivaAntes[l.code] = l.taxCode;
+  } catch { /* sin lectura previa no hay nada que conservar */ }
   const url = `${odataRoot()}/AdelantePO_ReplaceOrderLines?company=${encodeURIComponent(cid)}`;
   const res = await bcFetch(url, {
     method: "POST", cache: "no-store",
@@ -1618,7 +1684,31 @@ export async function bcReplaceOrderLines(orderNo: string, lineas: LineaReplaceB
     throw new Error(`BC ${res.status}: ${txt}`);
   }
   const d: any = await res.json().catch(() => ({}));
-  return { resultado: String(d?.value ?? "Líneas reescritas en BC."), omitidas };
+  const resultado = String(d?.value ?? "Líneas reescritas en BC.");
+  const ivaRestaurado: string[] = [];
+  let avisoIva: string | undefined;
+  if (Object.keys(ivaAntes).length) {
+    try {
+      const post = await bcLineasIvaDePedido(cid, orderNo);
+      if (!post) throw new Error("no se pudieron releer las líneas");
+      const fallas: string[] = [];
+      for (const p of lineasARestaurarIva(ivaAntes, post.lineas)) {
+        const r = await bcFetch(`${stdRoot()}/companies(${cid})/purchaseOrders(${post.poId})/purchaseOrderLines(${p.id})`, {
+          method: "PATCH", cache: "no-store",
+          headers: { "Content-Type": "application/json", "If-Match": "*" },
+          body: JSON.stringify({ taxCode: p.taxCode }),
+        });
+        if (r.ok) ivaRestaurado.push(`${p.code} → ${p.taxCode}`);
+        else fallas.push(`${p.code} (BC ${r.status}: ${(await r.text()).slice(0, 120)})`);
+      }
+      if (fallas.length) {
+        avisoIva = `OJO con el IVA: al reescribir las líneas del pedido ${orderNo} no se pudo volver a poner el grupo de IVA que tenían en BC a ${fallas.length} línea(s) — ${fallas.join("; ")}. Quedaron con el grupo del artículo: revisá el IVA del pedido en BC.`;
+      }
+    } catch (e: any) {
+      avisoIva = `OJO con el IVA: al reescribir las líneas del pedido ${orderNo} no se pudo verificar que conserven el grupo de IVA que tenían en BC (${String(e?.message ?? e)}). Si Contabilidad lo había corregido a mano, revisalo.`;
+    }
+  }
+  return { resultado, omitidas, ivaRestaurado, avisoIva };
 }
 
 // Traduce las líneas de una orden de la app (las que devuelve `getOrden`) a las
