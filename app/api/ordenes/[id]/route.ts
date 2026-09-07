@@ -225,7 +225,13 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
           // cotejo de acá abajo puede frenar el envío). Si no, el pedido queda creado
           // en BC y la app no sabe su número: al reintentar crea otro y el primero se
           // queda de huérfano — que es justo como aparecen los CP fantasma.
-          try { await asignarBcNumber(id, r.number, a.usuario, a.rol); } catch { /* se reintenta al guardar el estado */ }
+          // El detalle deja escrito A NOMBRE DE QUIÉN nació el pedido: es el único
+          // momento en que la app le manda el proveedor a BC, y sin esto no queda
+          // registro de con qué proveedor salió (lo que hubo que reconstruir a mano
+          // en CP-005183, CP-005249 y CP-005289).
+          const nacio = `Pedido ${r.number} creado en Business Central a nombre de ${o.proveedorNo || o.proveedorId}`
+            + `${o.proveedorNombre ? ` (${o.proveedorNombre})` : ""}${o.currencyCode ? `, en ${o.currencyCode}` : ""}.`;
+          try { await asignarBcNumber(id, r.number, a.usuario, a.rol, nacio); } catch { /* se reintenta al guardar el estado */ }
           const avisos = [
             r.omitidas.length ? `El pedido ${r.number} se creó en BC, pero sin ${r.omitidas.length} línea(s) — ${r.omitidas.join("; ")}.` : "",
             r.avisoCC ?? "",

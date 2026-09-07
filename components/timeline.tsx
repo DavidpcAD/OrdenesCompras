@@ -35,6 +35,7 @@ const LABEL: Record<string, string> = {
   recepcion_total: "Recepción total",
   eliminado: "Eliminado",
   bc_renumerado: "N.º de Business Central corregido",
+  encabezado_cambiado: "Cambió el proveedor o la moneda",
 };
 
 // Etiqueta contextual: el mismo tipo de movimiento se lee distinto según
@@ -56,6 +57,11 @@ function etiqueta(m: Movimiento): string {
     // Cotejo contra BC. Se guarda en la bitácora justamente para que dentro de un
     // mes se pueda saber DESDE CUÁNDO una orden estaba descuadrada con BC.
     if (m.tipoMovimiento === "bc_creado") return "Pedido creado en Business Central";
+    // El cambio ACÁ (al editar la orden). El de allá es `bc_encabezado`: cuando los
+    // dos aparecen juntos, la corrección llegó completa; cuando falta el segundo, el
+    // pedido de BC se quedó a nombre del proveedor viejo — que es como nacieron
+    // CP-005183, CP-005249 y CP-005289.
+    if (m.tipoMovimiento === "encabezado_cambiado") return "A la orden le cambiaron el proveedor o la moneda";
     if (m.tipoMovimiento === "bc_encabezado") return "El pedido en Business Central cambió de proveedor o moneda";
     if (m.tipoMovimiento === "bc_desalineado") return "⚠ La orden y Business Central NO coinciden";
     if (m.tipoMovimiento === "bc_alineado") return "La orden y Business Central coinciden";
@@ -78,6 +84,7 @@ function colorPunto(m: Movimiento): string {
       case "cerrado": return "var(--ds-color-gray-400)";     // cerrada a mano · neutral
       case "bc_renumerado": return "var(--ds-color-yellow)";  // se re-apuntó a otro pedido de BC
       case "bc_creado": return "var(--ds-color-gray-300)";   // el pedido nació en BC
+      case "encabezado_cambiado": return "var(--ds-color-yellow)"; // le cambiaron el proveedor/moneda a la orden
       case "bc_encabezado": return "var(--ds-color-yellow)";  // cambió el proveedor/moneda del pedido
       case "bc_desalineado": return "var(--ds-color-red-200)"; // BC no tiene lo mismo · rojo
       case "bc_alineado": return "var(--ds-color-green-200)";  // verificado y coincide

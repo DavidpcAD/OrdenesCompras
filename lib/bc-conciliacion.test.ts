@@ -7,7 +7,7 @@
 //   npm test
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { cotejarLineas, claveLinea, lineasRecibidasDeOrden, type LineaApp, type LineaBc } from "./bc-conciliacion.ts";
+import { cotejarLineas, claveLinea, lineasRecibidasDeOrden, proveedoresAjenos, type LineaApp, type LineaBc } from "./bc-conciliacion.ts";
 
 const app = (p: Partial<LineaApp> = {}): LineaApp => ({
   id: "1", tipo: "articulo", itemNo: "M06-0116", variantCode: "",
@@ -185,4 +185,45 @@ test("lineasRecibidasDeOrden deja solo lo efectivamente recibido, con esa cantid
   const r = lineasRecibidasDeOrden(lineas);
   assert.equal(r.length, 1);
   assert.equal(r[0].cantidad, 4);
+});
+
+// ── El proveedor de los documentos registrados ───────────────────────────────
+// El caso que hay que sostener acá es CP-005289: la orden era de Mercasa, la
+// factura CFR-009891 quedó registrada en BC a nombre de EPA, y como las líneas
+// cuadraban perfecto el detector la daba por buena. El proveedor manda sobre las
+// líneas: es lo único de esta lista que ya no se arregla reenviando la orden.
+const bcFact = (p: Partial<LineaBc> = {}): LineaBc => ({
+  documentNo: "CFR-009891", lineNo: 10000, tipo: "articulo", itemNo: "M01-0205", variantCode: "",
+  descripcion: "PERLING 2X4X1.5MM H.G", unidad: "UND", almacen: "ALM-GRAL",
+  cantidad: 25, recibida: 25, facturada: 25, pendiente: 0, precioUnitario: 8098.98,
+  vendorNo: "PROV-000800", ...p,
+});
+
+test("proveedoresAjenos: la factura a nombre de otro proveedor se delata (CP-005289)", () => {
+  assert.deepEqual(proveedoresAjenos([bcFact({ vendorNo: "PROV-000522" })], "PROV-000800"), ["PROV-000522"]);
+});
+
+test("proveedoresAjenos: el proveedor correcto no genera ruido", () => {
+  assert.deepEqual(proveedoresAjenos([bcFact(), bcFact({ lineNo: 20000 })], "PROV-000800"), []);
+});
+
+test("proveedoresAjenos: no le importan mayúsculas ni espacios", () => {
+  assert.deepEqual(proveedoresAjenos([bcFact({ vendorNo: " prov-000800 " })], "PROV-000800"), []);
+});
+
+test("proveedoresAjenos: si BC no dijo de quién era, no se acusa a nadie", () => {
+  assert.deepEqual(proveedoresAjenos([bcFact({ vendorNo: "" }), bcFact({ vendorNo: undefined })], "PROV-000800"), []);
+});
+
+test("proveedoresAjenos: sin proveedor en la orden no hay contra qué comparar", () => {
+  assert.deepEqual(proveedoresAjenos([bcFact({ vendorNo: "PROV-000522" })], ""), []);
+});
+
+test("proveedoresAjenos: dos documentos de dos proveedores ajenos se listan una vez cada uno", () => {
+  const lineas = [
+    bcFact({ vendorNo: "PROV-000522" }),
+    bcFact({ lineNo: 20000, vendorNo: "PROV-000522" }),
+    bcFact({ documentNo: "CFR-009892", vendorNo: "PROV-000163" }),
+  ];
+  assert.deepEqual(proveedoresAjenos(lineas, "PROV-000800"), ["PROV-000522", "PROV-000163"]);
 });

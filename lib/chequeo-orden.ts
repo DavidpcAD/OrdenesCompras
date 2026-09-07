@@ -9,7 +9,7 @@
 // nadie miró el que era de verdad.
 import { getOrden, facturasBcDeOrden, guardarChequeoBc } from "./repo.ts";
 import { chequearOrdenContraBc, lineasOrdenParaCotejo, bcLineasFacturaRegistrada, bcLineasFacturadasDePedido } from "./bc.ts";
-import { cotejarLineas, type Diferencia, type LineaBc } from "./bc-conciliacion.ts";
+import { cotejarLineas, proveedoresAjenos, type Diferencia, type LineaBc } from "./bc-conciliacion.ts";
 import type { Orden } from "./types.ts";
 import type { Role } from "./types.ts";
 
@@ -79,6 +79,29 @@ export async function chequearOrdenAFondo(
   if (porPedido && porPedido.length) {
     const cotejo = cotejarLineas(facturadoDe(orden), porPedido, { ignorarVariante: false });
     const docs = [...new Set(porPedido.map((l) => l.documentNo).filter(Boolean))];
+
+    // EL PROVEEDOR MANDA SOBRE LAS LÍNEAS. Mismo criterio que para el pedido vivo:
+    // que los artículos, cantidades y precios cuadren no dice nada si la factura
+    // quedó cargada a la cuenta por pagar de otro proveedor. Y es lo peor que puede
+    // salir mal acá, porque a esta altura ya solo se deshace con una nota de
+    // crédito. Así se escapó CFR-009891 (CP-005289, Mercasa facturada a EPA): las
+    // líneas cuadraban y el detector la daba por buena.
+    const ajenas = proveedoresAjenos(porPedido, String(orden.proveedorNo || orden.proveedorId || ""));
+    if (ajenas.length) {
+      const mensaje =
+        `FACTURA A NOMBRE DE OTRO PROVEEDOR — ${docs.length ? `el/los documento(s) ${docs.join(", ")}` : `lo registrado contra ${orden.bcNumber}`} `
+        + `en Business Central está a nombre de ${ajenas.join(", ")}, pero esta orden es de ${orden.proveedorNo || orden.proveedorId}`
+        + `${orden.proveedorNombre ? ` (${orden.proveedorNombre})` : ""}. `
+        + `La compra quedó cargada a la cuenta por pagar del proveedor equivocado. `
+        + `Eso ya no se corrige reenviando la orden: Contabilidad tiene que emitir una nota de crédito de esa factura y volver a registrarla contra el proveedor correcto.`
+        + (cotejo.ok ? "" : ` Además, las líneas no coinciden: ${cotejo.resumen}`);
+      await guardar("desalineado", mensaje);
+      return {
+        estado: "desalineado", contra: "factura", facturas: docs,
+        mensaje, diferencias: cotejo.diferencias, importeEnJuego: cotejo.importeEnJuego,
+      };
+    }
+
     const mensaje = cotejo.ok
       ? `Lo facturado coincide con lo que Business Central registró contra ${orden.bcNumber}${docs.length ? ` (${docs.join(", ")})` : ""}.`
       : `La orden y lo que Business Central registró contra ${orden.bcNumber}${docs.length ? ` (${docs.join(", ")})` : ""} NO coinciden. ${cotejo.resumen}`;

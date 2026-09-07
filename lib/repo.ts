@@ -1086,8 +1086,13 @@ export async function updateOrden(id: number, input: UpdateOrdenDB) {
   const rec = await pool.request().input("id", sql.Int, id)
     .query("SELECT COUNT(*) AS n FROM dbo.RecepcionCompra WHERE idOrdenCompra=@id AND esEliminada=0");
   if ((rec.recordset[0]?.n ?? 0) > 0) throw new Error("La orden ya tiene recepciones registradas; no se puede editar.");
+  // El proveedor y la moneda ANTERIORES se leen acá, antes de que el UPDATE los
+  // pise: son el dato que faltó para reconstruir CP-005183, CP-005249 y CP-005289
+  // (el movimiento "editado" decía solo "N línea(s)", así que de qué proveedor
+  // venía la orden no quedaba en ninguna parte). `bc_encabezado` registra el cambio
+  // en BC; esto registra el cambio de este lado, y también cuando BC lo rechazó.
   const head = await pool.request().input("id", sql.Int, id)
-    .query("SELECT ordenNo, idEstado FROM dbo.OrdenCompra WHERE idOrdenCompra=@id AND esEliminada=0");
+    .query("SELECT ordenNo, idEstado, proveedorNo, proveedorNombre, currencyCode FROM dbo.OrdenCompra WHERE idOrdenCompra=@id AND esEliminada=0");
   if (!head.recordset.length) throw new Error("Orden no encontrada.");
   // Misma regla que la pantalla de edición, pero del lado del server: solo se
   // reescribe una orden ABIERTA o RECHAZADA. Protege el caso de la pestaña vieja —
@@ -1099,6 +1104,9 @@ export async function updateOrden(id: number, input: UpdateOrdenDB) {
     throw new Error(`La orden ya no está abierta (${NOMBRE_POR_CODIGO[estadoActual] ?? estadoActual}); recargá la pantalla antes de editarla.`);
   }
   const ordenNo = head.recordset[0].ordenNo ?? "";
+  const antesProv: string = head.recordset[0].proveedorNo ?? "";
+  const antesProvNombre: string = head.recordset[0].proveedorNombre ?? "";
+  const antesMoneda: string = head.recordset[0].currencyCode ?? "";
   const lineas = (input.lineas ?? []).filter((l) => l.tipoLinea !== "articulo" || (l.itemNo && l.cantidad > 0) || l.cantidad > 0);
   validarLineasOrden(lineas);   // mismas reglas que al crear (cantidad/precio/IVA/descuento)
   await cortarLineasDevueltas(lineas);
@@ -1156,6 +1164,24 @@ export async function updateOrden(id: number, input: UpdateOrdenDB) {
           .query("UPDATE dbo.PedidoCompraDet SET quantityOrdenado = ISNULL(quantityOrdenado,0) + @q WHERE idPedidoCompraDet=@id");
       }
       line += 10000;
+    }
+    // Qué cambió del ENCABEZADO, dicho con nombre y apellido. Va en un movimiento
+    // aparte (filtrable en la bitácora) y no colgado del "editado", porque un
+    // cambio de proveedor no es lo mismo que tocar una cantidad: es el que puede
+    // dejar la compra a nombre de otro.
+    const cambiosEnc: string[] = [];
+    if ((antesProv || "").trim().toUpperCase() !== (input.proveedorNo || "").trim().toUpperCase()) {
+      const conNombre = (no?: string, nombre?: string) => `${no || "(sin proveedor)"}${nombre ? ` ${nombre}` : ""}`;
+      cambiosEnc.push(`Proveedor: ${conNombre(antesProv, antesProvNombre)} → ${conNombre(input.proveedorNo, input.proveedorNombre)}`);
+    }
+    if ((antesMoneda || "").trim().toUpperCase() !== (input.currencyCode || "").trim().toUpperCase()) {
+      cambiosEnc.push(`Moneda: ${antesMoneda || "—"} → ${input.currencyCode || "—"}`);
+    }
+    if (cambiosEnc.length) {
+      await logMov(tx, {
+        entidad: "orden", idEntidad: id, documentoNo: ordenNo, tipoMovimiento: "encabezado_cambiado",
+        detalle: cambiosEnc.join(" · "), usuario: input.usuario, rol: input.rol,
+      });
     }
     await logMov(tx, { entidad: "orden", idEntidad: id, documentoNo: ordenNo, tipoMovimiento: "editado", detalle: `${lineas.filter((l) => l.tipoLinea === "articulo").length} línea(s)`, usuario: input.usuario, rol: input.rol });
     await tx.commit();

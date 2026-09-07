@@ -35,6 +35,11 @@ export type LineaBc = {
   facturada: number;
   pendiente: number;      // Outstanding Quantity: lo que todavía se puede recibir
   precioUnitario: number;
+  // A nombre de QUIÉN quedó el documento en BC. Solo lo traen las líneas de
+  // facturas registradas (página `postedInvoiceLines`), y no se coteja acá: el
+  // proveedor no es una diferencia de línea, es una diferencia de encabezado y
+  // manda sobre las líneas. Lo usa `chequearOrdenAFondo`.
+  vendorNo?: string;
 };
 
 // Una línea de la orden de la app, reducida a lo que se puede cotejar contra BC.
@@ -340,4 +345,24 @@ export function lineasRecibidasDeOrden(lineas: (LineaApp & { cantidadRecibida?: 
   return (lineas ?? [])
     .filter((l) => l.tipo === "articulo" && (Number(l.cantidadRecibida) || 0) > 0)
     .map((l) => ({ ...l, cantidad: Number(l.cantidadRecibida) || 0 }));
+}
+
+// ── ¿A NOMBRE DE QUIÉN quedaron los documentos registrados? ──────────────────
+// Devuelve los proveedores que aparecen en las líneas registradas y NO son el de
+// la orden. Lista vacía = no hay nada que objetar (o BC no dijo de quién era, que
+// no es lo mismo que "está bien", pero tampoco afirma un desajuste: igual que el
+// resto de los cotejos, solo se acusa lo que BC afirmó).
+//
+// Va aparte del cotejo de líneas a propósito: el proveedor no es una diferencia de
+// línea. Es del encabezado y MANDA sobre las líneas — que los artículos, cantidades
+// y precios cuadren no sirve de nada si la factura se cargó a la cuenta por pagar
+// de otro. Así se escapó CFR-009891 (CP-005289: Mercasa facturada a EPA).
+export function proveedoresAjenos(lineasBc: LineaBc[], proveedorNoOrden: string): string[] {
+  const esperado = (proveedorNoOrden ?? "").trim().toUpperCase();
+  if (!esperado) return [];
+  return [...new Set(
+    (lineasBc ?? [])
+      .map((l) => (l.vendorNo ?? "").trim())
+      .filter((v) => v && v.toUpperCase() !== esperado),
+  )];
 }

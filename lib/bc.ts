@@ -2363,6 +2363,10 @@ export async function bcLineasFacturadasDePedido(orderNo: string): Promise<Linea
         facturada: cantidad,
         pendiente: 0,
         precioUnitario: Number(r.directUnitCost ?? 0) || 0,
+        // A nombre de quién quedó la factura registrada. La página API ya lo
+        // devolvía y la app lo tiraba: por eso CFR-009891 (CP-005289, facturada a
+        // EPA en vez de Mercasa) salía en verde con las líneas cuadradas.
+        vendorNo: String(r.buyFromVendorNo ?? "").trim(),
       };
     });
   } catch { return null; }
