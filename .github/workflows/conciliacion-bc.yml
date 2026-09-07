@@ -1,0 +1,55 @@
+# El reloj que dispara la barrida app ↔ Business Central.
+#
+# El detector existe desde el 2/9/2026, pero solo mira cuando alguien abre la
+# pantalla y aprieta "Revisar". Nadie lo hace, y así CP-005289 pasó dos días
+# desalineada hasta que se registró la factura a nombre de otro proveedor.
+#
+# Acá no hay lógica: la revisión entera vive en la app
+# (app/api/tareas/conciliacion-bc/route.ts). Esto es solo el reloj.
+#
+# Se puede correr a mano desde la pestaña Actions ("Run workflow").
+name: Conciliación con Business Central
+
+on:
+  schedule:
+    # Cada hora en punto, de 12:00 a 23:00 UTC = 6 a.m. a 5 p.m. de Costa Rica.
+    # Fuera de horario no hay nadie que actúe sobre un hallazgo, y las órdenes que
+    # queden sin revisar entran en la primera corrida del día siguiente (la barrida
+    # va por antigüedad, así que nada se queda sin mirar).
+    - cron: "0 12-23 * * 1-5"
+  workflow_dispatch:
+
+# Si una corrida se atrasa, no se encima con la siguiente.
+concurrency:
+  group: conciliacion-bc
+  cancel-in-progress: false
+
+jobs:
+  revisar:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Pedirle a la app que revise una tanda
+        env:
+          TAREA_SECRET: ${{ secrets.TAREA_SECRET }}
+        run: |
+          set -euo pipefail
+          if [ -z "${TAREA_SECRET}" ]; then
+            echo "Falta el secreto TAREA_SECRET en el repositorio (Settings → Secrets → Actions)."
+            exit 1
+          fi
+          # --fail-with-body: que un 4xx/5xx falle el job PERO deje ver qué contestó.
+          curl --fail-with-body -sS -X POST \
+            -H "x-tarea-secret: ${TAREA_SECRET}" \
+            -H "Content-Type: application/json" \
+            --max-time 300 \
+            https://proveeduria.adelante.cr/api/tareas/conciliacion-bc \
+            -o respuesta.json
+          # El resumen queda en el log del job, y los hallazgos también: si el webhook
+          # no está configurado, este log es el único lugar donde quedan.
+          jq -r '"Revisadas \(.revisadas) de \(.conBcTotal) órdenes con pedido en BC",
+                 "  ok=\(.resumen.ok) desalineadas=\(.resumen.desalineadas) sinPedido=\(.resumen.sinPedido) sinLectura=\(.resumen.sinLectura)"' respuesta.json
+          # Cada hallazgo como warning: aparece arriba en el resumen del job, sin
+          # pintarlo de rojo. Un job que falla cada vez que algo no cuadra se vuelve
+          # rojo permanente y se deja de mirar — que es justo lo que hay que evitar.
+          jq -r '.hallazgos[]? | "::warning::\(.numero) (\(.bcNumber // "sin N.º")) · \(.proveedor) · \(.mensaje)"' respuesta.json
+          jq -r '.avisoError // empty | "::warning::El aviso no se pudo mandar: \(.)"' respuesta.json

@@ -10,7 +10,13 @@ import { autorizacionActiva, mensajeNoAutorizado, rolPuede } from "@/lib/autoriz
 // de la app ni llamar a las API. Ya no sirve tocar localStorage en la consola.
 
 // API públicas (no requieren sesión).
-const PUBLIC_API = ["/api/login", "/api/logout", "/api/health"];
+//
+// `/api/tareas/*` las llama un temporizador, no una persona: no hay cookie que
+// mandar. No quedan abiertas — cada una exige su secreto en la cabecera y se
+// niega (404) si no hay secreto configurado. El chequeo va en la ruta y no acá
+// porque el middleware corre en el runtime del borde, donde no está la
+// comparación en tiempo constante.
+const PUBLIC_API = ["/api/login", "/api/logout", "/api/health", "/api/tareas"];
 
 // Renovación deslizante: si a la sesión le queda poco, se vuelve a firmar y se
 // devuelve la cookie nueva en ESTA respuesta. Así quien está trabajando nunca ve

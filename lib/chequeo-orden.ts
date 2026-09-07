@@ -77,7 +77,8 @@ export async function chequearOrdenAFondo(
   // alcanza también a las órdenes viejas — que son las que nunca nadie revisó.
   const porPedido = await bcLineasFacturadasDePedido(orden.bcNumber);
   if (porPedido && porPedido.length) {
-    const cotejo = cotejarLineas(facturadoDe(orden), porPedido, { ignorarVariante: false });
+    const facturadoApp = facturadoDe(orden);
+    const cotejo = cotejarLineas(facturadoApp, porPedido, { ignorarVariante: false });
     const docs = [...new Set(porPedido.map((l) => l.documentNo).filter(Boolean))];
 
     // EL PROVEEDOR MANDA SOBRE LAS LÍNEAS. Mismo criterio que para el pedido vivo:
@@ -99,6 +100,25 @@ export async function chequearOrdenAFondo(
       return {
         estado: "desalineado", contra: "factura", facturas: docs,
         mensaje, diferencias: cotejo.diferencias, importeEnJuego: cotejo.importeEnJuego,
+      };
+    }
+
+    // BC YA FACTURÓ ESTE PEDIDO Y LA APP NO SE ENTERÓ. Es distinto de "las líneas no
+    // cuadran": acá la app no facturó NADA, así que cotejar línea por línea acusa a
+    // todas de faltar y saca un "no coinciden en 1 línea — ₡1.190.159,30" que suena a
+    // plata perdida cuando lo único que pasa es que la orden se quedó en Lanzado.
+    // Son ~18 órdenes: dicho así llenan el aviso todos los días y entierran al que sí
+    // importa — exactamente cómo se pasó por alto CP-005172 en su momento.
+    if (!facturadoApp.length) {
+      const mensaje =
+        `Business Central YA registró ${docs.length ? docs.join(", ") : "documentos"} contra el pedido ${orden.bcNumber}, `
+        + `pero acá la orden sigue en ${orden.estado} y no tiene nada facturado. `
+        + `No es una diferencia de líneas: es que la recepción se hizo en BC y no en la app. `
+        + `Registrala acá o cerrala para que deje de aparecer.`;
+      await guardar("desalineado", mensaje);
+      return {
+        estado: "desalineado", contra: "factura", facturas: docs,
+        mensaje, diferencias: [], importeEnJuego: 0,
       };
     }
 
