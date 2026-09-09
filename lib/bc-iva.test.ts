@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { lineasAExonerar, grupoIvaExento, type LineaIvaBc } from "./bc.ts";
+import { lineasAExonerar, grupoIvaExento, codigosConIvaCero, lineasAPonerEnCero,
+  type LineaIvaBc, type LineaReplaceBc } from "./bc.ts";
 
 // Quitarle el IVA al pedido en BC (importación): a qué líneas hay que tocarles el
 // grupo. Cada línea de esta lista es un PATCH contra Business Central.
@@ -65,4 +66,46 @@ test("grupoIvaExento: default EXENTO-BIENES (el código real de taxGroups)", () 
   assert.equal(grupoIvaExento(), "EXONERADO-BIENES");
   if (antes === undefined) delete process.env.BC_IVA_GRUPO_EXENTO;
   else process.env.BC_IVA_GRUPO_EXENTO = antes;
+});
+
+// ── EL 0% DE LA ORDEN VIAJA A BC ───────────────────────────────────────────────
+// "Si yo no le pongo IVA, entonces va en 0". El IVA% de la app se quedaba en el
+// estimado y en el PDF; ahora, cuando es CERO, se le pone el grupo exento a esa
+// línea en BC en el mismo movimiento en que se crean o reescriben las líneas.
+
+const A = (itemNo: string, ivaPct?: number): LineaReplaceBc =>
+  ({ tipo: "articulo", itemNo, cantidad: 1, precio: 100, ivaPct });
+
+test("codigosConIvaCero: solo las líneas que dicen 0", () => {
+  const lineas = [A("M05-0804", 0), A("M17-0321", 13), A("M20-1088", 0)];
+  assert.deepEqual(codigosConIvaCero(lineas), ["M05-0804", "M20-1088"]);
+});
+
+// El default de la app es 13: una línea sin ivaPct es una que nadie tocó, no una
+// exenta. Si contara como cero, una orden vieja se quedaría sin IVA en BC sola.
+test("codigosConIvaCero: sin ivaPct NO es cero", () => {
+  assert.deepEqual(codigosConIvaCero([A("M05-0804"), A("M17-0321", 0)]), ["M17-0321"]);
+});
+
+test("codigosConIvaCero: la variante no cuenta, el código es el pelado", () => {
+  assert.deepEqual(codigosConIvaCero([A("M11-0081 -VAR 12", 0)]), ["M11-0081"]);
+});
+
+test("codigosConIvaCero: un cargo entra por su chargeNo", () => {
+  const cargo: LineaReplaceBc = { tipo: "cargo", chargeNo: "03", cantidad: 1, precio: 669.04, ivaPct: 0 };
+  assert.deepEqual(codigosConIvaCero([cargo]), ["03"]);
+});
+
+test("lineasAPonerEnCero: solo las que BC todavía cobra", () => {
+  const enBc = [
+    { id: "a", code: "M05-0804", taxCode: "IVA13", taxPercent: 13 },
+    { id: "b", code: "03", taxCode: "EXENTO", taxPercent: 0 },   // ya está en 0
+    { id: "c", code: "M17-0321", taxCode: "IVA13", taxPercent: 13 },  // la orden dice 13
+  ];
+  assert.deepEqual(lineasAPonerEnCero(["M05-0804", "03"], enBc).map((l) => l.code), ["M05-0804"]);
+});
+
+test("lineasAPonerEnCero: sin líneas en cero no se escribe nada en BC", () => {
+  const enBc = [{ id: "a", code: "M05-0804", taxCode: "IVA13", taxPercent: 13 }];
+  assert.deepEqual(lineasAPonerEnCero([], enBc), []);
 });

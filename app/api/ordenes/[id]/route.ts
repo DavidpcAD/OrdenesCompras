@@ -208,6 +208,8 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
           // El grupo de IVA que Contabilidad puso a mano en BC (una importación en
           // EXENTO-BIENES) sobrevive a la reescritura; si no se pudo, se dice.
           if (r.ivaRestaurado.length) bcAviso = [bcAviso, `Las líneas conservan el grupo de IVA que tenían en BC (${r.ivaRestaurado.join(", ")}).`].filter(Boolean).join(" · ");
+          // El 0% que dice la orden ya quedó puesto en BC: no hay que ir a arreglarlo.
+          if (r.ivaCeroAplicado.length) bcAviso = [bcAviso, `El 0% de IVA de la orden quedó aplicado en BC (${r.ivaCeroAplicado.join(", ")}).`].filter(Boolean).join(" · ");
           if (r.avisoIva) bcAviso = [bcAviso, r.avisoIva].filter(Boolean).join(" · ");
         } catch (e: any) {
           bcAviso = [bcAviso, `Se envió a aprobación, pero el pedido ${o.bcNumber} en BC quedó con las líneas VIEJAS: ${String(e?.message ?? e)}`].filter(Boolean).join(" · ");
@@ -405,6 +407,7 @@ export async function PUT(req: Request, { params }: { params: { id: string } }) 
         if (reabierto) avisos.push(`El pedido ${o.bcNumber} estaba Lanzado en BC: se reabrió para pasarle los cambios y quedó ABIERTO. Mandá la orden a aprobación para que la lancen de nuevo.`);
         if (r.omitidas.length) avisos.push(`Guardado. OJO: BC no recibió ${r.omitidas.length} línea(s) — ${r.omitidas.join("; ")}.`);
         if (r.ivaRestaurado.length) avisos.push(`Las líneas conservan el grupo de IVA que tenían en BC (${r.ivaRestaurado.join(", ")}).`);
+        if (r.ivaCeroAplicado.length) avisos.push(`El 0% de IVA de la orden quedó aplicado en BC (${r.ivaCeroAplicado.join(", ")}).`);
         if (r.avisoIva) avisos.push(r.avisoIva);
         // Se relee BC y se coteja. Acá NO se puede frenar nada (el SQL ya se
         // guardó), pero el resultado deja de ser un toast: queda escrito en la
