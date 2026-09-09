@@ -85,6 +85,12 @@
   --ds-surface-2: var(--ds-color-white);                  /* superficie levemente elevada / base de gradientes */
   --ds-text: var(--ds-color-black);      /* texto primario del cuerpo */
   --ds-tint-base: var(--ds-color-white);                  /* base para los color-mix sutiles */
+  /* Columna oscura del DS (riel de navegación). Es oscura en los DOS temas, así que
+     se define una sola vez acá y NO se remapea abajo. Existe como token porque el
+     valor se necesita en dos lugares —el fondo del riel y el anillo que separa el
+     punto de aviso del ícono— y tenerlo escrito dos veces hacía que cambiar el fondo
+     dejara el anillo sin calzar. */
+  --ds-nav-bg: #2a2a2a;
   color-scheme: light;
 }
 
@@ -642,6 +648,15 @@ h1, h2, h3, h4, p { margin: 0; }
 /* Fila marcada para incluir en la orden (armador por línea). */
 .ds-table tr.dt-row-incluida > td { background: color-mix(in srgb, var(--ds-color-green-100) 12%, var(--ds-tint-base)); }
 
+/* Línea que el cierre de la solicitud dio de baja: ya no se compra. Se apaga el
+   texto con un token, NO con `opacity` sobre la fila entera — eso bajaría también el
+   contraste de los chips de orden de compra que van adentro y los dejaría por debajo
+   de AA. La cantidad tachada dice "esto no va" sin necesidad de leer el badge. */
+.ds-table tr.fila-cancelada > td { color: var(--ds-color-gray-400); }
+.ds-table tr.fila-cancelada > td.ds-num:last-child { text-decoration: line-through; }
+/* Fila de una solicitud archivada, en la lista de Solicitudes. */
+.ds-table tr.dt-row-archivada > td { color: var(--ds-color-gray-400); }
+
 /* Date picker DS (componente DateField) — calendario propio y bonito. */
 .datefield { position: relative; }
 .datefield__input { display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%; min-height: 48px; padding: 0 18px; border: 0; border-radius: var(--ds-radius-xl); background: var(--ds-surface); box-shadow: var(--ds-shadow-01); font: inherit; font-size: var(--ds-font-size-body); color: var(--ds-text); cursor: pointer; text-align: left; transition: box-shadow .12s ease; }
@@ -695,6 +710,15 @@ h1, h2, h3, h4, p { margin: 0; }
   border-top-color: var(--ds-color-gray-500); animation: stc-spin .7s linear infinite;
 }
 @media (prefers-reduced-motion: reduce) { .ds-spinner { animation: none; } }
+/* Giro DENTRO de un botón (prop `loading` de Button). A diferencia de .ds-spinner,
+   que es gris fijo, este hereda currentColor: el mismo elemento tiene que leerse
+   sobre el verde, el negro, el rojo y el blanco del DS. */
+.ds-btn__spin {
+  flex-shrink: 0; width: 16px; height: 16px; border-radius: 50%;
+  border: 2px solid color-mix(in srgb, currentColor 30%, transparent);
+  border-top-color: currentColor; animation: stc-spin .7s linear infinite;
+}
+@media (prefers-reduced-motion: reduce) { .ds-btn__spin { animation: none; } }
 /* ocultar flechitas de los input number para que no corten el valor */
 .ds-cell-input[type=number]::-webkit-outer-spin-button,
 .ds-cell-input[type=number]::-webkit-inner-spin-button,
@@ -792,8 +816,10 @@ h1, h2, h3, h4, p { margin: 0; }
 .login__brand-name { font-weight: 700; font-size: var(--ds-font-size-subtitle); line-height: 1.05; }
 .login__brand-sub { color: rgba(255, 255, 255, 0.5); font-size: var(--ds-font-size-body-sm); }
 .login__aside-mid { position: relative; align-self: center; display: flex; flex-direction: column; gap: var(--ds-space-4); }
-.login__eyebrow { color: var(--ds-color-green-100); font-weight: 700; font-size: var(--ds-font-size-body-sm); letter-spacing: .14em; text-transform: uppercase; }
-.login__headline { font-size: clamp(40px, 6vw, 66px); line-height: 1; font-weight: 800; color: var(--ds-color-green-100); margin: -6px 0 2px; }
+/* El peso llega hasta 700: el link de Google carga 400;500;600;700, así que el 800
+   que había acá resolvía a 700 igual (mismo ancho al pixel, medido). Se deja el 700
+   explícito para que el CSS no prometa un grosor que no existe. */
+.login__headline { font-size: clamp(40px, 6vw, 66px); line-height: 1; font-weight: 700; color: var(--ds-color-green-100); margin: -6px 0 2px; }
 .login__lead { color: rgba(255, 255, 255, 0.72); font-size: var(--ds-font-size-body-md); max-width: 42ch; line-height: 1.5; }
 .login__features { display: flex; flex-direction: column; gap: var(--ds-space-3); margin-top: var(--ds-space-2); }
 .login__feature { display: flex; align-items: center; gap: var(--ds-space-3); padding: 13px 16px; border-radius: var(--ds-radius-lg); background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.08); }
@@ -1002,7 +1028,7 @@ h1, h2, h3, h4, p { margin: 0; }
   width: 72px; height: 100vh; height: 100dvh; overflow: hidden;
   display: flex; flex-direction: column; gap: var(--ds-space-2);
   padding: var(--ds-space-4) 14px;
-  background: #2a2a2a; /* columna oscura del DS */
+  background: var(--ds-nav-bg);
 }
 .app-shell.is-ready .app-nav { transition: width .26s cubic-bezier(.34, 1.2, .5, 1), box-shadow .2s ease; }
 .app-shell.is-ready .topbar,
@@ -1038,7 +1064,7 @@ h1, h2, h3, h4, p { margin: 0; }
 /* Punto rojo de aviso (p.ej. Devoluciones sin corregir). Va sobre el ÍCONO para que
    se vea igual con el riel colapsado y expandido. Se prende/apaga solo con el dato:
    no hay nada que marcar como leído. El anillo lo separa de los trazos del ícono. */
-.app-nav__dot { position: absolute; top: -2px; right: -3px; width: 8px; height: 8px; border-radius: 50%; background: var(--ds-color-red-200); box-shadow: 0 0 0 2px #2a2a2a; }
+.app-nav__dot { position: absolute; top: -2px; right: -3px; width: 8px; height: 8px; border-radius: 50%; background: var(--ds-color-red-200); box-shadow: 0 0 0 2px var(--ds-nav-bg); }
 .app-nav__item.is-active .app-nav__dot { box-shadow: 0 0 0 2px var(--ds-color-green-100); }
 /* Mismo aviso en el FAB de menú (móvil): con el drawer cerrado no se ve el ítem. */
 .fab--menu .app-nav__dot { top: 9px; right: 9px; box-shadow: 0 0 0 2px var(--ds-color-black); }
@@ -1387,6 +1413,16 @@ h1, h2, h3, h4, p { margin: 0; }
 .notif-bell { position: relative; border: none; background: transparent; cursor: pointer; font-size: 18px; line-height: 1; padding: 4px 6px; border-radius: var(--ds-radius-md); color: var(--ds-color-gray-500); display: grid; place-items: center; transition: background-color .12s ease, color .12s ease; }
 .notif-bell:hover { background: var(--ds-color-gray-100); color: var(--ds-text); }
 .notif-bell__dot { position: absolute; top: -1px; right: -1px; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 9px; background: var(--ds-color-red-200); color: var(--ds-color-white); font-size: 10px; font-weight: 700; display: grid; place-items: center; border: 2px solid var(--ds-color-white); box-sizing: content-box; }
+
+/* Objetivo táctil: con el dedo, la ayuda (ⓘ) y la campana medían 32×28, por debajo
+   de los 44px que el DS pide para cualquier control que se toca. Se agranda solo en
+   pantallas de puntero grueso —no por ancho— así el mouse conserva el tamaño
+   compacto de la topbar y el celular de bodega gana el área. Mismo caso el botón de
+   cerrar sesión del riel. */
+@media (pointer: coarse) {
+  .notif-bell { min-width: 44px; min-height: 44px; }
+  .app-nav__logout { width: 44px; height: 44px; }
+}
 .notif-overlay { position: fixed; inset: 0; z-index: 40; }
 .notif-panel { position: absolute; top: calc(100% + 10px); right: 0; z-index: 41; width: 360px; max-height: 440px; overflow-y: auto; background: var(--ds-surface); border: 1px solid var(--ds-color-gray-100); border-radius: var(--ds-radius-lg); box-shadow: var(--ds-shadow-01), var(--ds-shadow-02-soft); overflow: hidden; }
 .notif-panel__head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--ds-space-3); padding: var(--ds-space-4) var(--ds-space-4) var(--ds-space-3); position: sticky; top: 0; background: var(--ds-surface); border-bottom: 1px solid var(--ds-color-gray-100); }
@@ -1426,6 +1462,40 @@ h1, h2, h3, h4, p { margin: 0; }
 
 /* Fila de 3 tiles: 3 en desktop, apila en móvil (evita que se corte el 3º). */
 .tiles-3 { grid-template-columns: repeat(3, 1fr); }
+
+/* =====================  RESUMEN DEL DASHBOARD  =====================
+   Reemplaza la fila de 4 tarjetas planas (pedido / entregado / % / pendiente).
+   Eran cuatro vistas del mismo dato con el mismo peso visual, y ninguna mostraba
+   la relación parte-todo. Acá manda el número accionable (lo que falta), la barra
+   muestra la proporción, y pedido/entregado quedan de referencia. Solo tokens. */
+.dash-resumen { display: flex; flex-direction: column; gap: var(--ds-space-4); }
+.dash-resumen__head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--ds-space-6); flex-wrap: wrap; }
+.dash-resumen__label { color: var(--ds-color-gray-400); font-size: var(--ds-font-size-label); line-height: var(--ds-line-height-label); }
+/* El número que Angie acciona: el paso más grande de la rampa. */
+.dash-resumen__value { font-size: var(--ds-font-size-heading); line-height: var(--ds-line-height-heading); font-weight: var(--ds-font-weight-semibold); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.dash-resumen__ref { text-align: right; }
+/* La referencia baja un paso: se lee, pero no compite. */
+.dash-resumen__ref-value { font-size: var(--ds-font-size-subtitle); line-height: var(--ds-line-height-subtitle); font-weight: var(--ds-font-weight-semibold); color: var(--ds-color-gray-500); font-variant-numeric: tabular-nums; }
+
+.dash-resumen__track { position: relative; height: 12px; border-radius: 999px; background: var(--ds-color-red-100); overflow: hidden; }
+.dash-resumen__fill { display: block; height: 100%; border-radius: 999px; background: var(--ds-color-green-100); transition: width .3s ease; }
+
+.dash-resumen__legend { display: flex; flex-wrap: wrap; gap: var(--ds-space-2) var(--ds-space-6); font-size: var(--ds-font-size-label); line-height: var(--ds-line-height-label); }
+.dash-resumen__leg { display: inline-flex; align-items: center; gap: var(--ds-space-2); }
+.dash-resumen__leg strong { font-weight: var(--ds-font-weight-semibold); font-variant-numeric: tabular-nums; }
+.dash-resumen__dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+.dash-resumen__dot--done { background: var(--ds-color-green-100); }
+.dash-resumen__dot--pend { background: var(--ds-color-red-100); }
+
+@media (max-width: 760px) {
+  /* En columna: dos montos tabulares de 6 dígitos no caben lado a lado en 390px,
+     se apretaban y "sin IVA" quedaba cortado. Apilados, el pendiente sigue mandando. */
+  .dash-resumen__head { flex-direction: column; gap: var(--ds-space-3); }
+  .dash-resumen__ref { text-align: left; display: flex; align-items: baseline; gap: var(--ds-space-2); flex-wrap: wrap; }
+  .dash-resumen__value { font-size: var(--ds-font-size-subtitle-lg); line-height: var(--ds-line-height-subtitle); }
+  .dash-resumen__ref-value { font-size: var(--ds-font-size-body-md); line-height: var(--ds-line-height-body-md); }
+  .dash-resumen__legend { flex-direction: column; gap: var(--ds-space-2); }
+}
 @media (max-width: 760px) { .tiles-3 { grid-template-columns: 1fr 1fr; } }
 
 /* ---- Órdenes agrupadas por proveedor ---- */
@@ -2039,4 +2109,40 @@ button.ana-kpi:active { transform: translateY(1px); }
      scroll propio —es lo que deja el botón "Listo" al alcance con 60 líneas— y
      el piso de 160px evita que se cierre del todo en un teléfono muy chico. */
   .addl-scroll { max-height: max(160px, min(calc(88vh - 390px), 340px)); }
+}
+
+/* =========================================================================
+   MOVIMIENTO REDUCIDO — red de seguridad GLOBAL
+   Había 11 bloques @media puntuales para ~86 transiciones y 6 @keyframes: cada
+   animación nueva nacía sin guard y nadie se daba cuenta. Esto cubre todo de una
+   y va AL FINAL a propósito, para ganarle a cualquier regla anterior.
+   No se borra ningún guard puntual: los que apagan con `animation: none` siguen
+   siendo más explícitos, y este solo agarra lo que se les escape.
+   Nada escucha transitionend/animationend en el código, así que acortar a ~0 no
+   deja ninguna transición colgada.
+   ========================================================================= */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* =========================================================================
+   OBJETIVOS TÁCTILES — al final a propósito
+   Las media queries NO suman especificidad: una regla puesta antes de la
+   definición del componente pierde contra ella. `.kebab` se define en la ~1865,
+   así que agrandarlo desde un @media de la ~1400 no hacía nada. Acá, al final,
+   gana siempre.
+   Va por PUNTERO, no por ancho: el mouse conserva los controles compactos y solo
+   el dedo gana los 44px que pide el DS.
+   ========================================================================= */
+@media (pointer: coarse) {
+  /* El kebab de cada línea (34×30) es con el que Pedro marca una línea para nota
+     de crédito, en el celular y apurado: el peor lugar para errar el dedo. Sus
+     márgenes negativos se mantienen, así que crecer no corre la fila. */
+  .kebab { width: 44px; height: 44px; }
+  .icon-btn { min-width: 44px; min-height: 44px; }
 }

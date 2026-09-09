@@ -225,7 +225,7 @@ export default function ProvOrdenDetallePage() {
         <>
           <Button variant="outline" onClick={() => router.push(`/proveeduria/ordenes/${orden.id}/editar`)}>Editar</Button>
           {!espera && (
-            <Button disabled={procesando} onClick={() => act("pendiente_aprobacion", `${numeroOrden(orden)} enviada a aprobación`)}>
+            <Button loading={procesando} onClick={() => act("pendiente_aprobacion", `${numeroOrden(orden)} enviada a aprobación`)}>
               {procesando ? "Enviando…" : "Enviar a aprobación"}
             </Button>
           )}
@@ -265,7 +265,7 @@ export default function ProvOrdenDetallePage() {
         <>
           <Button variant="outline" onClick={() => router.push(`/proveeduria/ordenes/${orden.id}/editar`)}>Editar</Button>
           {!espera && (
-            <Button disabled={procesando} onClick={() => act("pendiente_aprobacion", `${numeroOrden(orden)} corregida y reenviada a aprobación`)}>
+            <Button loading={procesando} onClick={() => act("pendiente_aprobacion", `${numeroOrden(orden)} corregida y reenviada a aprobación`)}>
               {procesando ? "Reenviando…" : "Reenviar a aprobación"}
             </Button>
           )}

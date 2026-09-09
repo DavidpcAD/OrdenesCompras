@@ -7,6 +7,10 @@ import { Button } from "@/components/ui";
 import { AdelanteMark } from "@/components/icons";
 import { ROLE_META } from "@/components/shell";
 
+// El build lo reemplaza por true/false y borra el bloque muerto: en producción el
+// selector de roles de abajo no llega ni al bundle.
+const DEV = process.env.NODE_ENV !== "production";
+
 export default function LoginPage() {
   const { setRole, setUsuario } = useStore();
   const router = useRouter();
@@ -31,6 +35,12 @@ export default function LoginPage() {
     // redirect abierto (te logueás acá y terminás en otro sitio).
     if (next && next.startsWith("/") && !next.startsWith("//")) setVolverA(next);
   }, []);
+
+  function entrarComo(rol: keyof typeof ROLE_META) {
+    setRole(rol);
+    setUsuario(ROLE_META[rol].persona);
+    router.push(ROLE_META[rol].home);
+  }
 
   async function entrar() {
     if (!username.trim() || !password) { setError("Ingresá usuario y contraseña."); return; }
@@ -70,7 +80,6 @@ export default function LoginPage() {
         </div>
 
         <div className="login__aside-mid">
-          <span className="login__eyebrow">Sistema interno</span>
           <h1 className="login__headline">Proveeduría</h1>
           <p className="login__lead">
             Solicitudes y órdenes de compra, recepción de material y facturación. Integrado con Business Central.
@@ -180,6 +189,30 @@ export default function LoginPage() {
         <p className="ds-body-sm ds-muted mt-4" style={{ textAlign: "center" }}>
           Tu rol define a qué módulo entrás · Conectado a Business Central + SQL
         </p>
+
+        {/* Entrada local. El login va SIEMPRE contra SQL (lib/auth.ts), así que en una
+            máquina sin credenciales de SQL en .env.local no hay forma de pasar de acá: el
+            500 es correcto, no hay a quién preguntarle. Esto entra con datos mock, sin clave.
+            `process.env.NODE_ENV` lo inlinea el build, así que en producción este bloque
+            NO EXISTE en el bundle: no es un guard que se pueda desactivar por config. */}
+        {DEV && (
+          <div style={{ marginTop: "var(--ds-space-6)", paddingTop: "var(--ds-space-4)", borderTop: "1px solid rgba(255,255,255,0.12)" }}>
+            <p className="ds-body-sm ds-muted" style={{ marginBottom: "var(--ds-space-3)" }}>
+              Solo en desarrollo · sin base de datos, con datos de prueba
+            </p>
+            <div className="role-grid">
+              {(Object.keys(ROLE_META) as Array<keyof typeof ROLE_META>).map((rol) => (
+                <button key={rol} type="button" className="role-option" onClick={() => entrarComo(rol)}>
+                  <span className="role-option__icon" style={{ background: ROLE_META[rol].color }} aria-hidden />
+                  <span>
+                    <span className="role-option__title">{ROLE_META[rol].label}</span>
+                    <span className="role-option__desc" style={{ display: "block" }}>{ROLE_META[rol].persona}</span>
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
       </main>
     </div>
