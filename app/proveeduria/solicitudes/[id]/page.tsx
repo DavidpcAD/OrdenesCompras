@@ -2,14 +2,25 @@
 
 import { useParams, useRouter } from "next/navigation";
 import { useState } from "react";
-import { Badge, Button, Card, Checkbox, EmptyState, Modal, Textarea, useToast, QtyRing, Skeleton } from "@/components/ui";
+import { Badge, Button, Card, Checkbox, EmptyState, Field, Modal, Select, Textarea, useToast, QtyRing, Skeleton } from "@/components/ui";
 import { IconWarning } from "@/components/icons";
 import { Timeline } from "@/components/timeline";
 import { useStore } from "@/lib/store";
 import { useVolver } from "@/lib/use-volver";
 import { useVariantes } from "@/lib/use-variantes";
 import { codigoDeItem } from "@/lib/unidad";
-import { formatDate, num, pedidoBadge, pedidoLineaPendiente, recibidoDeLineaPedido, destinoCodigo, destinoLabel, tipoSolicitudBadge, esConsumoDirecto, puedeDevolverLinea, motivoNoDevolver, ordenesDeLineaPedido, estadoDeDevolucion, correccionDeSolicitud, ordenDeDevolucion, numeroOrden } from "@/lib/helpers";
+import { formatDate, num, pedidoBadge, pedidoLineaPendiente, recibidoDeLineaPedido, destinoCodigo, destinoLabel, tipoSolicitudBadge, esConsumoDirecto, puedeDevolverLinea, motivoNoDevolver, ordenesDeLineaPedido, estadoDeDevolucion, correccionDeSolicitud, ordenDeDevolucion, numeroOrden, motivoDeCierreSolicitud, comentarioDeSolicitud } from "@/lib/helpers";
+
+// Por qué se archiva una solicitud, en las palabras del oficio. Es un Select y no
+// un campo libre a propósito: el motivo es LA razón de ser del cierre, y con una
+// caja de texto vacía la mitad queda en "ok". El detalle fino va en la nota.
+const MOTIVOS_CIERRE = [
+  "Ya no se necesita",
+  "Se compró en otro lado",
+  "Cambió el alcance de la obra",
+  "Lo pidió el ingeniero",
+  "Solicitud duplicada",
+];
 
 export default function ProveeduriaPedidoDetallePage() {
   const { id } = useParams<{ id: string }>();
@@ -17,11 +28,17 @@ export default function ProveeduriaPedidoDetallePage() {
   // volver = pantalla anterior, con su filtro (el rótulo se ajusta solo)
   const { volver, etiqueta: volverTexto } = useVolver("/proveeduria/solicitudes", "Volver a solicitudes");
   const toast = useToast();
-  const { pedidos, ordenes, setBorrador, devolverPedido, retomarOrden, cargando } = useStore();
+  const { pedidos, ordenes, setBorrador, devolverPedido, cerrarSolicitud, reabrirSolicitud, retomarOrden, cargando } = useStore();
   const [devolverOpen, setDevolverOpen] = useState(false);
   const [motivo, setMotivo] = useState("");
   const [devolviendo, setDevolviendo] = useState(false);
   const [retomando, setRetomando] = useState(false);
+  // Archivar la solicitud que quedó a medias. El motivo sale de un Select y la nota
+  // es el detalle libre; se guardan juntos, igual que en "Cerrar orden".
+  const [cerrarOpen, setCerrarOpen] = useState(false);
+  const [motivoCierre, setMotivoCierre] = useState("");
+  const [notaCierre, setNotaCierre] = useState("");
+  const [cerrando, setCerrando] = useState(false);
   // Líneas marcadas para devolver. La devolución es POR LÍNEA: lo que ya tiene orden
   // de compra no se puede devolver (el material ya se le pidió al proveedor).
   const [sel, setSel] = useState<Record<string, boolean>>({});
@@ -66,9 +83,16 @@ export default function ProveeduriaPedidoDetallePage() {
   const total = pedido.lineas.reduce((s, l) => s + l.cantidad, 0);
   const rec = pedido.lineas.reduce((s, l) => s + recibidoDeLineaPedido(ordenes, l.id), 0);
   const pct = total > 0 ? Math.round(Math.min(100, (rec / total) * 100)) : 0;
-  const hayPendiente = pedido.lineas.some((l) => pedidoLineaPendiente(l) > 0);
+  // ARCHIVADA: el saldo se dio de baja y la solicitud es de solo lectura. Se calcula
+  // acá porque gobierna los tres botones de la barra: sin esto, "Crear orden de
+  // compra →" seguía habilitado y volvía a consumir el saldo que se dio por muerto.
+  const cerrada = pedido.estado === "cerrado";
+  const hayPendiente = !cerrada && pedido.lineas.some((l) => pedidoLineaPendiente(l) > 0);
   // Lo que se puede mandar de vuelta: solo líneas sin orden de compra y sin devolver.
   const devolvibles = pedido.lineas.filter(puedeDevolverLinea);
+  // Lo que el cierre va a dar de baja (o dio, si ya está cerrada): lo que nadie ordenó.
+  const sinComprar = pedido.lineas.filter((l) => !l.devuelta && l.cantidad - l.cantidadOrdenada > 1e-9);
+  const unidadesSinComprar = sinComprar.reduce((s, l) => s + (l.cantidad - l.cantidadOrdenada), 0);
 
   function crearOC() {
     const lineas = pedido!.lineas
@@ -86,6 +110,46 @@ export default function ProveeduriaPedidoDetallePage() {
     setDevolverOpen(true);
   }
   const elegidas = devolvibles.filter((l) => sel[l.id]);
+
+  function abrirCerrar() {
+    setMotivoCierre("");
+    setNotaCierre("");
+    setCerrarOpen(true);
+  }
+
+  // Mismo criterio que confirmarDevolver: si el server falla, el modal queda ABIERTO
+  // con lo escrito. El motivo es obligatorio también acá, pero el guard de verdad
+  // está en el server (la pantalla no es la única puerta).
+  async function confirmarCerrar() {
+    if (!motivoCierre) { toast("Elegí el motivo del cierre.", "error"); return; }
+    if (cerrando) return;
+    setCerrando(true);
+    try {
+      const texto = [motivoCierre, notaCierre.trim()].filter(Boolean).join(" — ");
+      const r = await cerrarSolicitud(pedido!.id, texto);
+      setCerrarOpen(false);
+      toast(r.lineasCanceladas > 0
+        ? `${pedido!.numero} archivada · ${num.format(r.unidadesCanceladas)} u. en ${r.lineasCanceladas} línea(s) ya no se van a comprar`
+        : `${pedido!.numero} archivada`, "success");
+    } catch (e: any) {
+      toast(`No se pudo cerrar: ${String(e?.message ?? e)}`, "error");
+    } finally {
+      setCerrando(false);
+    }
+  }
+
+  async function deshacerCierre() {
+    if (cerrando) return;
+    setCerrando(true);
+    try {
+      await reabrirSolicitud(pedido!.id);
+      toast(`${pedido!.numero} volvió a las solicitudes: su saldo está otra vez pendiente.`, "info");
+    } catch (e: any) {
+      toast(`No se pudo reabrir: ${String(e?.message ?? e)}`, "error");
+    } finally {
+      setCerrando(false);
+    }
+  }
 
   // Si el servidor falla, avisarlo y dejar el modal abierto con el motivo escrito
   // (antes la promesa se rechazaba sin manejar: no pasaba nada visible).
@@ -130,17 +194,38 @@ export default function ProveeduriaPedidoDetallePage() {
             {/* Manda la lista de materiales a cotizar. Es un <a> al endpoint del
                 servidor (no un botón con fetch) para que el navegador baje el .pdf
                 de una vez, igual que en la orden de compra. */}
-            <a className="ds-btn ds-btn--white" href={`/api/pedidos/${pedido.id}/pdf`}
-              title="Baja la solicitud en PDF con las columnas de precio en blanco, para mandarla a cotizar"
-              style={{ textDecoration: "none" }}>⬇ PDF para cotizar</a>
-            {/* El botón SIEMPRE abre el diálogo, aunque no haya nada devolvible: es ahí
-                donde se explica, línea por línea, cuál orden se llevó el material.
-                Deshabilitado no explicaba nada y dejaba a Proveeduría adivinando. */}
-            <Button variant="red" onClick={abrirDevolver}
-              title="Devolver al ingeniero las líneas que todavía no tienen orden de compra">
-              Devolver al ingeniero{devolvibles.length && devolvibles.length < pedido.lineas.length ? ` (${devolvibles.length})` : ""}
-            </Button>
-            <Button onClick={crearOC} disabled={!hayPendiente}>Crear orden de compra →</Button>
+            {/* No en la archivada: no hay nada que cotizar, y el server también lo
+                rechaza (si el link llegara por otro lado). */}
+            {!cerrada && (
+              <a className="ds-btn ds-btn--white" href={`/api/pedidos/${pedido.id}/pdf`}
+                title="Baja la solicitud en PDF con las columnas de precio en blanco, para mandarla a cotizar"
+                style={{ textDecoration: "none" }}>⬇ PDF para cotizar</a>
+            )}
+            {/* Archivada = solo lectura. Los tres botones de trabajo desaparecen (no
+                se deshabilitan: no hay nada que explicar, la solicitud terminó) y en
+                su lugar queda la salida para deshacerlo. */}
+            {cerrada ? (
+              <Button variant="outline" disabled={cerrando} onClick={deshacerCierre}
+                title="Volver a abrir la solicitud: su saldo vuelve a quedar pendiente">
+                {cerrando ? "Reabriendo…" : "Reabrir solicitud"}
+              </Button>
+            ) : (<>
+              {/* Cerrar no es destructivo como devolver —no le manda nada a nadie, da
+                  de baja lo que ya no se compra—, por eso `outline` y no `red`. Mismo
+                  criterio que "Cerrar orden". */}
+              <Button variant="outline" onClick={abrirCerrar}
+                title="Archivar la solicitud: lo que quedó sin ordenar ya no se va a comprar">
+                Cerrar solicitud
+              </Button>
+              {/* El botón SIEMPRE abre el diálogo, aunque no haya nada devolvible: es ahí
+                  donde se explica, línea por línea, cuál orden se llevó el material.
+                  Deshabilitado no explicaba nada y dejaba a Proveeduría adivinando. */}
+              <Button variant="red" onClick={abrirDevolver}
+                title="Devolver al ingeniero las líneas que todavía no tienen orden de compra">
+                Devolver al ingeniero{devolvibles.length && devolvibles.length < pedido.lineas.length ? ` (${devolvibles.length})` : ""}
+              </Button>
+              <Button onClick={crearOC} disabled={!hayPendiente}>Crear orden de compra →</Button>
+            </>)}
           </div>
         </div>
 
@@ -212,10 +297,33 @@ export default function ProveeduriaPedidoDetallePage() {
           );
         })()}
 
-        {pedido.notas && (
+        {/* Por qué se archivó. Va arriba del comentario del ingeniero porque es el
+            estado más reciente y el que explica en qué terminó la solicitud. Sin esta
+            tarjeta habría que bajar hasta el Historial para leer el motivo, y el
+            motivo obligatorio quedaría invisible. */}
+        {cerrada && (
+          <Card className="mt-2" style={{ background: "color-mix(in srgb, var(--ds-color-gray-300) 12%, var(--ds-tint-base))" }}>
+            <span className="ds-label ds-muted">Solicitud archivada</span>
+            <p style={{ margin: "4px 0 0" }}>
+              {motivoDeCierreSolicitud(pedido)
+                ? <>Lo que quedó sin ordenar ya no se va a comprar. <span className="ds-strong">Motivo: {motivoDeCierreSolicitud(pedido)}</span></>
+                : <>Lo que quedó sin ordenar ya no se va a comprar. El motivo está en el historial, abajo.</>}
+            </p>
+            {/* Lo ya ordenado NO se cancela: es la confusión más fácil de tener con
+                una solicitud archivada, y de ahí saldría un llamado a Bodega. */}
+            <p className="ds-body-sm ds-muted" style={{ margin: "6px 0 0" }}>
+              Las órdenes de compra que ya se le hicieron siguen su curso: ese material se recibe y se factura igual.
+              {unidadesSinComprar > 0 && <> Se dieron de baja <span className="ds-strong">{num.format(unidadesSinComprar)} u.</span> en {sinComprar.length} línea(s).</>}
+            </p>
+          </Card>
+        )}
+
+        {/* El comentario del ingeniero, sin los encabezados internos que le apilan
+            encima la devolución y el cierre (esos tienen su propia tarjeta). */}
+        {comentarioDeSolicitud(pedido) && (
           <Card className="mt-2" style={{ background: "color-mix(in srgb, var(--ds-color-yellow) 8%, var(--ds-tint-base))" }}>
             <span className="ds-label ds-muted">Comentario</span>
-            <p style={{ margin: "4px 0 0" }}>{pedido.notas}</p>
+            <p style={{ margin: "4px 0 0" }}>{comentarioDeSolicitud(pedido)}</p>
           </Card>
         )}
 
@@ -225,7 +333,7 @@ export default function ProveeduriaPedidoDetallePage() {
               <thead><tr><th>Artículo</th><th>Destino</th><th className="ds-num">Solicitado</th><th className="ds-num">Ordenado</th><th className="ds-num">Pendiente</th></tr></thead>
               <tbody>
                 {pedido.lineas.map((l) => (
-                  <tr key={l.id} style={l.devuelta ? { opacity: 0.6 } : undefined}>
+                  <tr key={l.id} className={l.cerrada ? "fila-cancelada" : undefined} style={l.devuelta ? { opacity: 0.6 } : undefined}>
                     <td>
                       <div className="ds-clamp-2" title={l.descripcion} style={{ maxWidth: 420, minWidth: 240 }}>{l.descripcion}</div>
                       {/* El código del material: es con lo que se busca en BC y con lo
@@ -249,6 +357,9 @@ export default function ProveeduriaPedidoDetallePage() {
                       {/* Devuelta = bloqueada: no se puede ordenar ni volver a
                           devolver. El motivo queda en el historial de abajo. */}
                       {l.devuelta && <Badge tone="yellow">↩ Devuelta al ingeniero</Badge>}
+                      {/* Solo en lo que quedó sin ordenar: una línea que se compró
+                          entera no se marca, porque esa sí se compró. */}
+                      {l.cerrada && <Badge tone="gray">⛔ Ya no se compra</Badge>}
                     </td>
                     <td className="ds-muted ds-body-sm">
                       {l.almacen || "—"}
@@ -288,6 +399,51 @@ export default function ProveeduriaPedidoDetallePage() {
         <h3 className="ds-subtitle mt-6" style={{ marginBottom: 12 }}>Historial</h3>
         <Card><Timeline entidad="pedido" idEntidad={pedido.id} traza /></Card>
       </main>
+
+      {cerrarOpen && (
+        <Modal title={`Cerrar ${pedido.numero}`} onClose={() => setCerrarOpen(false)} footer={
+          <>
+            <Button variant="outline" disabled={cerrando} onClick={() => setCerrarOpen(false)}>Cancelar</Button>
+            <Button disabled={cerrando || !motivoCierre} onClick={() => void confirmarCerrar()}>
+              {cerrando ? "Cerrando…" : "Cerrar y archivar"}
+            </Button>
+          </>
+        }>
+          <div className="col gap-4">
+            {/* Qué se da de baja, con el número puesto: cerrar sin ver cuánto material
+                queda afuera es la forma de arrepentirse después. */}
+            <p className="ds-body-sm" style={{ marginTop: 0 }}>
+              {unidadesSinComprar > 0
+                ? <>Quedan <span className="ds-strong">{num.format(unidadesSinComprar)} unidad(es)</span> sin ordenar en {sinComprar.length} línea(s). Al archivar dejan de estar pendientes y la solicitud sale de tus bandejas.</>
+                : <>Esta solicitud ya está ordenada por completo. Al archivarla sale de tus bandejas.</>}
+            </p>
+            {/* La confusión cara: creer que archivar cancela lo que ya se le pidió al
+                proveedor. No lo cancela, y decirlo acá evita el llamado a Bodega. */}
+            <div className="ds-callout ds-callout--yellow" role="status">
+              <span className="ds-callout__icon"><IconWarning size={18} /></span>
+              <div>
+                <div className="ds-callout__title">Lo que ya se ordenó no se toca</div>
+                <div className="ds-callout__body">
+                  Las órdenes de compra que salieron de esta solicitud siguen su curso: ese material se recibe y se factura
+                  igual. Archivar solo da de baja lo que <span className="ds-strong">nadie ordenó</span>.
+                </div>
+              </div>
+            </div>
+            <Field label="Motivo del cierre">
+              <Select value={motivoCierre} onChange={(e) => setMotivoCierre(e.target.value)} placeholder="Elegí un motivo…">
+                {MOTIVOS_CIERRE.map((m) => <option key={m} value={m}>{m}</option>)}
+              </Select>
+            </Field>
+            <Field label="Nota (opcional)">
+              <Textarea rows={2} value={notaCierre} onChange={(e) => setNotaCierre(e.target.value)}
+                placeholder="Detalle para el historial y para el ingeniero" />
+            </Field>
+            <span className="ds-body-sm ds-muted">
+              El motivo queda en el historial y en el comentario de la solicitud, que es lo que ve el ingeniero desde su app.
+            </span>
+          </div>
+        </Modal>
+      )}
 
       {devolverOpen && (
         <Modal wide title={`Devolver material de ${pedido.numero} a Ingeniería`} onClose={() => setDevolverOpen(false)}

@@ -37,6 +37,7 @@ const SOLICITUDES: HelpEntry = {
     "Acá llegan las solicitudes de material que Ingeniería envía desde la app de Producción.",
     "Cada solicitud tiene un destino/obra, un solicitante y sus líneas de material.",
     "El estado indica si está pendiente, ya está en una orden o cerrada.",
+    "Las solicitudes ARCHIVADAS salen de los cuatro conteos de arriba y se consultan en el panel “Archivadas”: son las que se cerraron porque lo que faltaba ya no se va a comprar.",
   ],
   pasos: [
     "Revisá la lista de solicitudes; usá el buscador o los filtros para acotar.",
@@ -44,8 +45,12 @@ const SOLICITUDES: HelpEntry = {
     "Elegí la(s) solicitud(es) o línea(s) que vas a comprar.",
     "Tocá el botón para armar la orden de compra con lo seleccionado.",
     "Alterná “por documento” / “por línea” con el toggle si querés juntar materiales de varias solicitudes.",
+    "Tocá “Archivadas” para ver las que se cerraron, con su motivo. El panel solo aparece si hay alguna.",
   ],
-  tips: ["Las líneas en borrador (sin enviar) se resaltan en amarillo para que no se te pasen."],
+  tips: [
+    "Las líneas en borrador (sin enviar) se resaltan en amarillo para que no se te pasen.",
+    "Archivar no toca las órdenes de compra que ya salieron de esa solicitud: ese material se recibe y se factura igual.",
+  ],
 };
 const SOLICITUDES_LINEA: HelpEntry = {
   titulo: "Materiales solicitados (por línea)",
@@ -71,10 +76,14 @@ const SOLICITUD_DET: HelpEntry = {
     "¿Necesitás precios antes de comprar? \"⬇ PDF para cotizar\" baja la lista de materiales con las columnas de precio en blanco: se la mandás al proveedor y él la llena.",
     "Si vas a comprar, avanzá la solicitud a una orden de compra desde acá.",
     "¿Hay material que el ingeniero tiene que corregir? “Devolver al ingeniero” abre la lista y devolvés SOLO las líneas que marques (o todas). Lo que ya tiene orden de compra no se puede devolver: ese material ya se le pidió al proveedor.",
+    "¿La solicitud quedó a medias y lo que falta ya no se va a comprar? “Cerrar solicitud” la archiva: el saldo sin ordenar deja de estar pendiente y sale de tus bandejas. Te pide el motivo, que queda en el historial y lo ve el ingeniero.",
   ],
   tips: [
     "Una línea devuelta queda bloqueada: no aparece más en materiales por ordenar ni se le puede hacer orden de compra. El motivo queda en el historial.",
     "Si devolvés TODAS las líneas, la solicitud entera pasa a “Devuelta”; si devolvés solo una parte, la solicitud sigue viva con el resto.",
+    "Cerrar es distinto de devolver: devolver le manda el material de vuelta al ingeniero para que lo corrija y vuelva; cerrar lo da de baja porque ya no se compra.",
+    "Cerrar NO cancela lo que ya se ordenó. Las órdenes de compra hechas siguen su curso, se reciben y se facturan igual: solo se da de baja lo que nadie ordenó.",
+    "¿Te equivocaste de solicitud? “Reabrir solicitud” deshace el archivado y su saldo vuelve a quedar pendiente. El ida y vuelta queda en el historial.",
   ],
 };
 const ORDENES: HelpEntry = {

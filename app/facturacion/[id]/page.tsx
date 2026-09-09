@@ -1024,7 +1024,7 @@ export default function RegistrarFacturaPage() {
           <div className="row gap-3 wrap recv-actions">
             <Button variant="outline" onClick={() => setPreview(true)} disabled={!algoRecibido}>Vista previa</Button>
             <Button variant="ghost" onClick={recibirEnRevision} disabled={!algoRecibido || guardando} title="El material llegó bien pero la factura tiene problemas: recibí el material y mandá la factura a revisión.">Recibir sin factura (a revisión)</Button>
-            <Button variant="green" onClick={registrar} disabled={!algoRecibido || !numeroFactura.trim() || guardando}>{guardando ? "Registrando…" : "Registrar factura"}</Button>
+            <Button variant="green" onClick={registrar} disabled={!algoRecibido || !numeroFactura.trim()} loading={guardando}>{guardando ? "Registrando…" : "Registrar factura"}</Button>
           </div>
           {guardando && (
             <p className="ds-body-sm ds-muted" role="status" style={{ marginTop: 10, display: "flex", alignItems: "center", gap: 8 }}>

@@ -168,13 +168,16 @@ export function DataTable<T>({
   const [vistas, setVistas] = useState<Vista[]>([]);
   const aplicadaDefault = useRef(false);
   async function cargarVistas() {
-    if (!usuario) return;
+    // Las vistas viven en SQL: en modo mock no hay nada que traer. Sin este freno
+    // /api/vistas contestaba 500 en cada carga (no hay base) y la consola quedaba
+    // llena de errores falsos que tapan los de verdad.
+    if (!usuario || !modoApi) return;
     try {
       const r = await fetch(`/api/vistas?usuario=${encodeURIComponent(usuario)}&tabla=${encodeURIComponent(tablaKey)}`);
       const d = await r.json(); if (r.ok) setVistas(d.vistas ?? []);
     } catch { /* sin BD */ }
   }
-  useEffect(() => { cargarVistas(); }, [usuario, tablaKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { cargarVistas(); }, [usuario, tablaKey, modoApi]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (aplicadaDefault.current || vistas.length === 0) return;
     const def = vistas.find((v) => v.esPredeterminada);

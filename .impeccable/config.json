@@ -1,0 +1,58 @@
+{
+  "detector": {
+    "ignoreRules": [
+      "side-tab",
+      "layout-transition"
+    ],
+    "ignoreFiles": [
+      "app/proveeduria/ordenes/[id]/imprimir/**"
+    ],
+    "ignoreValues": [
+      {
+        "rule": "overused-font",
+        "value": "roboto",
+        "createdAt": "2026-09-09T14:41:15.121Z",
+        "reason": "Roboto es la tipografia del Adelante Design System, no una eleccion por defecto: la carga app/layout.tsx desde Google Fonts y no se cambia desde esta app. Ver DESIGN.md > Typography."
+      },
+      {
+        "rule": "bounce-easing",
+        "value": "cubic-bezier(.34, 1.2, .5, 1)",
+        "createdAt": "2026-09-09T14:41:55.775Z",
+        "reason": "Sobrepaso suave (20%) del DS para rotacion de chevron, riel y barra de accion. Medido, no molesta. Una curva elastica mas agresiva SI debe seguir marcandose."
+      },
+      {
+        "rule": "bounce-easing",
+        "value": "cubic-bezier(.34, 1.4, .5, 1)",
+        "createdAt": "2026-09-09T14:41:55.787Z",
+        "reason": "Sobrepaso del 40% en la perilla del switch de tema y el chevron de expandir: es la firma tactil del DS. Idem: curvas mas elasticas siguen marcandose."
+      },
+      {
+        "rule": "design-system-color",
+        "value": "*",
+        "files": [
+          "components/data-table.tsx"
+        ],
+        "createdAt": "2026-09-09T14:43:02.563Z",
+        "reason": "Los literales viven dentro de la ventana de exportacion/impresion que abre DataTable con document.write. Es un documento aparte: no ve las variables CSS de la app, asi que el hex ahi es obligatorio, no deriva."
+      },
+      {
+        "rule": "design-system-font-size",
+        "value": "*",
+        "files": [
+          "components/data-table.tsx"
+        ],
+        "createdAt": "2026-09-09T14:43:02.579Z",
+        "reason": "Idem: escala en puntos de papel dentro de la ventana de impresion."
+      },
+      {
+        "rule": "design-system-radius",
+        "value": "*",
+        "files": [
+          "components/data-table.tsx"
+        ],
+        "createdAt": "2026-09-09T14:43:02.591Z",
+        "reason": "Idem: ventana de impresion."
+      }
+    ]
+  }
+}

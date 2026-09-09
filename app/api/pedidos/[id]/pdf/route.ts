@@ -23,6 +23,12 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     if (!pedido.lineas.length) {
       return NextResponse.json({ error: "La solicitud no tiene líneas: no hay nada que cotizar." }, { status: 409 });
     }
+    // La ARCHIVADA no se cotiza. El guard va acá y no solo en la pantalla porque esta
+    // ruta es un GET sin restricción de rol: con el link a mano, cualquiera bajaba un
+    // PDF pidiéndole al proveedor que cotice material que se acaba de dar de baja.
+    if (pedido.estado === "cerrado") {
+      return NextResponse.json({ error: `${pedido.numero} está archivada: lo que quedaba sin ordenar ya no se compra, no hay nada que cotizar.` }, { status: 409 });
+    }
     // Descripciones de unidad desde BC ("ESTAÑON" en vez de "EST"). Si BC no
     // responde, sale el código: el documento no se cae por esto.
     // Y el NOMBRE de la variante de cada línea: "PORCELANATO 60X60CM" no se puede

@@ -4,7 +4,7 @@
 // Por qué es seguro: la cookie es `httpOnly` (JavaScript del navegador NO la
 // puede leer) y va FIRMADA con SESSION_SECRET (solo el server lo conoce). Nadie
 // puede fabricarse un rol desde la consola como sí pasaba con localStorage.
-import type { Role } from "./types";
+import type { Role } from "./types.ts";
 
 export const SESSION_COOKIE = "adelante_oc_session";
 export const SESSION_MAX_AGE_S = 60 * 60 * 12; // 12 horas

@@ -5,7 +5,7 @@
 // La compañía sale de BC_COMPANY_ID (GUID). El tenant/environment se deducen
 // de BC_BASE_URL (o de BC_TENANT_ID/BC_ENVIRONMENT).
 
-import type { OrdenLinea } from "./types";
+import type { OrdenLinea } from "./types.ts";
 import { claveVariante } from "./variantes.ts";
 import { codigoDeItem } from "./unidad.ts";
 import { cotejarLineas, type Cotejo, type LineaApp, type LineaBc } from "./bc-conciliacion.ts";
@@ -1543,6 +1543,35 @@ export async function bcReopenPedido(orderNo: string): Promise<string> {
   return d?.value ?? "Open";
 }
 
+// EL CAMBIO DE LA APP TIENE QUE LLEGAR AL PEDIDO, Y EL PEDIDO QUEDA ABIERTO.
+//
+// Un pedido Lanzado en BC no deja que le toquen ni el encabezado ni las líneas. Hasta
+// ahora eso terminaba en un aviso rojo ("volvé a guardar") y la orden se quedaba
+// distinta de BC — que es exactamente lo que pasó con CP-005249: se le corrigió el
+// proveedor acá y en BC el pedido siguió a nombre del otro.
+//
+// El flujo real es: se corrige acá, la app lo manda a aprobación y Aprobación solo lo
+// pasa a Lanzado. Así que si BC se niega por estar Lanzado, la respuesta correcta no
+// es rendirse: es DES-LANZARLO y volver a empujar. Queda Abierto a propósito — el
+// lanzamiento es de Aprobación, no de esta app.
+//
+// Se reintenta UNA sola vez. Si el segundo intento falla, el error sube tal cual: ahí
+// ya no es el estado del pedido, es otra cosa, y hay que decirla.
+export async function conPedidoAbierto<T>(
+  orderNo: string,
+  accion: () => Promise<T>,
+): Promise<{ valor: T; reabierto: boolean }> {
+  try {
+    return { valor: await accion(), reabierto: false };
+  } catch (e: any) {
+    if (!bcPideAbierto(String(e?.message ?? e))) throw e;
+    // Si BC no deja reabrir (ya tiene recepciones registradas, por ejemplo), su error
+    // es el que hay que mostrar: explica por qué el cambio NO puede llegar.
+    await bcReopenPedido(orderNo);
+    return { valor: await accion(), reabierto: true };
+  }
+}
+
 // Tipos de línea que se le manda a BC al reescribir un pedido. Es el shape de la
 // app, no el de BC: la traducción la hace payloadReplaceLines.
 export type LineaReplaceBc = {
@@ -2061,7 +2090,7 @@ export function crearEnBcAlEnviar(): boolean {
 // El registro SÍ se puede hacer: lo que falta es reabrir el pedido. Se hace acá, se
 // reintenta UNA vez, y `Purch.-Post` lo vuelve a lanzar al registrar. Si el reintento
 // también falla, el mensaje avisa que el pedido quedó abierto en BC.
-const BC_PIDE_ABIERTO = /Status must be equal to 'Open'|El estado debe ser igual a 'Abierto'/i;
+const BC_PIDE_ABIERTO = /Status must be equal to 'Open'|El estado debe ser igual a 'Abierto'|no está Abierto en Business Central/i;
 
 /** ¿El error de BC es "este pedido tiene que estar Abierto"? (cubierto por tests) */
 export function bcPideAbierto(textoDelError: string): boolean {

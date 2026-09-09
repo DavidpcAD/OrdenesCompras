@@ -1,4 +1,4 @@
-import type { Orden, OrdenEstado, Pedido } from "./types";
+import type { Orden, OrdenEstado, Pedido } from "./types.ts";
 // Con extensión a propósito: este módulo lo carga también el test con node puro
 // (sin el resolutor de Next), y ahí un import sin extensión no resuelve.
 import { numeroOrden } from "./helpers.ts";

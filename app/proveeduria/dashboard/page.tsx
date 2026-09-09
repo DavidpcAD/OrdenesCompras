@@ -107,14 +107,47 @@ export default function ProveeduriaDashboardPage() {
           </div>
         </div>
 
-        <div className="tiles mt-2">
-          {/* Los tres montos son SIN IVA (suma de líneas de artículo con descuento),
-              igual que la columna "Total sin IVA" de la lista de órdenes. */}
-          <Tile value={money(tot.pedido, "CRC")} label="Pedido · sin IVA" />
-          <Tile value={money(tot.recibido, "CRC")} label="Entregado · sin IVA" accent="var(--ds-color-green-200)" />
-          <Tile value={`${pctGlobal}%`} label="Entregado (global)" accent="var(--ds-color-green-100)" />
-          <Tile value={money(pendienteGlobal, "CRC")} label="Pendiente por entregar · sin IVA" accent="var(--ds-color-red-100)" />
-        </div>
+        {/* Antes eran cuatro tarjetas con el mismo peso visual: pedido, entregado, % y
+            pendiente. Son cuatro caras del MISMO dato, y puestas en fila obligaban a
+            hacer la resta de cabeza para saber lo único que Angie va a accionar: cuánto
+            falta que llegue. Ahora ese número manda, la barra muestra la relación
+            parte-todo, y pedido/entregado quedan como referencia.
+            Los montos son SIN IVA (suma de líneas de artículo con descuento), igual que
+            la columna "Total sin IVA" de la lista de órdenes. */}
+        <section className="ds-card dash-resumen mt-2" aria-label="Resumen de lo pedido y lo entregado">
+          <div className="dash-resumen__head">
+            <div>
+              <div className="dash-resumen__label">Pendiente por entregar</div>
+              <div className="dash-resumen__value">{money(pendienteGlobal, "CRC")}</div>
+            </div>
+            <div className="dash-resumen__ref">
+              <div className="dash-resumen__label">Pedido total</div>
+              <div className="dash-resumen__ref-value">{money(tot.pedido, "CRC")}</div>
+              <div className="ds-body-sm ds-muted">sin IVA</div>
+            </div>
+          </div>
+
+          <div
+            className="dash-resumen__track"
+            role="img"
+            aria-label={`${pctGlobal}% entregado de ${money(tot.pedido, "CRC")}`}
+          >
+            <span className="dash-resumen__fill" style={{ width: `${pctGlobal}%` }} />
+          </div>
+
+          <div className="dash-resumen__legend">
+            <span className="dash-resumen__leg">
+              <i className="dash-resumen__dot dash-resumen__dot--done" aria-hidden />
+              Entregado <strong>{money(tot.recibido, "CRC")}</strong>
+              <span className="ds-muted">· {pctGlobal}%</span>
+            </span>
+            <span className="dash-resumen__leg">
+              <i className="dash-resumen__dot dash-resumen__dot--pend" aria-hidden />
+              Pendiente <strong>{money(pendienteGlobal, "CRC")}</strong>
+              <span className="ds-muted">· {100 - pctGlobal}%</span>
+            </span>
+          </div>
+        </section>
 
         <h2 className="ds-subtitle" style={{ marginTop: 28 }}>Por proveedor</h2>
         <div className="mt-2">

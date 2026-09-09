@@ -12,9 +12,9 @@ type BtnVariant = "green" | "red" | "white" | "black" | "yellow" | "ghost" | "ou
 type BtnSize = "sm" | "md" | "lg";
 
 export function Button({
-  variant = "green", size = "md", block, icon, className = "", children, ...rest
+  variant = "green", size = "md", block, icon, loading, className = "", children, ...rest
 }: React.ButtonHTMLAttributes<HTMLButtonElement> & {
-  variant?: BtnVariant; size?: BtnSize; block?: boolean; icon?: boolean;
+  variant?: BtnVariant; size?: BtnSize; block?: boolean; icon?: boolean; loading?: boolean;
 }) {
   // El DS solo tiene variantes green/red/white/black/gray. ghost/outline/yellow son
   // aliases de la app que se RENDERIZAN como clases reales del DS (secundario = white).
@@ -29,11 +29,21 @@ export function Button({
   // Haptic del DS: vibración semántica al presionar (delete para destructiva).
   // El anillo de "pressed" lo maneja el CSS vía :active. onClick nativo se mantiene
   // para preservar activación por teclado.
+  // `loading` = la acción ya salió y viaja. El botón queda inerte SOLO (no depende de
+  // que la pantalla se acuerde de pasar disabled) y muestra el giro. Acá cada acción
+  // escribe en Business Central: un segundo clic crea un segundo pedido de verdad.
+  // aria-busy se lo dice al lector de pantalla, que no ve el spinner.
+  const inerte = rest.disabled || loading;
   const onPointerDown = (e: React.PointerEvent<HTMLButtonElement>) => {
-    if (!rest.disabled) (variant === "red" ? haptic.delete : haptic.select)();
+    if (!inerte) (variant === "red" ? haptic.delete : haptic.select)();
     rest.onPointerDown?.(e);
   };
-  return <button className={cls} {...rest} onPointerDown={onPointerDown}>{children}</button>;
+  return (
+    <button className={cls} {...rest} disabled={inerte} aria-busy={loading || undefined} onPointerDown={onPointerDown}>
+      {loading ? <span className="ds-btn__spin" aria-hidden /> : null}
+      {children}
+    </button>
+  );
 }
 
 // ---------------------------------------------------------------- Field

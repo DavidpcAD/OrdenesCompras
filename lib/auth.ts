@@ -1,7 +1,7 @@
 import crypto from "crypto";
 import bcrypt from "bcryptjs";
-import { getAuthPool, sql } from "./db";
-import type { Role } from "./types";
+import { getAuthPool, sql } from "./db.ts";
+import type { Role } from "./types.ts";
 
 // Rol (dbo.Rol) -> módulo de la app. Los roles que no calzan NO tienen acceso.
 // Ingeniería y Aprobación se manejan en la app de producción, no acá.

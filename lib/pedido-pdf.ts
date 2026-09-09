@@ -1,11 +1,11 @@
-import type { Pedido, PedidoLinea } from "./types";
-import { lineasACotizar, observacionesParaProveedor, destinoCodigo, destinoLabel } from "./helpers";
-import { etiquetaUnidad, fmtDoc } from "./orden-doc";
+import type { Pedido, PedidoLinea } from "./types.ts";
+import { lineasACotizar, observacionesParaProveedor, destinoCodigo, destinoLabel } from "./helpers.ts";
+import { etiquetaUnidad, fmtDoc } from "./orden-doc.ts";
 import { etiquetaVariante, nombreDeVariante, descripcionParaDocumento } from "./variantes.ts";
 import {
   nuevoDocumento, dibujante, encabezadoMarca, bloqueEmpresa, numerarPaginas, formatearFecha,
   A4, MARGEN, DERECHA, ANCHO_UTIL, ANCHO_UTIL as UTIL, Y_CONTINUACION, GRIS, NEGRO,
-} from "./pdf-base";
+} from "./pdf-base.ts";
 
 // SOLICITUD DE COTIZACIÓN: la solicitud de Ingeniería convertida en un documento que
 // Proveeduría le manda a uno o varios proveedores para que le pongan precio.

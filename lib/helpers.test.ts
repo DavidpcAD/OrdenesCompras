@@ -18,6 +18,7 @@ import {
   ordenAdmiteDevolucion, puedeDevolverLineaOrden, motivoNoDevolverLineaOrden, ordenQuedaSinMaterial,
   lineasACotizar, observacionesParaProveedor, motivoDevolucion, devolucionesDeRol,
   estadoDeDevolucion, devolucionesPendientes, correccionDeSolicitud,
+  motivoDeCierreSolicitud, comentarioDeSolicitud, pedidoBadge,
   esTipoDevolucion, esTipoEdicion,
   ordenDeDetalleDevolucion, ordenEsperaCorreccion, ordenDeDevolucion, lineasCorregidasDeOrden,
   esLineaMaterial, esLineaRecibible, esLineaCargo, etiquetaTipoLinea,
@@ -197,6 +198,10 @@ const pLinea = (p: Partial<PedidoLinea> & { id: string }): PedidoLinea => ({
   id: p.id, articuloId: p.articuloId ?? "a1", descripcion: p.descripcion ?? "X",
   cantidad: p.cantidad ?? 0, unidad: p.unidad ?? "UND", almacen: p.almacen ?? "",
   cantidadOrdenada: p.cantidadOrdenada ?? 0,
+  // Las dos marcas que apagan el pendiente. Iban afuera y había que agregarlas con
+  // un spread en cada test ({ ...pLinea(…), devuelta: true }), que es fácil de
+  // olvidar y hace que el caso pase por el motivo equivocado.
+  devuelta: p.devuelta, cerrada: p.cerrada,
 });
 const pedido = (lineas: PedidoLinea[], extra: Partial<Pedido> = {}): Pedido => ({
   id: "p1", numero: "PED-000001", tipoSolicitud: "material", solicitante: "Laura",
@@ -891,4 +896,88 @@ test("motivoNoDevolverLineaOrden nombra el tipo que no se devuelve", () => {
   assert.match(motivoNoDevolverLineaOrden(linea({ id: "b", tipo: "activo_fijo" })), /es un activo fijo/);
   assert.match(motivoNoDevolverLineaOrden(linea({ id: "c", tipo: "cargo" })), /es un cargo/);
   assert.equal(puedeDevolverLineaOrden(linea({ id: "d", tipo: "recurso", pedidoLineaId: "pl1" })), false);
+});
+
+// ============================================================================
+// CERRAR / ARCHIVAR UNA SOLICITUD
+//
+// El caso: se ordenó una parte y el resto ya no se compra. Lo que se prueba acá es
+// que el saldo dado de baja NO reviva por ninguna puerta — es el modo de fallar que
+// no se ve en QA, porque aparece días después y en otra pantalla.
+// ============================================================================
+
+test("cerrada: la línea cancelada deja de tener pendiente, la ordenada no se toca", () => {
+  const p = pedido([
+    pLinea({ id: "l1", cantidad: 80, cantidadOrdenada: 80 }),            // se compró entera
+    pLinea({ id: "l2", cantidad: 120, cantidadOrdenada: 0, cerrada: true }),
+    pLinea({ id: "l3", cantidad: 25, cantidadOrdenada: 10, cerrada: true }),
+  ], { estado: "cerrado" });
+  assert.equal(pedidoLineaPendiente(p.lineas[0]), 0);
+  assert.equal(pedidoLineaPendiente(p.lineas[1]), 0);   // 120 dadas de baja
+  assert.equal(pedidoLineaPendiente(p.lineas[2]), 0);   // las 15 que faltaban, también
+  assert.equal(pedidoTieneSaldo(p), false);
+});
+
+test("cerrada: el badge dice Archivada y no un avance de compra", () => {
+  const p = pedido([pLinea({ id: "l1", cantidad: 10, cantidadOrdenada: 6, cerrada: true })], { estado: "cerrado" });
+  // Sin el corte diría "Parcialmente ordenado" en amarillo: prometería que falta comprar.
+  assert.equal(pedidoCompraBadge(p).label, "Archivada");
+  assert.equal(pedidoBadge("cerrado").label, "Archivada");
+});
+
+test("cerrada: sale de la bandeja de Devoluciones y del punto rojo del menú", () => {
+  // El escenario de todos los días: se devolvió, el ingeniero corrigió, y después se
+  // decidió no comprar el resto. Con saldo vivo se quedaba clavada para siempre.
+  const devolucion = { fecha: "2026-09-01T10:00:00.000Z", motivo: "faltaba la variante" };
+  const corregida = pedido([pLinea({ id: "l1", cantidad: 10, cantidadOrdenada: 0 })], { devolucion });
+  assert.equal(estadoDeDevolucion(corregida), "corregida");
+  assert.equal(devolucionesPendientes("proveeduria", [corregida], []), 1);
+
+  const archivada = { ...corregida, estado: "cerrado" as const, lineas: [pLinea({ id: "l1", cantidad: 10, cantidadOrdenada: 0, cerrada: true })] };
+  assert.equal(estadoDeDevolucion(archivada), null);
+  assert.equal(devolucionesPendientes("proveeduria", [archivada], []), 0);
+});
+
+test("cerrada: no se cotiza (el PDF mandaba a cotizar lo que se acababa de dar de baja)", () => {
+  // Una archivada se queda sin pendiente, así que caía justo en el fallback que
+  // cotiza "todo lo no devuelto" con la cantidad completa.
+  const p = pedido([
+    pLinea({ id: "l1", cantidad: 10, cantidadOrdenada: 10 }),
+    pLinea({ id: "l2", cantidad: 5, cantidadOrdenada: 0, cerrada: true }),
+  ], { estado: "cerrado" });
+  assert.deepEqual(lineasACotizar(p), []);
+});
+
+test("cerrada: cerrar una orden suya NO la des-archiva", () => {
+  // Es la puerta de atrás: cerrarOrden(devolverSaldo) le devuelve saldo a la
+  // solicitud. El número sube, pero la solicitud tiene que seguir archivada.
+  const ped = pedidoCon([{ id: "pl1", cantidad: 10, cantidadOrdenada: 10 }]);
+  const archivada = { ...ped, estado: "cerrado" as const };
+  const o = orden([linea({ id: "a", pedidoLineaId: "pl1", cantidad: 10, cantidadRecibida: 4 })]);
+  const [r] = devolverPendienteAPedidos([archivada], o);
+  assert.equal(r.estado, "cerrado");                // sigue archivada
+  assert.equal(r.lineas[0].cantidadOrdenada, 4);    // el saldo volvió al número…
+  // …pero como la línea sigue cancelada, no reaparece como trabajo pendiente.
+  assert.equal(pedidoLineaPendiente({ ...r.lineas[0], cerrada: true }), 0);
+});
+
+test("cerrada: el comentario del ingeniero se lee sin el encabezado del cierre", () => {
+  const p = pedido([pLinea({ id: "l1", cantidad: 1 })], {
+    estado: "cerrado",
+    notas: "⛔ Cerrada: Se compró en otro lado · ↩ Devuelto: faltaba la variante · Material para la losa",
+  });
+  assert.equal(motivoDeCierreSolicitud(p), "Se compró en otro lado");
+  assert.equal(comentarioDeSolicitud(p), "Material para la losa");
+  // Y el proveedor NO ve ninguno de los dos motivos internos.
+  assert.equal(observacionesParaProveedor(p.notas), "Material para la losa");
+  // La bandeja de Devoluciones sigue mostrando el motivo de la DEVOLUCIÓN, no el del cierre.
+  assert.equal(motivoDevolucion(p.notas), "faltaba la variante");
+});
+
+test("una solicitud viva no se ve afectada por nada de esto", () => {
+  const p = pedido([pLinea({ id: "l1", cantidad: 10, cantidadOrdenada: 4 })]);
+  assert.equal(pedidoLineaPendiente(p.lineas[0]), 6);
+  assert.equal(pedidoCompraBadge(p).label, "Parcialmente ordenado");
+  assert.equal(motivoDeCierreSolicitud(p), "");
+  assert.equal(lineasACotizar(p).length, 1);
 });

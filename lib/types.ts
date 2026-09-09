@@ -113,6 +113,12 @@ export interface PedidoLinea {
   // Devuelto). Queda bloqueada: no se puede ordenar ni volver a devolver, y su
   // pendiente cuenta como 0. Una línea que ya tiene orden de compra NO se devuelve.
   devuelta?: boolean;
+  // El saldo de ESTA línea se dio de baja al CERRAR la solicitud: ya no se compra.
+  // A diferencia de `devuelta`, no es una columna — se DERIVA de que el pedido esté
+  // cerrado y a la línea le quedara algo sin ordenar (ver lib/cierre-solicitud.ts,
+  // que explica por qué no puede persistirse en la línea: la app de Producción borra
+  // y reinserta las líneas sin ordenar cada vez que el ingeniero edita).
+  cerrada?: boolean;
   notas?: string;
 }
 

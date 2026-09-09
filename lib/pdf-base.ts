@@ -10,7 +10,7 @@
 // ("ENOENT … /vendor-chunks/data/Helvetica.afm"). Esta las trae embebidas.
 // @ts-expect-error — la build standalone no trae tipos propios; la API es la misma.
 import PDFDocument from "pdfkit/js/pdfkit.standalone.js";
-import { EMPRESA_DOC } from "./orden-doc";
+import { EMPRESA_DOC } from "./orden-doc.ts";
 
 // La marca del DS (react/AdelanteMark), en un viewBox de 163×71.
 export const MARCA_PATH = "M0 0H45.645L87.8835 70.7845H41.4411L0 0ZM72.5219 20.6455H118.403L133.203 45.715H162.804L148.004 70.7845H102.257L72.5219 20.6455Z";
