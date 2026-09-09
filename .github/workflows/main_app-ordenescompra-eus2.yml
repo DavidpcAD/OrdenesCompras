@@ -7,6 +7,12 @@ on:
   push:
     branches:
       - main
+  # En un pull request corre build + pruebas, pero NO despliega (ver la guarda del
+  # job `deploy`). Sin esto, un PR no se verificaba nunca: el error aparecía recién
+  # al mergear, con main ya roto.
+  pull_request:
+    branches:
+      - main
   workflow_dispatch:
 
 jobs:
@@ -54,6 +60,9 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     needs: build
+    # SOLO se despliega desde main. Esta guarda es la que hace seguro el trigger de
+    # pull_request de arriba: sin ella, abrir un PR mandaría su código a producción.
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     permissions:
       id-token: write #This is required for requesting the JWT
       contents: read #This is required for actions/checkout
