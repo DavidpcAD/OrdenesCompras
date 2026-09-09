@@ -1,5 +1,5 @@
-import type { Orden, OrdenLinea } from "./types";
-import { ordenLineaImporte } from "./helpers";
+import type { Orden, OrdenLinea } from "./types.ts";
+import { esLineaCargo, esLineaRecibible, ordenLineaImporte } from "./helpers.ts";
 
 // Datos del DOCUMENTO de una orden (el que se le manda al proveedor), calculados una
 // sola vez para los DOS que lo dibujan: la vista de pantalla y el PDF del servidor.
@@ -57,8 +57,12 @@ export type DocumentoOrden = {
 };
 
 export function documentoDeOrden(orden: Orden, unidades: Record<string, string> = {}): DocumentoOrden {
-  const articulos = orden.lineas.filter((l) => l.tipo === "articulo");
-  const cargos = orden.lineas.filter((l) => l.tipo === "cargo");
+  // El papel que se le manda al proveedor lleva TODAS las líneas: material, recurso
+  // y activo fijo primero, y los cargos (flete) al final, como el reporte de BC.
+  // Con `tipo === "articulo"` una compra directa de un servicio salía impresa vacía:
+  // la orden llegaba al proveedor sin la línea que se le estaba comprando.
+  const articulos = orden.lineas.filter(esLineaRecibible);
+  const cargos = orden.lineas.filter(esLineaCargo);
   const lineas = [...articulos, ...cargos];
   const destinos = [...new Set(articulos.map(destinoLineaDoc).filter(Boolean))];
   const subtotal = orden.lineas.reduce((s, l) => s + ordenLineaImporte(l), 0);

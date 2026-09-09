@@ -24,7 +24,7 @@ import { codigoDeItem } from "./unidad.ts";
 export type LineaBc = {
   documentNo: string;
   lineNo: number;
-  tipo: "articulo" | "cargo" | "otro";
+  tipo: "articulo" | "recurso" | "activo_fijo" | "cargo" | "otro";
   itemNo: string;
   variantCode: string;
   descripcion: string;
@@ -45,8 +45,8 @@ export type LineaBc = {
 // Una línea de la orden de la app, reducida a lo que se puede cotejar contra BC.
 export type LineaApp = {
   id: string;
-  tipo: "articulo" | "cargo";
-  itemNo: string;         // artículo o N.º de cargo
+  tipo: "articulo" | "recurso" | "activo_fijo" | "cargo";
+  itemNo: string;         // N.º del artículo, recurso o activo fijo; o el del cargo
   variantCode: string;
   descripcion: string;
   cantidad: number;
@@ -107,6 +107,14 @@ export function claveLinea(itemNo: string, variantCode?: string): string {
 }
 
 type Acumulado = { cantidad: number; importe: number; lineas: number; descripcion: string; itemNo: string; variantCode: string; unidad: string };
+
+// Los tipos que se cotejan LÍNEA POR LÍNEA (cantidad, precio, unidad): artículo,
+// recurso y activo fijo, o sea todo lo que la app le pide a BC con una cantidad.
+// Quedan fuera el CARGO (se coteja aparte, solo presencia: BC le reescribe cantidad
+// y precio al repartirlo) y "otro" —una cuenta contable que alguien agregó en BC—,
+// que esta app no arma y por lo tanto no puede afirmar que falte o sobre.
+const esLineaCotejable = (l: { tipo: string }) =>
+  l.tipo === "articulo" || l.tipo === "recurso" || l.tipo === "activo_fijo";
 
 // Agrupa por clave sumando cantidades. Se agrupa (en vez de comparar línea a línea)
 // porque una orden PUEDE repetir el mismo material en dos líneas —distinto almacén,
@@ -179,8 +187,10 @@ export function cotejarLineas(
 ): Cotejo {
   const soloArticulos = opts.soloArticulos ?? true;
   const sinVar = opts.ignorarVariante ?? false;
-  const artApp = (app ?? []).filter((l) => l.tipo === "articulo");
-  const artBc = (bc ?? []).filter((l) => l.tipo === "articulo");
+  // Un recurso o un activo fijo que la app mandó y BC no tiene es exactamente el
+  // agujero de CP-005172 con otro tipo de línea: entran al mismo cotejo.
+  const artApp = (app ?? []).filter(esLineaCotejable);
+  const artBc = (bc ?? []).filter(esLineaCotejable);
   const gApp = agrupar(artApp, sinVar);
   const gBc = agrupar(artBc, sinVar);
 
@@ -343,7 +353,7 @@ export function cotejarLineas(
 // orden entera, sino lo efectivamente recibido.
 export function lineasRecibidasDeOrden(lineas: (LineaApp & { cantidadRecibida?: number })[]): LineaApp[] {
   return (lineas ?? [])
-    .filter((l) => l.tipo === "articulo" && (Number(l.cantidadRecibida) || 0) > 0)
+    .filter((l) => esLineaCotejable(l) && (Number(l.cantidadRecibida) || 0) > 0)
     .map((l) => ({ ...l, cantidad: Number(l.cantidadRecibida) || 0 }));
 }
 

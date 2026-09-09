@@ -8,7 +8,7 @@ import type {
   NotaCreditoLinea, MotivoNC,
 } from "./types";
 import * as seed from "./seed";
-import { devolverPendienteAPedidos, nextNumero, nowISO, ordenEstaCompleta, PERSONA_POR_ROL, todayISO } from "./helpers";
+import { devolverPendienteAPedidos, esLineaRecibible, nextNumero, nowISO, ordenEstaCompleta, PERSONA_POR_ROL, todayISO } from "./helpers";
 import { api, USE_API as USE_API_BUILD } from "./api";
 import { instalarGuardFetch, EVENTO_SESION_VENCIDA } from "./fetch-guard";
 
@@ -592,7 +592,7 @@ export function StoreProvider({ children, useApi }: { children: React.ReactNode;
           p.lineas.some((l) => delta.has(l.id))
             ? { ...p, lineas: p.lineas.map((l) => (delta.has(l.id) ? { ...l, cantidadOrdenada: Math.max(0, l.cantidadOrdenada + delta.get(l.id)!) } : l)) }
             : p);
-        const mov = mkMov({ entidad: "orden", idEntidad: id, documentoNo: prevo?.numero ?? "", tipoMovimiento: "editado", detalle: `${lineas.filter((l) => l.tipo === "articulo").length} línea(s)` });
+        const mov = mkMov({ entidad: "orden", idEntidad: id, documentoNo: prevo?.numero ?? "", tipoMovimiento: "editado", detalle: `${lineas.filter(esLineaRecibible).length} línea(s)` });
         return { ...d, ordenes, pedidos, movimientos: [mov, ...d.movimientos] };
       });
       return {};
@@ -686,7 +686,9 @@ export function StoreProvider({ children, useApi }: { children: React.ReactNode;
       setData((d) => {
         const o = d.ordenes.find((x) => x.id === id);
         if (!o) return d;
-        pendienteDevuelto = o.lineas.filter((l) => l.tipo === "articulo")
+        // Mismo criterio que el SQL (`ISNULL(tipoLinea,'articulo') <> 'cargo'`):
+        // el saldo sin recibir también incluye recurso y activo fijo.
+        pendienteDevuelto = o.lineas.filter(esLineaRecibible)
           .reduce((s, l) => s + Math.max(0, l.cantidad - l.cantidadRecibida), 0);
         const mov = mkMov({ entidad: "orden", idEntidad: id, documentoNo: o.numero, tipoMovimiento: "cerrado",
           estadoAnterior: o.estado, estadoNuevo: "completado", detalle: motivo });
@@ -711,7 +713,7 @@ export function StoreProvider({ children, useApi }: { children: React.ReactNode;
         const o = d.ordenes.find((x) => x.id === id);
         if (!o) return d;
         const pendientes = o.lineas
-          .filter((l) => l.tipo === "articulo" && l.cantidad - l.cantidadRecibida > 0)
+          .filter((l) => esLineaRecibible(l) && l.cantidad - l.cantidadRecibida > 0)
           .map((l) => ({ ...l, id: uid(), cantidad: l.cantidad - l.cantidadRecibida, cantidadRecibida: 0, cantidadFacturada: 0 }));
         if (!pendientes.length) return d;
         const numero = nextNumero("CP", d.ordenes.map((x) => x.numero));
@@ -931,7 +933,7 @@ export function StoreProvider({ children, useApi }: { children: React.ReactNode;
         const vanVolver = o.lineas.filter((l) => ids.has(l.id) && l.tipo === "articulo" && l.pedidoLineaId);
         if (!vanVolver.length) return d;
         const quedan = o.lineas.filter((l) => !ids.has(l.id));
-        const sinMaterial = !quedan.some((l) => l.tipo === "articulo");
+        const sinMaterial = !quedan.some(esLineaRecibible);
         // Igual que el server (`devolverLineasDeOrden`): sin material se descarta SOLO
         // si la orden todavía no existe en BC. Si ya vive allá se queda esperando la
         // corrección del ingeniero, con su N.º intacto.

@@ -102,7 +102,9 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
       // N.º de BC, ver `devolverLineasDeOrden`). Se corta acá porque los guards de
       // abajo son POR LÍNEA: con cero líneas los pasa todos y el error se lo llevaría
       // BC, que rechaza el reemplazo con una lista vacía.
-      if (!o.lineas.some((l) => l.tipo === "articulo")) {
+      // Criterio: "no tiene NADA que comprar". Una directa de puro servicio o de un
+      // activo fijo sí tiene qué aprobar, aunque no lleve una línea de artículo.
+      if (!o.lineas.some((l) => l.tipo !== "cargo")) {
         return NextResponse.json({
           error: "La orden NO se envió a aprobación: no tiene material. Está esperando la corrección del ingeniero — cuando la devuelva, agregá la línea con «+ De solicitudes» al editar la orden y volvé a enviarla.",
         }, { status: 409 });

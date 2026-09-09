@@ -7,7 +7,7 @@ import { DataTable } from "@/components/data-table";
 import { VistaToggle } from "@/components/vista-toggle";
 import { IconReceipt, IconList } from "@/components/icons";
 import { useStore } from "@/lib/store";
-import { num, formatDate, numeroOrden } from "@/lib/helpers";
+import { esLineaRecibible, formatDate, num, numeroOrden } from "@/lib/helpers";
 import { useSoloMias } from "@/lib/use-solo-mias";
 
 type Estado = "pendiente" | "parcial" | "llego";
@@ -41,7 +41,9 @@ export default function ProveeduriaLineasPedidasPage() {
     ordenes.forEach((o) => {
       const prov = proveedores.find((p) => p.id === o.proveedorId);
       o.lineas.forEach((l) => {
-        if (l.tipo !== "articulo") return;
+        // Todo lo que se espera recibir: material, recurso y activo fijo. El cargo
+        // (flete) no llega a bodega y no tiene sentido en esta lista.
+        if (!esLineaRecibible(l)) return;
         const art = l.articuloId ? artPorClave.get(l.articuloId) : undefined;
         const ped = (l.pedidoLineaId ? pedidoPorLinea.get(l.pedidoLineaId) : undefined)
           ?? (l.pedidoNumero ? pedidoPorNumero.get(l.pedidoNumero) : undefined);
