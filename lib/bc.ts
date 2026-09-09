@@ -1863,17 +1863,54 @@ export async function bcReplaceOrderLines(orderNo: string, lineas: LineaReplaceB
 // El nombre del grupo sale de BC_IVA_GRUPO_EXENTO por si en BC lo renombran; el
 // default es el que la compañía usa hoy.
 export function grupoIvaExento(): string {
-  return (process.env.BC_IVA_GRUPO_EXENTO || "EXENTO").trim();
+  return (process.env.BC_IVA_GRUPO_EXENTO || "EXENTO-BIENES").trim();
 }
 
-// Las líneas a las que hay que cambiarles el grupo. Las que ya lo tienen se dejan
-// quietas: cada PATCH es una escritura en BC y una línea que ya está exenta no gana
-// nada con que se la reescriba (BC las nombra en mayúscula pero no cuesta nada
-// compararlas sin distinguir).
+// OJO — LEER Y ESCRIBIR `taxCode` NO HABLAN EL MISMO IDIOMA.
+// Al LEER, la API devuelve el VAT **Identifier** de la combinación ("EXENTO",
+// "IVA13"). Al ESCRIBIR, espera el código del VAT **Prod. Posting Group**
+// ("EXENTO-BIENES", "IVA13%-BIENES"), que es lo que lista `taxGroups`. Mandar el
+// identifier hace que BC conteste `Internal_InvalidTableRelation` ("contains a value
+// (EXENTO) that cannot be found"), que fue lo que pasó con CP-005254 el 9 sep 2026.
+//
+// Por eso "esta línea ya está exenta" NO se decide comparando textos: se decide con
+// el % que BC está calculando. Si ya es 0, no hay nada que arreglarle; cada PATCH de
+// más es una escritura en BC que no hace falta.
 export function lineasAExonerar(lineas: LineaIvaBc[], grupo: string): LineaIvaBc[] {
   const g = String(grupo ?? "").trim().toUpperCase();
   if (!g) return [];
-  return (lineas ?? []).filter((l) => l?.id && String(l?.taxCode ?? "").trim().toUpperCase() !== g);
+  return (lineas ?? []).filter((l) => {
+    if (!l?.id) return false;
+    const pct = Number(l?.taxPercent);
+    if (Number.isFinite(pct) && Math.abs(pct) < 1e-9) return false;   // ya va sin IVA
+    // Sin % que mirar (BC no lo dio), queda el texto: puede venir como el grupo
+    // entero o como su identifier, que es el grupo hasta el primer "-".
+    const actual = String(l?.taxCode ?? "").trim().toUpperCase();
+    return !actual || (actual !== g && actual !== g.split("-")[0]);
+  });
+}
+
+// Los VAT Prod. Posting Groups que existen en BC (`taxGroups`), en mayúscula. null si
+// no se pudieron leer. Sirve para no mandarle a BC un grupo que no existe y comerse
+// un error suyo que no dice qué hacer.
+async function bcGruposIvaProducto(cid: string): Promise<string[] | null> {
+  try {
+    const res = await bcFetch(`${stdRoot()}/companies(${cid})/taxGroups?$select=code&$top=200`, { cache: "no-store" });
+    if (!res.ok) return null;
+    return (((await res.json())?.value ?? []) as any[])
+      .map((g) => String(g?.code ?? "").trim().toUpperCase()).filter(Boolean);
+  } catch { return null; }
+}
+
+// El "message" de adentro del error de BC. Sin esto, en pantalla salía el JSON crudo
+// (`{"error":{"code":"Internal_InvalidTableRelation","message":"…"}}`), que es
+// justamente lo que nadie puede leer cuando algo falla.
+function mensajeBc(txt: string): string {
+  try {
+    const m = JSON.parse(txt)?.error?.message;
+    if (m) return String(m).replace(/\s*CorrelationId:.*$/is, "").trim();
+  } catch { /* no era JSON: se devuelve tal cual */ }
+  return txt.trim();
 }
 
 export type ResultadoExonerar = {
@@ -1905,6 +1942,16 @@ export async function bcExonerarLineasPedido(orderNo: string): Promise<Resultado
   if (/released|lanzad/i.test(antes.status)) {
     throw new Error(`El pedido ${orderNo} ya está lanzado en Business Central (${antes.status}): allá no se le puede cambiar el IVA. Que Aprobación lo reabra y volvés a intentar, o que Contabilidad le cambie el grupo de IVA en BC.`);
   }
+  // Que el grupo EXISTA en BC se revisa ACÁ, no en el PATCH: mandarle uno inventado
+  // devuelve un `Internal_InvalidTableRelation` que no le dice a nadie qué hacer.
+  const catalogo = await bcGruposIvaProducto(cid);
+  if (catalogo && !catalogo.includes(grupo.toUpperCase())) {
+    const exentos = catalogo.filter((g) => g.startsWith("EXENTO") || g.startsWith("EXONERADO"));
+    throw new Error(
+      `Business Central no tiene ningún grupo de IVA de producto que se llame "${grupo}". ` +
+      (exentos.length ? `Los que hay para esto son: ${exentos.join(", ")}. ` : "") +
+      `Se configura con BC_IVA_GRUPO_EXENTO.`);
+  }
   const totalesAntes = await bcOrdenTotales(orderNo);
 
   const pendientes = lineasAExonerar(antes.lineas, grupo);
@@ -1918,7 +1965,7 @@ export async function bcExonerarLineasPedido(orderNo: string): Promise<Resultado
       body: JSON.stringify({ taxCode: grupo }),
     });
     if (r.ok) cambiadas.push(`${l.code}: ${l.taxCode || "(sin grupo)"} → ${grupo}`);
-    else fallas.push(`${l.code} (BC ${r.status}: ${(await r.text()).slice(0, 160)})`);
+    else fallas.push(`${l.code} (${mensajeBc((await r.text()).slice(0, 400))})`);
   }
 
   // BC recalcula al momento: los totales de después son el resultado real, no el
