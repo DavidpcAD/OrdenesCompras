@@ -15,3 +15,5 @@ next-env.d.ts
 
 # Artefacto de Business Central (lo genera la extensión AL en carpeta equivocada — no va en este repo)
 extensionsPermissionSet.xml
+# Playwright CLI output (may contain credentials)
+.playwright-cli/
