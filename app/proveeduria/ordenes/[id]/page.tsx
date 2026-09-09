@@ -16,6 +16,10 @@ export default function ProvOrdenDetallePage() {
   const [procesando, setProcesando] = useState(false);
   // Quitarle el IVA al pedido EN BC: escribe allá, así que se confirma antes.
   const [exonerando, setExonerando] = useState(false);
+  // Sube cada vez que se cambió algo en BC, para que el detalle vuelva a leer de allá
+  // los totales. Sin esto quedaban clavados en lo que se leyó al abrir la orden, y el
+  // IVA recién quitado seguía apareciendo en pantalla hasta recargar (CP-005254).
+  const [refrescoBc, setRefrescoBc] = useState(0);
   // Aviso de BC que NO se puede perder (el toast se desvanece y el usuario se queda
   // creyendo que el pedido en BC también se reabrió).
   const [avisoBc, setAvisoBc] = useState<string | null>(null);
@@ -71,6 +75,9 @@ export default function ProvOrdenDetallePage() {
     setProcesando(true);
     try {
       const r = await setOrdenEstado(orden!.id, estado, { reabrirBc: opts?.reabrirBc });
+      // Enviar a aprobación o reabrir le reescribe las líneas al pedido en BC: los
+      // totales de allá cambian y hay que volver a leerlos.
+      setRefrescoBc((n) => n + 1);
       // Si BC no pudo acompañar el cambio, ese aviso manda sobre el "listo" — y queda
       // fijo en la pantalla, no solo como toast.
       if (r?.bcAviso) { setAvisoBc(r.bcAviso); toast(r.bcAviso, "info"); }
@@ -158,6 +165,7 @@ export default function ProvOrdenDetallePage() {
   async function usarIvaDeBc() {
     try {
       const r = await alinearIvaConBc(orden!.id);
+      setRefrescoBc((n) => n + 1);
       toast(r.cambiadas > 0
         ? `IVA alineado con BC en ${r.cambiadas} línea(s) · ${r.detalle.join(" · ")}`
         : "El IVA de la orden ya coincide con el de BC: no había nada que cambiar.", r.cambiadas > 0 ? "success" : "info");
@@ -175,6 +183,7 @@ export default function ProvOrdenDetallePage() {
     try {
       const r = await exonerarIvaEnBc(orden!.id);
       setExonerando(false);
+      setRefrescoBc((n) => n + 1);   // en BC ya cambió: releé los totales de allá
       // El aviso de BC NO se va en un toast: si el IVA no bajó del todo, eso hay que
       // poder leerlo con calma (dice qué falta tocar allá).
       if (r.aviso) setAvisoBc(r.aviso);
@@ -341,6 +350,7 @@ export default function ProvOrdenDetallePage() {
       <OrdenDetalle orden={orden} volverHref="/proveeduria/ordenes" volverLabel="Volver a órdenes" acciones={acciones} solicitudHref={solicitudHref}
         onAlinearIva={() => usarIvaDeBc()}
         onExonerarIva={() => setExonerando(true)}
+        refrescoBc={refrescoBc}
         pedidoHref={(n) => { const p = pedidos.find((x) => x.numero === n); return p ? `/proveeduria/solicitudes/${p.id}` : null; }}
         aviso={espera ? (
           <div className="ds-callout ds-callout--yellow mb-4" role="status">
