@@ -76,6 +76,15 @@ export const api = {
   alinearIvaConBc: (id: string, body: unknown): Promise<{ ordenNo: string; cambiadas: number; detalle: string[] }> =>
     fetch(`/api/ordenes/${id}/iva-bc`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }).then(jsonOrThrow),
 
+  // Al revés que la anterior: quitarle el IVA al pedido EN BC (una importación paga el
+  // impuesto en aduana) y después dejar la orden con lo que BC quedó calculando.
+  exonerarIvaEnBc: (id: string, body: unknown): Promise<{
+    ordenNo: string; grupo: string; cambiadas: string[]; yaEstaban: string[];
+    ivaAntes: number; ivaDespues: number; totalDespues: number; moneda: string;
+    alineadas: number; aviso?: string;
+  }> =>
+    fetch(`/api/ordenes/${id}/iva-bc`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }).then(jsonOrThrow),
+
   // Devolver al ingeniero LÍNEAS que ya están dentro de una orden Abierta/Rechazada:
   // salen de la orden (el saldo vuelve a la solicitud) y quedan marcadas devueltas.
   devolverLineasOrden: (id: string, body: unknown): Promise<{ ordenNo: string; devueltas: number; nombres: string[]; ordenDescartada: boolean; bcAviso?: string }> =>

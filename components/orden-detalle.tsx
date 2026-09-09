@@ -23,6 +23,7 @@ export function OrdenDetalle({
   pedidoHref,
   aviso,
   onAlinearIva,
+  onExonerarIva,
 }: {
   orden: Orden;
   volverHref: string;
@@ -39,6 +40,9 @@ export function OrdenDetalle({
   // Copiar a las líneas el IVA que BC va a contabilizar. Lo pasa la pantalla del rol
   // que puede corregir la orden (Proveeduría); sin esto el aviso solo explica.
   onAlinearIva?: () => void | Promise<void>;
+  // Al revés: quitarle el IVA al pedido EN BC (importación). Abre la confirmación de
+  // la pantalla, porque esto SÍ escribe en Business Central.
+  onExonerarIva?: () => void;
 }) {
   const { proveedores, recepciones, role } = useStore();
   const router = useRouter();
@@ -390,22 +394,34 @@ export function OrdenDetalle({
               La diferencia es <span className="ds-strong">IVA</span>: el IVA lo calcula Business Central cruzando el grupo de
               IVA del <span className="ds-strong">proveedor</span> con el del <span className="ds-strong">artículo</span> — el IVA% que se
               escribe en la orden es solo para el estimado de esta pantalla, no viaja a BC.
-              El que se contabiliza es el de BC. Si no corresponde (una compra del exterior, por ejemplo, que va sin IVA porque
-              el impuesto se paga en aduana), Contabilidad lo corrige <span className="ds-strong">en BC</span>: el grupo de IVA del
-              proveedor y del encabezado del pedido a EXTRANJERO, y el de las líneas a EXENTO-BIENES. BC recalcula al momento y
-              esta pantalla lo refleja al recargar; la app conserva ese grupo si después reescribe las líneas.
-              El PDF al proveedor usa el IVA de la orden, no el de BC.
+              El que se contabiliza es el de BC. Hay dos salidas, según cuál de los dos esté bien:
+              si el bueno es el de BC, se copia a la orden; si esta compra <span className="ds-strong">no lleva IVA</span> (una
+              importación, que paga el impuesto en aduana y lo trae en su línea de cargo), se le quita al pedido allá
+              — la app le pone el grupo exento a las líneas en BC, que recalcula al momento, y conserva ese grupo aunque
+              después reescriba el pedido. El PDF al proveedor usa el IVA de la orden, no el de BC.
             </div>
-            {/* Y si el que vale es el de BC —lo normal—, esto lo copia a las líneas de
-                una vez: el total de la orden, el del PDF del proveedor y el que ve
-                quien aprueba dejan de estar cortos. */}
-            {onAlinearIva && (
-              <div className="mt-2">
-                <Button variant="outline" size="sm" disabled={alineando}
-                  title="Copia a cada línea el IVA% que Business Central va a contabilizar. No toca BC. En una importación NO lo uses hasta que BC esté corregido: copiarías el 13% al PDF del proveedor."
-                  onClick={async () => { setAlineando(true); try { await onAlinearIva(); } finally { setAlineando(false); } }}>
-                  {alineando ? "Alineando…" : "Usar el IVA de BC"}
-                </Button>
+            {/* Dos botones porque son dos verdades distintas, no dos maneras de lo
+                mismo: uno hace que la orden le crea a BC, el otro hace que BC le crea
+                a la orden. Poner solo el primero era lo que dejaba las importaciones
+                cobrando 13% hasta que alguien fuera a arreglarlo a mano. */}
+            {(onAlinearIva || onExonerarIva) && (
+              <div className="row gap-2 wrap mt-2">
+                {onAlinearIva && (
+                  <Button variant="outline" size="sm" disabled={alineando}
+                    title="Copia a cada línea el IVA% que Business Central va a contabilizar. No toca BC. En una importación NO lo uses: copiarías el 13% al PDF del proveedor."
+                    onClick={async () => { setAlineando(true); try { await onAlinearIva(); } finally { setAlineando(false); } }}>
+                    {alineando ? "Alineando…" : "Usar el IVA de BC"}
+                  </Button>
+                )}
+                {/* Solo cuando BC cobra DE MÁS: si cobra menos que el estimado, quitarle
+                    el IVA al pedido no es lo que hace falta. */}
+                {onExonerarIva && difBc > 0 && (
+                  <Button variant="outline" size="sm"
+                    title="Esta compra no lleva IVA: le pone el grupo exento a las líneas del pedido EN Business Central y deja la orden con lo que BC quede calculando."
+                    onClick={() => onExonerarIva()}>
+                    Quitarle el IVA en BC
+                  </Button>
+                )}
               </div>
             )}
           </div>

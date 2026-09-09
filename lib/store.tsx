@@ -155,6 +155,12 @@ interface StoreShape {
   // que no viaja a BC): así el total de la orden, el del PDF y el del aprobador dejan
   // de estar cortos o largos. Solo en modo API: sin BC no hay de dónde copiarlo.
   alinearIvaConBc: (idOrden: string) => Promise<{ cambiadas: number; detalle: string[] }>;
+  // Y al revés: quitarle el IVA al pedido EN BC, porque esta compra no lo lleva (una
+  // importación paga el impuesto en aduana y va en su línea de cargo).
+  exonerarIvaEnBc: (idOrden: string) => Promise<{
+    grupo: string; cambiadas: string[]; ivaAntes: number; ivaDespues: number;
+    moneda: string; alineadas: number; aviso?: string;
+  }>;
   devolverOrden: (id: string, motivo: string) => Promise<void>;
 
   // Notas de crédito (Bodega): líneas de factura con problema para emitir NC.
@@ -993,6 +999,18 @@ export function StoreProvider({ children, useApi }: { children: React.ReactNode;
       return { cambiadas: Number(r?.cambiadas ?? 0), detalle: Array.isArray(r?.detalle) ? r.detalle : [] };
     };
 
+    // -------- QUITARLE EL IVA AL PEDIDO EN BUSINESS CENTRAL (importación) --------
+    const exonerarIvaEnBc: StoreShape["exonerarIvaEnBc"] = async (idOrden) => {
+      if (!USE_API) throw new Error("Sin Business Central no hay pedido al que quitarle el IVA (la app está en modo de prueba).");
+      const r = await api.exonerarIvaEnBc(idOrden, { accion: "exonerar", usuario: persona, rol: rolActual });
+      await refreshFromApi();
+      return {
+        grupo: String(r?.grupo ?? ""), cambiadas: Array.isArray(r?.cambiadas) ? r.cambiadas : [],
+        ivaAntes: Number(r?.ivaAntes ?? 0), ivaDespues: Number(r?.ivaDespues ?? 0),
+        moneda: String(r?.moneda ?? ""), alineadas: Number(r?.alineadas ?? 0), aviso: r?.aviso,
+      };
+    };
+
     // ------- DEVOLVER AL INGENIERO LÍNEAS QUE YA ESTÁN EN UNA ORDEN ---------
     // La variante/medida/grado del material los define quien pide, no Proveeduría:
     // cuando una orden se rechaza por eso, el material vuelve al ingeniero. La línea
@@ -1115,7 +1133,7 @@ export function StoreProvider({ children, useApi }: { children: React.ReactNode;
       maquinas: seed.maquinas, almacenes: seed.almacenes,
       pedidos: data.pedidos, ordenes: data.ordenes, recepciones: data.recepciones, movimientos: data.movimientos,
       addPedido, editPedido, setPedidoEstado, deletePedido,
-      createOrden, updateOrden, setOrdenEstado, corregirBcNumber, cerrarOrden, descartarOrden, retomarOrden, nuevaOrdenConPendiente, registrarRecepcion, guardarFotosRecepcion, facturarRecepcion, devolverPedido, cerrarSolicitud, reabrirSolicitud, devolverLineasOrden, alinearIvaConBc, devolverOrden, reset,
+      createOrden, updateOrden, setOrdenEstado, corregirBcNumber, cerrarOrden, descartarOrden, retomarOrden, nuevaOrdenConPendiente, registrarRecepcion, guardarFotosRecepcion, facturarRecepcion, devolverPedido, cerrarSolicitud, reabrirSolicitud, devolverLineasOrden, alinearIvaConBc, exonerarIvaEnBc, devolverOrden, reset,
       notasCredito, marcarNotasCredito, cargarNotasCredito, resolverNotaCredito,
       notificaciones: data.notificaciones, marcarNotifsLeidas, marcarNotifLeida,
       borrador, setBorrador,

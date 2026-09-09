@@ -6,14 +6,16 @@ import { Button, Checkbox, EmptyState, Field, Input, Modal, Select, Skeleton, Te
 import { IconWarning } from "@/components/icons";
 import { OrdenDetalle } from "@/components/orden-detalle";
 import { useStore } from "@/lib/store";
-import { num, ordenPendienteResumen, numeroOrden, etiquetaInterna, ordenAdmiteDevolucion, puedeDevolverLineaOrden, motivoNoDevolverLineaOrden, ordenQuedaSinMaterial, ordenEsperaCorreccion, lineasCorregidasDeOrden } from "@/lib/helpers";
+import { money, num, ordenPendienteResumen, numeroOrden, etiquetaInterna, ordenAdmiteDevolucion, puedeDevolverLineaOrden, motivoNoDevolverLineaOrden, ordenQuedaSinMaterial, ordenEsperaCorreccion, lineasCorregidasDeOrden } from "@/lib/helpers";
 
 export default function ProvOrdenDetallePage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
   const toast = useToast();
-  const { ordenes, pedidos, recepciones, setOrdenEstado, corregirBcNumber, cerrarOrden, descartarOrden, devolverLineasOrden, alinearIvaConBc, nuevaOrdenConPendiente, cargando } = useStore();
+  const { ordenes, pedidos, recepciones, setOrdenEstado, corregirBcNumber, cerrarOrden, descartarOrden, devolverLineasOrden, alinearIvaConBc, exonerarIvaEnBc, nuevaOrdenConPendiente, cargando } = useStore();
   const [procesando, setProcesando] = useState(false);
+  // Quitarle el IVA al pedido EN BC: escribe allá, así que se confirma antes.
+  const [exonerando, setExonerando] = useState(false);
   // Aviso de BC que NO se puede perder (el toast se desvanece y el usuario se queda
   // creyendo que el pedido en BC también se reabrió).
   const [avisoBc, setAvisoBc] = useState<string | null>(null);
@@ -161,6 +163,29 @@ export default function ProvOrdenDetallePage() {
         : "El IVA de la orden ya coincide con el de BC: no había nada que cambiar.", r.cambiadas > 0 ? "success" : "info");
     } catch (e: any) {
       toast(String(e?.message ?? e), "error");
+    }
+  }
+
+  // Quitarle el IVA al pedido EN Business Central: esta compra no lo lleva. Le pone el
+  // grupo exento a las líneas allá y deja la orden con lo que BC quede calculando.
+  // Antes esto se hacía a mano en BC y la app solo lo explicaba.
+  async function confirmarExoneracion() {
+    if (procesando) return;
+    setProcesando(true);
+    try {
+      const r = await exonerarIvaEnBc(orden!.id);
+      setExonerando(false);
+      // El aviso de BC NO se va en un toast: si el IVA no bajó del todo, eso hay que
+      // poder leerlo con calma (dice qué falta tocar allá).
+      if (r.aviso) setAvisoBc(r.aviso);
+      toast(r.cambiadas.length > 0
+        ? `${orden!.bcNumber} quedó exento en BC · IVA ${money(r.ivaAntes, r.moneda || orden!.currencyCode)} → ${money(r.ivaDespues, r.moneda || orden!.currencyCode)}${r.alineadas > 0 ? ` · la orden se alineó en ${r.alineadas} línea(s)` : ""}`
+        : `Las líneas del pedido ${orden!.bcNumber} ya estaban con el grupo ${r.grupo} en BC: no había nada que cambiar.`,
+        r.cambiadas.length > 0 ? "success" : "info");
+    } catch (e: any) {
+      toast(String(e?.message ?? e), "error");
+    } finally {
+      setProcesando(false);
     }
   }
 
@@ -315,6 +340,7 @@ export default function ProvOrdenDetallePage() {
     <>
       <OrdenDetalle orden={orden} volverHref="/proveeduria/ordenes" volverLabel="Volver a órdenes" acciones={acciones} solicitudHref={solicitudHref}
         onAlinearIva={() => usarIvaDeBc()}
+        onExonerarIva={() => setExonerando(true)}
         pedidoHref={(n) => { const p = pedidos.find((x) => x.numero === n); return p ? `/proveeduria/solicitudes/${p.id}` : null; }}
         aviso={espera ? (
           <div className="ds-callout ds-callout--yellow mb-4" role="status">
@@ -352,6 +378,33 @@ export default function ProvOrdenDetallePage() {
             <Button variant="outline" size="sm" onClick={() => setAvisoBc(null)}>Entendido</Button>
           </div>
         ) : null} />
+
+      {exonerando && (
+        <Modal title={`Quitarle el IVA al pedido ${orden.bcNumber} en Business Central`} onClose={() => setExonerando(false)} footer={
+          <>
+            <Button variant="outline" onClick={() => setExonerando(false)} disabled={procesando}>Cancelar</Button>
+            <Button loading={procesando} onClick={() => void confirmarExoneracion()}>
+              {procesando ? "Cambiándolo en BC…" : "Quitarle el IVA en BC"}
+            </Button>
+          </>
+        }>
+          <p className="ds-body-sm" style={{ marginTop: 0 }}>
+            Esto es para una compra que <span className="ds-strong">no lleva IVA</span>: una importación, donde el impuesto se
+            paga en aduana y viene en su propia línea de cargo. Business Central no lo sabe —le pone el 13% del artículo—, así
+            que la app le cambia el <span className="ds-strong">grupo de IVA de las líneas</span> del pedido allá, y BC recalcula
+            al momento.
+          </p>
+          <p className="ds-body-sm">
+            Escribe <span className="ds-strong">en Business Central</span>, en el pedido {orden.bcNumber}. Después se lee el
+            total de vuelta y se te dice en cuánto quedó el IVA de verdad; la orden se queda con ese mismo IVA, así que el PDF
+            del proveedor y lo que ve quien aprueba dejan de estar cortos. Queda en la bitácora a tu nombre.
+          </p>
+          <p className="ds-body-sm ds-pending-text">
+            Si esta compra <span className="ds-strong">sí</span> lleva IVA (una compra local normal), no es acá: es
+            “Usar el IVA de BC”, que copia el 13% a la orden sin tocar Business Central.
+          </p>
+        </Modal>
+      )}
 
       {renumerando && (
         <Modal title={`${orden.bcNumber ? "Corregir" : "Poner"} el N.º de Business Central de ${numeroOrden(orden)}`} onClose={() => setRenumerando(false)} footer={

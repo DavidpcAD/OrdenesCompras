@@ -1921,6 +1921,30 @@ export async function aplicarIvaDeBcEnOrden(
   } catch (e) { await tx.rollback(); throw e; }
 }
 
+// Dejar en la bitácora que a ESTE pedido se le quitó el IVA en Business Central.
+//
+// El cambio vive allá (el grupo de IVA de las líneas), no en ninguna columna de acá:
+// sin esta línea, dentro de tres meses el pedido aparece en 0% y nada dice quién lo
+// puso así ni cuándo. Es el mismo criterio del N.º de BC corregido.
+export async function anotarIvaExoneradoEnBc(
+  id: number, detalle: string, usuario: string, rol: Role,
+): Promise<string> {
+  const pool = await getPool();
+  const prev = await pool.request().input("id", sql.Int, id)
+    .query("SELECT ordenNo FROM dbo.OrdenCompra WHERE idOrdenCompra=@id AND esEliminada=0");
+  if (!prev.recordset.length) throw new Error("Orden no encontrada.");
+  const ordenNo = String(prev.recordset[0].ordenNo ?? "");
+  const tx = new sql.Transaction(pool); await tx.begin();
+  try {
+    await logMov(tx, {
+      entidad: "orden", idEntidad: id, documentoNo: ordenNo,
+      tipoMovimiento: "bc_iva_exento", detalle, usuario, rol,
+    });
+    await tx.commit();
+    return ordenNo;
+  } catch (e) { await tx.rollback(); throw e; }
+}
+
 // ----------------------------------------------------------------- RECEPCIONES
 export interface NewRecepcionDB {
   idOrdenCompra: number; numeroFactura: string; fechaFactura: string; fechaRecepcion: string; fechaRegistro: string;
