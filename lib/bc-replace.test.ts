@@ -509,3 +509,108 @@ test("el código se compara sin importar mayúsculas/espacios y las líneas sin 
   assert.deepEqual(lineasARestaurarIva(antes, despues), [{ id: "a", code: "M20-1088", taxCode: "EXENTO-BIENES" }]);
   assert.deepEqual(lineasARestaurarIva({}, despues), []);
 });
+
+// ── RECURSO Y ACTIVO FIJO ────────────────────────────────────────────────────
+// Una compra directa puede ser un servicio (Resource) o un activo (Fixed Asset), no
+// solo material. Son la MISMA línea de compra de BC con otro `Type`, pero con menos
+// campos: lo que se prueba acá es justamente qué NO se les manda, porque mandarles
+// almacén, variante o unidad es lo que hace que BC rechace la línea (o peor, que la
+// acepte y el activo entre al inventario).
+test("una línea de recurso viaja como Resource, con obra y sin almacén ni variante", () => {
+  const { lines, omitidas } = payloadReplaceLines([item({
+    tipo: "recurso", itemNo: "MO-0001", descripcion: "ALQUILER DE VAGONETA",
+    cantidad: 3, precio: 45000, unidad: "dia", jobNo: "VB-5.01", taskNo: "1000",
+    // Lo que NO debe viajar aunque venga puesto: BC solo acepta ubicación y variante
+    // en líneas de artículo.
+    locationCode: "ALM-GRAL", variantCode: "AZUL",
+  })]);
+  assert.equal(omitidas.length, 0);
+  assert.deepEqual(lines[0], {
+    type: "Resource", itemNo: "MO-0001", description: "ALQUILER DE VAGONETA",
+    quantity: 3, directUnitCost: 45000, lineDiscountPct: 0,
+    unitOfMeasureCode: "DIA", jobNo: "VB-5.01", taskNo: "1000",
+  });
+});
+
+test("una línea de activo fijo viaja como Fixed Asset, sin obra ni unidad", () => {
+  const { lines, omitidas } = payloadReplaceLines([item({
+    tipo: "activo_fijo", itemNo: "AF-000123", descripcion: "COMPRESOR 5HP",
+    cantidad: 1, precio: 890000, unidad: "UND",
+    // BC no acepta Job No. en una línea de activo fijo: lo costea el libro de
+    // depreciación. Si viniera puesto, no debe viajar.
+    jobNo: "VB-5.01", taskNo: "1000", locationCode: "ALM-GRAL",
+  })]);
+  assert.equal(omitidas.length, 0);
+  assert.deepEqual(lines[0], {
+    type: "Fixed Asset", itemNo: "AF-000123", description: "COMPRESOR 5HP",
+    quantity: 1, directUnitCost: 890000, lineDiscountPct: 0,
+  });
+});
+
+// Sin N.º el codeunit se salta la línea EN SILENCIO: el pedido queda en BC con una
+// línea de menos y nadie se entera hasta que llega la factura del proveedor (así se
+// perdió una línea de CP-005172). Se omite avisando, y el aviso dice de qué tipo era.
+test("un recurso o un activo fijo sin N.º se omite avisando de qué tipo era", () => {
+  const { lines, omitidas } = payloadReplaceLines([
+    item({ tipo: "recurso", itemNo: "", descripcion: "SERVICIO SIN CÓDIGO" }),
+    item({ tipo: "activo_fijo", itemNo: "  ", descripcion: "ACTIVO SIN CÓDIGO" }),
+  ]);
+  assert.equal(lines.length, 0);
+  assert.equal(omitidas.length, 2);
+  assert.match(omitidas[0], /SERVICIO SIN CÓDIGO \(sin Nº de recurso\)/);
+  assert.match(omitidas[1], /ACTIVO SIN CÓDIGO \(sin Nº de activo fijo\)/);
+});
+
+// Los frenos previos a tocar BC estaban escritos como "todo lo que no es cargo", y
+// con solo dos tipos daba lo mismo. Con cuatro ya no: exigirle unidad de compra o
+// almacén a un activo fijo dejaba la orden sin poder enviarse a aprobación por un
+// dato que BC ni acepta en esa línea.
+test("los frenos de unidad y almacén son solo del artículo", () => {
+  const lineas: LineaReplaceBc[] = [
+    item({ tipo: "recurso", itemNo: "MO-0001", unidad: "", locationCode: "" }),
+    item({ tipo: "activo_fijo", itemNo: "AF-000123", unidad: "", locationCode: "" }),
+  ];
+  assert.deepEqual(lineasSinUnidad(lineas), []);
+  assert.deepEqual(lineasSinAlmacen(lineas), []);
+  // Y el del artículo sigue en pie: es el que evita el error de 255.000×.
+  assert.equal(lineasSinUnidad([item({ unidad: "" })]).length, 1);
+  assert.equal(lineasSinAlmacen([item({ locationCode: "" })]).length, 1);
+});
+
+// La tarea sí se le exige al recurso (BC no acepta Job No. sin Job Task No.), pero
+// no al activo fijo, cuya obra ni siquiera viaja.
+test("la obra sin tarea frena al recurso y no al activo fijo", () => {
+  assert.equal(obrasSinTarea([item({ tipo: "recurso", jobNo: "VB-5.01", taskNo: "" })]).length, 1);
+  assert.deepEqual(obrasSinTarea([item({ tipo: "activo_fijo", jobNo: "VB-5.01", taskNo: "" })]), []);
+});
+
+// Las variantes son del catálogo de artículos: preguntarlas por un recurso no tiene
+// sentido y resolverle una sería inventarle un dato que BC va a rechazar.
+test("la resolución de variantes no toca al recurso ni al activo fijo", () => {
+  const catalogo = new Map([["MO-0001", ["A", "B"]], ["AF-000123", ["X"]]]);
+  const { lineas, ambiguas } = decidirVariantes([
+    item({ tipo: "recurso", itemNo: "MO-0001" }),
+    item({ tipo: "activo_fijo", itemNo: "AF-000123" }),
+  ], catalogo);
+  assert.deepEqual(ambiguas, []);
+  assert.equal(lineas[0].variantCode, undefined);
+  assert.equal(lineas[1].variantCode, undefined);
+});
+
+// El tipo tiene que llegar hasta el payload: `lineasOrdenParaBc` es el traductor que
+// usan TANTO el envío a aprobación como el edit, y si ahí se aplana a "articulo", BC
+// busca un artículo con el N.º del recurso y rechaza la reescritura completa.
+test("lineasOrdenParaBc conserva el tipo de cada línea", () => {
+  const linea = (p: Partial<OrdenLinea>): OrdenLinea => ({
+    id: "1", tipo: "articulo", articuloId: "M01-0147", descripcion: "VARILLA",
+    cantidad: 1, unidad: "UND", almacen: "ALM-GRAL", precioUnitario: 100, ivaPct: 13,
+    cantidadRecibida: 0, cantidadFacturada: 0, ...p,
+  });
+  const out = lineasOrdenParaBc([
+    linea({}),
+    linea({ id: "2", tipo: "recurso", articuloId: "MO-0001" }),
+    linea({ id: "3", tipo: "activo_fijo", articuloId: "AF-000123" }),
+    linea({ id: "4", tipo: "cargo", chargeNo: "01" }),
+  ]);
+  assert.deepEqual(out.map((l) => l.tipo), ["articulo", "recurso", "activo_fijo", "cargo"]);
+});

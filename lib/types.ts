@@ -22,7 +22,14 @@
 // Contabilidad (notas de crédito).
 export type Role = "proveeduria" | "facturacion" | "contabilidad";
 
-export type LineType = "articulo" | "cargo"; // 'cargo' = flete / cargo de producto
+// Tipo de línea, espejo del enum "Purchase Line Type" de BC (ordinales 2/3/4/5):
+//   articulo    → Item          · material de inventario (el 99% de las compras)
+//   recurso     → Resource      · mano de obra o servicio del catálogo de recursos
+//   activo_fijo → Fixed Asset   · compra de un activo, se capitaliza y no entra a inventario
+//   cargo       → Charge (Item) · flete / cargo de producto, se reparte entre las líneas
+// El N.º de BC viaja en `articuloId` para los tres primeros (igual que BC, que usa
+// el mismo campo "No." para todos) y en `chargeNo` para el cargo.
+export type LineType = "articulo" | "recurso" | "activo_fijo" | "cargo";
 export type TipoSolicitud = "material" | "repuesto" | "stock"; // stock = compra para bodega/inventario
 
 // ---- Catálogos (espejo de Business Central) ----
@@ -164,7 +171,7 @@ export type OrdenEstado =
 export interface OrdenLinea {
   id: string;
   tipo: LineType;
-  articuloId?: string;
+  articuloId?: string;      // N.º de BC: artículo, recurso o activo fijo según `tipo`
   variantCode?: string;     // variante del item (obligatoria en BC para items con variantes)
   pedidoLineaId?: string;   // enlace N:M a la línea de pedido origen
   pedidoNumero?: string;

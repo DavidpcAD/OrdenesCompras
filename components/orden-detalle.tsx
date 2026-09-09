@@ -7,7 +7,7 @@ import { IconChevronDown, IconWarning } from "@/components/icons";
 import { OrderLinesTable } from "@/components/order-lines";
 import { Timeline } from "@/components/timeline";
 import { useStore } from "@/lib/store";
-import { money, num, formatDate, ordenBadgeDe, proveedorLabel, ordenLineaImporte, ordenRecibidoPct, ordenPedidos, ordenEsDirecta, numeroOrden, tieneBc, destinoDeRecepcion, ordenEsperaCorreccion } from "@/lib/helpers";
+import { esLineaCargo, esLineaRecibible, money, num, formatDate, ordenBadgeDe, proveedorLabel, ordenLineaImporte, ordenRecibidoPct, ordenPedidos, ordenEsDirecta, numeroOrden, tieneBc, destinoDeRecepcion, ordenEsperaCorreccion } from "@/lib/helpers";
 import { ChipPedido } from "@/components/ordenes-lista";
 import { useVolver } from "@/lib/use-volver";
 import type { Orden } from "@/lib/types";
@@ -132,9 +132,12 @@ export function OrdenDetalle({
   const espera = ordenEsperaCorreccion(orden);
   const esDirecta = ordenEsDirecta(orden) && !espera;
   const recs = recepciones.filter((r) => r.ordenId === orden.id);
-  const subtotal = orden.lineas.filter((l) => l.tipo === "articulo").reduce((s, l) => s + ordenLineaImporte(l), 0);
-  const iva = orden.lineas.filter((l) => l.tipo === "articulo").reduce((s, l) => s + ordenLineaImporte(l) * ((l.ivaPct || 0) / 100), 0);
-  const flete = orden.lineas.filter((l) => l.tipo === "cargo").reduce((s, l) => s + l.cantidad * l.precioUnitario, 0);
+  // El subtotal y el IVA suman TODO lo que no es cargo: material, recurso y activo
+  // fijo. Con `tipo === "articulo"` una compra directa de un servicio salía con
+  // subtotal ₡0 y el total no cuadraba con lo que el proveedor iba a facturar.
+  const subtotal = orden.lineas.filter(esLineaRecibible).reduce((s, l) => s + ordenLineaImporte(l), 0);
+  const iva = orden.lineas.filter(esLineaRecibible).reduce((s, l) => s + ordenLineaImporte(l) * ((l.ivaPct || 0) / 100), 0);
+  const flete = orden.lineas.filter(esLineaCargo).reduce((s, l) => s + l.cantidad * l.precioUnitario, 0);
   // BC contra el estimado de la orden. El IVA% que se escribe en la orden NO viaja a
   // BC: allá se calcula cruzando el grupo de IVA del proveedor con el del artículo
   // (en la línea que se manda no va ningún campo de IVA). Cuando esos dos no dan lo

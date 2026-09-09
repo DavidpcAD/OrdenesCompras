@@ -1,4 +1,35 @@
-import type { Orden, OrdenLinea, Pedido, PedidoLinea, Recepcion, Role, TipoSolicitud } from "./types";
+import type { LineType, Orden, OrdenLinea, Pedido, PedidoLinea, Recepcion, Role, TipoSolicitud } from "./types";
+
+// ── QUÉ ES CADA TIPO DE LÍNEA, EN UN SOLO LUGAR ──────────────────────────────
+// Una orden puede llevar cuatro tipos de línea (ver LineType) y el código las
+// separa por DOS criterios distintos que no hay que confundir:
+//
+//  · `esLineaMaterial` — es un ARTÍCULO de inventario. Es lo que tiene existencias
+//    en BC, historial de compras por insumo, variante, unidad de compra convertible
+//    y solicitud de origen. Un recurso o un activo fijo NO son eso.
+//  · `esLineaRecibible` — se recibe y se factura POR CANTIDAD. Son las tres primeras
+//    (artículo, recurso, activo fijo): un servicio o un activo también se liquidan
+//    en la pantalla de Bodega. El CARGO es la excepción: no se recibe, se reparte
+//    entre las demás al registrar.
+//
+// Antes esto se escribía como `tipo === "articulo"` o `tipo !== "cargo"` en cada
+// lugar, y con solo dos tipos las dos formas daban lo mismo. Con cuatro ya no: la
+// diferencia decide si una compra de un servicio traba el % recibido o si un activo
+// fijo se le pide a BC como si tuviera existencias.
+export const esLineaMaterial = (l: Pick<OrdenLinea, "tipo">) => l.tipo === "articulo";
+export const esLineaRecibible = (l: Pick<OrdenLinea, "tipo">) => l.tipo !== "cargo";
+export const esLineaCargo = (l: Pick<OrdenLinea, "tipo">) => l.tipo === "cargo";
+
+// Cómo se llama cada tipo en pantalla (el vocabulario de BC, que es el que usan
+// Proveeduría y Contabilidad cuando abren el pedido allá).
+export const ETIQUETA_TIPO_LINEA: Record<LineType, string> = {
+  articulo: "Artículo",
+  recurso: "Recurso",
+  activo_fijo: "Activo fijo",
+  cargo: "Cargo",
+};
+export const etiquetaTipoLinea = (t?: LineType | string) =>
+  ETIQUETA_TIPO_LINEA[(t ?? "articulo") as LineType] ?? "Artículo";
 
 // Badge del tipo de solicitud (Material / Repuesto / Stock).
 export function tipoSolicitudBadge(t: TipoSolicitud): { label: string; tone: string } {
@@ -300,7 +331,11 @@ export function ordenDeDetalleDevolucion(detalle: string): string | undefined {
 // hay nada que aprobar— y en BC su pedido conserva las líneas viejas hasta que se
 // vuelva a enviar.
 export function ordenEsperaCorreccion(o: Pick<Orden, "bcNumber" | "lineas">): boolean {
-  return !!(o.bcNumber ?? "").trim() && !o.lineas.some((l) => l.tipo === "articulo");
+  // Ojo con el criterio: es "sin nada que comprar", no "sin artículos". Una orden
+  // directa de puro servicio (recurso) o de un activo fijo tiene líneas de verdad
+  // y no está esperando a ningún ingeniero; con `tipo === "articulo"` salía marcada
+  // "Esperando corrección" y no se podía enviar a aprobación.
+  return !!(o.bcNumber ?? "").trim() && !o.lineas.some(esLineaRecibible);
 }
 
 // La orden a la que hay que devolverle el material que el ingeniero acaba de corregir.
@@ -401,7 +436,9 @@ export function puedeDevolverLineaOrden(l: OrdenLinea): boolean {
 }
 
 export function motivoNoDevolverLineaOrden(l: OrdenLinea): string {
-  if (l.tipo !== "articulo") return "es un cargo, no material de una solicitud";
+  // Solo el material de inventario viene de una solicitud de Ingeniería: un cargo,
+  // un recurso o un activo fijo no tienen a quién devolverse.
+  if (!esLineaMaterial(l)) return `es un ${etiquetaTipoLinea(l.tipo).toLowerCase()}, no material de una solicitud`;
   if (!l.pedidoLineaId) return "se agregó a mano: no viene de una solicitud (quitala editando la orden)";
   if ((l.cantidadRecibida ?? 0) > 0) return "ya tiene material recibido";
   if ((l.cantidadFacturada ?? 0) > 0) return "ya está facturada";
@@ -412,7 +449,9 @@ export function motivoNoDevolverLineaOrden(l: OrdenLinea): string {
 // dejarla viva (una orden sin artículos no se puede guardar ni enviar): se descarta.
 export function ordenQuedaSinMaterial(o: Orden, lineaIds: string[]): boolean {
   const ids = new Set(lineaIds);
-  return !o.lineas.some((l) => l.tipo === "articulo" && !ids.has(l.id));
+  // Mismo criterio que ordenEsperaCorreccion: si quedan líneas de recurso o de
+  // activo fijo, la orden sigue teniendo qué comprar y no se descarta.
+  return !o.lineas.some((l) => esLineaRecibible(l) && !ids.has(l.id));
 }
 
 // Cómo se NOMBRAN varias órdenes en una frase. Las que todavía no están en BC no
@@ -618,10 +657,11 @@ export function ordenSubtotal(o: Orden): number {
   return o.lineas.reduce((s, l) => s + ordenLineaImporte(l), 0);
 }
 
-// El avance de recepción se mide SOLO sobre los artículos: las líneas de cargo
-// (flete) no se reciben en bodega, se facturan. Si se cuentan, una orden con flete
-// nunca llega a 100% ni se completa — y en SQL la regla ya es `tipoLinea='articulo'`.
-const soloArticulos = (o: Orden) => o.lineas.filter((l) => l.tipo !== "cargo");
+// El avance de recepción se mide sobre las líneas RECIBIBLES: las de cargo (flete)
+// no se reciben en bodega, se reparten al registrar. Si se cuentan, una orden con
+// flete nunca llega a 100% ni se completa — y en SQL la regla es la misma
+// (`tipoLinea <> 'cargo'` en repo.ts).
+const soloArticulos = (o: Orden) => o.lineas.filter(esLineaRecibible);
 
 export function ordenRecibidoPct(o: Orden): number {
   const arts = soloArticulos(o);

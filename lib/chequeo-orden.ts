@@ -31,9 +31,12 @@ export type ResultadoChequeo = {
 // `sinVariante` para el camino que lee la API estándar, que no devuelve su código.
 function facturadoDe(orden: Orden, sinVariante = false) {
   return orden.lineas
-    .filter((l) => l.tipo === "articulo" && (Number(l.cantidadFacturada) || 0) > 0)
+    // Recurso y activo fijo también se facturan por cantidad: si la app dice que
+    // facturó un servicio y en BC no está, es la misma plata perdida que con un
+    // material (el caso CP-005172 con otro tipo de línea).
+    .filter((l) => l.tipo !== "cargo" && (Number(l.cantidadFacturada) || 0) > 0)
     .map((l) => ({
-      id: String(l.id), tipo: "articulo" as const, itemNo: String(l.articuloId ?? ""),
+      id: String(l.id), tipo: l.tipo, itemNo: String(l.articuloId ?? ""),
       variantCode: sinVariante ? "" : String(l.variantCode ?? ""),
       descripcion: l.descripcion ?? "",
       cantidad: Number(l.cantidadFacturada) || 0, precioUnitario: Number(l.precioUnitario) || 0,

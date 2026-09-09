@@ -5,7 +5,7 @@ import type { ColumnDef } from "@tanstack/react-table";
 import { Tile, ProgressBar } from "@/components/ui";
 import { DataTable } from "@/components/data-table";
 import { useStore } from "@/lib/store";
-import { money, num, numeroOrden } from "@/lib/helpers";
+import { esLineaRecibible, money, num, numeroOrden } from "@/lib/helpers";
 
 // Importe de una línea de artículo (pedido) y su parte recibida.
 const impPedido = (l: { cantidad: number; precioUnitario: number; descuentoPct?: number }) =>
@@ -42,7 +42,9 @@ export default function ProveeduriaDashboardPage() {
       const r = byProv.get(key)!;
       r.nOrdenes += 1;
       for (const l of o.lineas) {
-        if (l.tipo !== "articulo") continue;
+        // Sin los cargos, con todo lo demás: si se dejan fuera el recurso y el
+        // activo fijo, el importe por proveedor no cuadra con el de la orden.
+        if (!esLineaRecibible(l)) continue;
         const ped = impPedido(l);
         const rec = impRecibido(l);
         r.pedido += ped; r.recibido += rec;

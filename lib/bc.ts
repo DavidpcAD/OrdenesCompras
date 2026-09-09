@@ -656,6 +656,66 @@ export async function bcItemCharges(): Promise<BcItemCharge[]> {
   }
 }
 
+export type BcRecurso = { no: string; nombre: string; unidad: string; costo: number };
+
+// Catálogo de RECURSOS (tabla Resource 156) para la línea de tipo "Recurso" de una
+// compra directa: mano de obra o servicio del catálogo, no material de inventario.
+// Custom API Adelante `resources` — grupo **inventory**, no purchasing: la página
+// (50245) ya existía en la extensión desde antes, así que este catálogo funciona sin
+// esperar un despliegue de BC.
+//
+// Nunca tira: si la página no responde en este entorno, devuelve lista vacía y la
+// pantalla no ofrece el tipo — mismo trato que `bcItemCharges`, y por la misma razón
+// (la extensión de BC se publica aparte de esta app).
+export async function bcRecursos(): Promise<BcRecurso[]> {
+  try {
+    const rows = await listCustom("inventory", "resources", { next: { revalidate: 300 } } as RequestInit);
+    return rows
+      // Los bloqueados no se ofrecen: BC rechaza la línea al validar el N.º, y es
+      // exactamente el error que se paga tarde (ver `itemsBloqueadosDeLineas`).
+      .filter((r) => !(r.blocked ?? r.Blocked ?? false))
+      .map((r) => ({
+        no: r.no ?? r.No ?? "",
+        nombre: r.name ?? r.Name ?? "",
+        unidad: r.baseUnitOfMeasure ?? r.BaseUnitOfMeasure ?? "",
+        costo: Number(r.directUnitCost ?? r.DirectUnitCost ?? 0) || 0,
+      }))
+      .filter((x) => x.no);
+  } catch {
+    return [];
+  }
+}
+
+export type BcActivoFijo = { no: string; descripcion: string; clase: string };
+
+// Catálogo de ACTIVOS FIJOS (tabla Fixed Asset 5600) para la línea de tipo "Activo
+// fijo": la compra se capitaliza contra el activo y NO entra a inventario. Custom API
+// Adelante `fixedAssets` (page 50246, grupo **inventory**, ya publicada). Nunca tira,
+// igual que arriba.
+//
+// OJO con el campo `blocked` de esa página: está enlazado al campo **Inactive** de
+// BC, no a Blocked (`field(blocked; Rec.Inactive)`). O sea que filtrar por `blocked`
+// deja fuera los INACTIVOS, que es lo que hace falta acá; el Blocked de verdad no lo
+// expone. Se lee así a propósito, en vez de "corregir" la página: la consume también
+// la app de Producción y renombrarle el campo le rompería el contrato.
+export async function bcActivosFijos(): Promise<BcActivoFijo[]> {
+  try {
+    const rows = await listCustom("inventory", "fixedAssets", { next: { revalidate: 300 } } as RequestInit);
+    return rows
+      // No comprable (inactivo o bloqueado): BC rechaza la línea al validar el N.º.
+      .filter((r) => !(r.blocked ?? r.Blocked ?? false) && !(r.inactive ?? r.Inactive ?? false))
+      .map((r) => ({
+        no: r.no ?? r.No ?? "",
+        descripcion: r.description ?? r.Description ?? "",
+        // La página no expone la clase; si algún día lo hace, se muestra sola.
+        clase: r.faClassCode ?? r.FAClassCode ?? "",
+      }))
+      .filter((x) => x.no);
+  } catch {
+    return [];
+  }
+}
+
 export type BcPostedReceiptLine = {
   documentNo: string;    // N.º de recepción registrada (albarán), p.ej. CR-000003
   lineNo: number;        // N.º de línea dentro de la recepción
@@ -907,15 +967,22 @@ export function estadoLanzamientoBc(status?: string): EstadoBcPedido {
 // codeunit manda el CAPTION EN EL IDIOMA DE LA SESIÓN ("Producto", "Cargo (prod.)").
 // Por eso se acepta también el número del enum de BC (2 = Item, 5 = Charge (Item)),
 // que es lo único estable — y por eso GetOrderLines manda `typeNo`.
-function tipoLineaBc(t: unknown, typeNo?: unknown): "articulo" | "cargo" | "otro" {
+function tipoLineaBc(t: unknown, typeNo?: unknown): "articulo" | "recurso" | "activo_fijo" | "cargo" | "otro" {
+  // Ordinales verificados contra los símbolos de la Base Application (enum 39
+  // "Purchase Line Type"): 1 G/L Account · 2 Item · 3 Resource · 4 Fixed Asset ·
+  // 5 Charge (Item) · 10 Allocation Account. "otro" = un tipo que esta app no arma.
   const n = Number(typeNo);
   if (Number.isFinite(n) && n > 0) {
     if (n === 2) return "articulo";
+    if (n === 3) return "recurso";
+    if (n === 4) return "activo_fijo";
     if (n === 5) return "cargo";
     return "otro";
   }
   const s = String(t ?? "").trim().toLowerCase().replace(/[\s_.\-()]/g, "");
   if (s === "item" || s === "articulo" || s === "artículo" || s === "producto" || s === "2") return "articulo";
+  if (s === "resource" || s === "recurso" || s === "3") return "recurso";
+  if (s === "fixedasset" || s === "activofijo" || s === "activosfijos" || s === "4") return "activo_fijo";
   if (s.startsWith("charge") || s.startsWith("cargo") || s === "5") return "cargo";
   return "otro";
 }
@@ -1479,7 +1546,8 @@ export async function bcReopenPedido(orderNo: string): Promise<string> {
 // Tipos de línea que se le manda a BC al reescribir un pedido. Es el shape de la
 // app, no el de BC: la traducción la hace payloadReplaceLines.
 export type LineaReplaceBc = {
-  tipo: "articulo" | "cargo";
+  // Mismos cuatro tipos que LineType (lib/types.ts) y mismo mapeo al enum de BC.
+  tipo: "articulo" | "recurso" | "activo_fijo" | "cargo";
   itemNo?: string; variantCode?: string; locationCode?: string;
   unidad?: string;   // unidad de COMPRA (EST): en ella están cantidad y precio
   cantidad: number; precio: number | string; descuentoPct?: number;
@@ -1565,7 +1633,33 @@ export function payloadReplaceLines(lineas: LineaReplaceBc[]): { lines: Record<s
       continue;
     }
     const itemNo = (l.itemNo ?? "").trim();
-    if (!itemNo) { omitidas.push(`${nombre} (sin Nº de artículo)`); continue; }
+    if (!itemNo) { omitidas.push(`${nombre} (sin Nº de ${l.tipo === "recurso" ? "recurso" : l.tipo === "activo_fijo" ? "activo fijo" : "artículo"})`); continue; }
+    // RECURSO y ACTIVO FIJO: la misma línea de compra de BC con otro `Type`. Van con
+    // menos campos a propósito, y no por falta de ganas:
+    //   · sin locationCode  → BC solo acepta almacén en líneas de artículo; un
+    //     servicio o un activo no entran a ninguna bodega.
+    //   · sin variantCode   → las variantes son del catálogo de artículos.
+    //   · sin unidad para el activo fijo → un activo fijo no tiene unidades de
+    //     medida en BC; para el recurso sí se manda la suya si viene.
+    //   · el activo fijo tampoco lleva obra: BC no acepta Job No. en esas líneas
+    //     (lo cobra el libro de depreciación, no el proyecto).
+    if (l.tipo === "recurso" || l.tipo === "activo_fijo") {
+      const otro: Record<string, unknown> = {
+        type: l.tipo === "recurso" ? "Resource" : "Fixed Asset",
+        itemNo, quantity: cantidad, directUnitCost: precio,
+        lineDiscountPct: Number(l.descuentoPct) || 0,
+        ...dimensionDeLinea(l),
+      };
+      if (l.tipo === "recurso") {
+        otro.jobNo = l.jobNo ?? "";
+        otro.taskNo = l.taskNo ?? "";
+        const u = (l.unidad ?? "").trim().toUpperCase();
+        if (u) otro.unitOfMeasureCode = u;
+      }
+      if (l.descripcion) otro.description = l.descripcion;
+      lines.push(otro);
+      continue;
+    }
     // La unidad viaja junto a la cantidad y el precio. BC igual pone la unidad de
     // compra del ítem al validar el N.º, pero mandarla explícita deja constancia de
     // en qué unidad están estos números: si algún día no coinciden, BC se queda con
@@ -1727,7 +1821,7 @@ export function lineasOrdenParaBc(
   obraDeSolicitud?: Map<string, string>,
 ): LineaReplaceBc[] {
   return lineas.map((l) => ({
-    tipo: l.tipo === "cargo" ? ("cargo" as const) : ("articulo" as const),
+    tipo: l.tipo,
     itemNo: l.articuloId, variantCode: l.variantCode,
     locationCode: l.almacen || process.env.BC_RECEPCION_LOCATION || "",
     unidad: l.unidad,
@@ -1757,7 +1851,10 @@ export function centroCostoDeLinea(l: OrdenLinea, obraDeSolicitud?: Map<string, 
 // no tiene cómo arreglarlo. Se corta antes de tocar BC.
 export function obrasSinTarea(lineas: LineaReplaceBc[]): string[] {
   return (lineas ?? [])
-    .filter((l) => l.tipo !== "cargo" && (l.jobNo ?? "").trim() && !(l.taskNo ?? "").trim())
+    // Solo artículo y recurso llevan obra a BC: la línea de activo fijo no acepta
+    // Job No. (payloadReplaceLines no lo manda), así que exigirle tarea trabaría
+    // una orden por un dato que nunca va a viajar.
+    .filter((l) => (l.tipo === "articulo" || l.tipo === "recurso") && (l.jobNo ?? "").trim() && !(l.taskNo ?? "").trim())
     .map((l) => `${l.descripcion || l.itemNo || "línea"} (obra ${(l.jobNo ?? "").trim()})`);
 }
 
@@ -1771,7 +1868,11 @@ export function obrasSinTarea(lineas: LineaReplaceBc[]): string[] {
 // un error de 255.000× facturado. Sin unidad, la línea no viaja.
 export function lineasSinUnidad(lineas: LineaReplaceBc[]): string[] {
   return (lineas ?? [])
-    .filter((l) => l.tipo !== "cargo" && (l.itemNo ?? "").trim() && !(l.unidad ?? "").trim())
+    // Solo el ARTÍCULO. El riesgo que justifica este freno es la conversión de
+    // unidades del catálogo de artículos (1 EST = 255.000 GR); un recurso se cobra
+    // por hora o por día sin factores de por medio, y un activo fijo no tiene
+    // unidad en BC. Exigírsela dejaba esas órdenes sin poder enviarse.
+    .filter((l) => l.tipo === "articulo" && (l.itemNo ?? "").trim() && !(l.unidad ?? "").trim())
     .map((l) => `${l.descripcion || l.itemNo || "línea"}`);
 }
 
@@ -1787,7 +1888,9 @@ export function lineasSinUnidad(lineas: LineaReplaceBc[]): string[] {
 // ni en la línea ni en la configuración. Ahí no se manda nada a BC. (Cubierto por tests.)
 export function lineasSinAlmacen(lineas: LineaReplaceBc[]): string[] {
   return (lineas ?? [])
-    .filter((l) => l.tipo !== "cargo" && (l.itemNo ?? "").trim() && !(l.locationCode ?? "").trim())
+    // Solo el ARTÍCULO tiene almacén en BC: un recurso y un activo fijo no entran a
+    // ninguna bodega, y de hecho su línea viaja SIN locationCode.
+    .filter((l) => l.tipo === "articulo" && (l.itemNo ?? "").trim() && !(l.locationCode ?? "").trim())
     .map((l) => `${l.descripcion || l.itemNo || "línea"}`);
 }
 
@@ -1815,7 +1918,9 @@ export function decidirVariantes(
 ): { lineas: LineaReplaceBc[]; ambiguas: string[] } {
   const ambiguas: string[] = [];
   const out = (lineas ?? []).map((l) => {
-    if (l.tipo === "cargo") return l;
+    // Las variantes son del catálogo de ARTÍCULOS: un recurso o un activo fijo no
+    // tienen, y preguntar por ellos devuelve vacío (o ruido).
+    if (l.tipo !== "articulo") return l;
     const itemNo = (l.itemNo ?? "").trim();
     if (!itemNo || (l.variantCode ?? "").trim()) return l;
     const cods = (catalogo.get(itemNo) ?? []).filter(Boolean);
@@ -1832,7 +1937,7 @@ export async function resolverVariantesRequeridas(
   lineas: LineaReplaceBc[],
 ): Promise<{ lineas: LineaReplaceBc[]; ambiguas: string[] }> {
   const items = [...new Set((lineas ?? [])
-    .filter((l) => l.tipo !== "cargo" && (l.itemNo ?? "").trim() && !(l.variantCode ?? "").trim())
+    .filter((l) => l.tipo === "articulo" && (l.itemNo ?? "").trim() && !(l.variantCode ?? "").trim())
     .map((l) => l.itemNo!.trim()))];
   if (!items.length) return { lineas: lineas ?? [], ambiguas: [] };
 
@@ -2125,7 +2230,9 @@ export async function bcEstadoDelPedido(orderNo: string): Promise<BcPedidoEstado
 // no contesta devuelve vacío: no se traba una orden por una consulta que falló.
 export async function itemsBloqueadosDeLineas(lineas: LineaReplaceBc[]): Promise<string[]> {
   const codigos = [...new Set((lineas ?? [])
-    .filter((l) => l.tipo !== "cargo")
+    // Solo artículos: el N.º de un recurso o de un activo fijo no está en el
+    // catálogo de artículos y preguntarlo ahí no dice nada de si está bloqueado.
+    .filter((l) => l.tipo === "articulo")
     .map((l) => codigoDeItem(String(l.itemNo ?? "")).trim().toUpperCase())
     .filter(Boolean))];
   if (!codigos.length) return [];
@@ -2187,7 +2294,7 @@ export type ChequeoBc = {
 export function lineasOrdenParaCotejo(lineas: OrdenLinea[]): LineaApp[] {
   return (lineas ?? []).map((l) => ({
     id: String(l.id),
-    tipo: l.tipo === "cargo" ? ("cargo" as const) : ("articulo" as const),
+    tipo: l.tipo,
     itemNo: String((l.tipo === "cargo" ? l.chargeNo : l.articuloId) ?? ""),
     variantCode: String(l.variantCode ?? ""),
     descripcion: String(l.descripcion ?? ""),
@@ -2207,7 +2314,7 @@ export function lineasOrdenParaCotejo(lineas: OrdenLinea[]): LineaApp[] {
 export function lineasReplaceParaCotejo(lineas: LineaReplaceBc[]): LineaApp[] {
   return (lineas ?? []).map((l, i) => ({
     id: String(i),
-    tipo: l.tipo === "cargo" ? ("cargo" as const) : ("articulo" as const),
+    tipo: l.tipo,
     itemNo: String((l.tipo === "cargo" ? l.chargeNo : l.itemNo) ?? ""),
     variantCode: String(l.variantCode ?? ""),
     descripcion: String(l.descripcion ?? ""),
@@ -2818,9 +2925,21 @@ export type ModoRegistro = "recibir" | "facturar-recibido";
 
 export type FrenoRegistro = { ok: boolean; problemas: string[]; verificado: boolean };
 
+// El tipo con el que se indexa una línea acá. Las líneas viejas (y los llamadores
+// que todavía no lo mandan) son artículos: así era todo antes de que la orden
+// directa pudiera llevar recurso o activo fijo.
+type TipoPosteable = "articulo" | "recurso" | "activo_fijo";
+function tipoPosteable(t: unknown): TipoPosteable {
+  const v = String(t ?? "").trim().toLowerCase();
+  return v === "recurso" || v === "activo_fijo" ? v : "articulo";
+}
+const NOMBRE_TIPO_POSTEABLE: Record<TipoPosteable, string> = {
+  articulo: "artículo", recurso: "recurso", activo_fijo: "activo fijo",
+};
+
 export async function verificarLineasPosteables(
   orderNo: string,
-  lineas: { itemNo: string; qty: number; variantCode?: string }[],
+  lineas: { itemNo: string; qty: number; variantCode?: string; tipo?: string }[],
   modo: ModoRegistro = "recibir",
 ): Promise<FrenoRegistro> {
   const pedidas = (lineas ?? []).filter((l) => (l.itemNo ?? "").trim() && (Number(l.qty) || 0) > 0);
@@ -2834,11 +2953,15 @@ export async function verificarLineasPosteables(
   const problemas: string[] = [];
   // Se consume el saldo a medida que se valida, igual que hace el codeunit al
   // asignar cantidades: dos líneas del mismo material no pueden usar el mismo saldo.
+  //
+  // Las claves llevan el TIPO adelante porque el codeunit busca la línea por N.º Y
+  // por tipo: un recurso "MO-001" y un artículo "MO-001" son dos líneas distintas
+  // en BC, y sin el tipo en la clave una le comería el saldo a la otra.
   const saldo = new Map<string, number>();
   const porItem = new Map<string, LineaBc[]>();
   for (const l of bc.lineas) {
-    if (l.tipo !== "articulo") continue;
-    const item = codigoDeItem(l.itemNo).toUpperCase();
+    if (l.tipo !== "articulo" && l.tipo !== "recurso" && l.tipo !== "activo_fijo") continue;
+    const item = `${l.tipo}|${codigoDeItem(l.itemNo).toUpperCase()}`;
     porItem.set(item, [...(porItem.get(item) ?? []), l]);
     const disponible = modo === "facturar-recibido" ? Math.max(0, l.recibida - l.facturada) : l.pendiente;
     saldo.set(`${item}|${l.variantCode.trim().toUpperCase()}`, (saldo.get(`${item}|${l.variantCode.trim().toUpperCase()}`) ?? 0) + disponible);
@@ -2846,11 +2969,12 @@ export async function verificarLineasPosteables(
   const queFalta = modo === "facturar-recibido" ? "recibido sin facturar" : "pendiente de recibir";
 
   for (const p of pedidas) {
-    const item = codigoDeItem(String(p.itemNo)).toUpperCase();
+    const tipo = tipoPosteable(p.tipo);
+    const item = `${tipo}|${codigoDeItem(String(p.itemNo)).toUpperCase()}`;
     const variante = String(p.variantCode ?? "").trim().toUpperCase();
     const enBc = porItem.get(item) ?? [];
     if (!enBc.length) {
-      problemas.push(`${p.itemNo}: el pedido ${orderNo} de Business Central NO tiene ninguna línea de este artículo. Si se registra, BC lo va a ignorar en silencio y la app lo va a dar por recibido.`);
+      problemas.push(`${p.itemNo}: el pedido ${orderNo} de Business Central NO tiene ninguna línea de ${NOMBRE_TIPO_POSTEABLE[tipo]} con ese N.º. Si se registra, BC lo va a ignorar en silencio y la app lo va a dar por recibido.`);
       continue;
     }
     // La variante solo se puede exigir si BC nos la devolvió (la API estándar no
@@ -3035,13 +3159,28 @@ export async function bcSellarRealizadoPor(orderNo: string, realizadoPor: string
   }
 }
 
+// Las líneas que se le mandan a los procedures de registro (PostInvoice /
+// PostReceipt / PostInvoiceOfReceived). El `tipo` de la app se traduce al `type` del
+// enum de BC para que el codeunit busque la línea correcta del pedido: sin él busca
+// solo entre las de artículo y una compra de servicio o de activo fijo "no calza".
+// Se omite cuando es artículo, para que el JSON siga siendo idéntico al de siempre
+// contra una extensión que todavía no conoce el campo.
+export type LineaPostBc = { itemNo: string; qty: number; variantCode?: string; tipo?: string };
+function lineasPost(lines: LineaPostBc[]): { itemNo: string; qty: number; variantCode?: string; type?: string }[] {
+  return (lines ?? []).map((l) => {
+    const t = tipoPosteable(l.tipo);
+    const { tipo: _tipo, ...resto } = l;
+    return t === "articulo" ? resto : { ...resto, type: t === "recurso" ? "Resource" : "Fixed Asset" };
+  });
+}
+
 // Registra (Recibir + Facturar) una factura parcial del pedido en BC con todos sus
 // movimientos contables, vía el web service custom AdelantePO_PostInvoice.
 // lines = cantidades recibidas en ESTA factura por item ({itemNo, qty}).
 export async function bcRegistrarFactura(
   orderNo: string,
   vendorInvoiceNo: string,
-  lines: { itemNo: string; qty: number; variantCode?: string }[],
+  lines: LineaPostBc[],
   postingDate = "", // fecha de registro (ISO yyyy-mm-dd). "" → BC usa la fecha del día
   // Cargo de transporte de ESTA factura/viaje (opcional). Se agrega a la OC y se
   // reparte entre lo que se recibe en este registro, según `metodo`.
@@ -3062,31 +3201,31 @@ export async function bcRegistrarFactura(
     catch (e) { console.warn(`BC asignar cargo de transporte en ${orderNo} falló:`, e); }
   }
   return (await bcPostear("AdelantePO_PostInvoice", "registrar", orderNo,
-    { orderNo, vendorInvoiceNo, linesJson: JSON.stringify(lines), postingDate })) || "Registrado";
+    { orderNo, vendorInvoiceNo, linesJson: JSON.stringify(lineasPost(lines)), postingDate })) || "Registrado";
 }
 
 // MODO 2 — Solo RECEPCIÓN (material llega bien, la factura queda en revisión).
 // Registra la recepción en BC (Receive=true, Invoice=false) vía AdelantePO_PostReceipt.
 // Mueve inventario/cantidad recibida sin tocar la factura ni el ledger del proveedor.
-export async function bcRecibir(orderNo: string, lines: { itemNo: string; qty: number; variantCode?: string }[], postingDate = "", realizadoPor = ""): Promise<string> {
+export async function bcRecibir(orderNo: string, lines: LineaPostBc[], postingDate = "", realizadoPor = ""): Promise<string> {
   if (!orderNo) throw new Error("Falta el número de pedido de BC.");
   // La recepción sola no genera el consumo de la obra (eso lo hace la factura), pero el
   // nombre queda sellado en el pedido: si nadie lo vuelve a sellar al facturar, el
   // movimiento sale con el de quien recibió el material.
   await bcSellarRealizadoPor(orderNo, realizadoPor);
   return (await bcPostear("AdelantePO_PostReceipt", "recibir", orderNo,
-    { orderNo, linesJson: JSON.stringify(lines), postingDate })) || "Recibido";
+    { orderNo, linesJson: JSON.stringify(lineasPost(lines)), postingDate })) || "Recibido";
 }
 
 // MODO 2 — Solo FACTURA de lo ya recibido (Kattya revisa y registra después).
 // Factura en BC lo que estaba recibido-no-facturado (Receive=false, Invoice=true)
 // vía AdelantePO_PostInvoiceOfReceived.
-export async function bcFacturarRecibido(orderNo: string, vendorInvoiceNo: string, lines: { itemNo: string; qty: number; variantCode?: string }[], postingDate = "", realizadoPor = ""): Promise<string> {
+export async function bcFacturarRecibido(orderNo: string, vendorInvoiceNo: string, lines: LineaPostBc[], postingDate = "", realizadoPor = ""): Promise<string> {
   if (!orderNo) throw new Error("Falta el número de pedido de BC.");
   if (!vendorInvoiceNo) throw new Error("Falta el N.º de factura del proveedor.");
   await bcSellarRealizadoPor(orderNo, realizadoPor);
   return (await bcPostear("AdelantePO_PostInvoiceOfReceived", "facturar", orderNo,
-    { orderNo, vendorInvoiceNo, linesJson: JSON.stringify(lines), postingDate })) || "Facturado";
+    { orderNo, vendorInvoiceNo, linesJson: JSON.stringify(lineasPost(lines)), postingDate })) || "Facturado";
 }
 
 // Crea una línea de Cargo de producto (Item Charge) en un pedido, vía el codeunit

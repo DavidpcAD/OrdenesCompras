@@ -20,6 +20,7 @@ import {
   estadoDeDevolucion, devolucionesPendientes, correccionDeSolicitud,
   esTipoDevolucion, esTipoEdicion,
   ordenDeDetalleDevolucion, ordenEsperaCorreccion, ordenDeDevolucion, lineasCorregidasDeOrden,
+  esLineaMaterial, esLineaRecibible, esLineaCargo, etiquetaTipoLinea,
 } from "./helpers.ts";
 import type { Orden, OrdenLinea, Pedido, PedidoLinea } from "./types.ts";
 
@@ -827,4 +828,67 @@ test("lineasCorregidasDeOrden: lo que ya se ordenó completo no vuelve", () => {
 test("lineasCorregidasDeOrden: también matchea por el N.º interno de la orden", () => {
   const p = pedDevuelto({ devolucion: { fecha: "2026-09-03T15:00:00Z", orden: "cp-000172" } });
   assert.equal(lineasCorregidasDeOrden([p], ordenVacia).length, 1);
+});
+
+// ── LOS CUATRO TIPOS DE LÍNEA ────────────────────────────────────────────────
+// Con solo dos tipos, `tipo === "articulo"` y `tipo !== "cargo"` daban lo mismo y
+// en el código quedaron escritas las dos formas indistintamente. Con cuatro tipos
+// la diferencia decide plata: si un recurso no cuenta como "recibible", una compra
+// de servicio nunca llega al 100% ni se completa; si cuenta como "material", la app
+// le va a buscar existencias en BC a algo que no tiene inventario.
+test("esLineaMaterial es SOLO el artículo; esLineaRecibible es todo menos el cargo", () => {
+  const tipos: OrdenLinea["tipo"][] = ["articulo", "recurso", "activo_fijo", "cargo"];
+  const l = (t: OrdenLinea["tipo"]) => linea({ id: t, tipo: t });
+  assert.deepEqual(tipos.map((t) => esLineaMaterial(l(t))), [true, false, false, false]);
+  assert.deepEqual(tipos.map((t) => esLineaRecibible(l(t))), [true, true, true, false]);
+  assert.deepEqual(tipos.map((t) => esLineaCargo(l(t))), [false, false, false, true]);
+});
+
+test("etiquetaTipoLinea usa el vocabulario de BC, y lo desconocido cae en Artículo", () => {
+  assert.equal(etiquetaTipoLinea("articulo"), "Artículo");
+  assert.equal(etiquetaTipoLinea("recurso"), "Recurso");
+  assert.equal(etiquetaTipoLinea("activo_fijo"), "Activo fijo");
+  assert.equal(etiquetaTipoLinea("cargo"), "Cargo");
+  // Las líneas viejas de SQL pueden traer el campo vacío: eran todas artículos.
+  assert.equal(etiquetaTipoLinea(undefined), "Artículo");
+});
+
+// El % recibido y el "está completa" se miden sobre lo recibible: una orden de puro
+// servicio tiene que poder llegar al 100%.
+test("el avance de recepción cuenta el recurso y el activo fijo, no el cargo", () => {
+  const o = orden([
+    linea({ id: "a", tipo: "recurso", cantidad: 10, cantidadRecibida: 10 }),
+    linea({ id: "b", tipo: "activo_fijo", cantidad: 1, cantidadRecibida: 1 }),
+    linea({ id: "c", tipo: "cargo", cantidad: 1, cantidadRecibida: 0 }),
+  ]);
+  assert.equal(ordenRecibidoPct(o), 100);
+  assert.equal(ordenEstaCompleta(o), true);
+  assert.deepEqual(ordenAvance(o), { recibida: 11, total: 11 });
+});
+
+// Una compra directa de puro servicio NO está esperando la corrección de ningún
+// ingeniero: con el criterio viejo ("no tiene líneas de artículo") salía marcada así
+// y la pantalla no dejaba enviarla a aprobación.
+test("ordenEsperaCorreccion: una orden de solo recurso no espera corrección", () => {
+  assert.equal(ordenEsperaCorreccion({ bcNumber: "CP-005337", lineas: [linea({ id: "a", tipo: "recurso" })] }), false);
+  assert.equal(ordenEsperaCorreccion({ bcNumber: "CP-005337", lineas: [linea({ id: "a", tipo: "activo_fijo" })] }), false);
+});
+
+// Al devolverle material al ingeniero, si lo que queda es un servicio la orden
+// TODAVÍA tiene qué comprar y no se descarta.
+test("ordenQuedaSinMaterial: un recurso que queda mantiene viva la orden", () => {
+  const o = orden([
+    linea({ id: "a", tipo: "articulo", pedidoLineaId: "pl1" }),
+    linea({ id: "b", tipo: "recurso" }),
+  ]);
+  assert.equal(ordenQuedaSinMaterial(o, ["a"]), false);
+});
+
+// Solo el material viene de una solicitud: lo demás no tiene a quién devolvérsele, y
+// el motivo tiene que decir qué era (antes decía "es un cargo" para cualquier cosa).
+test("motivoNoDevolverLineaOrden nombra el tipo que no se devuelve", () => {
+  assert.match(motivoNoDevolverLineaOrden(linea({ id: "a", tipo: "recurso" })), /es un recurso/);
+  assert.match(motivoNoDevolverLineaOrden(linea({ id: "b", tipo: "activo_fijo" })), /es un activo fijo/);
+  assert.match(motivoNoDevolverLineaOrden(linea({ id: "c", tipo: "cargo" })), /es un cargo/);
+  assert.equal(puedeDevolverLineaOrden(linea({ id: "d", tipo: "recurso", pedidoLineaId: "pl1" })), false);
 });

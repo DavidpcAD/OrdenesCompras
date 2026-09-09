@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { Badge } from "@/components/ui";
 import { DestinoLinea } from "@/components/destino-linea";
-import { money, num, ordenLineaImporte, ordenLineaPendiente } from "@/lib/helpers";
+import { esLineaRecibible, etiquetaTipoLinea, money, num, ordenLineaImporte, ordenLineaPendiente } from "@/lib/helpers";
 import { codigoDeItem } from "@/lib/unidad";
 import { useVariantes } from "@/lib/use-variantes";
 import type { Orden, OrdenLinea } from "@/lib/types";
@@ -35,10 +35,16 @@ export function OrderLinesTable({ orden, showRecepcion = true, solicitudHref }: 
           )}
           {orden.lineas.map((l) => {
             const pend = ordenLineaPendiente(l);
-            const pendiente = showRecepcion && pend > 0 && l.tipo === "articulo";
+            // El resaltado de "falta recibir" vale para todo lo que se recibe por
+            // cantidad (material, recurso, activo fijo), no solo para el material.
+            const pendiente = showRecepcion && pend > 0 && esLineaRecibible(l);
             return (
               <tr key={l.id} className={pendiente ? "row-pending" : ""}>
-                <td className="hide-mobile">{l.tipo === "cargo" ? <Badge tone="yellow">Cargo</Badge> : <Badge tone="gray">Artículo</Badge>}</td>
+                {/* El tipo con el que la línea vive EN BC: es el dato con el que
+                    Proveeduría o Contabilidad la encuentran al abrir el pedido allá. */}
+                <td className="hide-mobile">
+                  <Badge tone={l.tipo === "cargo" ? "yellow" : l.tipo === "articulo" ? "gray" : "green"}>{etiquetaTipoLinea(l.tipo)}</Badge>
+                </td>
                 <td>
                   {l.descripcion}
                   {l.variantCode && (
@@ -46,7 +52,7 @@ export function OrderLinesTable({ orden, showRecepcion = true, solicitudHref }: 
                   )}
                   {/* En móvil la columna Destino se oculta: el destino se repite acá
                       en una línea para no perderlo. */}
-                  {l.tipo === "articulo" && (
+                  {esLineaRecibible(l) && (
                     <div className="ds-body-sm ds-muted only-mobile-cols">
                       <DestinoLinea inline almacen={l.almacen} obra={l.proyecto} tarea={l.taskNo} avisarSinTarea={false} />
                     </div>
@@ -64,7 +70,10 @@ export function OrderLinesTable({ orden, showRecepcion = true, solicitudHref }: 
                       // orden. Se muestra el código pelado (el guardado puede traer la
                       // variante pegada, "M11-0081 -VAR 12", que BC no conoce); la
                       // variante ya va en su propia línea.
-                      const codigo = l.tipo === "articulo" ? codigoDeItem(l.articuloId ?? "") : "";
+                      // Un recurso y un activo fijo también tienen N.º en BC, y es
+                      // igual de necesario para encontrarlos allá. Solo el cargo no
+                      // muestra código acá (el suyo va en `chargeNo`).
+                      const codigo = esLineaRecibible(l) ? codigoDeItem(l.articuloId ?? "") : "";
                       return <>
                         {codigo && <span className="ds-strong">{codigo}</span>}
                         {codigo && (l.pedidoNumero || rest) ? " · " : ""}
