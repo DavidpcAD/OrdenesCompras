@@ -1736,7 +1736,10 @@ export function payloadReplaceLines(lineas: LineaReplaceBc[]): { lines: Record<s
 // restaurar, la reescritura igual vale y se avisa. Efecto secundario asumido: un
 // cambio del grupo en la ficha del ARTÍCULO no entra al pedido por una reescritura
 // (se conserva el que tenían las líneas) — es el caso raro; el otro costaba plata.
-export type LineaIvaBc = { id: string; code: string; taxCode: string };
+export type LineaIvaBc = { id: string; code: string; taxCode: string;
+  // El % que BC calcula HOY con ese grupo. Opcional: `lineasARestaurarIva` no
+  // lo mira, lo usa quien necesita reportar en qué quedó el IVA de verdad.
+  taxPercent?: number };
 
 export function lineasARestaurarIva(antes: Record<string, string>, despues: LineaIvaBc[]): { id: string; code: string; taxCode: string }[] {
   const out: { id: string; code: string; taxCode: string }[] = [];
@@ -1752,14 +1755,17 @@ export function lineasARestaurarIva(antes: Record<string, string>, despues: Line
 }
 
 // Las líneas del pedido con su grupo de IVA, por la API estándar. null si no se pudo.
-async function bcLineasIvaDePedido(cid: string, orderNo: string): Promise<{ poId: string; lineas: LineaIvaBc[] } | null> {
-  const filtro = `$filter=${encodeURIComponent(`number eq '${odataStr(orderNo)}'`)}&$select=id&$top=1`;
+// Trae también el ESTADO del pedido: un pedido lanzado no se edita en BC, y decirlo
+// antes de intentarlo es más claro que el error crudo de allá.
+async function bcLineasIvaDePedido(cid: string, orderNo: string): Promise<{ poId: string; status: string; lineas: LineaIvaBc[] } | null> {
+  const filtro = `$filter=${encodeURIComponent(`number eq '${odataStr(orderNo)}'`)}&$select=id,status&$top=1`;
   const res = await bcFetch(`${stdRoot()}/companies(${cid})/purchaseOrders?${filtro}`, { cache: "no-store" });
   if (!res.ok) return null;
-  const poId = ((await res.json())?.value ?? [])[0]?.id;
+  const po = ((await res.json())?.value ?? [])[0];
+  const poId = po?.id;
   if (!poId) return null;
   const resL = await bcFetch(
-    `${stdRoot()}/companies(${cid})/purchaseOrders(${poId})/purchaseOrderLines?$select=id,lineObjectNumber,taxCode`,
+    `${stdRoot()}/companies(${cid})/purchaseOrders(${poId})/purchaseOrderLines?$select=id,lineObjectNumber,taxCode,taxPercent`,
     { cache: "no-store" });
   if (!resL.ok) return null;
   const lineas: LineaIvaBc[] = (((await resL.json())?.value ?? []) as any[])
@@ -1767,9 +1773,10 @@ async function bcLineasIvaDePedido(cid: string, orderNo: string): Promise<{ poId
       id: String(l?.id ?? ""),
       code: String(l?.lineObjectNumber ?? "").trim().toUpperCase(),
       taxCode: String(l?.taxCode ?? "").trim(),
+      taxPercent: Number(l?.taxPercent),
     }))
     .filter((l) => l.id && l.code);
-  return { poId, lineas };
+  return { poId, status: String(po?.status ?? "").trim(), lineas };
 }
 
 export type ResultadoReplace = {
@@ -1832,6 +1839,106 @@ export async function bcReplaceOrderLines(orderNo: string, lineas: LineaReplaceB
     }
   }
   return { resultado, omitidas, ivaRestaurado, avisoIva };
+}
+
+// ── DEJAR EL PEDIDO EXENTO DE IVA EN BC ──────────────────────────────────────
+// Una importación no lleva IVA: el impuesto se paga en aduana y viaja en su propia
+// línea de cargo ("Impuestos Exterior"). BC no lo sabe — calcula el IVA cruzando el
+// grupo del ENCABEZADO con el del ARTÍCULO, y los artículos traen IVA13, así que el
+// pedido sale con 13% aunque la orden diga 0% (CP-005254, AMAZON: ₡1.270,16 de más
+// sobre un artículo de ₡9.770,43).
+//
+// Hasta acá la app solo lo EXPLICABA y el arreglo lo hacía Contabilidad a mano en BC.
+// Esto lo empuja desde la app: le pone a cada línea el grupo exento por la API
+// estándar (en `purchaseOrderLines`, `taxCode` ES el VAT Prod. Posting Group) y
+// vuelve a leer los totales para decir en qué quedó el IVA DE VERDAD, no en qué
+// debería haber quedado.
+//
+// El grupo del ENCABEZADO no se toca, y no hace falta: las facturas de importación de
+// AMAZON que ya están registradas en 0% (CFR-009320, CFR-008565, CFR-007919…) tienen
+// el proveedor tal como está hoy y EXENTO en las líneas. Si en algún pedido esa
+// combinación no diera 0, la relectura lo canta y ahí sí hay que cambiar el grupo del
+// encabezado en BC (la API estándar no lo expone).
+//
+// El nombre del grupo sale de BC_IVA_GRUPO_EXENTO por si en BC lo renombran; el
+// default es el que la compañía usa hoy.
+export function grupoIvaExento(): string {
+  return (process.env.BC_IVA_GRUPO_EXENTO || "EXENTO").trim();
+}
+
+// Las líneas a las que hay que cambiarles el grupo. Las que ya lo tienen se dejan
+// quietas: cada PATCH es una escritura en BC y una línea que ya está exenta no gana
+// nada con que se la reescriba (BC las nombra en mayúscula pero no cuesta nada
+// compararlas sin distinguir).
+export function lineasAExonerar(lineas: LineaIvaBc[], grupo: string): LineaIvaBc[] {
+  const g = String(grupo ?? "").trim().toUpperCase();
+  if (!g) return [];
+  return (lineas ?? []).filter((l) => l?.id && String(l?.taxCode ?? "").trim().toUpperCase() !== g);
+}
+
+export type ResultadoExonerar = {
+  grupo: string;
+  // "M05-0804: IVA13 → EXENTO"
+  cambiadas: string[];
+  yaEstaban: string[];
+  fallas: string[];
+  ivaAntes: number;
+  ivaDespues: number;
+  totalDespues: number;
+  moneda: string;
+  // Lo que quedó a medias: líneas que BC no dejó cambiar, o un IVA que sigue vivo
+  // porque falta el grupo del encabezado.
+  aviso?: string;
+};
+
+export async function bcExonerarLineasPedido(orderNo: string): Promise<ResultadoExonerar> {
+  if (!orderNo) throw new Error("Falta el número de pedido de BC.");
+  const grupo = grupoIvaExento();
+  const cid = await getStdCompanyId();
+  const antes = await bcLineasIvaDePedido(cid, orderNo);
+  if (!antes) {
+    throw new Error(`No se pudieron leer las líneas del pedido ${orderNo} en Business Central. Reintentá; si sigue, revisá que el pedido exista allá.`);
+  }
+  if (!antes.lineas.length) throw new Error(`El pedido ${orderNo} no tiene líneas en Business Central.`);
+  // Un pedido LANZADO no se edita en BC: rechaza el cambio. Lanzarlo y reabrirlo es de
+  // Aprobación, no de esta app (ver la frontera con BC en el README).
+  if (/released|lanzad/i.test(antes.status)) {
+    throw new Error(`El pedido ${orderNo} ya está lanzado en Business Central (${antes.status}): allá no se le puede cambiar el IVA. Que Aprobación lo reabra y volvés a intentar, o que Contabilidad le cambie el grupo de IVA en BC.`);
+  }
+  const totalesAntes = await bcOrdenTotales(orderNo);
+
+  const pendientes = lineasAExonerar(antes.lineas, grupo);
+  const yaEstaban = antes.lineas.filter((l) => !pendientes.includes(l)).map((l) => l.code);
+  const cambiadas: string[] = [];
+  const fallas: string[] = [];
+  for (const l of pendientes) {
+    const r = await bcFetch(`${stdRoot()}/companies(${cid})/purchaseOrders(${antes.poId})/purchaseOrderLines(${l.id})`, {
+      method: "PATCH", cache: "no-store",
+      headers: { "Content-Type": "application/json", "If-Match": "*" },
+      body: JSON.stringify({ taxCode: grupo }),
+    });
+    if (r.ok) cambiadas.push(`${l.code}: ${l.taxCode || "(sin grupo)"} → ${grupo}`);
+    else fallas.push(`${l.code} (BC ${r.status}: ${(await r.text()).slice(0, 160)})`);
+  }
+
+  // BC recalcula al momento: los totales de después son el resultado real, no el
+  // esperado. Eso es lo que se le muestra a quien apretó el botón.
+  const despues = await bcOrdenTotales(orderNo);
+  const ivaAntes = Number(totalesAntes?.iva ?? 0);
+  const ivaDespues = Number(despues?.iva ?? 0);
+  let aviso: string | undefined;
+  if (fallas.length) {
+    aviso = `Business Central no dejó cambiarle el grupo de IVA a ${fallas.length} línea(s) del pedido ${orderNo}: ${fallas.join("; ")}. Esas líneas siguen con el IVA de antes.`;
+  } else if (despues && Math.abs(ivaDespues) > 0.01) {
+    aviso = `Las líneas del pedido ${orderNo} quedaron en ${grupo}, pero Business Central sigue calculando IVA (${ivaDespues.toFixed(2)}). Eso ya es el grupo de IVA del ENCABEZADO: en BC, en el pedido, poné el Grupo registro IVA negocio en EXTRANJERO (y lo mismo en la ficha del proveedor, para los pedidos que vengan).`;
+  }
+  return {
+    grupo, cambiadas, yaEstaban, fallas,
+    ivaAntes, ivaDespues,
+    totalDespues: Number(despues?.total ?? 0),
+    moneda: String(despues?.currencyCode ?? totalesAntes?.currencyCode ?? ""),
+    aviso,
+  };
 }
 
 // Traduce las líneas de una orden de la app (las que devuelve `getOrden`) a las

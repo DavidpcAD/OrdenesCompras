@@ -36,6 +36,7 @@ const LABEL: Record<string, string> = {
   eliminado: "Eliminado",
   bc_renumerado: "N.º de Business Central corregido",
   encabezado_cambiado: "Cambió el proveedor o la moneda",
+  bc_iva_exento: "IVA quitado en Business Central",
 };
 
 // Etiqueta contextual: el mismo tipo de movimiento se lee distinto según
@@ -94,6 +95,7 @@ function colorPunto(m: Movimiento): string {
       case "bc_creado": return "var(--ds-color-gray-300)";   // el pedido nació en BC
       case "encabezado_cambiado": return "var(--ds-color-yellow)"; // le cambiaron el proveedor/moneda a la orden
       case "bc_encabezado": return "var(--ds-color-yellow)";  // cambió el proveedor/moneda del pedido
+      case "bc_iva_exento": return "var(--ds-color-yellow)";  // se le quitó el IVA al pedido en BC
       case "bc_desalineado": return "var(--ds-color-red-200)"; // BC no tiene lo mismo · rojo
       case "bc_alineado": return "var(--ds-color-green-200)";  // verificado y coincide
       case "eliminado": return "var(--ds-color-red-100)";

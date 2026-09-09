@@ -1345,6 +1345,11 @@ h1, h2, h3, h4, p { margin: 0; }
 .modal-overlay { position: fixed; inset: 0; background: #0006; display: grid; place-items: center; z-index: 80; padding: var(--ds-space-6); animation: fade .15s ease; overflow: auto; }
 .modal { width: 100%; max-width: 560px; min-width: 0; background: var(--ds-surface); border-radius: var(--ds-radius-2xl); box-shadow: var(--ds-shadow-03-big); padding: var(--ds-space-6); max-height: 88vh; overflow: auto; }
 .modal--wide { max-width: 920px; }
+/* El reset deja los <p> en margen 0, y un diálogo que explica algo en dos o tres
+   párrafos salía como un solo bloque de texto pegado (los otros diálogos lo tapaban
+   porque tienen un campo en medio). Solo entre párrafos hermanos: el primero sigue
+   pegado al título. */
+.modal > p + p { margin-top: var(--ds-space-3); }
 @keyframes fade { from { opacity: 0; } to { opacity: 1; } }
 
 @media (max-width: 760px) {
