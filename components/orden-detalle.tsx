@@ -24,6 +24,7 @@ export function OrdenDetalle({
   aviso,
   onAlinearIva,
   onExonerarIva,
+  refrescoBc = 0,
 }: {
   orden: Orden;
   volverHref: string;
@@ -43,6 +44,9 @@ export function OrdenDetalle({
   // Al revés: quitarle el IVA al pedido EN BC (importación). Abre la confirmación de
   // la pantalla, porque esto SÍ escribe en Business Central.
   onExonerarIva?: () => void;
+  // Sube de número cada vez que la pantalla cambió algo EN BC. Con eso los totales se
+  // vuelven a leer de allá: si no, quedan clavados en lo que se leyó al abrir.
+  refrescoBc?: number;
 }) {
   const { proveedores, recepciones, role } = useStore();
   const router = useRouter();
@@ -54,15 +58,20 @@ export function OrdenDetalle({
   // que BC esté caído, y hay que decirlo: el N.º guardado apunta a un documento que
   // ya no está, así que ni se abre en BC ni hay nada que lanzar allá.
   const [bcMotivo, setBcMotivo] = useState<string | null>(null);
+  // Los totales se leían UNA sola vez, al abrir la orden, y el efecto solo miraba el
+  // N.º de BC — que no cambia nunca. Así, después de cambiarle el IVA al pedido en BC
+  // la pantalla seguía mostrando la foto vieja: el IVA "seguía ahí" aunque en BC ya
+  // estuviera en cero (CP-005254). `refrescoBc` es la pantalla diciendo "eso que
+  // tenías ya no vale, volvé a preguntarle a BC".
   useEffect(() => {
     if (!orden.bcNumber) { setBcTot(null); setBcMotivo(null); return; }
     let vivo = true;
-    fetch(`/api/bc/orden-totales?orderNo=${encodeURIComponent(orden.bcNumber)}`)
+    fetch(`/api/bc/orden-totales?orderNo=${encodeURIComponent(orden.bcNumber)}`, { cache: "no-store" })
       .then((r) => (r.ok ? r.json() : { totales: null }))
       .then((d) => { if (!vivo) return; if (d?.totales) setBcTot(d.totales); setBcMotivo(d?.motivo ?? null); })
       .catch(() => { /* sin BC: se muestran los totales locales */ });
     return () => { vivo = false; };
-  }, [orden.bcNumber]);
+  }, [orden.bcNumber, refrescoBc]);
   // Verificar contra BC a pedido: relee las líneas del pedido (o de las facturas
   // registradas, si la orden ya está completada y BC borró el pedido) y las coteja
   // con las de la orden. El resultado se guarda del lado del servidor, así que al
