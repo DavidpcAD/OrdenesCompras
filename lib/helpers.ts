@@ -1,4 +1,36 @@
-import type { Orden, OrdenLinea, Pedido, PedidoLinea, Recepcion, Role, TipoSolicitud } from "./types";
+import type { LineType, Orden, OrdenLinea, Pedido, PedidoLinea, Recepcion, Role, TipoSolicitud } from "./types.ts";
+import { comentarioSinMarcasInternas, motivoDeCierre, segmentosDeNota } from "./cierre-solicitud.ts";
+
+// ── QUÉ ES CADA TIPO DE LÍNEA, EN UN SOLO LUGAR ──────────────────────────────
+// Una orden puede llevar cuatro tipos de línea (ver LineType) y el código las
+// separa por DOS criterios distintos que no hay que confundir:
+//
+//  · `esLineaMaterial` — es un ARTÍCULO de inventario. Es lo que tiene existencias
+//    en BC, historial de compras por insumo, variante, unidad de compra convertible
+//    y solicitud de origen. Un recurso o un activo fijo NO son eso.
+//  · `esLineaRecibible` — se recibe y se factura POR CANTIDAD. Son las tres primeras
+//    (artículo, recurso, activo fijo): un servicio o un activo también se liquidan
+//    en la pantalla de Bodega. El CARGO es la excepción: no se recibe, se reparte
+//    entre las demás al registrar.
+//
+// Antes esto se escribía como `tipo === "articulo"` o `tipo !== "cargo"` en cada
+// lugar, y con solo dos tipos las dos formas daban lo mismo. Con cuatro ya no: la
+// diferencia decide si una compra de un servicio traba el % recibido o si un activo
+// fijo se le pide a BC como si tuviera existencias.
+export const esLineaMaterial = (l: Pick<OrdenLinea, "tipo">) => l.tipo === "articulo";
+export const esLineaRecibible = (l: Pick<OrdenLinea, "tipo">) => l.tipo !== "cargo";
+export const esLineaCargo = (l: Pick<OrdenLinea, "tipo">) => l.tipo === "cargo";
+
+// Cómo se llama cada tipo en pantalla (el vocabulario de BC, que es el que usan
+// Proveeduría y Contabilidad cuando abren el pedido allá).
+export const ETIQUETA_TIPO_LINEA: Record<LineType, string> = {
+  articulo: "Artículo",
+  recurso: "Recurso",
+  activo_fijo: "Activo fijo",
+  cargo: "Cargo",
+};
+export const etiquetaTipoLinea = (t?: LineType | string) =>
+  ETIQUETA_TIPO_LINEA[(t ?? "articulo") as LineType] ?? "Artículo";
 
 // Badge del tipo de solicitud (Material / Repuesto / Stock).
 export function tipoSolicitudBadge(t: TipoSolicitud): { label: string; tone: string } {
@@ -49,6 +81,13 @@ export function esTipoEdicion(tipo?: string): boolean {
 // esta solicitud pasó por una devolución.
 export type EstadoDevolucion = "esperando" | "corregida";
 export function estadoDeDevolucion(p: Pedido): EstadoDevolucion | null {
+  // Una solicitud ARCHIVADA no es trabajo pendiente de nadie: el saldo que le queda
+  // se dio de baja a propósito. Sin este corte se quedaba clavada en "Listas para
+  // ordenar" y en el punto rojo del menú para siempre —`pedidoTieneSaldo` sigue
+  // diciendo true—, que es exactamente el número imposible de bajar que el
+  // comentario de arriba dice que se quiso evitar. Y es el caso de todos los días:
+  // devuelta → el ingeniero la corrige → se decide no comprar el resto → se cierra.
+  if (p.estado === "cerrado") return null;
   const marcada = p.estado === "devuelto" || p.lineas.some((l) => l.devuelta);
   if (marcada) return "esperando";
   if (!p.devolucion) return null;
@@ -247,7 +286,13 @@ export function pedidoLineaPendiente(l: PedidoLinea): number {
   // Una línea devuelta al ingeniero está BLOQUEADA: aunque le quede cantidad sin
   // ordenar, ya no se compra. Cortarlo acá la saca de una sola vez de todos lados
   // (materiales por línea, "+ De solicitudes", crear OC, saldo del pedido).
-  if (l.devuelta) return 0;
+  //
+  // Lo mismo la CANCELADA por el cierre de la solicitud, y por el mismo motivo: es
+  // el único cuello por el que pasa "lo que falta comprar", así que apagarlo acá
+  // vale por los 24 lugares que lo consultan. La diferencia entre las dos es de
+  // quién es la pelota: la devuelta espera que el ingeniero la corrija; la cerrada
+  // no espera nada, ya no se compra (ver lib/cierre-solicitud.ts).
+  if (l.devuelta || l.cerrada) return 0;
   return Math.max(0, l.cantidad - l.cantidadOrdenada);
 }
 
@@ -300,7 +345,11 @@ export function ordenDeDetalleDevolucion(detalle: string): string | undefined {
 // hay nada que aprobar— y en BC su pedido conserva las líneas viejas hasta que se
 // vuelva a enviar.
 export function ordenEsperaCorreccion(o: Pick<Orden, "bcNumber" | "lineas">): boolean {
-  return !!(o.bcNumber ?? "").trim() && !o.lineas.some((l) => l.tipo === "articulo");
+  // Ojo con el criterio: es "sin nada que comprar", no "sin artículos". Una orden
+  // directa de puro servicio (recurso) o de un activo fijo tiene líneas de verdad
+  // y no está esperando a ningún ingeniero; con `tipo === "articulo"` salía marcada
+  // "Esperando corrección" y no se podía enviar a aprobación.
+  return !!(o.bcNumber ?? "").trim() && !o.lineas.some(esLineaRecibible);
 }
 
 // La orden a la que hay que devolverle el material que el ingeniero acaba de corregir.
@@ -401,7 +450,9 @@ export function puedeDevolverLineaOrden(l: OrdenLinea): boolean {
 }
 
 export function motivoNoDevolverLineaOrden(l: OrdenLinea): string {
-  if (l.tipo !== "articulo") return "es un cargo, no material de una solicitud";
+  // Solo el material de inventario viene de una solicitud de Ingeniería: un cargo,
+  // un recurso o un activo fijo no tienen a quién devolverse.
+  if (!esLineaMaterial(l)) return `es un ${etiquetaTipoLinea(l.tipo).toLowerCase()}, no material de una solicitud`;
   if (!l.pedidoLineaId) return "se agregó a mano: no viene de una solicitud (quitala editando la orden)";
   if ((l.cantidadRecibida ?? 0) > 0) return "ya tiene material recibido";
   if ((l.cantidadFacturada ?? 0) > 0) return "ya está facturada";
@@ -412,7 +463,9 @@ export function motivoNoDevolverLineaOrden(l: OrdenLinea): string {
 // dejarla viva (una orden sin artículos no se puede guardar ni enviar): se descarta.
 export function ordenQuedaSinMaterial(o: Orden, lineaIds: string[]): boolean {
   const ids = new Set(lineaIds);
-  return !o.lineas.some((l) => l.tipo === "articulo" && !ids.has(l.id));
+  // Mismo criterio que ordenEsperaCorreccion: si quedan líneas de recurso o de
+  // activo fijo, la orden sigue teniendo qué comprar y no se descarta.
+  return !o.lineas.some((l) => esLineaRecibible(l) && !ids.has(l.id));
 }
 
 // Cómo se NOMBRAN varias órdenes en una frase. Las que todavía no están en BC no
@@ -463,6 +516,12 @@ export function motivoNoDevolver(l: PedidoLinea, ordenes?: Orden[]): string {
 // mandaba a cotizar con su cantidad completa (se escribió cuando "sin pendiente"
 // solo podía significar "ya se ordenó todo").
 export function lineasACotizar(pedido: Pedido): { linea: PedidoLinea; cantidad: number }[] {
+  // La solicitud ARCHIVADA no se cotiza: no le queda nada por comprar. Va antes del
+  // fallback a propósito, porque una cerrada por definición se queda sin pendiente y
+  // caería justo ahí — mandándole al proveedor a cotizar TODAS las líneas por su
+  // cantidad completa, incluidas las que se acaban de dar de baja. Es el mismo
+  // incidente que ya pasó con lo devuelto y que este fallback tuvo que aprender.
+  if (pedido.estado === "cerrado") return [];
   const pendientes = pedido.lineas
     .map((l) => ({ linea: l, cantidad: pedidoLineaPendiente(l) }))
     .filter((x) => x.cantidad > 0);
@@ -476,23 +535,48 @@ export function lineasACotizar(pedido: Pedido): { linea: PedidoLinea; cantidad: 
 // pidió de más, no hay presupuesto" no puede salir en el papel que recibe el
 // proveedor —, así que acá se recorta el prefijo de la devolución y queda solo el
 // comentario original.
+//
+// Desde que también se puede CERRAR una solicitud, la nota puede traer dos
+// encabezados internos apilados ("⛔ Cerrada: … · ↩ Devuelto: … · <comentario>"), así
+// que la poda se delega en `comentarioSinMarcasInternas`, que los saca todos. Con el
+// recorte viejo —un solo prefijo, y solo si empezaba con "↩"— una solicitud cerrada
+// después de una devolución le imprimía al proveedor los dos motivos internos.
 export function observacionesParaProveedor(notas?: string): string {
-  const t = (notas ?? "").trim();
-  if (!t.startsWith("↩")) return t;
-  const corte = t.indexOf(" · ");        // "↩ Devuelta(s): … — motivo · <comentario original>"
-  return corte >= 0 ? t.slice(corte + 3).trim() : "";
+  return comentarioSinMarcasInternas(notas);
 }
 
 // El motivo de la devolución para la bandeja de Devoluciones: soporta el pedido
 // entero ("↩ Devuelto: <motivo>") y la devolución por línea
 // ("↩ Devuelta(s): <líneas> — <motivo>"), donde el motivo va después del em-dash.
+//
+// Busca el tramo de la devolución en toda la nota y no solo en el primero: si la
+// solicitud se cerró después, adelante quedó el "⛔ Cerrada: …" y mirando el primero
+// la bandeja de Devoluciones mostraba el motivo del CIERRE como si fuera el de la
+// devolución.
 export function motivoDevolucion(notas?: string): string {
-  const encabezado = (notas ?? "").trim().split(" · ")[0];
-  const porLineas = encabezado.match(/^↩\s*Devuelta\(s\):.*—\s*(.*)$/i);
-  if (porLineas) return porLineas[1].trim() || "—";
-  const entero = encabezado.match(/^↩\s*Devuelto:\s*(.*)$/i);
-  if (entero) return entero[1].trim() || "—";
-  return encabezado || "—";
+  const segs = segmentosDeNota(notas);
+  for (const seg of segs) {
+    const porLineas = seg.match(/^↩\s*Devuelta\(s\):.*—\s*(.*)$/i);
+    if (porLineas) return porLineas[1].trim() || "—";
+    const entero = seg.match(/^↩\s*Devuelto:\s*(.*)$/i);
+    if (entero) return entero[1].trim() || "—";
+  }
+  return segs[0] || "—";
+}
+
+// Por qué se archivó esta solicitud. Sale de la nota y no de la bitácora porque la
+// nota es el único canal que la app de Producción ya muestra hoy: el ingeniero lee
+// el porqué en su lista, sin abrir el detalle. "" = se cerró sin nota (solicitudes
+// viejas, o cerradas por fuera de la app).
+export function motivoDeCierreSolicitud(p: Pedido): string {
+  return p.estado === "cerrado" ? motivoDeCierre(p.notas) : "";
+}
+
+// El comentario del ingeniero, sin los encabezados internos que le apilan encima la
+// devolución y el cierre. Es lo que va en la tarjeta "Comentario": el motivo del
+// cierre tiene su propia tarjeta y repetirlo en las dos es ruido.
+export function comentarioDeSolicitud(p: Pedido): string {
+  return comentarioSinMarcasInternas(p.notas);
 }
 
 export function pedidoTieneSaldo(p: Pedido): boolean {
@@ -571,6 +655,11 @@ export function devolverPendienteAPedidos(pedidos: Pedido[], orden: Orden): Pedi
       return { ...pl, cantidadOrdenada: Math.max(0, pl.cantidadOrdenada - dev) };
     });
     if (!tocado) return p;
+    // La solicitud ARCHIVADA no revive porque una orden suya se haya cerrado o
+    // descartado: el saldo vuelve al número, pero el cierre lo mantiene dado de baja
+    // (`cerrada` deja su pendiente en 0). Sin este corte, cerrar una solicitud y
+    // después cerrar una de sus órdenes la des-cerraba sola y volvía a "aprobado".
+    if (p.estado === "cerrado") return { ...p, lineas: ls };
     // Si volvió a quedar saldo, la solicitud deja de estar "en orden": tiene que
     // reaparecer en "Por línea" para que Proveeduría la pueda comprar de nuevo.
     const sinSaldo = ls.every((pl) => pl.cantidadOrdenada >= pl.cantidad - 1e-9);
@@ -618,10 +707,11 @@ export function ordenSubtotal(o: Orden): number {
   return o.lineas.reduce((s, l) => s + ordenLineaImporte(l), 0);
 }
 
-// El avance de recepción se mide SOLO sobre los artículos: las líneas de cargo
-// (flete) no se reciben en bodega, se facturan. Si se cuentan, una orden con flete
-// nunca llega a 100% ni se completa — y en SQL la regla ya es `tipoLinea='articulo'`.
-const soloArticulos = (o: Orden) => o.lineas.filter((l) => l.tipo !== "cargo");
+// El avance de recepción se mide sobre las líneas RECIBIBLES: las de cargo (flete)
+// no se reciben en bodega, se reparten al registrar. Si se cuentan, una orden con
+// flete nunca llega a 100% ni se completa — y en SQL la regla es la misma
+// (`tipoLinea <> 'cargo'` en repo.ts).
+const soloArticulos = (o: Orden) => o.lineas.filter(esLineaRecibible);
 
 export function ordenRecibidoPct(o: Orden): number {
   const arts = soloArticulos(o);
@@ -727,7 +817,9 @@ export function pedidoBadge(estado: Pedido["estado"]): { label: string; tone: st
     case "borrador": return { label: "Borrador", tone: "gray" };
     case "aprobado": return { label: "En proveeduría", tone: "green" };
     case "en_orden": return { label: "En orden", tone: "yellow" };
-    case "cerrado": return { label: "Cerrado", tone: "gray" };
+    // Misma palabra que el panel de la lista y que el botón: si el badge dijera
+    // "Cerrada" y el panel "Archivadas", nadie relaciona las dos pantallas.
+    case "cerrado": return { label: "Archivada", tone: "gray" };
     case "devuelto": return { label: "Devuelto", tone: "red" };
   }
 }
@@ -739,6 +831,10 @@ export function pedidoBadge(estado: Pedido["estado"]): { label: string; tone: st
 // significa que se le pidió al proveedor. Comprado de verdad es cuando llega y se
 // factura, y eso lo cuenta la columna "Entregado".
 export function pedidoCompraBadge(p: Pedido): { label: string; tone: string } {
+  // La archivada no se mide por avance: decir "Parcialmente ordenado" en amarillo
+  // sobre una solicitud que se cerró al 60% es prometer que falta comprar algo. Va
+  // acá y no en la celda de la tabla porque el buscador indexa esta etiqueta.
+  if (p.estado === "cerrado") return { label: "Archivada", tone: "gray" };
   const pct = pedidoOrdenadoPct(p);
   if (pct >= 100) return { label: "100% ordenado", tone: "green" };
   if (pct > 0) return { label: "Parcialmente ordenado", tone: "yellow" };

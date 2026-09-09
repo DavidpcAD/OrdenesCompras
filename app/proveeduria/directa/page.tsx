@@ -8,9 +8,9 @@ import { Combobox } from "@/components/combobox";
 import { IconCheck, IconWarning } from "@/components/icons";
 import { useStore } from "@/lib/store";
 import { leerBorrador, guardarBorrador, borrarBorrador, hace, type BorradorOrden } from "@/lib/borrador-orden";
-import { money, almacenesParaRecepcion, esAlmacenFisico, monedaApp, numeroOrden } from "@/lib/helpers";
+import { etiquetaTipoLinea, money, almacenesParaRecepcion, esAlmacenFisico, monedaApp, numeroOrden } from "@/lib/helpers";
 import { precioEnUnidad, precioEntreUnidades, cantidadEntreUnidades, equivalencia, equivalenciaDeUnidad, mismaMoneda, codigoDeItem, opcionesDeUnidad, type UnidadDeItem } from "@/lib/unidad";
-import type { OrdenLinea } from "@/lib/types";
+import type { LineType, OrdenLinea } from "@/lib/types";
 
 // Orden DIRECTA: compra armada por Proveeduría sin partir de una solicitud de
 // Ingeniería (material que no vino en ningún pedido). Todas las líneas son
@@ -20,7 +20,22 @@ import type { OrdenLinea } from "@/lib/types";
 // `obra`/`tarea` son OPCIONALES y van POR LÍNEA (Job No. + Job Task No. de BC): una
 // directa puede mezclar material que entra a bodega con un servicio que se carga a
 // una obra (ver comentario en crear()).
-interface Row { key: string; articuloId: string; descripcion: string; unidad: string; unidadBase?: string; factorCompra?: number; cantidad: string; precio: string; iva: string; descuento: string; variantCode: string; variantNombre: string; obra: string; obraNombre: string; tarea: string; tareaNombre: string; }
+interface Row { key: string; tipo: LineType; articuloId: string; descripcion: string; unidad: string; unidadBase?: string; factorCompra?: number; cantidad: string; precio: string; iva: string; descuento: string; variantCode: string; variantNombre: string; obra: string; obraNombre: string; tarea: string; tareaNombre: string; }
+type Recurso = { no: string; nombre: string; unidad: string; costo: number };
+type ActivoFijo = { no: string; descripcion: string; clase: string };
+// Qué se le pide a BC en cada tipo, en la voz de la pantalla. `catalogo` es el
+// rótulo del buscador y `ayuda` lo que hay que saber ANTES de elegirlo — sobre todo
+// que un recurso o un activo fijo no entran a inventario.
+const TIPOS_LINEA: { tipo: LineType; etiqueta: string; catalogo: string; ayuda: string }[] = [
+  { tipo: "articulo", etiqueta: "Artículo", catalogo: "Buscar artículo del catálogo…",
+    ayuda: "Material de inventario: entra al almacén de recepción y suma existencias." },
+  { tipo: "recurso", etiqueta: "Recurso", catalogo: "Buscar recurso…",
+    ayuda: "Mano de obra o servicio del catálogo de recursos. No entra a inventario; se puede cargar a una obra." },
+  { tipo: "activo_fijo", etiqueta: "Activo fijo", catalogo: "Buscar activo fijo…",
+    ayuda: "La compra se capitaliza contra el activo en Business Central. No entra a inventario ni se carga a una obra." },
+  { tipo: "cargo", etiqueta: "Cargo (Prod.)", catalogo: "Buscar cargo de producto…",
+    ayuda: "Flete, seguro, impuestos de exterior. BC lo reparte entre las demás líneas al registrar." },
+];
 type Variante = { code: string; descripcion: string };
 type Obra = { codigo: string; nombre: string };
 type Tarea = { jobTaskNo: string; descripcion: string; tipo: string };
@@ -46,6 +61,7 @@ export default function OrdenDirectaPage() {
 
   const qtyId = useId();
   const priceId = useId();
+  const tipoId = useId();
   const [proveedorId, setProveedorId] = useState(rescate?.proveedorId ?? "");
   const [currency, setCurrency] = useState(rescate?.currency ?? "");
   const [almacen, setAlmacen] = useState(rescate?.almacen ?? "ALM-GRAL");
@@ -82,12 +98,24 @@ export default function OrdenDirectaPage() {
     // el selector queda vacío y la orden se arma sin obra, como antes.
     fetch("/api/bc/obras").then((r) => (r.ok ? r.json() : { obras: [] }))
       .then((d) => { if (Array.isArray(d.obras)) setObras(d.obras.map((o: any) => ({ codigo: o.codigo, nombre: o.nombre }))); }).catch(() => {});
+    // Recursos y activos fijos: los catálogos de los otros dos tipos de línea. Si la
+    // API custom de BC todavía no está publicada en este entorno, la lista llega
+    // vacía y el tipo queda deshabilitado con el motivo a la vista — no se ofrece un
+    // buscador que no va a encontrar nada.
+    fetch("/api/bc/recursos").then((r) => (r.ok ? r.json() : { recursos: [] }))
+      .then((d) => { if (Array.isArray(d.recursos)) setRecursos(d.recursos); }).catch(() => {});
+    fetch("/api/bc/activos-fijos").then((r) => (r.ok ? r.json() : { activos: [] }))
+      .then((d) => { if (Array.isArray(d.activos)) setActivosFijos(d.activos); }).catch(() => {});
   }, []);
   const catProv = bcProv ?? proveedores;
   const catAlm = almacenesParaRecepcion(bcAlm ?? almacenes);
   const provSel = catProv.find((x) => x.id === proveedorId);
 
-  const [rows, setRows] = useState<Row[]>(rescate?.filas ?? []);
+  // El borrador rescatado puede venir de ANTES de que la línea tuviera tipo (se
+  // guarda en el navegador, así que sobrevive al despliegue): sin este default sus
+  // filas quedaban con `tipo` undefined y la pantalla las trataba como si no fueran
+  // material — sin unidad, sin destino y sin variante.
+  const [rows, setRows] = useState<Row[]>(() => (rescate?.filas ?? []).map((r) => ({ ...r, tipo: r.tipo ?? "articulo" })));
 
   // Guardado automático (con respiro, para no escribir en cada tecla). No toca la
   // base ni BC: es la libreta de quien arma, en su navegador.
@@ -105,6 +133,12 @@ export default function OrdenDirectaPage() {
     setAvisoRescate(null);
     setRows([]);
   }
+  // TIPO de la próxima línea (el mismo desplegable que BC tiene en el pedido de
+  // compra). Queda pegado después de agregar: una orden de servicios suele traer
+  // varias líneas del mismo tipo.
+  const [qaTipo, setQaTipo] = useState<LineType>("articulo");
+  const [recursos, setRecursos] = useState<Recurso[]>([]);
+  const [activosFijos, setActivosFijos] = useState<ActivoFijo[]>([]);
   const [qaCode, setQaCode] = useState(""); const [qaQty, setQaQty] = useState(""); const [qaPrecio, setQaPrecio] = useState("");
   // Último precio de BC del artículo elegido, con la unidad y la moneda a las que
   // corresponde (puede no ser la de esta línea).
@@ -139,6 +173,98 @@ export default function OrdenDirectaPage() {
     // la equivalencia de la unidad de compra, que es lo que había antes.
     ?? equivalencia({ base: qaItem?.unidadBase ?? "", compra: qaUnidad, factor: qaItem?.factorCompra });
   const variantePendiente = qaVariantes.length > 0 && !qaVariante;
+
+  // ── LO QUE CAMBIA SEGÚN EL TIPO DE LÍNEA ──────────────────────────────────────
+  // Un solo lugar donde se decide qué campos tienen sentido en cada tipo, en vez de
+  // repetir `qaTipo === "articulo"` en cada control:
+  //   · variante y unidades convertibles → solo el ARTÍCULO (son del catálogo de
+  //     artículos; 1 EST = 255.000 GR no existe para un recurso);
+  //   · obra/tarea → artículo y recurso. El ACTIVO FIJO no: BC no acepta Job No. en
+  //     su línea, lo costea el libro de depreciación;
+  //   · el CARGO no entra a la tabla de líneas: va a la tarjeta de "Cargos de
+  //     producto" de abajo, que es donde se elige el método de reparto.
+  const esArticulo = qaTipo === "articulo";
+  const admiteObra = qaTipo === "articulo" || qaTipo === "recurso";
+  const cfgTipo = TIPOS_LINEA.find((t) => t.tipo === qaTipo)!;
+  // Catálogo del tipo elegido, con la forma que espera el Combobox (clave + rótulo).
+  type OpcionCat = { key: string; etiqueta: string; buscar: string; extra: string };
+  const catalogoTipo: OpcionCat[] = useMemo(() => {
+    if (qaTipo === "recurso") return recursos.map((r) => ({ key: r.no, etiqueta: `${r.no} — ${r.nombre}`, buscar: `${r.no} ${r.nombre}`, extra: r.unidad }));
+    if (qaTipo === "activo_fijo") return activosFijos.map((a) => ({ key: a.no, etiqueta: `${a.no} — ${a.descripcion}`, buscar: `${a.no} ${a.descripcion} ${a.clase}`, extra: a.clase }));
+    if (qaTipo === "cargo") return itemCharges.map((c) => ({ key: c.no, etiqueta: `${c.no} — ${c.descripcion}`, buscar: `${c.no} ${c.descripcion}`, extra: "" }));
+    return itemsBc.map((i) => ({ key: i.code, etiqueta: `${i.code} — ${i.descripcion}`, buscar: `${i.code} ${i.descripcion} ${i.unidad}`, extra: i.unidad }));
+  }, [qaTipo, recursos, activosFijos, itemCharges, itemsBc]);
+  // El catálogo de este tipo no llegó (API custom sin publicar, o BC caído). Se dice
+  // en la pantalla: sin esto el buscador se ve vacío y parece que no hay recursos
+  // dados de alta, cuando lo que falta es la página de BC.
+  const catalogoVacio = catalogoTipo.length === 0;
+
+  // Elegir el tipo limpia lo elegido: el N.º de un artículo no es el de un recurso, y
+  // arrastrar el código de un catálogo a otro deja una línea que BC rechaza.
+  function elegirTipo(t: LineType) {
+    setQaTipo(t);
+    setQaCode(""); setQaQty(""); setQaPrecio(""); setQaRef(null);
+    setQaVariantes([]); setQaVariante(""); setQaVariantesError(false);
+    setQaUnidad("");
+    // El activo fijo no puede ir a una obra: si venía una puesta, se suelta.
+    if (t === "activo_fijo") { setQaObra(""); setQaTarea(""); }
+  }
+
+  // Elegir un ARTÍCULO: su unidad de compra, la lista de unidades, el último precio
+  // pagado a este proveedor y las variantes que BC exige. Es lo que hacía el
+  // `onChange` del buscador cuando solo se podían agregar artículos.
+  function elegirArticulo(k: string) {
+    const it = itemsBc.find((x) => x.code === k);
+    // Arranca en la unidad con la que BC compra este material; la lista completa
+    // llega aparte y solo sirve para poder cambiarla.
+    setQaUnidad(it?.unidad ?? "");
+    if (!k) return;
+    cargarUnidades(k);
+    fetch(`/api/bc/lastprice?item=${encodeURIComponent(k)}&vendor=${encodeURIComponent(provSel?.code ?? "")}`)
+      .then((r) => r.json()).then((d) => {
+        if (!(typeof d.precio === "number" && d.precio > 0)) return;
+        const ref = { precio: d.precio, unidad: String(d.unidad ?? ""), moneda: String(d.moneda ?? ""), factor: d.factor };
+        setQaRef(ref);
+        // Solo se prellena si ese precio corresponde a ESTA unidad y a la moneda de
+        // la orden. Si no, se muestra rotulado y lo escribe Proveeduría: un costo por
+        // gramo en una línea de estañones deja la orden 255.000 veces más barata.
+        const p = mismaMoneda(ref.moneda, currency)
+          ? precioEnUnidad(ref, it?.unidad ?? ref.unidad, it?.unidadBase ?? ref.unidad)
+          : null;
+        if (p != null) setQaPrecio(String(p));
+      }).catch(() => {});
+    // Variantes del item: si tiene, se exige elegir una antes de agregar la línea.
+    fetch(`/api/bc/variants?item=${encodeURIComponent(k)}`)
+      .then((r) => (r.ok ? r.json() : { variantes: [], disponible: false }))
+      .then((d) => {
+        const vs = d.variantes ?? [];
+        setQaVariantes(vs);
+        setQaVariantesError(d.disponible === false);
+        // Con UNA sola variante no hay nada que elegir: BC la exige y esa es la única
+        // válida. Se preselecciona para no hacer clickear una opción obvia.
+        if (vs.length === 1) setQaVariante(vs[0].code);
+      })
+      .catch(() => { setQaVariantes([]); setQaVariantesError(true); });
+  }
+
+  // Lo que se elige en el buscador, por tipo. Cada catálogo trae lo suyo: el
+  // artículo dispara variantes, unidades y último precio; el recurso trae su unidad
+  // base y su costo; el activo fijo y el cargo, solo el N.º y la descripción.
+  function elegirDelCatalogo(k: string) {
+    setQaCode(k);
+    setQaVariantes([]); setQaVariante(""); setQaVariantesError(false);
+    setQaPrecio(""); setQaRef(null);
+    if (qaTipo === "recurso") {
+      const r = recursos.find((x) => x.no === k);
+      setQaUnidad(r?.unidad ?? "");
+      // El costo directo del recurso es la referencia que tiene BC; se prellena y
+      // Proveeduría lo corrige con lo que se acordó.
+      if (r && r.costo > 0) setQaPrecio(String(r.costo));
+      return;
+    }
+    if (qaTipo === "activo_fijo" || qaTipo === "cargo") { setQaUnidad(""); return; }
+    elegirArticulo(k);
+  }
 
   // Unidades de un material, una sola vez por material. Si BC no las da (página sin
   // publicar), queda [] y la pantalla se queda con la unidad de siempre: el selector
@@ -242,22 +368,43 @@ export default function OrdenDirectaPage() {
   const onTipoCargo = (i: number, chargeNo: string) => { const ic = itemCharges.find((x) => x.no === chargeNo); setCargo(i, { chargeNo, descripcion: ic ? ic.descripcion : "FLETE / TRANSPORTE" }); };
   const cargoImporte = (c: Cargo) => (Number(c.cantidad) || 0) * (Number(c.precio) || 0);
   function agregarLinea() {
-    const it = itemsBc.find((x) => x.code === qaCode);
-    if (!it || !(Number(qaQty) > 0)) { toast("Elegí un artículo y una cantidad.", "error"); return; }
-    if (variantePendiente) { toast("Este artículo tiene variantes: elegí una antes de agregar la línea.", "error"); return; }
+    const elegido = catalogoTipo.find((o) => o.key === qaCode);
+    if (!elegido || !(Number(qaQty) > 0)) { toast(`Elegí un ${cfgTipo.etiqueta.toLowerCase()} y una cantidad.`, "error"); return; }
+    // El CARGO no es una línea de la tabla: va a la tarjeta de "Cargos de producto",
+    // que es donde se elige el método con el que BC lo reparte. Se agrega desde acá
+    // igual que los demás tipos para no tener dos formas distintas de agregar.
+    if (qaTipo === "cargo") {
+      const ic = itemCharges.find((x) => x.no === qaCode);
+      setCargos((cs) => [...cs, { key: uid(), chargeNo: qaCode, descripcion: ic?.descripcion || "CARGO",
+        cantidad: String(Number(qaQty)), precio: String(Number(qaPrecio) || 0), iva: "13" }]);
+      setQaCode(""); setQaQty(""); setQaPrecio("");
+      toast(`Cargo agregado: ${ic?.descripcion || qaCode}. El método de reparto se elige abajo.`, "success");
+      return;
+    }
+    if (esArticulo && variantePendiente) { toast("Este artículo tiene variantes: elegí una antes de agregar la línea.", "error"); return; }
     // BC exige la tarea cuando la línea va a una obra (Job Task No. obligatorio si
     // hay Job No.). Si las tareas no cargaron (BC caído) no se bloquea: se avisa en
     // crear() y la orden se arma igual.
-    if (tareaPendiente) { toast("Elegí la tarea de la obra: sin ella Business Central no acepta la línea.", "error"); return; }
+    if (admiteObra && tareaPendiente) { toast("Elegí la tarea de la obra: sin ella Business Central no acepta la línea.", "error"); return; }
+    const it = esArticulo ? itemsBc.find((x) => x.code === qaCode) : undefined;
     const variante = qaVariantes.find((v) => v.code === qaVariante);
-    const unidadElegida = qaUnidad || it.unidad;
-    setRows((rs) => [...rs, { key: `m-${uid()}`, articuloId: it.code, descripcion: it.descripcion,
-      unidad: unidadElegida, unidadBase: it.unidadBase,
+    // La unidad: la elegida para el artículo, la base del recurso, y ninguna para el
+    // activo fijo (BC no maneja unidades de medida en esas líneas).
+    const unidadElegida = qaTipo === "activo_fijo" ? "" : (qaUnidad || it?.unidad || "");
+    setRows((rs) => [...rs, { key: `m-${uid()}`, tipo: qaTipo, articuloId: elegido.key,
+      // La descripción es la del catálogo, sin el N.º adelante: en la tabla el código
+      // ya va en su propia línea debajo.
+      descripcion: elegido.etiqueta.replace(/^[^—]*—\s*/, "") || elegido.key,
+      unidad: unidadElegida, unidadBase: it?.unidadBase,
       // El factor de la unidad ELEGIDA (no el de la de compra): es el que explica
-      // "1 LT = 244,01914 GR" cuando se compró por litro.
-      factorCompra: factorDe(it.code, unidadElegida) ?? (unidadElegida === it.unidad ? it.factorCompra : undefined),
-      cantidad: String(Number(qaQty)), precio: String(Number(qaPrecio) || 0), iva: "13", descuento: "0", variantCode: qaVariante, variantNombre: variante?.descripcion ?? "",
-      obra: qaObra, obraNombre: nombreObra(qaObra), tarea: qaTarea, tareaNombre: nombreTarea(qaObra, qaTarea) }]);
+      // "1 LT = 244,01914 GR" cuando se compró por litro. Solo aplica al artículo.
+      factorCompra: esArticulo ? (factorDe(elegido.key, unidadElegida) ?? (unidadElegida === it?.unidad ? it?.factorCompra : undefined)) : undefined,
+      cantidad: String(Number(qaQty)), precio: String(Number(qaPrecio) || 0), iva: "13", descuento: "0",
+      variantCode: esArticulo ? qaVariante : "", variantNombre: esArticulo ? (variante?.descripcion ?? "") : "",
+      // El activo fijo no va a una obra ni con la obra puesta en la barra: BC no
+      // acepta Job No. en su línea.
+      obra: admiteObra ? qaObra : "", obraNombre: admiteObra ? nombreObra(qaObra) : "",
+      tarea: admiteObra ? qaTarea : "", tareaNombre: admiteObra ? nombreTarea(qaObra, qaTarea) : "" }]);
     // La obra y la tarea NO se limpian a propósito (ver el estado): siguen a la vista
     // en la barra, así que es evidente a qué obra va a ir la línea siguiente.
     setQaCode(""); setQaQty(""); setQaPrecio(""); setQaVariantes([]); setQaVariante(""); setQaVariantesError(false);
@@ -296,7 +443,7 @@ export default function OrdenDirectaPage() {
     if (malPrecio) { toast(`El precio de "${malPrecio.descripcion}" no es un número válido.`, "error"); return; }
     // Última red antes de guardar: si una línea quedó con obra y sin tarea (p. ej.
     // las tareas no habían cargado al agregarla), BC va a rechazarla.
-    const sinTarea = rows.find((r) => r.obra && !r.tarea);
+    const sinTarea = rows.find((r) => r.tipo !== "activo_fijo" && r.obra && !r.tarea);
     if (sinTarea) { toast(`Falta la tarea de la obra ${sinTarea.obra} en "${sinTarea.descripcion}". Sin ella BC no acepta la línea.`, "error"); return; }
     setGuardando(true);
     try {
@@ -307,8 +454,12 @@ export default function OrdenDirectaPage() {
       // que se usaba a la vez de almacén y de Job No. sin que nadie lo supiera.
       // El almacén de recepción se manda igual: es el locationCode de la línea.
       const ls: Omit<OrdenLinea, "id" | "cantidadRecibida" | "cantidadFacturada">[] = rows.map((r) => ({
-        tipo: "articulo", articuloId: r.articuloId, variantCode: r.variantCode || undefined, pedidoNumero: "Manual",
-        descripcion: r.descripcion, cantidad: Number(r.cantidad), unidad: r.unidad, almacen,
+        tipo: r.tipo, articuloId: r.articuloId, variantCode: r.variantCode || undefined, pedidoNumero: "Manual",
+        descripcion: r.descripcion, cantidad: Number(r.cantidad), unidad: r.unidad,
+        // El almacén es SOLO del material: BC no acepta ubicación en una línea de
+        // recurso ni de activo fijo, y ponérselo acá haría que la app dijera que ese
+        // servicio "entra al Almacén General", que no pasa en ninguna parte.
+        almacen: r.tipo === "articulo" ? almacen : "",
         precioUnitario: Number(r.precio), ivaPct: Number(r.iva) || 0, descuentoPct: Number(r.descuento) || 0,
         proyecto: r.obra || undefined, taskNo: r.tarea || undefined,
       }));
@@ -415,57 +566,32 @@ export default function OrdenDirectaPage() {
 
         <Card className="mt-4" style={{ padding: 0, overflow: "hidden" }}>
           <div className="row wrap gap-2" style={{ alignItems: "flex-end", padding: "12px 16px", borderBottom: "1.5px solid var(--ds-color-gray-100)", background: "color-mix(in srgb, var(--ds-color-green-100) 6%, var(--ds-tint-base))" }}>
+            {/* TIPO de la línea: el mismo desplegable que tiene el pedido de compra
+                en BC. Va PRIMERO porque decide qué catálogo se busca al lado y qué
+                campos tienen sentido (un activo fijo no lleva obra ni unidad). */}
+            <div style={{ flex: "0 1 170px", minWidth: 150 }}>
+              <label className="ds-label ds-muted" htmlFor={tipoId} style={{ display: "block", marginBottom: 4 }}>Tipo</label>
+              <Select id={tipoId} value={qaTipo} onChange={(e) => elegirTipo(e.target.value as LineType)}>
+                {TIPOS_LINEA.map((t) => <option key={t.tipo} value={t.tipo}>{t.etiqueta}</option>)}
+              </Select>
+            </div>
             <div style={{ flex: "1 1 280px", minWidth: 220 }}>
-              <label className="ds-label ds-muted" style={{ display: "block", marginBottom: 4 }}>Agregar artículo</label>
-              <Combobox items={itemsBc} value={qaCode} onChange={(k) => {
-                  setQaCode(k);
-                  setQaVariantes([]); setQaVariante(""); setQaVariantesError(false);
-                  const it = itemsBc.find((x) => x.code === k);
-                  setQaPrecio(""); setQaRef(null);
-                  // Arranca en la unidad con la que BC compra este material; la lista
-                  // completa llega aparte y solo sirve para poder cambiarla.
-                  setQaUnidad(it?.unidad ?? "");
-                  if (k) {
-                    cargarUnidades(k);
-                    fetch(`/api/bc/lastprice?item=${encodeURIComponent(k)}&vendor=${encodeURIComponent(provSel?.code ?? "")}`)
-                      .then((r) => r.json()).then((d) => {
-                        if (!(typeof d.precio === "number" && d.precio > 0)) return;
-                        const ref = { precio: d.precio, unidad: String(d.unidad ?? ""), moneda: String(d.moneda ?? ""), factor: d.factor };
-                        setQaRef(ref);
-                        // Solo se prellena si ese precio corresponde a ESTA unidad y a la
-                        // moneda de la orden. Si no, se muestra rotulado y lo escribe
-                        // Proveeduría: un costo por gramo en una línea de estañones deja
-                        // la orden 255.000 veces más barata.
-                        const p = mismaMoneda(ref.moneda, currency)
-                          ? precioEnUnidad(ref, it?.unidad ?? ref.unidad, it?.unidadBase ?? ref.unidad)
-                          : null;
-                        if (p != null) setQaPrecio(String(p));
-                      }).catch(() => {});
-                    // Variantes del item: si tiene, se exige elegir una antes de agregar.
-                    fetch(`/api/bc/variants?item=${encodeURIComponent(k)}`)
-                      .then((r) => (r.ok ? r.json() : { variantes: [], disponible: false }))
-                      .then((d) => {
-                        const vs = d.variantes ?? [];
-                        setQaVariantes(vs);
-                        setQaVariantesError(d.disponible === false);
-                        // Con UNA sola variante no hay nada que elegir: BC la exige y
-                        // esa es la única válida. Se preselecciona para no hacer
-                        // clickear una opción obvia (con varias sí hay que elegir).
-                        if (vs.length === 1) setQaVariante(vs[0].code);
-                      })
-                      .catch(() => { setQaVariantes([]); setQaVariantesError(true); });
-                  }
-                }} getKey={(i) => i.code} getLabel={(i) => `${i.code} — ${i.descripcion}`}
-                  // La UNIDAD a la par de cada opción: se elige el material sabiendo si
-                  // va por SACO, M3 o UND, sin tener que elegirlo para averiguarlo.
+              <label className="ds-label ds-muted" style={{ display: "block", marginBottom: 4 }}>
+                Agregar {cfgTipo.etiqueta.toLowerCase()}
+              </label>
+              <Combobox items={catalogoTipo} value={qaCode} onChange={elegirDelCatalogo}
+                  getKey={(o) => o.key} getLabel={(o) => o.etiqueta}
+                  // El dato de la derecha cambia con el tipo: la UNIDAD del artículo
+                  // o del recurso (se elige sabiendo si va por SACO, M3 o HORA, sin
+                  // tener que elegirlo para averiguarlo) y la CLASE del activo fijo.
                   // `.combo__item` es flex, así que el margin-left:auto la manda a la
                   // derecha y queda en columna, alineada entre filas.
-                  renderItem={(i) => <>{`${i.code} — ${i.descripcion}`}<small style={{ marginLeft: "auto", paddingLeft: 12, whiteSpace: "nowrap" }}
-                    title={equivalencia({ base: i.unidadBase ?? "", compra: i.unidad, factor: i.factorCompra }) ?? undefined}>{i.unidad}</small></>}
-                  // También se puede buscar por unidad ("saco", "m3").
-                  getSearch={(i) => `${i.code} ${i.descripcion} ${i.unidad}`} minChars={2} placeholder="Buscar artículo del catálogo…" />
+                  renderItem={(o) => <>{o.etiqueta}{o.extra ? <small style={{ marginLeft: "auto", paddingLeft: 12, whiteSpace: "nowrap" }}>{o.extra}</small> : null}</>}
+                  // También se puede buscar por unidad ("saco", "m3") o por clase.
+                  getSearch={(o) => o.buscar} minChars={2} placeholder={cfgTipo.catalogo} />
+              <div className="ds-body-sm ds-muted" style={{ marginTop: 4, maxWidth: 420 }}>{cfgTipo.ayuda}</div>
             </div>
-            {qaVariantes.length > 0 && (
+            {esArticulo && qaVariantes.length > 0 && (
               <div style={{ flex: "0 1 200px", minWidth: 170 }}>
                 <label className="ds-label ds-muted" style={{ display: "block", marginBottom: 4 }}>Variante</label>
                 <div style={!qaVariante ? { outline: "1.5px solid var(--ds-color-red-100)", borderRadius: 12 } : undefined}>
@@ -475,13 +601,16 @@ export default function OrdenDirectaPage() {
             )}
             {/* Obra y tarea de la línea (Job No. + Job Task No. de BC). Opcionales: sin
                 obra la línea entra a bodega como siempre. Se quedan puestas después
-                de agregar, así que se ve a qué obra va a ir la línea siguiente. */}
-            <div style={{ flex: "0 1 240px", minWidth: 190 }}>
-              <label className="ds-label ds-muted" style={{ display: "block", marginBottom: 4 }}>Obra <span className="ds-body-sm">(opcional)</span></label>
-              <Combobox items={obrasConVacio} value={qaObra} onChange={(k) => elegirObra(k)}
-                getKey={(o) => o.codigo} getLabel={etiquetaObra} getSearch={(o) => `${o.codigo} ${o.nombre}`} placeholder="Sin obra…" />
-            </div>
-            {qaObra && (
+                de agregar, así que se ve a qué obra va a ir la línea siguiente.
+                No aparece en el ACTIVO FIJO: BC no acepta Job No. en esa línea. */}
+            {admiteObra && (
+              <div style={{ flex: "0 1 240px", minWidth: 190 }}>
+                <label className="ds-label ds-muted" style={{ display: "block", marginBottom: 4 }}>Obra <span className="ds-body-sm">(opcional)</span></label>
+                <Combobox items={obrasConVacio} value={qaObra} onChange={(k) => elegirObra(k)}
+                  getKey={(o) => o.codigo} getLabel={etiquetaObra} getSearch={(o) => `${o.codigo} ${o.nombre}`} placeholder="Sin obra…" />
+              </div>
+            )}
+            {admiteObra && qaObra && (
               <div style={{ flex: "0 1 230px", minWidth: 180 }}>
                 <label className="ds-label ds-muted" style={{ display: "block", marginBottom: 4 }}>Tarea</label>
                 <div style={tareaPendiente ? { outline: "1.5px solid var(--ds-color-red-100)", borderRadius: 12 } : undefined}>
@@ -500,7 +629,7 @@ export default function OrdenDirectaPage() {
                 {/* Con qué unidad se le pide al proveedor. Si BC devolvió más de una
                     para este material, se puede elegir (CUB, EST, LT, TANQUETA…);
                     si no, se muestra la de siempre como texto. */}
-                {unidadesDe(qaCode).length > 1 ? (
+                {esArticulo && unidadesDe(qaCode).length > 1 ? (
                   <Select ariaLabel="Unidad de compra" value={qaUnidad} onChange={(e) => elegirUnidadQa(e.target.value)} style={{ width: 130 }}>
                     {unidadesDe(qaCode).map((u) => (
                       <option key={u.code} value={u.code}>{u.code}{u.descripcion ? ` · ${u.descripcion}` : ""}</option>
@@ -512,12 +641,20 @@ export default function OrdenDirectaPage() {
               </span>
               {/* La equivalencia a la vista: "1 EST = 255 000 GR". Sin esto nadie sabe
                   cuánto está pidiendo cuando la unidad de compra no es la de inventario. */}
-              {qaEquiv && <div className="ds-body-sm ds-muted" style={{ marginTop: 2 }}>{qaEquiv}</div>}
+              {esArticulo && qaEquiv && <div className="ds-body-sm ds-muted" style={{ marginTop: 2 }}>{qaEquiv}</div>}
             </div>
             <div><label className="ds-label ds-muted" htmlFor={priceId} style={{ display: "block", marginBottom: 4 }}>Precio</label><Input id={priceId} type="number" min={0} value={qaPrecio} onChange={(e) => setQaPrecio(e.target.value)} placeholder="0" style={{ width: 110 }} />{qaRef ? <div className="ds-body-sm ds-muted" style={{ marginTop: 2 }}>últ. compra {money(qaRef.precio, monedaApp(qaRef.moneda))}{qaRef.unidad ? ` / ${qaRef.unidad}` : ""}</div> : null}</div>
-            <Button variant="outline" onClick={agregarLinea} disabled={!qaCode || !(Number(qaQty) > 0) || variantePendiente || tareaPendiente}>+ Agregar línea</Button>
+            <Button variant="outline" onClick={agregarLinea}
+              disabled={!qaCode || !(Number(qaQty) > 0) || (esArticulo && variantePendiente) || (admiteObra && tareaPendiente)}>
+              + Agregar {qaTipo === "cargo" ? "cargo" : "línea"}
+            </Button>
           </div>
-          {qaCode && qaVariantesError && (
+          {catalogoVacio && (
+            <div role="status" className="ds-body-sm ds-muted" style={{ padding: "0 16px 10px" }}>
+              El catálogo de {cfgTipo.etiqueta.toLowerCase()} de Business Central llegó vacío. O no hay ninguno dado de alta, o la página de la API todavía no está publicada en este entorno: mientras tanto no se pueden agregar líneas de este tipo.
+            </div>
+          )}
+          {esArticulo && qaCode && qaVariantesError && (
             <div role="alert" className="ds-body-sm" style={{ color: "var(--ds-color-red-100)", padding: "0 16px 10px" }}>
               No se pudieron cargar las variantes de este material. Si requiere variante, la orden podría fallar en Business Central.
             </div>
@@ -538,24 +675,34 @@ export default function OrdenDirectaPage() {
           )}
           <div className="ds-table-wrap" style={{ boxShadow: "none" }}>
             <table className="ds-table">
-              <thead><tr><th>Artículo</th><th>Destino</th><th className="ds-num">Cantidad</th><th className="ds-num">Precio</th><th className="ds-num">Desc%</th><th className="ds-num">IVA%</th><th className="ds-num">Importe</th><th></th></tr></thead>
+              <thead><tr><th>Tipo</th><th>Artículo / recurso</th><th>Destino</th><th className="ds-num">Cantidad</th><th className="ds-num">Precio</th><th className="ds-num">Desc%</th><th className="ds-num">IVA%</th><th className="ds-num">Importe</th><th></th></tr></thead>
               <tbody>
-                {rows.length === 0 && <tr><td colSpan={8}><div className="empty">Sin líneas. Buscá un artículo del catálogo y agregalo.</div></td></tr>}
+                {rows.length === 0 && <tr><td colSpan={9}><div className="empty">Sin líneas. Elegí el tipo, buscalo en el catálogo y agregalo.</div></td></tr>}
                 {rows.map((r) => (
                   <tr key={r.key}>
+                    {/* El tipo con el que la línea va a nacer EN BC. Se ve en la tabla
+                        porque decide todo lo demás: si entra a inventario, si puede ir
+                        a una obra y cómo la va a encontrar Contabilidad allá. */}
+                    <td><Badge tone={r.tipo === "articulo" ? "gray" : "green"}>{etiquetaTipoLinea(r.tipo)}</Badge></td>
                     <td><div className="ds-clamp-2" title={r.descripcion} style={{ maxWidth: 380, minWidth: 240 }}>{r.descripcion}</div><div className="ds-body-sm ds-muted">{r.articuloId}{r.variantCode ? ` · var. ${r.variantCode}${r.variantNombre ? ` (${r.variantNombre})` : ""}` : ""}</div></td>
                     {/* Destino de ESTA línea: la obra que la consume (con su tarea) o
                         el almacén al que entra, nunca las dos. Se corrige en un diálogo
                         y no con dos selectores dentro de la celda: la tabla ya tiene
                         seis campos editables y no le caben dos buscadores más. */}
                     <td className="ds-body-sm">
-                      <DestinoLinea
-                        almacen={almacen} almacenNombre={nombreAlmacen(almacen)}
-                        obra={r.obra} obraNombre={r.obraNombre}
-                        tarea={r.tarea} tareaNombre={r.tareaNombre} />
-                      <button type="button" className="link-btn" onClick={() => { setEditObra(r); if (r.obra) cargarTareas(r.obra); }}>
-                        {r.obra ? "Cambiar" : "Asignar obra"}
-                      </button>
+                      {r.tipo === "activo_fijo" ? (
+                        // Un activo fijo no entra a bodega ni se carga a una obra: la
+                        // compra se capitaliza contra el activo en BC.
+                        <span className="ds-muted">Se capitaliza contra el activo</span>
+                      ) : (<>
+                        <DestinoLinea
+                          almacen={r.tipo === "articulo" ? almacen : ""} almacenNombre={r.tipo === "articulo" ? nombreAlmacen(almacen) : ""}
+                          obra={r.obra} obraNombre={r.obraNombre}
+                          tarea={r.tarea} tareaNombre={r.tareaNombre} />
+                        <button type="button" className="link-btn" onClick={() => { setEditObra(r); if (r.obra) cargarTareas(r.obra); }}>
+                          {r.obra ? "Cambiar" : "Asignar obra"}
+                        </button>
+                      </>)}
                     </td>
                     <td className="ds-num">
                       {/* La unidad al lado de la cantidad: "40" solo no dice nada
@@ -564,7 +711,7 @@ export default function OrdenDirectaPage() {
                         <input className="ds-cell-input" aria-label="Cantidad" type="number" min={0} value={r.cantidad} style={{ width: 70 }} onChange={(e) => setRow(r.key, { cantidad: e.target.value })} />
                         {/* La unidad de la línea se puede corregir acá mismo: al
                             cambiarla, el precio se convierte con ella. */}
-                        {opcionesFila(r.articuloId, r.unidad).length > 1 ? (
+                        {r.tipo === "articulo" && opcionesFila(r.articuloId, r.unidad).length > 1 ? (
                           <span title={equivFila(r) ?? undefined}>
                             <Select ariaLabel="Unidad de compra" className="ds-select--celda" value={r.unidad}
                               style={{ width: 104 }} onChange={(e) => elegirUnidadFila(r, e.target.value)}>
@@ -596,7 +743,7 @@ export default function OrdenDirectaPage() {
           <div className="row row--between wrap gap-3" style={{ alignItems: "center", marginBottom: cargos.length ? 12 : 0 }}>
             <div className="col" style={{ gap: 2 }}>
               <span className="ds-subtitle">Cargos de producto</span>
-              <span className="ds-muted ds-body-sm">Transporte, seguro, etc. Se reparten entre los artículos según el método elegido.</span>
+              <span className="ds-muted ds-body-sm">Transporte, seguro, etc. Se reparten entre los artículos según el método elegido. También se agregan desde la barra de arriba eligiendo el tipo «Cargo (Prod.)».</span>
             </div>
             <div className="row gap-3 wrap" style={{ alignItems: "flex-end" }}>
               {cargos.length > 0 && (

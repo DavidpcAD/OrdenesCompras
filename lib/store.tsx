@@ -8,7 +8,8 @@ import type {
   NotaCreditoLinea, MotivoNC,
 } from "./types";
 import * as seed from "./seed";
-import { devolverPendienteAPedidos, nextNumero, nowISO, ordenEstaCompleta, PERSONA_POR_ROL, todayISO } from "./helpers";
+import { devolverPendienteAPedidos, esLineaRecibible, nextNumero, nowISO, ordenEstaCompleta, PERSONA_POR_ROL, todayISO } from "./helpers";
+import { componerNotaCierre, detalleDeCierre, lineaCancelada, motivoObligatorio, quitarNotaCierre } from "./cierre-solicitud.ts";
 import { api, USE_API as USE_API_BUILD } from "./api";
 import { instalarGuardFetch, EVENTO_SESION_VENCIDA } from "./fetch-guard";
 
@@ -142,6 +143,11 @@ interface StoreShape {
   // Devuelve al ingeniero las LÍNEAS elegidas de una solicitud. El pedido entero
   // pasa a "Devuelto" solo si no le queda ninguna línea viva (lo decide el server).
   devolverPedido: (id: string, motivo: string, lineaIds: string[]) => Promise<{ devueltas: number; pedidoDevuelto: boolean }>;
+  // ARCHIVAR una solicitud que quedó a medias: lo que no se ordenó ya no se compra.
+  // El motivo es obligatorio (lo exige también el server) y queda en la nota del
+  // pedido, que es lo que el ingeniero ve del otro lado.
+  cerrarSolicitud: (id: string, motivo: string) => Promise<{ lineasCanceladas: number; unidadesCanceladas: number }>;
+  reabrirSolicitud: (id: string, motivo?: string) => Promise<void>;
   // Devolver al ingeniero líneas que YA están en una orden (Abierta/Rechazada): la
   // línea sale de la orden, el saldo vuelve a la solicitud y queda marcada devuelta.
   devolverLineasOrden: (idOrden: string, motivo: string, lineaIds: string[]) => Promise<{ devueltas: number; ordenDescartada: boolean; bcAviso?: string }>;
@@ -531,6 +537,11 @@ export function StoreProvider({ children, useApi }: { children: React.ReactNode;
             return pl;
           });
           if (!touched) return p;
+          // La ARCHIVADA no revive por armarle una orden a una línea suya (pasa en
+          // modo demo con un borrador viejo de la libreta local). Mismo corte que
+          // `devolverPendienteAPedidos` en helpers.ts, que es la otra copia de esta
+          // regla: si se arregla una sola, la otra des-cierra la solicitud igual.
+          if (p.estado === "cerrado") return { ...p, lineas: ls };
           const sinSaldo = ls.every((pl) => pl.cantidadOrdenada >= pl.cantidad - 1e-9);
           return { ...p, lineas: ls, estado: (sinSaldo ? "en_orden" : "aprobado") as Pedido["estado"] };
         });
@@ -592,7 +603,7 @@ export function StoreProvider({ children, useApi }: { children: React.ReactNode;
           p.lineas.some((l) => delta.has(l.id))
             ? { ...p, lineas: p.lineas.map((l) => (delta.has(l.id) ? { ...l, cantidadOrdenada: Math.max(0, l.cantidadOrdenada + delta.get(l.id)!) } : l)) }
             : p);
-        const mov = mkMov({ entidad: "orden", idEntidad: id, documentoNo: prevo?.numero ?? "", tipoMovimiento: "editado", detalle: `${lineas.filter((l) => l.tipo === "articulo").length} línea(s)` });
+        const mov = mkMov({ entidad: "orden", idEntidad: id, documentoNo: prevo?.numero ?? "", tipoMovimiento: "editado", detalle: `${lineas.filter(esLineaRecibible).length} línea(s)` });
         return { ...d, ordenes, pedidos, movimientos: [mov, ...d.movimientos] };
       });
       return {};
@@ -686,7 +697,9 @@ export function StoreProvider({ children, useApi }: { children: React.ReactNode;
       setData((d) => {
         const o = d.ordenes.find((x) => x.id === id);
         if (!o) return d;
-        pendienteDevuelto = o.lineas.filter((l) => l.tipo === "articulo")
+        // Mismo criterio que el SQL (`ISNULL(tipoLinea,'articulo') <> 'cargo'`):
+        // el saldo sin recibir también incluye recurso y activo fijo.
+        pendienteDevuelto = o.lineas.filter(esLineaRecibible)
           .reduce((s, l) => s + Math.max(0, l.cantidad - l.cantidadRecibida), 0);
         const mov = mkMov({ entidad: "orden", idEntidad: id, documentoNo: o.numero, tipoMovimiento: "cerrado",
           estadoAnterior: o.estado, estadoNuevo: "completado", detalle: motivo });
@@ -711,7 +724,7 @@ export function StoreProvider({ children, useApi }: { children: React.ReactNode;
         const o = d.ordenes.find((x) => x.id === id);
         if (!o) return d;
         const pendientes = o.lineas
-          .filter((l) => l.tipo === "articulo" && l.cantidad - l.cantidadRecibida > 0)
+          .filter((l) => esLineaRecibible(l) && l.cantidad - l.cantidadRecibida > 0)
           .map((l) => ({ ...l, id: uid(), cantidad: l.cantidad - l.cantidadRecibida, cantidadRecibida: 0, cantidadFacturada: 0 }));
         if (!pendientes.length) return d;
         const numero = nextNumero("CP", d.ordenes.map((x) => x.numero));
@@ -905,6 +918,73 @@ export function StoreProvider({ children, useApi }: { children: React.ReactNode;
       return resultado;
     };
 
+    // ---------------- ARCHIVAR / DESARCHIVAR UNA SOLICITUD ----------------
+    // Cerrar es distinto de devolver: devolver le manda el material de vuelta al
+    // ingeniero para que lo corrija; cerrar lo da de baja porque ya no se compra.
+    const cerrarSolicitud: StoreShape["cerrarSolicitud"] = async (id, motivo) => {
+      const limpio = motivoObligatorio(motivo);
+      if (USE_API) {
+        const r = await api.cerrarSolicitud(id, { motivo: limpio, usuario: persona, rol: rolActual });
+        await refreshFromApi();
+        return { lineasCanceladas: Number(r?.lineasCanceladas ?? 0), unidadesCanceladas: Number(r?.unidadesCanceladas ?? 0) };
+      }
+      let out = { lineasCanceladas: 0, unidadesCanceladas: 0 };
+      setData((d) => {
+        const prev = d.pedidos.find((p) => p.id === id);
+        if (!prev) return d;
+        // Mismo criterio que el server: se dan de baja las líneas con saldo, sin
+        // contar las devueltas (esas ya estaban bloqueadas).
+        const conSaldo = prev.lineas.filter((l) => !l.devuelta && l.cantidad - l.cantidadOrdenada > 1e-9);
+        const unidades = conSaldo.reduce((s, l) => s + (l.cantidad - l.cantidadOrdenada), 0);
+        out = { lineasCanceladas: conSaldo.length, unidadesCanceladas: unidades };
+        const mov = mkMov({
+          entidad: "pedido", idEntidad: id, documentoNo: prev.numero, tipoMovimiento: "cerrado",
+          estadoAnterior: prev.estado, estadoNuevo: "cerrado",
+          detalle: detalleDeCierre({ nombres: conSaldo.map((l) => l.descripcion), unidades }, limpio),
+        });
+        return {
+          ...d,
+          pedidos: d.pedidos.map((p) => (p.id === id ? {
+            ...p,
+            estado: "cerrado" as Pedido["estado"],
+            notas: componerNotaCierre(limpio, p.notas),
+            // En SQL esto es derivado (mapPedido); acá se escribe en el objeto para
+            // que el resto de la app lo vea igual sin conocer la diferencia.
+            lineas: p.lineas.map((l) => ({ ...l, cerrada: lineaCancelada(true, l.cantidad, l.cantidadOrdenada) || undefined })),
+          } : p)),
+          movimientos: [mov, ...d.movimientos],
+        };
+      });
+      return out;
+    };
+
+    const reabrirSolicitud: StoreShape["reabrirSolicitud"] = async (id, motivo) => {
+      if (USE_API) {
+        await api.reabrirSolicitud(id, { motivo, usuario: persona, rol: rolActual });
+        await refreshFromApi();
+        return;
+      }
+      setData((d) => {
+        const prev = d.pedidos.find((p) => p.id === id);
+        if (!prev || prev.estado !== "cerrado") return d;
+        const conSaldo = prev.lineas.some((l) => l.cantidad - l.cantidadOrdenada > 1e-9);
+        const estado = (conSaldo ? "aprobado" : "en_orden") as Pedido["estado"];
+        const mov = mkMov({
+          entidad: "pedido", idEntidad: id, documentoNo: prev.numero, tipoMovimiento: "reabierto",
+          estadoAnterior: "cerrado", estadoNuevo: estado,
+          detalle: `Se deshizo el archivado${String(motivo ?? "").trim() ? ` · Motivo: ${String(motivo).trim()}` : ""}`,
+        });
+        return {
+          ...d,
+          pedidos: d.pedidos.map((p) => (p.id === id ? {
+            ...p, estado, notas: quitarNotaCierre(p.notas) || undefined,
+            lineas: p.lineas.map((l) => ({ ...l, cerrada: undefined })),
+          } : p)),
+          movimientos: [mov, ...d.movimientos],
+        };
+      });
+    };
+
     // ---------------- ALINEAR EL IVA CON BUSINESS CENTRAL ----------------
     const alinearIvaConBc: StoreShape["alinearIvaConBc"] = async (idOrden) => {
       if (!USE_API) throw new Error("Sin Business Central no hay IVA que copiar (la app está en modo de prueba).");
@@ -931,7 +1011,7 @@ export function StoreProvider({ children, useApi }: { children: React.ReactNode;
         const vanVolver = o.lineas.filter((l) => ids.has(l.id) && l.tipo === "articulo" && l.pedidoLineaId);
         if (!vanVolver.length) return d;
         const quedan = o.lineas.filter((l) => !ids.has(l.id));
-        const sinMaterial = !quedan.some((l) => l.tipo === "articulo");
+        const sinMaterial = !quedan.some(esLineaRecibible);
         // Igual que el server (`devolverLineasDeOrden`): sin material se descarta SOLO
         // si la orden todavía no existe en BC. Si ya vive allá se queda esperando la
         // corrección del ingeniero, con su N.º intacto.
@@ -1035,7 +1115,7 @@ export function StoreProvider({ children, useApi }: { children: React.ReactNode;
       maquinas: seed.maquinas, almacenes: seed.almacenes,
       pedidos: data.pedidos, ordenes: data.ordenes, recepciones: data.recepciones, movimientos: data.movimientos,
       addPedido, editPedido, setPedidoEstado, deletePedido,
-      createOrden, updateOrden, setOrdenEstado, corregirBcNumber, cerrarOrden, descartarOrden, retomarOrden, nuevaOrdenConPendiente, registrarRecepcion, guardarFotosRecepcion, facturarRecepcion, devolverPedido, devolverLineasOrden, alinearIvaConBc, devolverOrden, reset,
+      createOrden, updateOrden, setOrdenEstado, corregirBcNumber, cerrarOrden, descartarOrden, retomarOrden, nuevaOrdenConPendiente, registrarRecepcion, guardarFotosRecepcion, facturarRecepcion, devolverPedido, cerrarSolicitud, reabrirSolicitud, devolverLineasOrden, alinearIvaConBc, devolverOrden, reset,
       notasCredito, marcarNotasCredito, cargarNotasCredito, resolverNotaCredito,
       notificaciones: data.notificaciones, marcarNotifsLeidas, marcarNotifLeida,
       borrador, setBorrador,

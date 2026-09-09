@@ -42,18 +42,24 @@ IF COL_LENGTH('dbo.PedidoCompra','idClasificacion') IS NULL
 GO
 
 /* ---- Matriz por obra × CLASIFICACIÓN, estado derivado del pedido ------------
-   dbo.Estado.estado guarda "Borrador"/"Aprobado"/"En orden"/"Cerrado". --------- */
+   dbo.Estado.estado guarda "Borrador"/"Aprobado"/"En orden"/"Cerrado".
+   "Cerrado" = solicitud ARCHIVADA por Proveeduría (lo que no se ordenó ya no se
+   compra): va en rango 0 para que NO participe del MAX. Antes era 4 = 'ENTREGADO',
+   o sea el máximo, y una solicitud cancelada le pintaba a Ingeniería la celda como
+   material entregado, tapando además el estado real de los otros pedidos de esa
+   celda. Ver sql/matriz_archivada_no_es_entregado.sql, que es la migración para las
+   bases donde la vista ya está creada. --------------------------------------- */
 CREATE OR ALTER VIEW dbo.vw_MatrizObraClasificacion AS
 WITH p AS (
     SELECT o.idObra, pc.idClasificacion,
-        CASE e.estado WHEN 'Cerrado' THEN 4 WHEN 'En orden' THEN 3 WHEN 'Aprobado' THEN 2 WHEN 'Borrador' THEN 1 ELSE 0 END AS rk
+        CASE e.estado WHEN 'En orden' THEN 3 WHEN 'Aprobado' THEN 2 WHEN 'Borrador' THEN 1 ELSE 0 END AS rk
     FROM dbo.PedidoCompra pc
     JOIN dbo.Estado e ON e.idEstado = pc.idEstado
     JOIN dbo.Obra o   ON o.numeroObra = pc.obra
     WHERE pc.esEliminada = 0 AND pc.idClasificacion IS NOT NULL
 )
 SELECT idObra, idClasificacion,
-    CASE MAX(rk) WHEN 4 THEN 'ENTREGADO' WHEN 3 THEN 'COMPRADO' WHEN 2 THEN 'PEDIDO' WHEN 1 THEN 'BORRADOR' ELSE NULL END AS estado
+    CASE MAX(rk) WHEN 3 THEN 'COMPRADO' WHEN 2 THEN 'PEDIDO' WHEN 1 THEN 'BORRADOR' ELSE NULL END AS estado
 FROM p
 GROUP BY idObra, idClasificacion;
 GO

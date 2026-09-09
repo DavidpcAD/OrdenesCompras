@@ -23,7 +23,10 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
     if (!o?.bcNumber) return NextResponse.json({ lineas: [] });
     const bc = await bcLineasPedido(o.bcNumber);
     const lineas = (bc?.lineas ?? [])
-      .filter((l) => l.tipo === "articulo" && l.itemNo)
+      // Sin los cargos: BC les reescribe cantidad y precio al repartirlos, así que
+      // su precio no sirve para reponer una línea. El resto (artículo, recurso,
+      // activo fijo) tiene el precio que se le negoció al proveedor.
+      .filter((l) => l.tipo !== "cargo" && l.tipo !== "otro" && l.itemNo)
       .map((l) => ({
         itemNo: l.itemNo, variantCode: l.variantCode ?? "", unidad: l.unidad ?? "",
         precioUnitario: l.precioUnitario, cantidad: l.cantidad, almacen: l.almacen ?? "",

@@ -66,6 +66,14 @@ function etiqueta(m: Movimiento): string {
     if (m.tipoMovimiento === "bc_desalineado") return "⚠ La orden y Business Central NO coinciden";
     if (m.tipoMovimiento === "bc_alineado") return "La orden y Business Central coinciden";
   }
+  if (m.entidad === "pedido") {
+    // El tipo "cerrado" lo comparten la orden y la solicitud, y se distinguen solo
+    // por `entidad`: en la traza de una solicitud que además tiene una orden cerrada
+    // aparecían dos eventos que decían literalmente lo mismo. El motivo va en el
+    // detalle del movimiento, que el Timeline ya imprime al lado.
+    if (m.tipoMovimiento === "cerrado") return "Solicitud archivada por Proveeduría";
+    if (m.tipoMovimiento === "reabierto" && m.estadoAnterior === "cerrado") return "Se deshizo el archivado";
+  }
   if (m.entidad === "recepcion" && m.tipoMovimiento === "creado") return "Factura registrada";
   return LABEL[m.tipoMovimiento] ?? m.tipoMovimiento;
 }
@@ -96,6 +104,9 @@ function colorPunto(m: Movimiento): string {
     case "creado": return "var(--ds-color-gray-300)";     // creado · gris
     case "aprobado": return "var(--ds-color-green-100)";  // aprobado · verde lima
     case "reabierto": return "var(--ds-color-gray-400)";
+    // Archivada a mano · neutro, el mismo gris que la orden cerrada. Sin este case
+    // caía al default gris-300 y no se distinguía de "creado", que es el otro extremo.
+    case "cerrado": return "var(--ds-color-gray-400)";
     case "eliminado":
     case "rechazado": return "var(--ds-color-red-100)";
   }

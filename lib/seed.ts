@@ -1,4 +1,4 @@
-import type { Articulo, Almacen, Maquina, Movimiento, Obra, Orden, Pedido, Proveedor, Recepcion } from "./types";
+import type { Articulo, Almacen, Maquina, Movimiento, Obra, Orden, Pedido, Proveedor, Recepcion } from "./types.ts";
 
 export const proveedores: Proveedor[] = [
   { id: "p1", code: "PROV-001305", nombre: "PRECISE FORMS INC", paymentTermsCode: "CONTADO", paymentMethodCode: "TRANSFER", currencyCode: "USD", cedula: "3-012-882795" },
@@ -76,6 +76,24 @@ export const pedidos: Pedido[] = [
     lineas: [
       { id: "pl7", articuloId: "r2", descripcion: "FILTRO HIDRÁULICO CAT 320", cantidad: 4, unidad: "UND", almacen: "ALM-GRAL", cantidadOrdenada: 0 },
       { id: "pl8", articuloId: "r3", descripcion: "JUEGO DIENTES DE CUCHARÓN", cantidad: 1, unidad: "JGO", almacen: "ALM-GRAL", cantidadOrdenada: 0 },
+    ],
+  },
+  {
+    // Solicitud ARCHIVADA, que es el caso que este feature resuelve: se ordenó una
+    // parte (los sacos de cemento) y el resto ya no se va a comprar. Sirve para ver
+    // el panel "Archivadas", el badge y la tarjeta del motivo sin base de datos.
+    // Solo modo demo: en modo API el store arranca vacío (ver freshData en store.tsx)
+    // y esta semilla nunca entra.
+    id: "ped4", numero: "PED-000121", tipoSolicitud: "material",
+    obraCodigo: "OBRA-001", obraNombre: "Torre Escazú — Fase 2",
+    solicitante: "Laura Jiménez", fecha: "2026-06-11", estado: "cerrado", prioridad: "normal",
+    notas: "⛔ Cerrada: Cambió el alcance de la obra — la losa del nivel 3 se pasó a la etapa 2 · Material para la losa del nivel 3.",
+    lineas: [
+      // Esta se compró entera: NO se marca cancelada, y por eso no va tachada.
+      { id: "pl9", articuloId: "a7", descripcion: "CEMENTO GRIS 50KG", cantidad: 80, unidad: "SACO", almacen: "ALM-CENTRAL", cantidadOrdenada: 80 },
+      // Estas dos son las que el cierre dio de baja.
+      { id: "pl10", articuloId: "a6", descripcion: "VARILLA #4 GRADO 40 (6m)", cantidad: 120, unidad: "UND", almacen: "ALM-CENTRAL", cantidadOrdenada: 0, cerrada: true },
+      { id: "pl11", articuloId: "a8", descripcion: "TUBO PVC 4\" SDR 32.5 (6m)", cantidad: 25, unidad: "UND", almacen: "ALM-CENTRAL", cantidadOrdenada: 10, cerrada: true },
     ],
   },
 ];

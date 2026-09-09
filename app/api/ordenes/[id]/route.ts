@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getOrden, setOrdenEstado, setOrdenBcNumber, updateOrden, descartarOrden, ordenTieneRecepciones, obrasDeLineasPedido, asignarBcNumber, guardarChequeoBc, guardarVariantesResueltas, anotarEncabezadoBc, MSG_NO_REABRIR } from "@/lib/repo";
-import { bcReopenPedido, bcReplaceOrderLines, bcCrearPedidoAbierto, crearEnBcAlEnviar, lineasOrdenParaBc, obrasSinTarea, lineasSinUnidad, lineasSinAlmacen, resolverVariantesRequeridas, sanearObrasDeLineas, avisoDeSaneo, bcOrdenTotales, bcEstadoDelPedido, chequearOrdenContraBc, lineasReplaceParaCotejo, lineasOrdenParaCotejo, paredAprobacionActiva, itemsBloqueadosDeLineas, bcSincronizarEncabezado, bcBorrarPedidoAbierto } from "@/lib/bc";
+import { bcReopenPedido, bcReplaceOrderLines, bcCrearPedidoAbierto, crearEnBcAlEnviar, lineasOrdenParaBc, obrasSinTarea, lineasSinUnidad, lineasSinAlmacen, resolverVariantesRequeridas, sanearObrasDeLineas, avisoDeSaneo, bcOrdenTotales, bcEstadoDelPedido, chequearOrdenContraBc, lineasReplaceParaCotejo, lineasOrdenParaCotejo, paredAprobacionActiva, itemsBloqueadosDeLineas, bcSincronizarEncabezado, bcBorrarPedidoAbierto, conPedidoAbierto } from "@/lib/bc";
 import { ordenLineaImporte } from "@/lib/helpers";
 import { actor } from "@/lib/actor";
 
@@ -102,7 +102,9 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
       // N.º de BC, ver `devolverLineasDeOrden`). Se corta acá porque los guards de
       // abajo son POR LÍNEA: con cero líneas los pasa todos y el error se lo llevaría
       // BC, que rechaza el reemplazo con una lista vacía.
-      if (!o.lineas.some((l) => l.tipo === "articulo")) {
+      // Criterio: "no tiene NADA que comprar". Una directa de puro servicio o de un
+      // activo fijo sí tiene qué aprobar, aunque no lleve una línea de artículo.
+      if (!o.lineas.some((l) => l.tipo !== "cargo")) {
         return NextResponse.json({
           error: "La orden NO se envió a aprobación: no tiene material. Está esperando la corrección del ingeniero — cuando la devuelva, agregá la línea con «+ De solicitudes» al editar la orden y volvé a enviarla.",
         }, { status: 409 });
@@ -186,7 +188,11 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
         // Después las líneas, por si un edit no llegó a BC. Que las líneas fallen NO
         // frena el envío (el pedido existe y se puede lanzar): va como aviso.
         try {
-          const sync = await bcSincronizarEncabezado(o.bcNumber, { vendorNo: o.proveedorNo || o.proveedorId, currencyCode: o.currencyCode, lineas: lineasBc });
+          // Si el pedido está Lanzado en BC, se des-lanza y se vuelve a empujar: el
+          // cambio de acá TIENE que llegar allá, y el pedido queda Abierto para que
+          // Aprobación lo lance (ver `conPedidoAbierto`).
+          const { valor: sync } = await conPedidoAbierto(o.bcNumber, () =>
+            bcSincronizarEncabezado(o.bcNumber!, { vendorNo: o.proveedorNo || o.proveedorId, currencyCode: o.currencyCode, lineas: lineasBc }));
           if (sync.estado === "cambiado") {
             const texto = [`Al pedido ${o.bcNumber} en Business Central se le cambió ${sync.cambios.join(" y ")}, como dice la orden.`, sync.aviso].filter(Boolean).join(" ");
             bcAviso = texto;
@@ -196,7 +202,8 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
           fallaEncabezado = String(e?.message ?? e);
         }
         try {
-          const r = await bcReplaceOrderLines(o.bcNumber, lineasBc);
+          const { valor: r, reabierto } = await conPedidoAbierto(o.bcNumber, () => bcReplaceOrderLines(o.bcNumber!, lineasBc));
+          if (reabierto) bcAviso = [bcAviso, `El pedido ${o.bcNumber} estaba Lanzado en BC: se reabrió para poder pasarle los cambios y quedó ABIERTO, listo para que Aprobación lo lance.`].filter(Boolean).join(" · ");
           if (r.omitidas.length) bcAviso = [bcAviso, `Enviada a aprobación. OJO: BC no recibió ${r.omitidas.length} línea(s) — ${r.omitidas.join("; ")}.`].filter(Boolean).join(" · ");
           // El grupo de IVA que Contabilidad puso a mano en BC (una importación en
           // EXENTO-BIENES) sobrevive a la reescritura; si no se pudo, se dice.
@@ -382,7 +389,10 @@ export async function PUT(req: Request, { params }: { params: { id: string } }) 
         // Si BC se niega, se sigue con las líneas igual: el cotejo de abajo lo deja
         // escrito en la orden con el motivo real.
         try {
-          const sync = await bcSincronizarEncabezado(o.bcNumber, { vendorNo: o.proveedorNo || o.proveedorId, currencyCode: o.currencyCode, lineas: lineasBc });
+          // Pedido Lanzado en BC: se des-lanza y se empuja igual. Queda Abierto — de
+          // acá la orden se manda a aprobación y Aprobación es quien lanza.
+          const { valor: sync } = await conPedidoAbierto(o.bcNumber, () =>
+            bcSincronizarEncabezado(o.bcNumber!, { vendorNo: o.proveedorNo || o.proveedorId, currencyCode: o.currencyCode, lineas: lineasBc }));
           if (sync.estado === "cambiado") {
             const texto = [`Al pedido ${o.bcNumber} en Business Central se le cambió ${sync.cambios.join(" y ")}, como quedó en la orden.`, sync.aviso].filter(Boolean).join(" ");
             avisos.push(texto);
@@ -391,7 +401,8 @@ export async function PUT(req: Request, { params }: { params: { id: string } }) 
         } catch (e: any) {
           avisos.push(`Se guardó acá, pero al pedido ${o.bcNumber} en BC NO se le pudo cambiar el encabezado (proveedor/moneda): ${String(e?.message ?? e)}.`);
         }
-        const r = await bcReplaceOrderLines(o.bcNumber, lineasBc);
+        const { valor: r, reabierto } = await conPedidoAbierto(o.bcNumber, () => bcReplaceOrderLines(o.bcNumber!, lineasBc));
+        if (reabierto) avisos.push(`El pedido ${o.bcNumber} estaba Lanzado en BC: se reabrió para pasarle los cambios y quedó ABIERTO. Mandá la orden a aprobación para que la lancen de nuevo.`);
         if (r.omitidas.length) avisos.push(`Guardado. OJO: BC no recibió ${r.omitidas.length} línea(s) — ${r.omitidas.join("; ")}.`);
         if (r.ivaRestaurado.length) avisos.push(`Las líneas conservan el grupo de IVA que tenían en BC (${r.ivaRestaurado.join(", ")}).`);
         if (r.avisoIva) avisos.push(r.avisoIva);

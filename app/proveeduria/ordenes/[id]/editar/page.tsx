@@ -8,7 +8,7 @@ import { AgregarLineasSolicitud } from "@/components/agregar-lineas-solicitud";
 import { IconWarning } from "@/components/icons";
 import { Combobox } from "@/components/combobox";
 import { useStore } from "@/lib/store";
-import { money, num, ordenEsDirecta, ordenEsperaCorreccion, lineasCorregidasDeOrden, ordenPedidos, almacenesParaRecepcion, esAlmacenFisico, repartoDeLineaSolicitud, pedidoLineaPendiente, obraParaOrden, ultimoPrecioProveedor, monedaApp, numeroOrden } from "@/lib/helpers";
+import { etiquetaTipoLinea, money, num, ordenEsDirecta, ordenEsperaCorreccion, lineasCorregidasDeOrden, ordenPedidos, almacenesParaRecepcion, esAlmacenFisico, repartoDeLineaSolicitud, pedidoLineaPendiente, obraParaOrden, ultimoPrecioProveedor, monedaApp, numeroOrden } from "@/lib/helpers";
 import { precioEnUnidad, precioEntreUnidades, cantidadEntreUnidades, equivalencia, equivalenciaDeUnidad, mismaMoneda, codigoDeItem, opcionesDeUnidad, type UnidadDeItem } from "@/lib/unidad";
 import { useVariantes } from "@/lib/use-variantes";
 import type { OrdenLinea } from "@/lib/types";
@@ -17,15 +17,20 @@ import type { OrdenLinea } from "@/lib/types";
 //   almacen  -> locationCode: DÓNDE entra el material en BC.
 //   proyecto -> Project No. (Job): a qué OBRA se carga como consumo. Opcional, y
 //               tiene que existir en BC.
-interface Row { key: string; articuloId: string; variantCode?: string; descripcion: string; unidad: string; unidadBase?: string; factorCompra?: number; almacen: string; cantidad: string; precio: string; iva: string; descuento: string; proyecto?: string; taskNo?: string; pedidoLineaId?: string; pedidoNumero?: string; }
+interface Row { key: string; tipo: OrdenLinea["tipo"]; articuloId: string; variantCode?: string; descripcion: string; unidad: string; unidadBase?: string; factorCompra?: number; almacen: string; cantidad: string; precio: string; iva: string; descuento: string; proyecto?: string; taskNo?: string; pedidoLineaId?: string; pedidoNumero?: string; }
 type Obra = { codigo: string; nombre: string };
 type Tarea = { jobTaskNo: string; descripcion: string; tipo: string };
 const uid = () => Math.random().toString(36).slice(2, 9);
 
 // Líneas de la orden -> filas editables. Se usa en el estado inicial y al hidratar.
+//
+// Entra TODO lo que no es cargo (material, recurso, activo fijo). Con el filtro
+// `tipo === "articulo"` que tenía antes, editar una orden que llevara un servicio o
+// un activo fijo no solo no lo mostraba: al guardar, `ls` se armaba con estas filas
+// y la línea desaparecía del SQL y del pedido en BC sin que nadie lo viera.
 const filasDeOrden = (lineas: OrdenLinea[]): Row[] =>
-  lineas.filter((l) => l.tipo === "articulo").map((l) => ({
-    key: l.id, articuloId: l.articuloId ?? "", variantCode: l.variantCode, descripcion: l.descripcion, unidad: l.unidad,
+  lineas.filter((l) => l.tipo !== "cargo").map((l) => ({
+    key: l.id, tipo: l.tipo, articuloId: l.articuloId ?? "", variantCode: l.variantCode, descripcion: l.descripcion, unidad: l.unidad,
     unidadBase: l.unidadBase, factorCompra: l.factorCompra, almacen: l.almacen ?? "",
     cantidad: String(l.cantidad), precio: String(l.precioUnitario), iva: String(l.ivaPct ?? 13), descuento: String(l.descuentoPct ?? 0),
     proyecto: l.proyecto, taskNo: l.taskNo, pedidoLineaId: l.pedidoLineaId, pedidoNumero: l.pedidoNumero,
@@ -36,6 +41,8 @@ const filasDeOrden = (lineas: OrdenLinea[]): Row[] =>
 // SQL, así que el selector arrancaba SIEMPRE en ALM-GRAL, y como además no se
 // mandaba a ninguna parte, cambiarlo no movía nada ni acá ni en BC.
 function almacenComun(lineas: OrdenLinea[]): string {
+  // Solo las de ARTÍCULO: un recurso o un activo fijo no entran a ninguna bodega y
+  // van sin almacén, así que contarlas dejaría el selector vacío ("varios").
   const codigos = [...new Set(lineas.filter((l) => l.tipo === "articulo").map((l) => (l.almacen ?? "").trim()))];
   return codigos.length === 1 ? codigos[0] : "";
 }
@@ -143,7 +150,7 @@ export default function EditarOrdenPage() {
     // de arriba queda en blanco), el de la primera línea que tenga uno: una línea sin
     // almacén la rechaza el envío a aprobación, y acá hay con qué rellenarla.
     const almLinea = almacen || rows.find((r) => (r.almacen ?? "").trim())?.almacen || "";
-    setRows((rs) => [...rs, { key: `m-${uid()}`, articuloId: it.code, descripcion: it.descripcion, unidad: it.unidad, unidadBase: it.unidadBase, factorCompra: it.factorCompra, almacen: almLinea, cantidad: String(Number(qaQty)), precio: String(Number(qaPrecio) || 0), iva: "13", descuento: "0", pedidoNumero: "Manual" }]);
+    setRows((rs) => [...rs, { key: `m-${uid()}`, tipo: "articulo" as const, articuloId: it.code, descripcion: it.descripcion, unidad: it.unidad, unidadBase: it.unidadBase, factorCompra: it.factorCompra, almacen: almLinea, cantidad: String(Number(qaQty)), precio: String(Number(qaPrecio) || 0), iva: "13", descuento: "0", pedidoNumero: "Manual" }]);
     setQaCode(""); setQaQty(""); setQaPrecio(""); setQaRef(null);
   }
 
@@ -154,7 +161,7 @@ export default function EditarOrdenPage() {
 
   // Unidades de los materiales de las líneas, una sola vez por material.
   useEffect(() => {
-    for (const itemNo of new Set(rows.map((r) => codigoDeItem(r.articuloId)).filter(Boolean))) {
+    for (const itemNo of new Set(rows.filter((r) => r.tipo === "articulo").map((r) => codigoDeItem(r.articuloId)).filter(Boolean))) {
       if (unidadesPedidasRef.current.has(itemNo)) continue;
       unidadesPedidasRef.current.add(itemNo);
       fetch(`/api/bc/unidades?item=${encodeURIComponent(itemNo)}`)
@@ -167,7 +174,7 @@ export default function EditarOrdenPage() {
   // tabla. BC EXIGE la variante en el ítem que la tiene, pero solo lo dice al LANZAR
   // el pedido — o sea que el error le caía al aprobador y acá no había forma de
   // elegirla (venía la que puso Ingeniería, o ninguna).
-  const variantes = useVariantes(rows.map((r) => r.articuloId));
+  const variantes = useVariantes(rows.filter((r) => r.tipo === "articulo").map((r) => r.articuloId));
   // Con una sola opción se pone sola: no hay nada que elegir y BC la exige igual.
   useEffect(() => {
     setRows((rs) => {
@@ -299,7 +306,7 @@ export default function EditarOrdenPage() {
     const bc = (orden?.bcNumber ?? "").trim();
     // Solo hace falta cuando la orden se quedó sin material: es el único caso donde
     // hay que recuperar precios que la orden ya no tiene.
-    const sinMaterial = !!orden && !orden.lineas.some((l) => l.tipo === "articulo");
+    const sinMaterial = !!orden && !orden.lineas.some((l) => l.tipo !== "cargo");
     if (!bc || !sinMaterial) return;
     let vivo = true;
     fetch(`/api/ordenes/${orden!.id}/lineas-bc`, { cache: "no-store" })
@@ -417,7 +424,8 @@ export default function EditarOrdenPage() {
       : provSel ? ultimoPrecioProveedor(ordenes, l.articuloId, provSel.code) : null;
     const key = `s-${uid()}`;
     setRows((rs) => [...rs, {
-      key, articuloId: l.articuloId, variantCode: l.variantCode ?? "", descripcion: l.descripcion,
+      // Viene de una SOLICITUD de Ingeniería, así que siempre es material.
+      key, tipo: "articulo" as const, articuloId: l.articuloId, variantCode: l.variantCode ?? "", descripcion: l.descripcion,
       unidad: l.unidad, unidadBase: l.unidadBase, factorCompra: l.factorCompra,
       // El almacén de arriba manda al guardar; el de la línea es el que puso quien
       // pidió el material y sirve cuando la orden tiene almacenes distintos.
@@ -500,18 +508,25 @@ export default function EditarOrdenPage() {
       const ls: Omit<OrdenLinea, "id" | "cantidadRecibida" | "cantidadFacturada">[] = rows.map((r) => ({
         // La variante viaja SIEMPRE: sin esto, editar una orden le borraba el color/
         // medida a la línea en el SQL y la reescribía en BC con la variante vacía.
-        tipo: "articulo", articuloId: r.articuloId, variantCode: r.variantCode || undefined,
+        // El TIPO se conserva: la fila puede ser un recurso o un activo fijo, y
+        // mandarlo como artículo hace que BC busque un artículo con ese N.º y
+        // rechace la reescritura completa del pedido.
+        tipo: r.tipo, articuloId: r.articuloId, variantCode: r.tipo === "articulo" ? (r.variantCode || undefined) : undefined,
         pedidoLineaId: r.pedidoLineaId, pedidoNumero: r.pedidoNumero,
         descripcion: r.descripcion, cantidad: Number(r.cantidad), unidad: r.unidad,
         // El almacén de arriba manda sobre todas las líneas (es el punto de
         // "cambiarle el centro de costo a la orden"). Vacío = cada línea se queda
         // con el suyo, que es lo que pasa cuando la orden tiene varios.
-        almacen: almacen || r.almacen,
+        // Solo el material entra a una bodega: al recurso y al activo fijo no se les
+        // pone almacén (BC solo lo acepta en líneas de artículo).
+        almacen: r.tipo === "articulo" ? (almacen || r.almacen) : "",
         precioUnitario: Number(r.precio), ivaPct: Number(r.iva) || 0, descuentoPct: Number(r.descuento) || 0,
         // La obra viaja a BC como Project No. y SOLO si la línea de verdad tiene una:
         // antes se caía al almacén, y un "ALM-GRAL" en Project No. hace que BC rechace
         // la reescritura completa del pedido (se quedaba con las líneas viejas).
-        proyecto: r.proyecto || undefined, taskNo: r.proyecto ? r.taskNo : undefined,
+        // El activo fijo no lleva obra: BC no acepta Job No. en esas líneas.
+        proyecto: r.tipo === "activo_fijo" ? undefined : (r.proyecto || undefined),
+        taskNo: r.tipo === "activo_fijo" ? undefined : (r.proyecto ? r.taskNo : undefined),
       }));
       // El cargo se rearma conservando lo que ya tenía la orden (tipo de Item Charge
       // de BC, método de reparto, descripción y cantidad). Antes se reescribía como
@@ -738,7 +753,13 @@ export default function EditarOrdenPage() {
                       {/* Variante: solo aparece si el ítem la tiene y hay más de una
                           (con una sola ya quedó puesta). BC no deja lanzar el pedido
                           sin ella, así que sin elegir se marca en rojo acá y no allá. */}
-                      {variantesDe(r.articuloId).length > 1 && (
+                      {r.tipo !== "articulo" && (
+                        <div className="ds-body-sm ds-muted" style={{ marginTop: 2 }}>
+                          <Badge tone="green">{etiquetaTipoLinea(r.tipo)}</Badge>{" "}
+                          {r.articuloId}
+                        </div>
+                      )}
+                      {r.tipo === "articulo" && variantesDe(r.articuloId).length > 1 && (
                         <div className="row gap-2 wrap" style={{ alignItems: "center", marginTop: 4, maxWidth: 360 }}>
                           <span className="ds-label ds-muted">Variante</span>
                           <span style={!(r.variantCode ?? "").trim() ? { outline: "1.5px solid var(--ds-color-red-100)", borderRadius: 8 } : undefined}>

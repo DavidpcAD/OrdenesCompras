@@ -7,7 +7,7 @@ import { IconWarning } from "@/components/icons";
 import { DateField } from "@/components/date-field";
 import { useStore } from "@/lib/store";
 import { useVolver } from "@/lib/use-volver";
-import { esNombreObraVacio, money, distribuirCargo, num, ordenBadge, ordenLineaPendiente, ordenRecibidoPct, todayISO, numeroOrden } from "@/lib/helpers";
+import { esLineaCargo, esLineaRecibible, esNombreObraVacio, etiquetaTipoLinea, money, distribuirCargo, num, ordenBadge, ordenLineaPendiente, ordenRecibidoPct, todayISO, numeroOrden } from "@/lib/helpers";
 import { codigoDeItem } from "@/lib/unidad";
 import { comprimirFoto, pesoLegible } from "@/lib/foto";
 import type { FotoComprimida } from "@/lib/foto";
@@ -62,17 +62,21 @@ export default function RegistrarFacturaPage() {
 
   const orden = ordenes.find((o) => o.id === id);
 
-  const articulo = (orden?.lineas ?? []).filter((l) => l.tipo === "articulo");
-  const cargo = (orden?.lineas ?? []).find((l) => l.tipo === "cargo");
+  // Lo que Bodega recibe y factura en esta pantalla: material, y también RECURSO y
+  // ACTIVO FIJO, que se liquidan de una vez acá igual que el material (una compra
+  // directa puede ser un servicio o un activo, y también llevan cantidad y precio).
+  // El CARGO queda aparte: no se recibe, BC lo reparte entre las demás al registrar.
+  const recibibles = (orden?.lineas ?? []).filter(esLineaRecibible);
+  const cargo = (orden?.lineas ?? []).find(esLineaCargo);
   // Para MOSTRAR: solo las líneas que todavía tienen pendiente (lo ya recibido
-  // completo no aparece) y SIEMPRE en orden alfabético. Los cálculos usan `articulo`.
-  const articuloVisible = articulo
+  // completo no aparece) y SIEMPRE en orden alfabético. Los cálculos usan `recibibles`.
+  const recibiblesVisibles = recibibles
     .filter((l) => ordenLineaPendiente(l) > 1e-9)
     .sort((a, b) => a.descripcion.localeCompare(b.descripcion, "es"));
 
   const [recibir, setRecibir] = useState<Record<string, string>>(() => {
     const init: Record<string, string> = {};
-    (orden?.lineas ?? []).filter((l) => l.tipo === "articulo").forEach((l) => {
+    (orden?.lineas ?? []).filter(esLineaRecibible).forEach((l) => {
       init[l.id] = String(ordenLineaPendiente(l));
     });
     return init;
@@ -87,7 +91,7 @@ export default function RegistrarFacturaPage() {
       let falta = false;
       const next = { ...r };
       for (const l of orden.lineas) {
-        if (l.tipo !== "articulo" || next[l.id] !== undefined) continue;
+        if (!esLineaRecibible(l) || next[l.id] !== undefined) continue;
         next[l.id] = String(ordenLineaPendiente(l));
         falta = true;
       }
@@ -207,38 +211,38 @@ export default function RegistrarFacturaPage() {
   // ¿esta recepción completa toda la orden?
   const completaOrden = useMemo(() => {
     if (!orden) return false;
-    return articulo.every((l) => {
+    return recibibles.every((l) => {
       const rec = Number(recibir[l.id] || 0);
       return l.cantidadRecibida + rec >= l.cantidad - 1e-9;
     });
-  }, [orden, articulo, recibir]);
+  }, [orden, recibibles, recibir]);
 
   // El precio proviene de la orden (BC). Bodega NO lo edita: la factura usa ese precio.
   const importeRecibir = (l: { id: string; precioUnitario: number; descuentoPct?: number }) =>
     Number(recibir[l.id] || 0) * l.precioUnitario * (1 - (l.descuentoPct ?? 0) / 100);
   const subtotalRecibido = useMemo(
-    () => articulo.reduce((s, l) => s + importeRecibir(l), 0),
-    [articulo, recibir]
+    () => recibibles.reduce((s, l) => s + importeRecibir(l), 0),
+    [recibibles, recibir]
   );
   // El flete ORIGINAL de la orden (el que puso proveeduría) va en la PRIMERA
   // factura, repartido entre los materiales que se reciben en esa entrega — no
   // espera a completar. En entregas siguientes ya está facturado: no se re-cobra.
   // Bodega NO agrega fletes: eso lo maneja Proveeduría (Angie) o Contabilidad.
   const nadaRecibidoAun = useMemo(
-    () => articulo.every((l) => (l.cantidadRecibida ?? 0) <= 1e-9),
-    [articulo]
+    () => recibibles.every((l) => (l.cantidadRecibida ?? 0) <= 1e-9),
+    [recibibles]
   );
   const fleteAplicado = nadaRecibidoAun && cargo ? cargo.precioUnitario : 0;
   const totalFactura = subtotalRecibido + fleteAplicado;
   // IVA de la factura: por línea según su ivaPct + IVA del flete (BC aplica IVA
   // también al cargo). Así la app muestra el mismo total con IVA que BC.
   const ivaFactura = useMemo(
-    () => articulo.reduce((s, l) => s + importeRecibir(l) * ((l.ivaPct ?? 0) / 100), 0)
+    () => recibibles.reduce((s, l) => s + importeRecibir(l) * ((l.ivaPct ?? 0) / 100), 0)
       + fleteAplicado * ((cargo?.ivaPct ?? 0) / 100),
-    [articulo, recibir, fleteAplicado, cargo] // eslint-disable-line react-hooks/exhaustive-deps
+    [recibibles, recibir, fleteAplicado, cargo] // eslint-disable-line react-hooks/exhaustive-deps
   );
   const totalConIva = totalFactura + ivaFactura;
-  const algoRecibido = articulo.some((l) => Number(recibir[l.id] || 0) > 0);
+  const algoRecibido = recibibles.some((l) => Number(recibir[l.id] || 0) > 0);
   const fechasCoinciden = fechaFactura === fechaRegistro;
 
   if (!orden) {
@@ -259,14 +263,14 @@ export default function RegistrarFacturaPage() {
 
   // distribución del flete sobre lo recibido (informativo)
   const distrib = fleteAplicado
-    ? distribuirCargo(fleteAplicado, articulo.map((l) => ({ ...l, cantidad: Number(recibir[l.id] || 0) })))
+    ? distribuirCargo(fleteAplicado, recibibles.map((l) => ({ ...l, cantidad: Number(recibir[l.id] || 0) })))
     : {};
 
   // Setear "a recibir" acotado a [0, pendiente] (lo usa el selector − valor + móvil).
   const setQty = (l: { id: string }, n: number, pend: number) =>
     setRecibir((r) => ({ ...r, [l.id]: String(Math.max(0, Math.min(n, pend))) }));
-  const recibirTodoPend = () => setRecibir(Object.fromEntries(articulo.map((l) => [l.id, String(ordenLineaPendiente(l))])));
-  const limpiarCant = () => setRecibir(Object.fromEntries(articulo.map((l) => [l.id, "0"])));
+  const recibirTodoPend = () => setRecibir(Object.fromEntries(recibibles.map((l) => [l.id, String(ordenLineaPendiente(l))])));
+  const limpiarCant = () => setRecibir(Object.fromEntries(recibibles.map((l) => [l.id, "0"])));
 
   // Bloque "marcar para nota de crédito" (compartido tabla desktop + tarjeta móvil):
   // tipo de nota + comentario por línea. Cantidad y precio se toman de la línea.
@@ -349,7 +353,7 @@ export default function RegistrarFacturaPage() {
     if (!numeroFactura.trim()) { toast("Ingresá el número de factura.", "error"); return; }
     if (!algoRecibido) { toast("Indicá al menos una cantidad a recibir.", "error"); return; }
     if (avisarCargo && !cargoAvisoDesc.trim()) { toast("Escribí qué cargo de producto trae la factura para avisarle a Contabilidad (o desmarcá la casilla).", "error"); return; }
-    const excede = articulo.find((l) => Number(recibir[l.id] || 0) > ordenLineaPendiente(l) + 1e-9);
+    const excede = recibibles.find((l) => Number(recibir[l.id] || 0) > ordenLineaPendiente(l) + 1e-9);
     if (excede) { toast(`No podés recibir más de lo pendiente en "${excede.descripcion}".`, "error"); return; }
     // Factura repetida en la misma orden: casi siempre es un doble registro o un
     // error de dedo, y en contabilidad se termina pagando dos veces.
@@ -360,17 +364,20 @@ export default function RegistrarFacturaPage() {
       toast(`La factura ${numeroFactura.trim()} ya está registrada en esta orden. Revisá "Recibidas".`, "error");
       return;
     }
-    const lineas = articulo
+    const lineas = recibibles
       .filter((l) => Number(recibir[l.id] || 0) > 0)
       .map((l) => ({ ordenLineaId: l.id, cantidadRecibida: Number(recibir[l.id]) }));
     if (nadaRecibidoAun && cargo) lineas.push({ ordenLineaId: cargo.id, cantidadRecibida: cargo.cantidad });
     // Detalle de lo que se factura ahora, con la obra de cada línea: alimenta tanto
     // las líneas que viajan a BC como el resumen final (inventario vs. consumo).
-    const detalle = articulo
+    const detalle = recibibles
       .filter((l) => Number(recibir[l.id] || 0) > 0 && l.articuloId)
       .map((l) => ({ l, qty: Number(recibir[l.id]), obra: obraDeLinea(l) }));
-    // Líneas para BC: cantidad recibida en esta factura por item (solo artículos).
-    const bcLineas = detalle.map((d) => ({ itemNo: d.l.articuloId as string, qty: d.qty, variantCode: d.l.variantCode }));
+    // Líneas para BC: cantidad recibida en esta factura por línea. El TIPO viaja
+    // con cada una: el codeunit busca la línea del pedido por N.º y por tipo, y sin
+    // eso una línea de recurso o de activo fijo no calza con ninguna línea de
+    // artículo y el registro se aborta ("el pedido no tiene esta línea").
+    const bcLineas = detalle.map((d) => ({ itemNo: d.l.articuloId as string, qty: d.qty, variantCode: d.l.variantCode, tipo: d.l.tipo }));
 
     setGuardando(true);
     const items = [...new Set(bcLineas.map((l) => l.itemNo))];
@@ -468,7 +475,7 @@ export default function RegistrarFacturaPage() {
       // Foto de la factura: va aparte y después (la recepción ya está hecha).
       const avisoFoto = await subirFotos(rec.id);
       // Líneas marcadas → notas de crédito (no bloquea el registro).
-      const nc = articulo.filter((l) => marcadas[l.id]).map((l) => ({ ordenLineaId: l.id, articuloNo: l.articuloId, descripcion: l.descripcion, motivo: marcadas[l.id].motivo, cantidad: Number(marcadas[l.id].cantidad) || 0, precioUnitario: Number(marcadas[l.id].precio) || 0, nota: marcadas[l.id].nota || undefined }));
+      const nc = recibibles.filter((l) => marcadas[l.id]).map((l) => ({ ordenLineaId: l.id, articuloNo: l.articuloId, descripcion: l.descripcion, motivo: marcadas[l.id].motivo, cantidad: Number(marcadas[l.id].cantidad) || 0, precioUnitario: Number(marcadas[l.id].precio) || 0, nota: marcadas[l.id].nota || undefined }));
       // No debe tumbar el registro (la factura ya viajó a BC), pero SÍ hay que
       // avisar: si esto falla en silencio, Bodega marcó líneas para nota de crédito
       // y Contabilidad nunca las ve.
@@ -522,14 +529,14 @@ export default function RegistrarFacturaPage() {
   async function recibirEnRevision() {
     if (!algoRecibido) { toast("Indicá al menos una cantidad a recibir.", "error"); return; }
     if (avisarCargo && !cargoAvisoDesc.trim()) { toast("Escribí qué cargo de producto trae la factura para avisarle a Contabilidad (o desmarcá la casilla).", "error"); return; }
-    const excede = articulo.find((l) => Number(recibir[l.id] || 0) > ordenLineaPendiente(l) + 1e-9);
+    const excede = recibibles.find((l) => Number(recibir[l.id] || 0) > ordenLineaPendiente(l) + 1e-9);
     if (excede) { toast(`No podés recibir más de lo pendiente en "${excede.descripcion}".`, "error"); return; }
-    const lineas = articulo
+    const lineas = recibibles
       .filter((l) => Number(recibir[l.id] || 0) > 0)
       .map((l) => ({ ordenLineaId: l.id, cantidadRecibida: Number(recibir[l.id]) }));
-    const bcLineas = articulo
+    const bcLineas = recibibles
       .filter((l) => Number(recibir[l.id] || 0) > 0 && l.articuloId)
-      .map((l) => ({ itemNo: l.articuloId as string, qty: Number(recibir[l.id]), variantCode: l.variantCode }));
+      .map((l) => ({ itemNo: l.articuloId as string, qty: Number(recibir[l.id]), variantCode: l.variantCode, tipo: l.tipo }));
 
     setGuardando(true);
     let aviso = ""; let bcOk = false; let diag: DiagBc | null = null;
@@ -574,7 +581,7 @@ export default function RegistrarFacturaPage() {
         cargoAviso: cargoAvisoPayload(),
       });
       const avisoFoto = await subirFotos(rec.id);
-      const nc = articulo.filter((l) => marcadas[l.id]).map((l) => ({ ordenLineaId: l.id, articuloNo: l.articuloId, descripcion: l.descripcion, motivo: marcadas[l.id].motivo, cantidad: Number(marcadas[l.id].cantidad) || 0, precioUnitario: Number(marcadas[l.id].precio) || 0, nota: marcadas[l.id].nota || undefined }));
+      const nc = recibibles.filter((l) => marcadas[l.id]).map((l) => ({ ordenLineaId: l.id, articuloNo: l.articuloId, descripcion: l.descripcion, motivo: marcadas[l.id].motivo, cantidad: Number(marcadas[l.id].cantidad) || 0, precioUnitario: Number(marcadas[l.id].precio) || 0, nota: marcadas[l.id].nota || undefined }));
       // No debe tumbar el registro (la factura ya viajó a BC), pero SÍ hay que
       // avisar: si esto falla en silencio, Bodega marcó líneas para nota de crédito
       // y Contabilidad nunca las ve.
@@ -713,7 +720,7 @@ export default function RegistrarFacturaPage() {
         {esContabilidad && (
         <Card className="mt-4" style={{ padding: 0, overflow: "hidden" }}>
           <div className="row row--between" style={{ padding: "12px 16px", borderBottom: "1.5px solid var(--ds-color-gray-100)" }}>
-            <span className="ds-label ds-muted">{articuloVisible.length} línea(s) de artículo</span>
+            <span className="ds-label ds-muted">{recibiblesVisibles.length} línea(s) de artículo</span>
             <div className="row gap-3">
               <button className="link-btn" title="Poner en 'a recibir' toda la cantidad pendiente de cada línea" onClick={recibirTodoPend}>Recibir todo lo pendiente</button>
               <button className="link-btn" title="Dejar en 0 las cantidades a recibir" onClick={limpiarCant}>Limpiar cantidades</button>
@@ -731,7 +738,7 @@ export default function RegistrarFacturaPage() {
                 </tr>
               </thead>
               <tbody>
-                {articuloVisible.map((l) => {
+                {recibiblesVisibles.map((l) => {
                   const pend = ordenLineaPendiente(l);
                   const val = Number(recibir[l.id] || 0);
                   const importe = importeRecibir(l);
@@ -793,21 +800,21 @@ export default function RegistrarFacturaPage() {
         {!esContabilidad && (
         <Card className="mt-4">
           <div className="recv-head">
-            <span className="ds-label ds-muted">{articuloVisible.length} artículo(s) a recibir</span>
+            <span className="ds-label ds-muted">{recibiblesVisibles.length} artículo(s) a recibir</span>
           </div>
-          {articuloVisible.length > 0 && (
+          {recibiblesVisibles.length > 0 && (
             <div className="recv-head__actions">
               <Button variant="green" size="sm" onClick={recibirTodoPend}>Recibir todo</Button>
               <Button variant="outline" size="sm" onClick={limpiarCant}>Limpiar</Button>
             </div>
           )}
           <div className="recv-list">
-            {articuloVisible.length === 0 && (
+            {recibiblesVisibles.length === 0 && (
               <div className="ds-body-sm ds-muted" style={{ padding: "6px 2px" }}>
                 Ya recibiste todos los artículos de esta orden.
               </div>
             )}
-            {articuloVisible.map((l) => {
+            {recibiblesVisibles.map((l) => {
               const pend = ordenLineaPendiente(l);
               const val = Number(recibir[l.id] || 0);
               const full = pend > 0 && val >= pend;
@@ -1017,7 +1024,7 @@ export default function RegistrarFacturaPage() {
           <div className="row gap-3 wrap recv-actions">
             <Button variant="outline" onClick={() => setPreview(true)} disabled={!algoRecibido}>Vista previa</Button>
             <Button variant="ghost" onClick={recibirEnRevision} disabled={!algoRecibido || guardando} title="El material llegó bien pero la factura tiene problemas: recibí el material y mandá la factura a revisión.">Recibir sin factura (a revisión)</Button>
-            <Button variant="green" onClick={registrar} disabled={!algoRecibido || !numeroFactura.trim() || guardando}>{guardando ? "Registrando…" : "Registrar factura"}</Button>
+            <Button variant="green" onClick={registrar} disabled={!algoRecibido || !numeroFactura.trim()} loading={guardando}>{guardando ? "Registrando…" : "Registrar factura"}</Button>
           </div>
           {guardando && (
             <p className="ds-body-sm ds-muted" role="status" style={{ marginTop: 10, display: "flex", alignItems: "center", gap: 8 }}>
@@ -1086,7 +1093,7 @@ export default function RegistrarFacturaPage() {
             <h2 className="ds-heading" style={{ margin: "8px 0 4px" }}>{money(totalConIva, orden.currencyCode)}</h2>
             <p className="ds-body-sm ds-muted" style={{ margin: "0 0 16px" }}>Subtotal {money(totalFactura, orden.currencyCode)} + IVA {money(ivaFactura, orden.currencyCode)}</p>
             <div className="col gap-3" style={{ borderTop: "1.5px solid var(--ds-color-gray-100)", paddingTop: 12 }}>
-              {articulo.filter((l) => Number(recibir[l.id] || 0) > 0).sort((a, b) => a.descripcion.localeCompare(b.descripcion, "es")).map((l) => (
+              {recibibles.filter((l) => Number(recibir[l.id] || 0) > 0).sort((a, b) => a.descripcion.localeCompare(b.descripcion, "es")).map((l) => (
                 <div key={l.id} className="row row--between gap-4" style={{ alignItems: "baseline" }}>
                   <div style={{ minWidth: 0 }}>
                     <div className="ds-clamp-2" title={l.descripcion}>{l.descripcion}</div>

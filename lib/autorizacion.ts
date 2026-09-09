@@ -1,4 +1,4 @@
-import type { Role } from "./types";
+import type { Role } from "./types.ts";
 
 /* ============================================================================
    Qué puede ESCRIBIR cada rol en la API.

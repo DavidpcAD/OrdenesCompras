@@ -1,9 +1,11 @@
-import { getAuthPool, getPool, sql } from "./db";
-import { bcDeepLinkPedido, bcDeepLinkFacturaRegistrada, bcUnidadesDeCompra, sanearObrasDeLineas } from "./bc";
-import { unidadCorregida, codigoDeItem } from "./unidad";
-import { etiquetaInterna, esTipoDevolucion, esTipoEdicion, ordenDeDetalleDevolucion } from "./helpers";
-import type { UnidadCompraItem } from "./bc";
-import type { DevolucionSolicitud, Orden, OrdenLinea, Pedido, PedidoLinea, Recepcion, RecepcionFoto, RecepcionLinea, Role, NotaCreditoLinea } from "./types";
+import { getAuthPool, getPool, sql } from "./db.ts";
+import { bcDeepLinkPedido, bcDeepLinkFacturaRegistrada, bcUnidadesDeCompra, sanearObrasDeLineas } from "./bc.ts";
+import { unidadCorregida, codigoDeItem } from "./unidad.ts";
+import { etiquetaInterna, esTipoDevolucion, esTipoEdicion, ordenDeDetalleDevolucion } from "./helpers.ts";
+import { resumirCambiosDeLineas } from "./cambios-orden.ts";
+import { componerNotaCierre, detalleDeCierre, lineaCancelada, motivoObligatorio, quitarNotaCierre } from "./cierre-solicitud.ts";
+import type { UnidadCompraItem } from "./bc.ts";
+import type { DevolucionSolicitud, Orden, OrdenLinea, Pedido, PedidoLinea, Recepcion, RecepcionFoto, RecepcionLinea, Role, NotaCreditoLinea } from "./types.ts";
 
 /* ============================================================================
    Capa de acceso a datos (SQL Server) para Compras Adelante.
@@ -220,6 +222,18 @@ async function mapaUnidades(): Promise<Record<string, UnidadCompraItem>> {
   try { return await bcUnidadesDeCompra(); } catch { return {}; }
 }
 
+// `tipoLinea` es texto libre en SQL (nvarchar(30)) y lo escriben DOS apps, así que
+// no se puede confiar en que traiga exactamente uno de los cuatro valores. Lo que no
+// se reconoce cae en "articulo", que es lo que eran todas las líneas antes de que
+// existiera la columna.
+function tipoLineaDeSql(t: unknown): OrdenLinea["tipo"] {
+  const v = String(t ?? "").trim().toLowerCase().replace(/[\s-]/g, "_");
+  if (v === "cargo") return "cargo";
+  if (v === "recurso") return "recurso";
+  if (v === "activo_fijo" || v === "activofijo") return "activo_fijo";
+  return "articulo";
+}
+
 function unidadLinea(itemNo: string, guardada: string, mapa: Record<string, UnidadCompraItem>) {
   const u = mapa[itemNo];
   const unidad = unidadCorregida(guardada, u);
@@ -241,6 +255,9 @@ function mapPedido(
   unidades: Record<string, UnidadCompraItem> = {},
   devoluciones: Map<string, DevolucionSolicitud> = new Map(),
 ): Pedido {
+  // La solicitud ARCHIVADA: su saldo sin ordenar se dio de baja. Se calcula una vez
+  // acá porque cada línea lo necesita (ver `cerrada` abajo).
+  const cerrado = codigoDeId(p.idEstado) === "cerrado";
   return {
     id: String(p.idPedidoCompra), numero: p.pedidoNo ?? "",
     tipoSolicitud: (p.tipoSolicitud ?? "material") as Pedido["tipoSolicitud"],
@@ -269,6 +286,13 @@ function mapPedido(
       // existía sin usarse). Así Proveeduría devuelve una línea suelta sin tumbar
       // el pedido entero, que es lo único que se podía hacer antes.
       devuelta: codigoDeId(l.idEstado) === "devuelto" || undefined,
+      // Cancelada por el CIERRE de la solicitud. Es lo único de este feature que se
+      // DERIVA en vez de leerse: el `updatePedido` de la app de Producción borra y
+      // reinserta las líneas sin ordenar cada vez que el ingeniero edita, y son
+      // justo estas, así que una marca en dbo.PedidoCompraDet.idEstado se borraría
+      // sola en silencio. El encabezado, en cambio, ellos no lo tocan.
+      // Ver lib/cierre-solicitud.ts.
+      cerrada: lineaCancelada(cerrado, Number(l.quantitySolicitado ?? 0), Number(l.quantityOrdenado ?? 0)) || undefined,
     })),
   };
 }
@@ -390,6 +414,13 @@ export async function updatePedido(input: EditPedidoDB): Promise<void> {
 }
 
 export async function setPedidoEstado(id: number, estado: string, usuario: string, rol: Role, motivo?: string) {
+  // Cerrar NO se hace por acá. Esta función escribe el estado fuera de transacción y
+  // no exige motivo, así que sería la puerta de atrás para archivar una solicitud sin
+  // explicación — justo lo que el feature promete que no puede pasar. El camino es
+  // `cerrarSolicitud`, que escribe estado + nota + bitácora en un solo commit.
+  if (estado === "cerrado") {
+    throw new Error("Para archivar una solicitud usá el cierre con motivo (POST /api/pedidos/{id}/cerrar), no un cambio de estado suelto.");
+  }
   const pool = await getPool();
   const prev = await pool.request().input("id", sql.Int, id).query("SELECT idEstado, pedidoNo, notaCreador FROM dbo.PedidoCompra WHERE idPedidoCompra=@id");
   const idEstado = await idDeEstado(estado);
@@ -533,6 +564,135 @@ async function marcarLineasDevueltasTx(tx: sql.Transaction, o: {
     detalle: `${o.pedidoDevuelto ? "Solicitud devuelta" : `Devuelta(s) ${o.nombres.length} línea(s): ${o.nombres.join("; ")}`}${o.origen ? ` · ${o.origen}` : ""}${o.motivo ? ` · Motivo: ${o.motivo}` : ""}`,
     usuario: o.usuario, rol: o.rol,
   });
+}
+
+export interface CierreSolicitud {
+  numero: string;
+  /** Líneas que quedaron sin comprar (las que tenían saldo). */
+  lineasCanceladas: number;
+  /** Unidades dadas de baja. */
+  unidadesCanceladas: number;
+  /** Líneas que SÍ se ordenaron: siguen su curso, no se tocan. */
+  lineasOrdenadas: number;
+}
+
+/**
+ * CERRAR (archivar) una solicitud: lo que quedó sin ordenar ya no se va a comprar.
+ *
+ * El caso real: Ingeniería pidió 8 materiales, Proveeduría le hizo orden a 5 y los
+ * otros 3 no se van a pedir (cambió el alcance, se consiguieron en otro lado). Hasta
+ * hoy esa solicitud se quedaba para siempre en "Sin orden de compra" y su saldo
+ * seguía apareciendo en la bandeja de materiales por ordenar, sin forma de bajarlo.
+ *
+ * Lo que hace, todo en UN commit:
+ *   · pone el encabezado en Cerrado,
+ *   · escribe el motivo en `notaCreador` (con el prefijo "⛔ Cerrada:"), que es lo
+ *     único que la app de Producción ya le muestra al ingeniero en su lista,
+ *   · deja el movimiento con qué se dio de baja y por qué.
+ *
+ * Lo que NO hace, a propósito:
+ *   · No toca las LÍNEAS. La marca se derivaría en vano: el `updatePedido` de
+ *     Producción borra y reinserta justo las líneas sin ordenar. El front deriva
+ *     `cerrada` del encabezado (ver mapPedido y lib/cierre-solicitud.ts).
+ *   · No toca `quantityOrdenado`. Es el espejo exacto de las líneas vivas de
+ *     OrdenCompraDet y acá no se crea ni se borra ninguna orden.
+ *   · No toca Business Central. La solicitud es 100% SQL; el que vive en BC es el
+ *     pedido de compra (CP-…), o sea la ORDEN, y esa sigue su curso.
+ */
+export async function cerrarSolicitud(
+  id: number, motivo: string, usuario: string, rol: Role,
+): Promise<CierreSolicitud> {
+  const limpio = motivoObligatorio(motivo);   // la regla dura: nunca sin nota
+  await ensureEstados();
+  const pool = await getPool();
+
+  const cab = await pool.request().input("id", sql.Int, id)
+    .query("SELECT pedidoNo, idEstado, notaCreador FROM dbo.PedidoCompra WHERE idPedidoCompra=@id AND esEliminada=0");
+  if (!cab.recordset.length) throw new Error("La solicitud no existe.");
+  const estadoActual = codigoDeId(cab.recordset[0].idEstado);
+  if (estadoActual === "cerrado") throw new Error("Esta solicitud ya está archivada.");
+  const pedidoNo = cab.recordset[0].pedidoNo ?? "";
+
+  // Qué se da de baja: las líneas a las que les quedaba saldo. Las devueltas ya
+  // estaban bloqueadas, así que no se cuentan de nuevo (contarlas haría que el
+  // historial dijera que se canceló material que el ingeniero ya tenía en la mano).
+  const idDevuelto = await idDeEstado("devuelto");
+  const det = await pool.request().input("id", sql.Int, id).query(
+    `SELECT idPedidoCompraDet, descripcion, itemNo, idEstado,
+            ISNULL(quantitySolicitado,0) AS solicitado, ISNULL(quantityOrdenado,0) AS ordenado
+       FROM dbo.PedidoCompraDet WHERE idPedidoCompra=@id ORDER BY idPedidoCompraDet`);
+  const conSaldo = det.recordset.filter(
+    (l: any) => l.idEstado !== idDevuelto && Number(l.solicitado) - Number(l.ordenado) > 1e-9);
+  const nombres = conSaldo.map((l: any) => String(l.descripcion || l.itemNo || `Línea ${l.idPedidoCompraDet}`));
+  const unidades = conSaldo.reduce((s: number, l: any) => s + (Number(l.solicitado) - Number(l.ordenado)), 0);
+  const lineasOrdenadas = det.recordset.filter((l: any) => Number(l.ordenado) > 1e-9).length;
+
+  const idCerrado = await idDeEstado("cerrado");
+  const nota = componerNotaCierre(limpio, cab.recordset[0].notaCreador ?? "");
+
+  const tx = new sql.Transaction(pool); await tx.begin();
+  try {
+    await new sql.Request(tx)
+      .input("id", sql.Int, id).input("e", sql.Int, idCerrado)
+      .input("u", sql.NVarChar(100), usuario)
+      // NVarChar(500), no MAX: la columna es NVARCHAR(500) y la nota CONCATENA sobre
+      // la previa, así que sin el recorte de componerNotaCierre esto revienta con el
+      // error 8152 de truncamiento y el cierre falla entero.
+      .input("nota", sql.NVarChar(500), nota)
+      .query("UPDATE dbo.PedidoCompra SET idEstado=@e, notaCreador=@nota, fechaModificacion=getdate(), modificadoPor=@u WHERE idPedidoCompra=@id");
+    await logMov(tx, {
+      entidad: "pedido", idEntidad: id, documentoNo: pedidoNo,
+      tipoMovimiento: "cerrado", estadoAnterior: estadoActual, estadoNuevo: "cerrado",
+      detalle: detalleDeCierre({ nombres, unidades }, limpio),
+      usuario, rol,
+    });
+    await tx.commit();
+  } catch (e) { await tx.rollback(); throw e; }
+
+  return { numero: pedidoNo, lineasCanceladas: conSaldo.length, unidadesCanceladas: unidades, lineasOrdenadas };
+}
+
+/**
+ * Deshacer el cierre: la solicitud vuelve a la bandeja con su saldo.
+ *
+ * Existe porque archivar es un clic y equivocarse de solicitud también. El estado al
+ * que vuelve se DEDUCE del saldo (igual criterio que `devolverPendienteAPedidos` y
+ * que el createOrden de Producción): si ya no le queda nada por ordenar es "en orden",
+ * y si le queda, "aprobado" — que es donde Proveeduría la vuelve a ver.
+ */
+export async function reabrirSolicitud(
+  id: number, motivo: string, usuario: string, rol: Role,
+): Promise<{ numero: string; estado: string }> {
+  await ensureEstados();
+  const pool = await getPool();
+  const cab = await pool.request().input("id", sql.Int, id)
+    .query("SELECT pedidoNo, idEstado, notaCreador FROM dbo.PedidoCompra WHERE idPedidoCompra=@id AND esEliminada=0");
+  if (!cab.recordset.length) throw new Error("La solicitud no existe.");
+  if (codigoDeId(cab.recordset[0].idEstado) !== "cerrado") throw new Error("Esta solicitud no está archivada.");
+  const pedidoNo = cab.recordset[0].pedidoNo ?? "";
+
+  const saldo = await pool.request().input("id", sql.Int, id).query(
+    `SELECT COUNT(*) AS pend FROM dbo.PedidoCompraDet
+      WHERE idPedidoCompra=@id AND ISNULL(quantityOrdenado,0) < ISNULL(quantitySolicitado,0) - 0.0001`);
+  const estado = Number(saldo.recordset[0]?.pend ?? 0) > 0 ? "aprobado" : "en_orden";
+  const idNuevo = await idDeEstado(estado);
+  const nota = quitarNotaCierre(cab.recordset[0].notaCreador ?? "");
+
+  const tx = new sql.Transaction(pool); await tx.begin();
+  try {
+    await new sql.Request(tx)
+      .input("id", sql.Int, id).input("e", sql.Int, idNuevo)
+      .input("u", sql.NVarChar(100), usuario).input("nota", sql.NVarChar(500), nota || null)
+      .query("UPDATE dbo.PedidoCompra SET idEstado=@e, notaCreador=@nota, fechaModificacion=getdate(), modificadoPor=@u WHERE idPedidoCompra=@id");
+    await logMov(tx, {
+      entidad: "pedido", idEntidad: id, documentoNo: pedidoNo,
+      tipoMovimiento: "reabierto", estadoAnterior: "cerrado", estadoNuevo: estado,
+      detalle: `Se deshizo el archivado${String(motivo ?? "").trim() ? ` · Motivo: ${String(motivo).trim()}` : ""}`,
+      usuario, rol,
+    });
+    await tx.commit();
+  } catch (e) { await tx.rollback(); throw e; }
+  return { numero: pedidoNo, estado };
 }
 
 // Obra de cada línea de SOLICITUD (dbo.PedidoCompraDet.obra), por id de línea.
@@ -914,13 +1074,15 @@ function mapOrden(o: any, lineas: any[], motivoRechazo?: string, unidades: Recor
         }
       : undefined,
     lineas: lineas.map((l): OrdenLinea => ({
-      id: String(l.idOrdenCompraDet), tipo: (l.tipoLinea === "cargo" ? "cargo" : "articulo"),
+      id: String(l.idOrdenCompraDet), tipo: tipoLineaDeSql(l.tipoLinea),
       articuloId: l.itemNo ?? undefined, variantCode: l.variantCode ?? undefined, pedidoLineaId: l.idPedidoCompraDet ? String(l.idPedidoCompraDet) : undefined,
       pedidoNumero: l.pedidoNumero ?? undefined, descripcion: l.descripcion ?? "", cantidad: Number(l.quantity ?? 0),
-      // Los cargos (flete) no son materiales: no tienen unidad de compra que corregir.
-      ...(l.tipoLinea === "cargo"
-        ? { unidad: l.unitOfMeasureCode ?? "" }
-        : unidadLinea(l.itemNo ?? "", l.unitOfMeasureCode ?? "", unidades)),
+      // Solo el ARTÍCULO tiene unidad de compra que corregir (1 EST = 255.000 GR).
+      // Un cargo, un recurso o un activo fijo no están en esa tabla de BC: su unidad
+      // se guarda tal cual y buscarles equivalencia inventaría una que no existe.
+      ...(tipoLineaDeSql(l.tipoLinea) === "articulo"
+        ? unidadLinea(l.itemNo ?? "", l.unitOfMeasureCode ?? "", unidades)
+        : { unidad: l.unitOfMeasureCode ?? "" }),
       almacen: l.locationCode ?? "", precioUnitario: Number(l.directUnitCost ?? 0),
       ivaPct: Number(l.vatPct ?? 0), descuentoPct: Number(l.lineDiscountPct ?? 0) || undefined,
       proyecto: l.jobNo ?? undefined, taskNo: l.taskNo ?? undefined,
@@ -955,6 +1117,14 @@ function validarLineasOrden(lineas: NewOrdenDB["lineas"]) {
     if (!Number.isFinite(iva) || iva < 0 || iva > 100) throw new Error(`IVA inválido en "${desc}".`);
     const d = Number(l.descuentoPct ?? 0);
     if (!Number.isFinite(d) || d < 0 || d > 100) throw new Error(`Descuento inválido en "${desc}".`);
+    // Artículo, recurso y activo fijo van a BC con su N.º en el mismo campo ("No."
+    // de la línea de compra). Sin N.º, el codeunit se salta la línea EN SILENCIO y
+    // la orden queda en BC con una línea de menos — el modo exacto en que se perdió
+    // una línea de CP-005172. Se corta acá.
+    const tipo = tipoLineaDeSql(l.tipoLinea);
+    if (tipo !== "cargo" && !String(l.itemNo ?? "").trim()) {
+      throw new Error(`Falta el N.º de ${tipo === "recurso" ? "recurso" : tipo === "activo_fijo" ? "activo fijo" : "artículo"} en "${desc}": sin él Business Central no acepta la línea.`);
+    }
   }
 }
 
@@ -1107,6 +1277,15 @@ export async function updateOrden(id: number, input: UpdateOrdenDB) {
   const antesProv: string = head.recordset[0].proveedorNo ?? "";
   const antesProvNombre: string = head.recordset[0].proveedorNombre ?? "";
   const antesMoneda: string = head.recordset[0].currencyCode ?? "";
+  // Las LÍNEAS de antes, por lo mismo que el proveedor: el movimiento "editado" decía
+  // solo "N línea(s)" y con eso, mirando la orden días después, no había forma de
+  // saber si le tocaron la cantidad, el precio, o si le quitaron una y pusieron otra.
+  const det = await pool.request().input("id", sql.Int, id)
+    .query("SELECT itemNo, variantCode, descripcion, quantity, directUnitCost FROM dbo.OrdenCompraDet WHERE idOrdenCompra=@id ORDER BY lineNum");
+  const antesLineas = det.recordset.map((r: any) => ({
+    itemNo: r.itemNo, variantCode: r.variantCode, descripcion: r.descripcion,
+    cantidad: Number(r.quantity ?? 0), precioUnitario: Number(r.directUnitCost ?? 0),
+  }));
   const lineas = (input.lineas ?? []).filter((l) => l.tipoLinea !== "articulo" || (l.itemNo && l.cantidad > 0) || l.cantidad > 0);
   validarLineasOrden(lineas);   // mismas reglas que al crear (cantidad/precio/IVA/descuento)
   await cortarLineasDevueltas(lineas);
@@ -1183,7 +1362,15 @@ export async function updateOrden(id: number, input: UpdateOrdenDB) {
         detalle: cambiosEnc.join(" · "), usuario: input.usuario, rol: input.rol,
       });
     }
-    await logMov(tx, { entidad: "orden", idEntidad: id, documentoNo: ordenNo, tipoMovimiento: "editado", detalle: `${lineas.filter((l) => l.tipoLinea === "articulo").length} línea(s)`, usuario: input.usuario, rol: input.rol });
+    // Qué cambió de las líneas. Si no cambió ninguna (el edit tocó solo el encabezado
+    // o una nota), se cae al conteo de siempre en vez de mentir con un cambio que no
+    // hubo: el "editado" tiene que quedar igual, porque la orden sí se reescribió.
+    const cambiosLin = resumirCambiosDeLineas(antesLineas, lineas.map((l) => ({
+      itemNo: l.itemNo, variantCode: l.variantCode, descripcion: l.descripcion,
+      cantidad: Number(l.cantidad ?? 0), precioUnitario: Number(l.precioUnitario ?? 0),
+    })));
+    const nArt = lineas.filter((l) => tipoLineaDeSql(l.tipoLinea) !== "cargo").length;
+    await logMov(tx, { entidad: "orden", idEntidad: id, documentoNo: ordenNo, tipoMovimiento: "editado", detalle: cambiosLin || `${nArt} línea(s), sin cambios`, usuario: input.usuario, rol: input.rol });
     await tx.commit();
   } catch (e) {
     await tx.rollback();
@@ -1221,11 +1408,11 @@ export async function cerrarOrden(
 
   const tx = new sql.Transaction(pool); await tx.begin();
   try {
-    // Lo que quedó sin recibir. Solo artículos: un cargo (flete) no tiene saldo.
+    // Lo que quedó sin recibir. Sin los cargos: un flete no tiene saldo que devolver.
     const pend = await new sql.Request(tx).input("id", sql.Int, id).query(`
       SELECT ISNULL(SUM(quantity - ISNULL(quantityRecibida,0)),0) AS unidades, COUNT(*) AS lineas
         FROM dbo.OrdenCompraDet
-       WHERE idOrdenCompra=@id AND tipoLinea='articulo' AND quantity - ISNULL(quantityRecibida,0) > 0`);
+       WHERE idOrdenCompra=@id AND ISNULL(tipoLinea,'articulo') <> 'cargo' AND quantity - ISNULL(quantityRecibida,0) > 0`);
     const pendienteDevuelto = Number(pend.recordset[0]?.unidades ?? 0);
     const lineasConPendiente = Number(pend.recordset[0]?.lineas ?? 0);
 
@@ -1241,7 +1428,7 @@ export async function cerrarOrden(
         JOIN (SELECT idPedidoCompraDet, SUM(quantity - ISNULL(quantityRecibida,0)) AS q
                 FROM dbo.OrdenCompraDet
                WHERE idOrdenCompra=@id AND idPedidoCompraDet IS NOT NULL
-                 AND tipoLinea='articulo' AND quantity - ISNULL(quantityRecibida,0) > 0
+                 AND ISNULL(tipoLinea,'articulo') <> 'cargo' AND quantity - ISNULL(quantityRecibida,0) > 0
                GROUP BY idPedidoCompraDet) x ON x.idPedidoCompraDet = pcd.idPedidoCompraDet`);
     }
 
@@ -1279,7 +1466,7 @@ export async function nuevaOrdenDesdePendiente(
   const h = head.recordset[0];
   const det = await pool.request().input("id", sql.Int, id).query(`
     SELECT * FROM dbo.OrdenCompraDet
-     WHERE idOrdenCompra=@id AND tipoLinea='articulo' AND quantity - ISNULL(quantityRecibida,0) > 0
+     WHERE idOrdenCompra=@id AND ISNULL(tipoLinea,'articulo') <> 'cargo' AND quantity - ISNULL(quantityRecibida,0) > 0
      ORDER BY lineNum`);
   if (!det.recordset.length) throw new Error("Esta orden no tiene material pendiente: no hay nada que pasar a una orden nueva.");
 
@@ -1290,7 +1477,10 @@ export async function nuevaOrdenDesdePendiente(
   // nueva nacería envenenada igual que ella: acá no pasa por las rutas HTTP, así que
   // el saneo se hace en este punto.
   const lineasPendientes = await sanearObrasDeLineas(det.recordset.map((l: any) => ({
-      tipoLinea: "articulo",
+      // El tipo se ARRASTRA: si el pendiente era un recurso o un activo fijo, la
+      // orden nueva tiene que pedirle a BC lo mismo. Con "articulo" fijo, BC iba a
+      // buscar un artículo con el N.º del recurso y rechazar la línea.
+      tipoLinea: tipoLineaDeSql(l.tipoLinea),
       itemNo: l.itemNo ?? undefined, variantCode: l.variantCode ?? undefined,
       idPedidoCompraDet: l.idPedidoCompraDet ?? undefined,
       descripcion: l.descripcion ?? "",
@@ -1507,7 +1697,9 @@ export async function devolverLineasDeOrden(
     const l = porId.get(Number(lid));
     if (!l) throw new Error(`La línea ${lid} no es de esta orden.`);
     const nombre = String(l.descripcion || `Línea ${lid}`);
-    if (l.tipoLinea !== "articulo") throw new Error(`${nombre}: un cargo no se devuelve al ingeniero.`);
+    // Solo el material de inventario viene de una solicitud: un cargo, un recurso o
+    // un activo fijo no tienen a quién devolvérselos.
+    if (tipoLineaDeSql(l.tipoLinea) !== "articulo") throw new Error(`${nombre}: no es material de una solicitud (es ${tipoLineaDeSql(l.tipoLinea) === "cargo" ? "un cargo" : tipoLineaDeSql(l.tipoLinea) === "recurso" ? "un recurso" : "un activo fijo"}), así que no se devuelve al ingeniero. Quitala editando la orden.`);
     if (!l.idPedidoCompraDet) throw new Error(`${nombre}: esta línea no viene de una solicitud (se agregó a mano), así que no hay a quién devolvérsela. Quitala editando la orden.`);
     if (Number(l.quantityRecibida ?? 0) > 0 || Number(l.quantityFacturada ?? 0) > 0) {
       throw new Error(`${nombre}: ya tiene recibido/facturado, no se puede devolver.`);
@@ -1536,7 +1728,7 @@ export async function devolverLineasDeOrden(
   // corrección del ingeniero" (`ordenEsperaCorreccion` en lib/helpers.ts lo deriva de
   // ahí: no hace falta una columna, porque la ÚNICA forma de que una orden quede sin
   // artículos es esta devolución — guardar con cero líneas está prohibido).
-  const quedan = det.recordset.filter((l: any) => l.tipoLinea === "articulo" && !ids.includes(Number(l.idOrdenCompraDet)));
+  const quedan = det.recordset.filter((l: any) => tipoLineaDeSql(l.tipoLinea) !== "cargo" && !ids.includes(Number(l.idOrdenCompraDet)));
   const ordenVacia = quedan.length === 0 && !!bcNo;
   const ordenDescartada = quedan.length === 0 && !bcNo;
 
@@ -1704,7 +1896,7 @@ export async function aplicarIvaDeBcEnOrden(
   for (const l of det.recordset) {
     // El itemNo de una línea puede traer la variante pegada ("M11-0081 -VAR 12"): el
     // código con el que BC nombra la línea es el pelado.
-    const code = l.tipoLinea === "cargo" ? norm(l.chargeNo) : norm(codigoDeItem(String(l.itemNo ?? "")));
+    const code = tipoLineaDeSql(l.tipoLinea) === "cargo" ? norm(l.chargeNo) : norm(codigoDeItem(String(l.itemNo ?? "")));
     if (!code || !(code in porCodigo)) continue;
     const nuevo = Number(porCodigo[code]);
     const viejo = Number(l.vatPct ?? 0);
@@ -1844,7 +2036,7 @@ export async function createRecepcion(input: NewRecepcionDB): Promise<number> {
     }
     // ¿orden completa?
     const saldo = await new sql.Request(tx).input("id", sql.Int, input.idOrdenCompra)
-      .query("SELECT SUM(quantity - ISNULL(quantityRecibida,0)) AS pend FROM dbo.OrdenCompraDet WHERE idOrdenCompra=@id AND tipoLinea='articulo'");
+      .query("SELECT SUM(quantity - ISNULL(quantityRecibida,0)) AS pend FROM dbo.OrdenCompraDet WHERE idOrdenCompra=@id AND ISNULL(tipoLinea,'articulo') <> 'cargo'");
     // En revisión NO cierra la orden: queda pendiente de factura hasta que Kattya la registre.
     const completa = !enRevision && Number(saldo.recordset[0].pend ?? 0) <= 0;
     if (completa) {
@@ -1901,7 +2093,7 @@ export async function setRecepcionFactura(idRec: number, numeroFactura: string, 
     const ord = await new sql.Request(tx).input("id", sql.Int, idOrden).query("SELECT ordenNo FROM dbo.OrdenCompra WHERE idOrdenCompra=@id");
     const ordenNo = ord.recordset[0]?.ordenNo ?? "";
     const saldo = await new sql.Request(tx).input("id", sql.Int, idOrden)
-      .query("SELECT SUM(quantity - ISNULL(quantityRecibida,0)) AS pend FROM dbo.OrdenCompraDet WHERE idOrdenCompra=@id AND tipoLinea='articulo'");
+      .query("SELECT SUM(quantity - ISNULL(quantityRecibida,0)) AS pend FROM dbo.OrdenCompraDet WHERE idOrdenCompra=@id AND ISNULL(tipoLinea,'articulo') <> 'cargo'");
     const completa = Number(saldo.recordset[0].pend ?? 0) <= 0;
     if (completa) {
       const idComp = await idDeEstado("completado");

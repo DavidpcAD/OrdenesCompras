@@ -8,11 +8,16 @@ import { DataTable } from "@/components/data-table";
 import { VistaToggle } from "@/components/vista-toggle";
 import { IconReceipt, IconList } from "@/components/icons";
 import { useStore } from "@/lib/store";
-import { formatDate, pedidoCompraBadge, pedidoOrdenadoPct, ordenesPorPedido, recibidoPorLineaPedido, destinoCodigo, destinoLabel, tipoSolicitudBadge, numeroOrden } from "@/lib/helpers";
+import { formatDate, pedidoCompraBadge, pedidoOrdenadoPct, ordenesPorPedido, recibidoPorLineaPedido, destinoCodigo, destinoLabel, tipoSolicitudBadge, numeroOrden, comentarioDeSolicitud } from "@/lib/helpers";
 import { useVariantes } from "@/lib/use-variantes";
 import type { Pedido } from "@/lib/types";
 
-type Filtro = "todas" | "pendiente" | "parcial" | "ordenado";
+// "archivadas" no es un avance de compra como los otros tres: es el estado del
+// documento. Por eso convive con ellos como panel pero se resuelve aparte, antes de
+// `bucket()` — meterlo adentro haría que una archivada al 60% dejara de contar en
+// "Parcialmente ordenadas" y los conteos cambiarían de significado.
+type Filtro = "todas" | "pendiente" | "parcial" | "ordenado" | "archivadas";
+type Bucket = Exclude<Filtro, "todas" | "archivadas">;
 
 export default function ProveeduriaSolicitudesPage() {
   const { pedidos, ordenes } = useStore();
@@ -22,14 +27,23 @@ export default function ProveeduriaSolicitudesPage() {
   const CLAVE_FILTRO = "adelante_oc_kpi_solicitudes-prov";
   const [filtro, setFiltro] = useState<Filtro>("todas");
   useEffect(() => {
-    try { const v = sessionStorage.getItem(CLAVE_FILTRO); if (v) setFiltro(v as Filtro); } catch { /* sin sessionStorage */ }
+    // Se valida contra la lista: un filtro guardado que ya no existe (o "archivadas"
+    // cuando ya no queda ninguna, porque su panel no se dibuja) dejaba la tabla vacía
+    // sin nada en qué hacer clic para salir.
+    try {
+      const v = sessionStorage.getItem(CLAVE_FILTRO);
+      if (v && (["todas", "pendiente", "parcial", "ordenado", "archivadas"] as Filtro[]).includes(v as Filtro)) setFiltro(v as Filtro);
+    } catch { /* sin sessionStorage */ }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   const elegirFiltro = (f: Filtro) => { setFiltro(f); try { sessionStorage.setItem(CLAVE_FILTRO, f); } catch { /* noop */ } };
 
-  // Proveeduría solo ve solicitudes ENVIADAS (no borrador ni devueltas).
-  const enviadas = pedidos.filter((p) => p.estado !== "borrador" && p.estado !== "devuelto");
-  const bucket = (p: Pedido): Exclude<Filtro, "todas"> => {
+  // Proveeduría solo ve solicitudes ENVIADAS (no borrador ni devueltas). Las
+  // ARCHIVADAS salen de acá: ya no se compran, así que no pueden sumar al conteo de
+  // "Sin orden de compra" ni aparecer como trabajo vivo. Se consultan en su panel.
+  const enviadas = pedidos.filter((p) => p.estado !== "borrador" && p.estado !== "devuelto" && p.estado !== "cerrado");
+  const archivadas = pedidos.filter((p) => p.estado === "cerrado");
+  const bucket = (p: Pedido): Bucket => {
     const pct = pedidoOrdenadoPct(p);
     return pct >= 100 ? "ordenado" : pct > 0 ? "parcial" : "pendiente";
   };
@@ -43,8 +57,13 @@ export default function ProveeduriaSolicitudesPage() {
     const total = p.lineas.reduce((s, l) => s + l.cantidad, 0);
     return total > 0 ? Math.round(Math.min(100, (recibidoDe(p) / total) * 100)) : 0;
   };
-  const cuenta = (f: Filtro) => f === "todas" ? enviadas.length : enviadas.filter((p) => bucket(p) === f).length;
-  const base = useMemo(() => enviadas.filter((p) => filtro === "todas" ? true : bucket(p) === filtro), [enviadas, filtro]); // eslint-disable-line react-hooks/exhaustive-deps
+  const cuenta = (f: Filtro) =>
+    f === "todas" ? enviadas.length
+      : f === "archivadas" ? archivadas.length
+        : enviadas.filter((p) => bucket(p) === f).length;
+  const base = useMemo(
+    () => filtro === "archivadas" ? archivadas : enviadas.filter((p) => filtro === "todas" ? true : bucket(p) === filtro),
+    [enviadas, archivadas, filtro]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const columns = useMemo<ColumnDef<Pedido, any>[]>(() => [
     { id: "num", header: "N.º", accessorFn: (p) => p.numero, meta: { label: "N.º" }, cell: (c) => <span className="ds-strong">{c.getValue()}</span> },
@@ -53,7 +72,9 @@ export default function ProveeduriaSolicitudesPage() {
       id: "obra", header: "Destino", accessorFn: (p) => `${destinoCodigo(p)} ${destinoLabel(p)}`.trim(), meta: { label: "Destino" },
       cell: (c) => { const p = c.row.original; return <div><div className="ds-strong ds-body-sm">{destinoCodigo(p)}</div><div className="ds-muted ds-body-sm ds-truncate" style={{ maxWidth: 160 }} title={destinoLabel(p)}>{destinoLabel(p)}</div></div>; },
     },
-    { id: "comentario", header: "Comentario", accessorFn: (p) => p.notas ?? "", meta: { label: "Comentario" }, cell: (c) => <div className="ds-body-sm ds-muted ds-truncate" style={{ maxWidth: 220 }} title={c.getValue()}>{c.getValue() || "—"}</div> },
+    // El comentario del ingeniero, sin los encabezados internos que le apila encima
+    // el cierre o la devolución (esos se leen en el detalle, con su tarjeta).
+    { id: "comentario", header: "Comentario", accessorFn: (p) => comentarioDeSolicitud(p), meta: { label: "Comentario" }, cell: (c) => <div className="ds-body-sm ds-muted ds-truncate" style={{ maxWidth: 220 }} title={c.getValue()}>{c.getValue() || "—"}</div> },
     { id: "solicitante", header: "Solicitante", accessorFn: (p) => p.solicitante, meta: { label: "Solicitante" }, cell: (c) => c.getValue() },
     { id: "fecha", header: "Fecha", accessorFn: (p) => p.fecha, meta: { label: "Fecha", date: true }, cell: (c) => formatDate(c.getValue()) },
     { id: "lineas", header: "Líneas", accessorFn: (p) => p.lineas.length, meta: { label: "Líneas", num: true }, enableColumnFilter: false, cell: (c) => c.getValue() },
@@ -80,7 +101,9 @@ export default function ProveeduriaSolicitudesPage() {
                 ))}
               </div>
             )}
-            {(ocs.length === 0 || pedidoOrdenadoPct(p) < 100) && <Badge tone={b.tone}>{b.label}</Badge>}
+            {/* En la archivada el badge va SIEMPRE: es su estado, no un avance, y sin
+                él una solicitud cerrada al 100% no se distinguía de una normal. */}
+            {(p.estado === "cerrado" || ocs.length === 0 || pedidoOrdenadoPct(p) < 100) && <Badge tone={b.tone}>{b.label}</Badge>}
           </div>
         );
       },
@@ -108,10 +131,18 @@ export default function ProveeduriaSolicitudesPage() {
           <Tile value={cuenta("pendiente")} label="Sin orden de compra" accent="var(--ds-color-gray-300)" onClick={() => elegirFiltro("pendiente")} active={filtro === "pendiente"} />
           <Tile value={cuenta("parcial")} label="Parcialmente ordenadas" accent="var(--ds-color-yellow)" onClick={() => elegirFiltro("parcial")} active={filtro === "parcial"} />
           <Tile value={cuenta("ordenado")} label="100% ordenadas" accent="var(--ds-color-green-200)" onClick={() => elegirFiltro("ordenado")} active={filtro === "ordenado"} />
+          {/* Solo si hay: un panel en 0 permanente es ruido (mismo criterio que
+              "Esperando corrección" en Órdenes). Si el filtro guardado es este y ya no
+              queda ninguna, el useEffect de abajo lo devuelve a "todas". */}
+          {archivadas.length > 0 && (
+            <Tile value={cuenta("archivadas")} label="Archivadas" accent="var(--ds-color-gray-400)" onClick={() => elegirFiltro("archivadas")} active={filtro === "archivadas"} />
+          )}
         </div>
 
         <div className="mt-6">
-          <DataTable data={base} columns={columns} tablaKey="solicitudes-prov" buscarPlaceholder="Buscar por N.º, material u obra…" getRowId={(p) => p.id} onRowClick={(p) => router.push(`/proveeduria/solicitudes/${p.id}`)} vacio="No hay solicitudes que coincidan."
+          <DataTable data={base} columns={columns} tablaKey="solicitudes-prov" buscarPlaceholder="Buscar por N.º, material u obra…" getRowId={(p) => p.id} onRowClick={(p) => router.push(`/proveeduria/solicitudes/${p.id}`)}
+            vacio={filtro === "archivadas" ? "Todavía no hay solicitudes archivadas." : "No hay solicitudes que coincidan."}
+            rowClassName={(p) => (p.estado === "cerrado" ? "dt-row-archivada" : "")}
             renderExpanded={(p) => <LineasDeSolicitud pedido={p} />} />
         </div>
       </main>

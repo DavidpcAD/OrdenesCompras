@@ -1,11 +1,11 @@
-import type { Orden } from "./types";
-import { ordenLineaImporte } from "./helpers";
-import { documentoDeOrden, destinoLineaDoc, fmtDoc, etiquetaUnidad } from "./orden-doc";
+import type { Orden } from "./types.ts";
+import { ordenLineaImporte } from "./helpers.ts";
+import { documentoDeOrden, destinoLineaDoc, fmtDoc, etiquetaUnidad } from "./orden-doc.ts";
 import { etiquetaVariante, nombreDeVariante, descripcionParaDocumento } from "./variantes.ts";
 import {
   nuevoDocumento, dibujante, encabezadoMarca, bloqueEmpresa, numerarPaginas, formatearFecha,
   A4, MARGEN, DERECHA, ANCHO_UTIL, Y_CONTINUACION, NEGRO,
-} from "./pdf-base";
+} from "./pdf-base.ts";
 
 // PDF de la orden de compra que se le manda al proveedor, dibujado en el SERVIDOR con
 // pdfkit. Existe para que "Descargar PDF" baje un .pdf de una vez, sin pasar por el

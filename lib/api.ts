@@ -1,5 +1,5 @@
 // Cliente del front-end para las API routes (modo API).
-import type { Orden, Pedido, Recepcion, NotaCreditoLinea } from "./types";
+import type { Orden, Pedido, Recepcion, NotaCreditoLinea } from "./types.ts";
 
 export const USE_API = process.env.NEXT_PUBLIC_USE_API === "1";
 
@@ -61,6 +61,12 @@ export const api = {
   // pedido entero queda "Devuelto").
   devolverLineasPedido: (id: string, body: unknown): Promise<{ devueltas: number; pedidoDevuelto: boolean; nombres: string[] }> =>
     fetch(`/api/pedidos/${id}/devolver`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }).then(jsonOrThrow),
+  // Archivar una solicitud que quedó a medias (el motivo es obligatorio del lado del
+  // server) y deshacer ese archivado.
+  cerrarSolicitud: (id: string, body: unknown): Promise<{ numero: string; lineasCanceladas: number; unidadesCanceladas: number; lineasOrdenadas: number }> =>
+    fetch(`/api/pedidos/${id}/cerrar`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }).then(jsonOrThrow),
+  reabrirSolicitud: (id: string, body: unknown): Promise<{ numero: string; estado: string }> =>
+    fetch(`/api/pedidos/${id}/cerrar`, { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }).then(jsonOrThrow),
   putPedido: (id: string, body: unknown) =>
     fetch(`/api/pedidos/${id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }).then(jsonOrThrow),
   deletePedido: (id: string, body: unknown) =>

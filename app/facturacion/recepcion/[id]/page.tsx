@@ -6,7 +6,7 @@ import { IconWarning } from "@/components/icons";
 import { FotosFactura } from "@/components/fotos-factura";
 import { useStore } from "@/lib/store";
 import { useVolver } from "@/lib/use-volver";
-import { money, formatDate, num, numeroOrden } from "@/lib/helpers";
+import { etiquetaTipoLinea, money, formatDate, num, numeroOrden } from "@/lib/helpers";
 
 // Detalle de UNA recepción/factura: qué se recibió exactamente en ese registro
 // (líneas, cantidad recibida, precio e importe), distinto del detalle acumulado
@@ -89,7 +89,12 @@ export default function RecepcionDetallePage() {
                 {filas.map((f) => (
                   <tr key={f.rl.ordenLineaId}>
                     <td>
-                      {esCargo(f) ? <><Badge tone="yellow">Cargo</Badge> {f.ol?.descripcion ?? "Flete / transporte"}</> : (f.ol?.descripcion ?? "—")}
+                      {esCargo(f)
+                        ? <><Badge tone="yellow">Cargo</Badge> {f.ol?.descripcion ?? "Flete / transporte"}</>
+                        // Un recurso o un activo fijo se liquidan en esta misma
+                        // factura pero no son material: se rotulan para que en la
+                        // conciliación no se los busque en el inventario.
+                        : <>{f.ol && f.ol.tipo !== "articulo" ? <><Badge tone="green">{etiquetaTipoLinea(f.ol.tipo)}</Badge>{" "}</> : null}{f.ol?.descripcion ?? "—"}</>}
                       {!esCargo(f) && (
                         <div className="ds-body-sm ds-muted">
                           {[f.ol?.pedidoNumero, f.ol?.proyecto && `Proy. ${f.ol.proyecto}`, f.ol?.descuentoPct ? `−${f.ol.descuentoPct}%` : null].filter(Boolean).join(" · ")}

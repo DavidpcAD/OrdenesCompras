@@ -1,6 +1,6 @@
 import { cookies } from "next/headers";
-import { SESSION_COOKIE, verifySession, authEnabled } from "./session";
-import type { Role } from "./types";
+import { SESSION_COOKIE, verifySession, authEnabled } from "./session.ts";
+import type { Role } from "./types.ts";
 
 // Quién está haciendo la acción, según la COOKIE FIRMADA — no según el body.
 //
