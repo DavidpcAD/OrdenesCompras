@@ -1592,6 +1592,12 @@ export type LineaReplaceBc = {
   // stock lleva solo el CC.
   centroCosto?: string;
   chargeNo?: string; chargeMethod?: string; descripcion?: string;
+  // El IVA% que Proveeduría le puso a la línea en la orden. NO viaja al codeunit (BC
+  // no recibe porcentajes: calcula el IVA con los grupos), pero SÍ manda cuando es
+  // CERO: ahí se le pone el grupo exento a la línea en BC, para que allá salga en
+  // cero igual que en la orden. El default de la app es 13, así que un 0 es una
+  // decisión de quien armó la orden, no un campo sin llenar.
+  ivaPct?: number;
 };
 
 // Almacenes que tienen el CC AMARRADO en BC (dimensión predeterminada con registro
@@ -1779,11 +1785,41 @@ async function bcLineasIvaDePedido(cid: string, orderNo: string): Promise<{ poId
   return { poId, status: String(po?.status ?? "").trim(), lineas };
 }
 
+// Los códigos (artículo o cargo) que la ORDEN tiene en 0% de IVA. El default de la
+// app es 13, así que un 0 es una decisión de quien la armó, no un campo vacío: una
+// línea SIN `ivaPct` no cuenta como cero, para que una orden vieja no se quede sin
+// IVA en BC por omisión.
+export function codigosConIvaCero(lineas: LineaReplaceBc[]): string[] {
+  const out = new Set<string>();
+  for (const l of lineas ?? []) {
+    if (l?.ivaPct === undefined || l?.ivaPct === null) continue;
+    if (Number(l.ivaPct) !== 0) continue;
+    const code = String(l.tipo === "cargo" ? l.chargeNo : codigoDeItem(String(l.itemNo ?? ""))).trim().toUpperCase();
+    if (code) out.add(code);
+  }
+  return [...out];
+}
+
+// De las líneas que BC tiene, las que hay que poner en cero: las que la orden marcó
+// en 0% y a las que BC les sigue calculando IVA. Las que allá ya están en 0 se dejan
+// quietas — un PATCH de más es una escritura en BC que no hace falta.
+export function lineasAPonerEnCero(codigosCero: string[], lineasBc: LineaIvaBc[]): LineaIvaBc[] {
+  const ceros = new Set((codigosCero ?? []).map((c) => String(c).trim().toUpperCase()).filter(Boolean));
+  if (!ceros.size) return [];
+  return (lineasBc ?? []).filter((l) => {
+    if (!l?.id || !ceros.has(String(l.code ?? "").trim().toUpperCase())) return false;
+    const pct = Number(l.taxPercent);
+    return !(Number.isFinite(pct) && Math.abs(pct) < 1e-9);
+  });
+}
+
 export type ResultadoReplace = {
   resultado: string;
   omitidas: string[];
   // Líneas a las que se les volvió a poner el grupo de IVA que tenían en BC ("M20-1088 → EXENTO-BIENES").
   ivaRestaurado: string[];
+  // Líneas que la orden tiene en 0% y que quedaron en 0 también en BC ("M05-0804 → EXENTO-BIENES").
+  ivaCeroAplicado: string[];
   // Cuando NO se pudo conservar ese grupo: el IVA del pedido pudo cambiar en BC.
   avisoIva?: string;
 };
@@ -1838,7 +1874,40 @@ export async function bcReplaceOrderLines(orderNo: string, lineas: LineaReplaceB
       avisoIva = `OJO con el IVA: al reescribir las líneas del pedido ${orderNo} no se pudo verificar que conserven el grupo de IVA que tenían en BC (${String(e?.message ?? e)}). Si Contabilidad lo había corregido a mano, revisalo.`;
     }
   }
-  return { resultado, omitidas, ivaRestaurado, avisoIva };
+
+  // ── EL 0% DE LA ORDEN VIAJA A BC ────────────────────────────────────────────
+  // Si Proveeduría le puso 0% de IVA a una línea, en BC tiene que salir en 0. Punto.
+  // Antes no: el IVA% de la app se quedaba en el estimado y en el PDF, BC calculaba
+  // el suyo con el grupo del artículo (13%), y la diferencia había que ir a
+  // arreglarla a mano allá. Esto la aplica sola, en el mismo movimiento en que se
+  // crean o se reescriben las líneas.
+  //
+  // Solo se toca el 0: con cualquier otro %, manda el grupo del artículo, que es el
+  // que Contabilidad tiene configurado en BC para cada cosa.
+  const ivaCeroAplicado: string[] = [];
+  const ceros = codigosConIvaCero(lineas);
+  if (ceros.length) {
+    try {
+      const post = await bcLineasIvaDePedido(cid, orderNo);
+      const grupo = grupoIvaExento();
+      for (const l of lineasAPonerEnCero(ceros, post?.lineas ?? [])) {
+        const pct = Number(l.taxPercent);
+        const r = await bcFetch(`${stdRoot()}/companies(${cid})/purchaseOrders(${post!.poId})/purchaseOrderLines(${l.id})`, {
+          method: "PATCH", cache: "no-store",
+          headers: { "Content-Type": "application/json", "If-Match": "*" },
+          body: JSON.stringify({ taxCode: grupo }),
+        });
+        if (r.ok) ivaCeroAplicado.push(`${l.code} → ${grupo}`);
+        else {
+          // No es fatal: el pedido está bien, lo que quedó mal es el IVA. Se dice.
+          avisoIva = [avisoIva, `OJO con el IVA: la orden dice 0% en ${l.code} pero Business Central le sigue calculando ${pct}% y no dejó cambiarlo (${mensajeBc((await r.text()).slice(0, 300))}).`].filter(Boolean).join(" ");
+        }
+      }
+    } catch (e: any) {
+      avisoIva = [avisoIva, `OJO con el IVA: no se pudo aplicar en Business Central el 0% que la orden tiene en ${ceros.length} línea(s) (${String(e?.message ?? e)}). Revisá el IVA del pedido allá.`].filter(Boolean).join(" ");
+    }
+  }
+  return { resultado, omitidas, ivaRestaurado, ivaCeroAplicado, avisoIva };
 }
 
 // ── DEJAR EL PEDIDO EXENTO DE IVA EN BC ──────────────────────────────────────
@@ -2012,6 +2081,7 @@ export function lineasOrdenParaBc(
     jobNo: l.proyecto, taskNo: l.taskNo,
     centroCosto: centroCostoDeLinea(l, obraDeSolicitud),
     chargeNo: l.chargeNo, chargeMethod: l.chargeMethod, descripcion: l.descripcion,
+    ivaPct: l.ivaPct,
   }));
 }
 
