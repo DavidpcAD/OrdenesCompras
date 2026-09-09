@@ -205,11 +205,9 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
           const { valor: r, reabierto } = await conPedidoAbierto(o.bcNumber, () => bcReplaceOrderLines(o.bcNumber!, lineasBc));
           if (reabierto) bcAviso = [bcAviso, `El pedido ${o.bcNumber} estaba Lanzado en BC: se reabrió para poder pasarle los cambios y quedó ABIERTO, listo para que Aprobación lo lance.`].filter(Boolean).join(" · ");
           if (r.omitidas.length) bcAviso = [bcAviso, `Enviada a aprobación. OJO: BC no recibió ${r.omitidas.length} línea(s) — ${r.omitidas.join("; ")}.`].filter(Boolean).join(" · ");
-          // El grupo de IVA que Contabilidad puso a mano en BC (una importación en
-          // EXENTO-BIENES) sobrevive a la reescritura; si no se pudo, se dice.
-          if (r.ivaRestaurado.length) bcAviso = [bcAviso, `Las líneas conservan el grupo de IVA que tenían en BC (${r.ivaRestaurado.join(", ")}).`].filter(Boolean).join(" · ");
-          // El 0% que dice la orden ya quedó puesto en BC: no hay que ir a arreglarlo.
-          if (r.ivaCeroAplicado.length) bcAviso = [bcAviso, `El 0% de IVA de la orden quedó aplicado en BC (${r.ivaCeroAplicado.join(", ")}).`].filter(Boolean).join(" · ");
+          // El 0% de la orden se aplica solo en BC. Que HAYA funcionado no se avisa:
+          // este canal es el de "algo quedó mal", y un pedido correcto no es noticia.
+          // Si NO se pudo, `avisoIva` lo dice con el dato concreto.
           if (r.avisoIva) bcAviso = [bcAviso, r.avisoIva].filter(Boolean).join(" · ");
         } catch (e: any) {
           bcAviso = [bcAviso, `Se envió a aprobación, pero el pedido ${o.bcNumber} en BC quedó con las líneas VIEJAS: ${String(e?.message ?? e)}`].filter(Boolean).join(" · ");
@@ -406,8 +404,6 @@ export async function PUT(req: Request, { params }: { params: { id: string } }) 
         const { valor: r, reabierto } = await conPedidoAbierto(o.bcNumber, () => bcReplaceOrderLines(o.bcNumber!, lineasBc));
         if (reabierto) avisos.push(`El pedido ${o.bcNumber} estaba Lanzado en BC: se reabrió para pasarle los cambios y quedó ABIERTO. Mandá la orden a aprobación para que la lancen de nuevo.`);
         if (r.omitidas.length) avisos.push(`Guardado. OJO: BC no recibió ${r.omitidas.length} línea(s) — ${r.omitidas.join("; ")}.`);
-        if (r.ivaRestaurado.length) avisos.push(`Las líneas conservan el grupo de IVA que tenían en BC (${r.ivaRestaurado.join(", ")}).`);
-        if (r.ivaCeroAplicado.length) avisos.push(`El 0% de IVA de la orden quedó aplicado en BC (${r.ivaCeroAplicado.join(", ")}).`);
         if (r.avisoIva) avisos.push(r.avisoIva);
         // Se relee BC y se coteja. Acá NO se puede frenar nada (el SQL ya se
         // guardó), pero el resultado deja de ser un toast: queda escrito en la
