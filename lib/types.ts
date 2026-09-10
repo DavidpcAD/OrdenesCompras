@@ -194,6 +194,12 @@ export interface OrdenLinea {
   descuentoPct?: number;     // descuento de línea
   proyecto?: string;         // obra / Job No.
   taskNo?: string;           // N.º tarea proyecto
+  // MÁQUINA a la que va el repuesto: el "N.º máquina" que BC lleva en la LÍNEA del
+  // pedido (parque de maquinaria GomEqp), no en el encabezado. Por eso tres filtros
+  // para tres máquinas son TRES LÍNEAS de 1, una por máquina (ver lib/maquinas.ts):
+  // en una sola línea el costo queda sin dueño y ninguna máquina tiene su historial.
+  maquinaNo?: string;
+  maquinaNombre?: string;    // rótulo del parque; se muestra, a BC solo le viaja el N.º
   cantidadRecibida: number;
   cantidadFacturada: number;
 }

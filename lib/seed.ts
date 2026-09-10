@@ -28,6 +28,19 @@ export const maquinas: Maquina[] = [
   { id: "mq2", no: "MAQ-0023", nombre: "Retroexcavadora JCB 3CX", placa: "EQ-2310" },
   { id: "mq3", no: "MAQ-0031", nombre: "Compactadora Bomag BW213", placa: "EQ-3105" },
   { id: "mq4", no: "MAQ-0044", nombre: "Generador Cummins 60kVA", placa: "EQ-4402" },
+  // El parque tal como está en BC (GomEqp Machine): en modo API este catálogo lo
+  // trae /api/bc/maquinas, así que estos son solo para trabajar en modo mock —
+  // pero con los N.º de verdad, para no probar el reparto con nombres inventados.
+  { id: "mq5", no: "GENERICO", nombre: "GENERICO" },
+  { id: "mq6", no: "MAQ00005", nombre: "TRACTOR MASSEY FERGUSON", placa: "TABMC180" },
+  { id: "mq7", no: "MAQ00006", nombre: "AUTOHORMIGONERA FIORI DB", placa: "EE38990" },
+  { id: "mq8", no: "MAQ00007", nombre: "AUTOHORMIGONERA FIORI DB", placa: "EE040251" },
+  { id: "mq9", no: "MAQ00012", nombre: "BOMBA CONCRETO CIPSA" },
+  { id: "mq10", no: "MAQ00014", nombre: "BRAZO TELESCOPICO ATABEY" },
+  { id: "mq11", no: "MAQ00017", nombre: "CAMION FOTON" },
+  { id: "mq12", no: "MAQ00018", nombre: "CAMION HYUNDAI CL317002" },
+  { id: "mq13", no: "MAQ00019", nombre: "CAMION INTERNATIONAL EE0" },
+  { id: "mq14", no: "MAQ00020", nombre: "CAMION JAC C175247" },
 ];
 
 export const articulos: Articulo[] = [

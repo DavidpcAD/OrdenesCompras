@@ -596,3 +596,91 @@ test("lineasOrdenParaBc conserva el tipo de cada línea", () => {
   ]);
   assert.deepEqual(out.map((l) => l.tipo), ["articulo", "recurso", "activo_fijo", "cargo"]);
 });
+
+// ── N.º MÁQUINA: EL REPUESTO TIENE DUEÑO ─────────────────────────────────────
+// En BC el equipo que consume el repuesto viaja en la LÍNEA del pedido (Purchase
+// Line."GomEqp Machine No.", del parque de maquinaria de Goom), no en el encabezado.
+// Es el dato con el que la maquinaria arma su historial de costos: si se queda en el
+// SQL de la app, en BC el gasto no tiene dueño y ninguna máquina sabe qué le costó.
+// Estas pruebas cuidan el contrato de las cuatro puntas: `maquinaNo` en la app,
+// `maquinaNo` en el linesJson, la columna de SQL y el campo de BC.
+test("la línea de artículo lleva el N.º de máquina a BC", () => {
+  const { lines, omitidas } = payloadReplaceLines([item({ maquinaNo: "MAQ00017" })]);
+  assert.equal(omitidas.length, 0);
+  assert.equal(lines[0].maquinaNo, "MAQ00017");
+});
+
+// El código sale del catálogo que la app le lee a BC, así que ya viene escrito como
+// allá lo tiene: solo se le quitan los espacios (mismo criterio que la variante).
+test("el N.º de máquina viaja sin espacios y sin cambiarle la caja", () => {
+  assert.equal(payloadReplaceLines([item({ maquinaNo: " MAQ00017 " })]).lines[0].maquinaNo, "MAQ00017");
+});
+
+// Vacía NO se manda, por lo mismo que la unidad y la variante: una clave en blanco
+// no es "dejá lo que había", es borrarlo.
+test("sin máquina NO se manda la clave", () => {
+  for (const v of [undefined, "", "   "]) {
+    const { lines } = payloadReplaceLines([item({ maquinaNo: v })]);
+    assert.ok(!("maquinaNo" in lines[0]), String(v));
+  }
+});
+
+// Al cargo no se le manda máquina aunque la orden la traiga: el cargo es uno solo
+// para todo el pedido y BC le reescribe cantidad y precio al repartirlo, así que
+// amarrarlo a una máquina diría que el flete de tres máquinas fue de una sola.
+test("una línea de cargo NO lleva máquina, aunque venga puesta", () => {
+  const { lines, omitidas } = payloadReplaceLines([{
+    tipo: "cargo", chargeNo: "FLETE", descripcion: "FLETE / TRANSPORTE",
+    cantidad: 1, precio: 45000, maquinaNo: "MAQ00017",
+  }]);
+  assert.equal(omitidas.length, 0);
+  assert.ok(!("maquinaNo" in lines[0]));
+});
+
+// El activo fijo tampoco: la máquina que se COMPRA es el activo, no el destino del
+// gasto. El recurso sí, que es el torno o la soldadura que se le pagó a un tercero
+// POR esa máquina.
+test("el recurso lleva máquina y el activo fijo no", () => {
+  const { lines } = payloadReplaceLines([
+    item({ tipo: "recurso", itemNo: "MO-0001", jobNo: "VB-5.01", taskNo: "1000", maquinaNo: "MAQ00017" }),
+    item({ tipo: "activo_fijo", itemNo: "AF-000123", maquinaNo: "MAQ00017" }),
+  ]);
+  assert.equal(lines[0].maquinaNo, "MAQ00017");
+  assert.ok(!("maquinaNo" in lines[1]));
+});
+
+// Tres repuestos para tres máquinas son TRES líneas, una por máquina (lib/maquinas.ts):
+// en una sola el costo queda sin dueño. El payload tiene que respetar ese reparto.
+test("una línea por máquina llega a BC como una línea por máquina", () => {
+  const { lines } = payloadReplaceLines([
+    item({ cantidad: 1, maquinaNo: "MAQ00017" }),
+    item({ cantidad: 1, maquinaNo: "MAQ00018" }),
+    item({ cantidad: 1, maquinaNo: "MAQ00020" }),
+  ]);
+  assert.deepEqual(lines.map((l) => l.maquinaNo), ["MAQ00017", "MAQ00018", "MAQ00020"]);
+});
+
+// El traductor app → BC es el que usan TANTO el envío a aprobación como el edit. Si
+// no copia la máquina, el N.º que eligió Proveeduría muere en el SQL de la app.
+test("lineasOrdenParaBc copia el N.º de máquina de la línea de la orden", () => {
+  const [conMaquina, sinMaquina] = lineasOrdenParaBc([
+    lineaApp({ maquinaNo: "MAQ00017", maquinaNombre: "EXCAVADORA CAT 320" }),
+    lineaApp({ id: "2" }),
+  ]);
+  assert.equal(conMaquina.maquinaNo, "MAQ00017");
+  assert.equal(sinMaquina.maquinaNo, undefined);
+  // El nombre del parque es rótulo de pantalla: no tiene a dónde llegar en BC y no
+  // debe colarse en el tipo que viaja (LineaReplaceBc no lo tiene).
+  assert.ok(!("maquinaNombre" in conMaquina));
+});
+
+// De punta a punta, que es lo que importa: de la OrdenLinea de SQL al JSON que
+// recibe el codeunit, sin pasos manuales en el medio.
+test("de la línea de la orden al linesJson, la máquina no se pierde", () => {
+  const { lines } = payloadReplaceLines(lineasOrdenParaBc([
+    lineaApp({ maquinaNo: "MAQ00017", maquinaNombre: "EXCAVADORA CAT 320" }),
+  ]));
+  assert.equal(lines[0].maquinaNo, "MAQ00017");
+  // Y así es como sale en el body real: `linesJson` es un STRING con el JSON escapado.
+  assert.match(JSON.stringify({ lines }), /"maquinaNo":"MAQ00017"/);
+});

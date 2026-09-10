@@ -9,6 +9,7 @@ import { IconCheck, IconWarning } from "@/components/icons";
 import { useStore } from "@/lib/store";
 import { leerBorrador, guardarBorrador, borrarBorrador, hace, type BorradorOrden } from "@/lib/borrador-orden";
 import { etiquetaTipoLinea, money, almacenesParaRecepcion, esAlmacenFisico, monedaApp, numeroOrden } from "@/lib/helpers";
+import { CampoMaquina, RepartoMaquinasModal, buscarMaquina, etiquetaMaquina, nombreDeMaquina, useMaquinasBc, type MaquinaCat } from "@/components/maquina-linea";
 import { precioEnUnidad, precioEntreUnidades, cantidadEntreUnidades, equivalencia, equivalenciaDeUnidad, mismaMoneda, codigoDeItem, opcionesDeUnidad, type UnidadDeItem } from "@/lib/unidad";
 import type { LineType, OrdenLinea } from "@/lib/types";
 
@@ -20,7 +21,10 @@ import type { LineType, OrdenLinea } from "@/lib/types";
 // `obra`/`tarea` son OPCIONALES y van POR LÍNEA (Job No. + Job Task No. de BC): una
 // directa puede mezclar material que entra a bodega con un servicio que se carga a
 // una obra (ver comentario en crear()).
-interface Row { key: string; tipo: LineType; articuloId: string; descripcion: string; unidad: string; unidadBase?: string; factorCompra?: number; cantidad: string; precio: string; iva: string; descuento: string; variantCode: string; variantNombre: string; obra: string; obraNombre: string; tarea: string; tareaNombre: string; }
+// `maquinaNo` es el N.º máquina de la LÍNEA en BC (parque GomEqp): el equipo que se
+// va a comer el repuesto. Va por línea, así que tres filtros para tres máquinas son
+// tres filas de 1 — eso lo reparte el diálogo de abajo (ver lib/maquinas.ts).
+interface Row { key: string; tipo: LineType; articuloId: string; descripcion: string; unidad: string; unidadBase?: string; factorCompra?: number; cantidad: string; precio: string; iva: string; descuento: string; variantCode: string; variantNombre: string; obra: string; obraNombre: string; tarea: string; tareaNombre: string; maquinaNo: string; maquinaNombre: string; }
 type Recurso = { no: string; nombre: string; unidad: string; costo: number };
 type ActivoFijo = { no: string; descripcion: string; clase: string };
 // Qué se le pide a BC en cada tipo, en la voz de la pantalla. `catalogo` es el
@@ -38,6 +42,10 @@ const TIPOS_LINEA: { tipo: LineType; etiqueta: string; catalogo: string; ayuda: 
 ];
 type Variante = { code: string; descripcion: string };
 type Obra = { codigo: string; nombre: string };
+// La línea que se está repartiendo entre máquinas (null = diálogo cerrado). El
+// diálogo y la matemática son de components/maquina-linea.tsx: los comparte con la
+// pantalla de corregir una orden y no puede haber dos copias que se separen.
+interface Reparto { filaKey: string; total: number; unidad: string; codigo: string; descripcion: string; maquinaNo: string; maquinaNombre: string; }
 type Tarea = { jobTaskNo: string; descripcion: string; tipo: string };
 // Cargo de producto (Item Charge) a agregar a la orden: tipo (chargeNo del catálogo
 // BC), cantidad, precio e IVA%. chargeNo "" = flete por defecto. Igual que en "nueva".
@@ -107,6 +115,10 @@ export default function OrdenDirectaPage() {
     fetch("/api/bc/activos-fijos").then((r) => (r.ok ? r.json() : { activos: [] }))
       .then((d) => { if (Array.isArray(d.activos)) setActivosFijos(d.activos); }).catch(() => {});
   }, []);
+  // El PARQUE DE MAQUINARIA de BC, con su espera y su respaldo en modo mock, sale
+  // del hook compartido (components/maquina-linea.tsx).
+  const { maquinas: catMaq, cargando: maqCargando } = useMaquinasBc();
+
   const catProv = bcProv ?? proveedores;
   const catAlm = almacenesParaRecepcion(bcAlm ?? almacenes);
   const provSel = catProv.find((x) => x.id === proveedorId);
@@ -115,7 +127,7 @@ export default function OrdenDirectaPage() {
   // guarda en el navegador, así que sobrevive al despliegue): sin este default sus
   // filas quedaban con `tipo` undefined y la pantalla las trataba como si no fueran
   // material — sin unidad, sin destino y sin variante.
-  const [rows, setRows] = useState<Row[]>(() => (rescate?.filas ?? []).map((r) => ({ ...r, tipo: r.tipo ?? "articulo" })));
+  const [rows, setRows] = useState<Row[]>(() => (rescate?.filas ?? []).map((r) => ({ ...r, tipo: r.tipo ?? "articulo", maquinaNo: r.maquinaNo ?? "", maquinaNombre: r.maquinaNombre ?? "" })));
 
   // Guardado automático (con respiro, para no escribir en cada tecla). No toca la
   // base ni BC: es la libreta de quien arma, en su navegador.
@@ -164,8 +176,13 @@ export default function OrdenDirectaPage() {
   // Tareas por obra, cacheadas: las pide la barra de agregar y también el diálogo
   // que corrige la obra de una línea ya agregada.
   const [tareasPorObra, setTareasPorObra] = useState<Record<string, Tarea[]>>({});
-  // Línea cuya obra/tarea se está corrigiendo en el diálogo (null = cerrado).
+  // Línea cuya obra/tarea/máquina se está corrigiendo en el diálogo (null = cerrado).
   const [editObra, setEditObra] = useState<Row | null>(null);
+  // MÁQUINA de la próxima línea. Queda pegada como la obra: una orden de repuestos
+  // suele traer varias líneas del mismo equipo.
+  const [qaMaquina, setQaMaquina] = useState("");
+  // Línea que se está repartiendo entre varias máquinas (null = diálogo cerrado).
+  const [reparto, setReparto] = useState<Reparto | null>(null);
   // Unidad de medida del artículo elegido en "Agregar artículo".
   const qaItem = itemsBc.find((x) => x.code === qaCode);
   const qaEquiv = equivalenciaDeUnidad(unidadesPorItem[qaCode], qaUnidad, qaItem?.unidadBase ?? qaItem?.unidad ?? "")
@@ -185,6 +202,9 @@ export default function OrdenDirectaPage() {
   //     producto" de abajo, que es donde se elige el método de reparto.
   const esArticulo = qaTipo === "articulo";
   const admiteObra = qaTipo === "articulo" || qaTipo === "recurso";
+  // La máquina es la misma historia que la obra: el N.º máquina vive en la LÍNEA del
+  // pedido, y en un activo fijo no aplica (la compra se capitaliza contra el activo).
+  const admiteMaquina = admiteObra;
   const cfgTipo = TIPOS_LINEA.find((t) => t.tipo === qaTipo)!;
   // Catálogo del tipo elegido, con la forma que espera el Combobox (clave + rótulo).
   type OpcionCat = { key: string; etiqueta: string; buscar: string; extra: string };
@@ -207,7 +227,7 @@ export default function OrdenDirectaPage() {
     setQaVariantes([]); setQaVariante(""); setQaVariantesError(false);
     setQaUnidad("");
     // El activo fijo no puede ir a una obra: si venía una puesta, se suelta.
-    if (t === "activo_fijo") { setQaObra(""); setQaTarea(""); }
+    if (t === "activo_fijo") { setQaObra(""); setQaTarea(""); setQaMaquina(""); }
   }
 
   // Elegir un ARTÍCULO: su unidad de compra, la lista de unidades, el último precio
@@ -353,6 +373,10 @@ export default function OrdenDirectaPage() {
   const nombreObra = (codigo: string) => obras.find((o) => o.codigo === codigo)?.nombre ?? "";
   const nombreTarea = (jobNo: string, taskNo: string) => tareasDe(jobNo).find((t) => t.jobTaskNo === taskNo)?.descripcion ?? "";
   const nombreAlmacen = (cod: string) => catAlm.find((a) => a.codigo === cod)?.nombre ?? "";
+  // Igual que con la obra, "Sin máquina" es una opción más: sin ella, elegir una
+  // máquina por error no se podría deshacer.
+  const maquinasConVacio = useMemo<MaquinaCat[]>(() => [{ no: "", nombre: "Sin máquina" }, ...catMaq], [catMaq]);
+  const nombreMaquina = (no: string) => nombreDeMaquina(catMaq, no);
   // Al cambiar la obra hay que soltar la tarea: una tarea pertenece a UNA obra y
   // dejarla puesta manda a BC un Job Task No. que no existe en la obra nueva.
   function elegirObra(codigo: string) { setQaObra(codigo); setQaTarea(""); if (codigo) cargarTareas(codigo); }
@@ -404,10 +428,36 @@ export default function OrdenDirectaPage() {
       // El activo fijo no va a una obra ni con la obra puesta en la barra: BC no
       // acepta Job No. en su línea.
       obra: admiteObra ? qaObra : "", obraNombre: admiteObra ? nombreObra(qaObra) : "",
-      tarea: admiteObra ? qaTarea : "", tareaNombre: admiteObra ? nombreTarea(qaObra, qaTarea) : "" }]);
+      tarea: admiteObra ? qaTarea : "", tareaNombre: admiteObra ? nombreTarea(qaObra, qaTarea) : "",
+      maquinaNo: admiteMaquina ? qaMaquina : "", maquinaNombre: admiteMaquina ? nombreMaquina(qaMaquina) : "" }]);
     // La obra y la tarea NO se limpian a propósito (ver el estado): siguen a la vista
     // en la barra, así que es evidente a qué obra va a ir la línea siguiente.
     setQaCode(""); setQaQty(""); setQaPrecio(""); setQaVariantes([]); setQaVariante(""); setQaVariantesError(false);
+  }
+
+  // ---- Repartir UNA línea entre VARIAS máquinas -------------------------------
+  // Tres filtros para tres máquinas no caben en una línea: BC lleva el N.º máquina
+  // en la línea, así que hay que partirla en tres. Acá se elige a qué equipos va y
+  // cuánto a cada uno; al guardar, la fila se convierte en una fila por máquina.
+  function abrirReparto(r: Row) {
+    setReparto({
+      filaKey: r.key, total: Number(r.cantidad) || 0, unidad: r.unidad,
+      codigo: r.articuloId, descripcion: r.descripcion,
+      maquinaNo: r.maquinaNo, maquinaNombre: r.maquinaNombre,
+    });
+  }
+  // Lo que devuelve el diálogo: una línea por máquina (y una sin máquina si sobró
+  // cantidad). La fila original se reemplaza por esas, en su mismo lugar.
+  function guardarReparto(ls: { maquinaNo: string; maquinaNombre: string; cantidad: number }[]) {
+    if (!reparto) return;
+    setRows((rs) => rs.flatMap((r) => (r.key !== reparto.filaKey ? [r] : ls.map((l) => ({
+      ...r, key: `m-${uid()}`, cantidad: String(l.cantidad), maquinaNo: l.maquinaNo, maquinaNombre: l.maquinaNombre,
+    })))));
+    const conMaq = ls.filter((l) => l.maquinaNo).length;
+    setReparto(null);
+    toast(conMaq > 1
+      ? `Listo: la línea quedó partida en ${ls.length} — una por máquina.`
+      : conMaq === 1 ? "Máquina asignada a la línea." : "La línea quedó sin máquina.", "success");
   }
 
   const calcImporte = (r: Row) => Number(r.cantidad) * Number(r.precio) * (1 - (Number(r.descuento) || 0) / 100);
@@ -462,6 +512,7 @@ export default function OrdenDirectaPage() {
         almacen: r.tipo === "articulo" ? almacen : "",
         precioUnitario: Number(r.precio), ivaPct: Number(r.iva) || 0, descuentoPct: Number(r.descuento) || 0,
         proyecto: r.obra || undefined, taskNo: r.tarea || undefined,
+        maquinaNo: r.maquinaNo || undefined, maquinaNombre: r.maquinaNombre || undefined,
       }));
       for (const c of cargos) {
         if (cargoImporte(c) <= 0) continue;
@@ -620,6 +671,25 @@ export default function OrdenDirectaPage() {
                 </div>
               </div>
             )}
+            {/* MÁQUINA de la línea (N.º máquina del pedido en BC). Opcional y pegada,
+                igual que la obra: una orden de repuestos suele ser toda del mismo
+                equipo. Si son varios equipos, la línea se reparte después con
+                «Repartir entre máquinas» — BC lleva el N.º en la línea, no en el
+                encabezado, así que un equipo por línea. */}
+            {admiteMaquina && (
+              <div style={{ flex: "0 1 240px", minWidth: 190 }}>
+                <label className="ds-label ds-muted" style={{ display: "block", marginBottom: 4 }}>Máquina <span className="ds-body-sm">(opcional)</span></label>
+                <Combobox items={maquinasConVacio} value={qaMaquina} onChange={(k) => setQaMaquina(k)}
+                  getKey={(m) => m.no} getLabel={etiquetaMaquina} getSearch={buscarMaquina} placeholder="Sin máquina…" />
+                {!catMaq.length && (
+                  <div className="ds-body-sm ds-muted" style={{ marginTop: 4, maxWidth: 240 }} role="status">
+                    {maqCargando
+                      ? "Buscando el parque de maquinaria en Business Central… La primera lectura del día tarda; podés seguir armando la orden."
+                      : "El parque de maquinaria de Business Central no llegó: la línea se puede armar igual, pero sin máquina."}
+                  </div>
+                )}
+              </div>
+            )}
             <div>
               <label className="ds-label ds-muted" htmlFor={qtyId} style={{ display: "block", marginBottom: 4 }}>Cantidad</label>
               {/* La unidad del artículo elegido, al lado del campo: al escribir "40"
@@ -675,7 +745,7 @@ export default function OrdenDirectaPage() {
           )}
           <div className="ds-table-wrap" style={{ boxShadow: "none" }}>
             <table className="ds-table">
-              <thead><tr><th>Tipo</th><th>Artículo / recurso</th><th>Destino</th><th className="ds-num">Cantidad</th><th className="ds-num">Precio</th><th className="ds-num">Desc%</th><th className="ds-num">IVA%</th><th className="ds-num">Importe</th><th></th></tr></thead>
+              <thead><tr><th>Tipo</th><th>Artículo / recurso</th><th>Destino</th><th className="ds-num">Cantidad</th><th className="ds-num">Precio</th><th className="ds-num">Desc%</th><th className="ds-num">IVA%</th><th className="ds-num">Importe</th><th className="ds-col-fija" style={{ width: 56 }} /></tr></thead>
               <tbody>
                 {rows.length === 0 && <tr><td colSpan={9}><div className="empty">Sin líneas. Elegí el tipo, buscalo en el catálogo y agregalo.</div></td></tr>}
                 {rows.map((r) => (
@@ -698,10 +768,21 @@ export default function OrdenDirectaPage() {
                         <DestinoLinea
                           almacen={r.tipo === "articulo" ? almacen : ""} almacenNombre={r.tipo === "articulo" ? nombreAlmacen(almacen) : ""}
                           obra={r.obra} obraNombre={r.obraNombre}
-                          tarea={r.tarea} tareaNombre={r.tareaNombre} />
-                        <button type="button" className="link-btn" onClick={() => { setEditObra(r); if (r.obra) cargarTareas(r.obra); }}>
-                          {r.obra ? "Cambiar" : "Asignar obra"}
-                        </button>
+                          tarea={r.tarea} tareaNombre={r.tareaNombre}
+                          maquina={r.maquinaNo} maquinaNombre={r.maquinaNombre} />
+                        <span className="row wrap gap-3" style={{ marginTop: 2 }}>
+                          <button type="button" className="link-btn" onClick={() => { setEditObra(r); if (r.obra) cargarTareas(r.obra); }}>
+                            {r.obra || r.maquinaNo ? "Cambiar" : "Asignar destino"}
+                          </button>
+                          {/* Una línea de 1 no se reparte entre máquinas: para esa,
+                              la máquina se elige en «Cambiar». */}
+                          {Number(r.cantidad) > 1 && (
+                            <button type="button" className="link-btn" onClick={() => abrirReparto(r)}
+                              title="Repartir la cantidad de esta línea entre varias máquinas: queda una línea por máquina, que es como BC lleva el N.º máquina.">
+                              Repartir entre máquinas
+                            </button>
+                          )}
+                        </span>
                       </>)}
                     </td>
                     <td className="ds-num">
@@ -728,7 +809,7 @@ export default function OrdenDirectaPage() {
                     <td className="ds-num"><input className="ds-cell-input" aria-label="Descuento %" type="number" min={0} max={100} value={r.descuento} style={{ width: 60 }} onChange={(e) => setRow(r.key, { descuento: e.target.value })} /></td>
                     <td className="ds-num"><input className="ds-cell-input" aria-label="IVA %" type="number" min={0} value={r.iva} style={{ width: 56 }} onChange={(e) => setRow(r.key, { iva: e.target.value })} /></td>
                     <td className="ds-num ds-strong">{money(calcImporte(r) || 0, currency)}</td>
-                    <td className="ds-num"><button type="button" className="icon-btn" title="Quitar línea" aria-label="Quitar línea" onClick={() => removeRow(r.key)}>×</button></td>
+                    <td className="ds-num ds-col-fija"><button type="button" className="icon-btn icon-btn--quitar" title="Quitar línea" aria-label="Quitar línea" onClick={() => removeRow(r.key)}>×</button></td>
                   </tr>
                 ))}
               </tbody>
@@ -804,14 +885,15 @@ export default function OrdenDirectaPage() {
       </main>
 
       {editObra && (
-        <Modal title="Obra y tarea de la línea" onClose={() => setEditObra(null)}
+        <Modal title="Destino de la línea" onClose={() => setEditObra(null)}
           footer={
             <>
               <Button variant="outline" onClick={() => setEditObra(null)}>Cancelar</Button>
               <Button
                 disabled={!!editObra.obra && tareasDe(editObra.obra).length > 0 && !editObra.tarea}
                 onClick={() => {
-                  setRow(editObra.key, { obra: editObra.obra, obraNombre: editObra.obraNombre, tarea: editObra.tarea, tareaNombre: editObra.tareaNombre });
+                  setRow(editObra.key, { obra: editObra.obra, obraNombre: editObra.obraNombre, tarea: editObra.tarea, tareaNombre: editObra.tareaNombre,
+                    maquinaNo: editObra.maquinaNo, maquinaNombre: editObra.maquinaNombre });
                   setEditObra(null);
                 }}>Guardar</Button>
             </>
@@ -830,7 +912,29 @@ export default function OrdenDirectaPage() {
                 placeholder={tareasDe(editObra.obra).length ? "Elegí tarea…" : "Sin tareas en BC"} />
             </Field>
           )}
+          {/* La MÁQUINA es otra cosa que la obra: no dice a dónde entra el material
+              sino qué equipo se lo come. Va en la misma línea del pedido en BC. */}
+          {editObra.tipo !== "activo_fijo" && (
+            <CampoMaquina maquinas={catMaq} cargando={maqCargando}
+              value={editObra.maquinaNo} nombre={editObra.maquinaNombre}
+              onChange={(no, nombre) => setEditObra({ ...editObra, maquinaNo: no, maquinaNombre: nombre })}
+              help="Opcional. El equipo al que va el repuesto (N.º máquina de la línea en BC). Si esta línea va a varias máquinas, cerrá y usá «Repartir entre máquinas»."
+              className="mt-4" />
+          )}
         </Modal>
+      )}
+
+      {/* REPARTIR UNA LÍNEA ENTRE VARIAS MÁQUINAS. El caso real: tres filtros de
+          motor, uno para cada vagoneta. El diálogo es compartido con la pantalla de
+          corregir una orden (components/maquina-linea.tsx) y devuelve las líneas en
+          las que queda partida esta. */}
+      {reparto && (
+        <RepartoMaquinasModal
+          codigo={reparto.codigo} descripcion={reparto.descripcion}
+          total={reparto.total} unidad={reparto.unidad}
+          maquinaInicial={reparto.maquinaNo} maquinaNombreInicial={reparto.maquinaNombre}
+          maquinas={catMaq} cargando={maqCargando}
+          onClose={() => setReparto(null)} onGuardar={guardarReparto} />
       )}
 
       <div className="action-bar">

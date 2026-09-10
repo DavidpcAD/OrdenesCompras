@@ -784,6 +784,42 @@ async function ensureCargoCols(): Promise<boolean> {
   return cargoColsListas;
 }
 
+// ── N.º máquina de la línea (parque GomEqp): dbo.OrdenCompraDet.maquinaNo ──
+// Columna OPCIONAL (sql/orden_maquina.sql). Mientras no exista, la orden se crea y
+// se edita exactamente como antes y lo único que se pierde es a qué máquina iba el
+// repuesto: nombrar una columna inexistente en el INSERT reventaría la creación de
+// CUALQUIER orden, no solo las de repuesto. Mismo criterio que ensureCargoCols:
+// dbo.OrdenCompraDet la comparte la app de Producción, así que esta app no le hace
+// ALTER por su cuenta salvo que MIGRAR_ESQUEMA=1 lo autorice.
+//
+// El "no está" se recuerda solo un rato, como en ensureChequeoBcCols y por lo
+// mismo: la migración se corre DESPUÉS de desplegar (la corre David a mano), y con
+// un caché definitivo el proceso de Azure se quedaría con "no existe" hasta que
+// alguien lo reinicie — o sea, las órdenes de todo el día se guardarían sin máquina
+// aunque la columna ya esté. El "sí está" sí se recuerda para siempre: una columna
+// no se borra sola.
+const REINTENTO_COLS_MS = 5 * 60 * 1000;   // cada cuánto se vuelve a preguntar por una columna que "no está"
+let maquinaColLista: boolean | null = null;
+let maquinaColRevisada = 0;
+async function ensureMaquinaCol(): Promise<boolean> {
+  if (maquinaColLista === true) return true;
+  if (maquinaColLista === false && Date.now() - maquinaColRevisada < REINTENTO_COLS_MS) return false;
+  maquinaColRevisada = Date.now();
+  try {
+    const pool = await getPool();
+    if (process.env.MIGRAR_ESQUEMA === "1") {
+      await pool.request().query(`
+        IF COL_LENGTH('dbo.OrdenCompraDet','maquinaNo') IS NULL
+          ALTER TABLE dbo.OrdenCompraDet ADD maquinaNo NVARCHAR(20) NULL;`);
+    }
+    const r = await pool.request().query("SELECT COL_LENGTH('dbo.OrdenCompraDet','maquinaNo') AS a");
+    maquinaColLista = r.recordset[0]?.a != null;
+  } catch {
+    maquinaColLista = false;
+  }
+  return maquinaColLista;
+}
+
 // ── Chequeo contra BC: ¿la orden y el pedido de allá tienen las mismas líneas? ──
 // Las columnas son OPCIONALES (sql/orden_chequeo_bc.sql). Sin ellas la app coteja
 // igual y lo muestra en el momento; lo que se pierde es la memoria entre visitas y
@@ -796,7 +832,6 @@ async function ensureCargoCols(): Promise<boolean> {
 // siempre: una columna no se borra sola.
 let chequeoBcColsListas: boolean | null = null;
 let chequeoBcColsRevisadas = 0;
-const REINTENTO_COLS_MS = 5 * 60 * 1000;
 async function ensureChequeoBcCols(): Promise<boolean> {
   if (chequeoBcColsListas === true) return true;
   if (chequeoBcColsListas === false && Date.now() - chequeoBcColsRevisadas < REINTENTO_COLS_MS) return false;
@@ -1087,6 +1122,11 @@ function mapOrden(o: any, lineas: any[], motivoRechazo?: string, unidades: Recor
       ivaPct: Number(l.vatPct ?? 0), descuentoPct: Number(l.lineDiscountPct ?? 0) || undefined,
       proyecto: l.jobNo ?? undefined, taskNo: l.taskNo ?? undefined,
       chargeNo: l.chargeNo ?? undefined, chargeMethod: l.chargeMethod ?? undefined,
+      // Máquina a la que va el repuesto (columna opcional: sql/orden_maquina.sql).
+      // Sin este renglón la máquina se guardaba pero la pantalla no la volvía a ver.
+      // Solo el N.º: `maquinaNombre` es rótulo del catálogo de BC y no está en SQL a
+      // propósito, así que se resuelve en el front y acá queda sin llenar.
+      maquinaNo: l.maquinaNo ?? undefined,
       cantidadRecibida: Number(l.quantityRecibida ?? 0), cantidadFacturada: Number(l.quantityFacturada ?? 0),
     })),
   };
@@ -1101,6 +1141,9 @@ export interface NewOrdenDB {
     unidad: string; almacen: string; precioUnitario: number; ivaPct: number; descuentoPct?: number; jobNo?: string; taskNo?: string;
     // Solo líneas tipo "cargo": tipo de Item Charge de BC y método de reparto.
     chargeNo?: string; chargeMethod?: string;
+    // N.º de la máquina del repuesto (parque GomEqp). Solo el N.º: el nombre es
+    // rótulo de pantalla y no viaja ni a SQL ni a BC.
+    maquinaNo?: string;
   }[];
 }
 
@@ -1156,6 +1199,10 @@ export async function createOrden(input: NewOrdenDB): Promise<number> {
   const conCargo = await ensureCargoCols();
   const colsCargo = conCargo ? ",chargeNo,chargeMethod" : "";
   const valsCargo = conCargo ? ",@chargeNo,@chargeMethod" : "";
+  // Mientras la columna de la máquina no esté, la orden se crea igual (sin máquina).
+  const conMaquina = await ensureMaquinaCol();
+  const colMaquina = conMaquina ? ",maquinaNo" : "";
+  const valMaquina = conMaquina ? ",@maquinaNo" : "";
   // Si la columna del comentario interno todavía no está, la orden se crea igual.
   const conNotaInterna = await ensureNotaInterna();
   const colNotaInterna = conNotaInterna ? ",notaInterna" : "";
@@ -1219,8 +1266,9 @@ export async function createOrden(input: NewOrdenDB): Promise<number> {
         .input("creadoPor", sql.NVarChar(100), input.usuario)
         .input("chargeNo", sql.NVarChar(40), l.chargeNo ?? null)
         .input("chargeMethod", sql.NVarChar(20), l.chargeMethod ?? null)
-        .query(`INSERT dbo.OrdenCompraDet (idOrdenCompra,idPedidoCompraDet,lineNum,tipoLinea,descripcion,itemNo,variantCode,unitOfMeasureCode,locationCode,quantity,quantityRecibida,quantityFacturada,directUnitCost,vatPct,lineDiscountPct,jobNo,taskNo,fechaCreacion,creadoPor${colsCargo})
-                VALUES (@idOrdenCompra,@idPedidoCompraDet,@lineNum,@tipoLinea,@descripcion,@itemNo,@variantCode,@unitOfMeasureCode,@locationCode,@quantity,0,0,@directUnitCost,@vatPct,@lineDiscountPct,@jobNo,@taskNo,getdate(),@creadoPor${valsCargo})`);
+        .input("maquinaNo", sql.NVarChar(20), l.maquinaNo ?? null)
+        .query(`INSERT dbo.OrdenCompraDet (idOrdenCompra,idPedidoCompraDet,lineNum,tipoLinea,descripcion,itemNo,variantCode,unitOfMeasureCode,locationCode,quantity,quantityRecibida,quantityFacturada,directUnitCost,vatPct,lineDiscountPct,jobNo,taskNo,fechaCreacion,creadoPor${colsCargo}${colMaquina})
+                VALUES (@idOrdenCompra,@idPedidoCompraDet,@lineNum,@tipoLinea,@descripcion,@itemNo,@variantCode,@unitOfMeasureCode,@locationCode,@quantity,0,0,@directUnitCost,@vatPct,@lineDiscountPct,@jobNo,@taskNo,getdate(),@creadoPor${valsCargo}${valMaquina})`);
       // descontar saldo del pedido origen
       if (l.idPedidoCompraDet) {
         await new sql.Request(tx).input("id", sql.Int, l.idPedidoCompraDet).input("q", sql.Decimal(18, 4), l.cantidad)
@@ -1252,6 +1300,12 @@ export async function updateOrden(id: number, input: UpdateOrdenDB) {
   const conCargo = await ensureCargoCols();
   const colsCargo = conCargo ? ",chargeNo,chargeMethod" : "";
   const valsCargo = conCargo ? ",@chargeNo,@chargeMethod" : "";
+  // Igual que al crear: sin la columna, editar la orden funciona y la máquina no se
+  // guarda. Ojo que este UPDATE BORRA y reinserta las líneas, así que si la columna
+  // llegara a faltar acá la máquina se pierde en el edit aunque estuviera guardada.
+  const conMaquina = await ensureMaquinaCol();
+  const colMaquina = conMaquina ? ",maquinaNo" : "";
+  const valMaquina = conMaquina ? ",@maquinaNo" : "";
   const setNotaInterna = (await ensureNotaInterna()) ? ", notaInterna=@notaInterna" : "";
   const rec = await pool.request().input("id", sql.Int, id)
     .query("SELECT COUNT(*) AS n FROM dbo.RecepcionCompra WHERE idOrdenCompra=@id AND esEliminada=0");
@@ -1336,8 +1390,9 @@ export async function updateOrden(id: number, input: UpdateOrdenDB) {
         .input("creadoPor", sql.NVarChar(100), input.usuario)
         .input("chargeNo", sql.NVarChar(40), l.chargeNo ?? null)
         .input("chargeMethod", sql.NVarChar(20), l.chargeMethod ?? null)
-        .query(`INSERT dbo.OrdenCompraDet (idOrdenCompra,idPedidoCompraDet,lineNum,tipoLinea,descripcion,itemNo,variantCode,unitOfMeasureCode,locationCode,quantity,quantityRecibida,quantityFacturada,directUnitCost,vatPct,lineDiscountPct,jobNo,taskNo,fechaCreacion,creadoPor${colsCargo})
-                VALUES (@idOrdenCompra,@idPedidoCompraDet,@lineNum,@tipoLinea,@descripcion,@itemNo,@variantCode,@unitOfMeasureCode,@locationCode,@quantity,0,0,@directUnitCost,@vatPct,@lineDiscountPct,@jobNo,@taskNo,getdate(),@creadoPor${valsCargo})`);
+        .input("maquinaNo", sql.NVarChar(20), l.maquinaNo ?? null)
+        .query(`INSERT dbo.OrdenCompraDet (idOrdenCompra,idPedidoCompraDet,lineNum,tipoLinea,descripcion,itemNo,variantCode,unitOfMeasureCode,locationCode,quantity,quantityRecibida,quantityFacturada,directUnitCost,vatPct,lineDiscountPct,jobNo,taskNo,fechaCreacion,creadoPor${colsCargo}${colMaquina})
+                VALUES (@idOrdenCompra,@idPedidoCompraDet,@lineNum,@tipoLinea,@descripcion,@itemNo,@variantCode,@unitOfMeasureCode,@locationCode,@quantity,0,0,@directUnitCost,@vatPct,@lineDiscountPct,@jobNo,@taskNo,getdate(),@creadoPor${valsCargo}${valMaquina})`);
       if (l.idPedidoCompraDet) {
         await new sql.Request(tx).input("id", sql.Int, l.idPedidoCompraDet).input("q", sql.Decimal(18, 4), l.cantidad)
           .query("UPDATE dbo.PedidoCompraDet SET quantityOrdenado = ISNULL(quantityOrdenado,0) + @q WHERE idPedidoCompraDet=@id");
@@ -1489,6 +1544,12 @@ export async function nuevaOrdenDesdePendiente(
       precioUnitario: Number(l.directUnitCost ?? 0), ivaPct: Number(l.vatPct ?? 0),
       descuentoPct: Number(l.lineDiscountPct ?? 0) || undefined,
       jobNo: l.jobNo ?? undefined, taskNo: l.taskNo ?? undefined,
+      // La MÁQUINA se arrastra por lo mismo que el tipo de línea (el agujero de
+      // arriba ya se pagó una vez): el repuesto pendiente sigue siendo para esa
+      // máquina, y si la orden nueva naciera sin ella el costo del repuesto que se
+      // compra al segundo proveedor queda sin dueño y la máquina pierde su
+      // historial — justo lo que esta columna vino a arreglar.
+      maquinaNo: l.maquinaNo ?? undefined,
     })));
   const idOrden = await createOrden({
     proveedorNo: h.proveedorNo, proveedorNombre: h.proveedorNombre ?? undefined,

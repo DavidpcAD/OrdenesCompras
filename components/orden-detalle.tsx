@@ -514,6 +514,19 @@ export function OrdenDetalle({
                                       {ol && (ol.proyecto
                                         ? <div className="ds-body-sm ds-muted">Consumo de la obra <span className="ds-strong">{ol.proyecto}</span>{ol.taskNo ? ` · tarea ${ol.taskNo}` : ""} — no suma inventario</div>
                                         : <div className="ds-body-sm ds-muted">Entró al almacén <span className="ds-strong">{ol.almacen || "—"}</span></div>)}
+                                      {/* Y para QUÉ EQUIPO era el repuesto. Acá NO va
+                                          `DestinoLinea`: las dos líneas de arriba son
+                                          frases que explican la consecuencia en el
+                                          inventario, y el componente las reemplazaría
+                                          por su propio formato. Se usa el mismo rótulo
+                                          ("Máquina X") para que se lea igual que en la
+                                          tabla de líneas de la orden. */}
+                                      {ol?.maquinaNo && (
+                                        <div className="ds-body-sm ds-muted">
+                                          Máquina <span className="ds-strong">{ol.maquinaNo}</span>
+                                          {ol.maquinaNombre && ol.maquinaNombre !== ol.maquinaNo ? ` — ${ol.maquinaNombre}` : ""}
+                                        </div>
+                                      )}
                                     </div>
                                     <div className="fac-det__num">{num.format(rl.cantidadRecibida)} {ol?.unidad ?? ""}</div>
                                     <div className="fac-det__num">

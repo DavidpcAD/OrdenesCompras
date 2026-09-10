@@ -109,6 +109,28 @@ async function getStdCompanyId(): Promise<string> {
   return getCompanyId();
 }
 
+// El NOMBRE de la compañía (no el GUID). Lo pide el OData de páginas, que se
+// direcciona `Company('NOMBRE')/Servicio`: medido contra Production, ese endpoint
+// NO acepta `?company=<guid>` (contesta 404 Internal_CompanyNotFound) aunque sí lo
+// acepten los web services de codeunit que usa el resto del archivo. Se resuelve
+// contra /companies para que un renombre en BC no rompa la lectura.
+let companyNameCache: string | null = null;
+async function getCompanyName(): Promise<string> {
+  if (companyNameCache) return companyNameCache;
+  const nombre = process.env.BC_COMPANY || "ADELANTE_DESARROLLOS_NUEVA";
+  try {
+    const res = await bcFetch(`${customRoot("inventory")}/companies`, { cache: "no-store" });
+    if (res.ok) {
+      const lista: any[] = (await res.json()).value ?? [];
+      const comp = lista.find((c) => (c.name ?? c.displayName) === nombre) ?? lista[0];
+      const n = (comp?.name ?? comp?.displayName ?? "").toString().trim();
+      if (n) { companyNameCache = n; return n; }
+    }
+  } catch { /* cae al nombre configurado */ }
+  companyNameCache = nombre;
+  return nombre;
+}
+
 // Lista de compañías visibles para la app (diagnóstico).
 export async function bcCompanies(): Promise<{ id: string; name: string }[]> {
   const res = await bcFetch(`${customRoot("inventory")}/companies`, { cache: "no-store" });
@@ -684,6 +706,215 @@ export async function bcRecursos(): Promise<BcRecurso[]> {
   } catch {
     return [];
   }
+}
+
+export type BcMaquina = { no: string; nombre: string; placa?: string };
+
+// ── PARQUE DE MAQUINARIA: DE DÓNDE SALE EL "N.º MÁQUINA" DE LA LÍNEA ──────────
+//
+// El equipo que se come el repuesto viaja en CADA LÍNEA del pedido de compra
+// (`Purchase Line."GomEqp Machine No."`), y el catálogo es la tabla GomEqp Machine
+// 71950576 de la extensión "Goom Parque Maquinaria". O sea: NO es un catálogo
+// nuestro. Se prueban tres caminos, en este orden:
+//
+//   a) `machines` de la API custom de Adelante (grupo inventory). Todavía no está
+//      publicada; el día que lo esté, este camino gana y los otros no corren. Es el
+//      único que responde como los demás catálogos (~300 ms).
+//   b) el web service ODataV4 de la PÁGINA 71950576, que ya está publicado en
+//      Production (se llama "Tarjetas_Maquinaria", y hay otro sobre la misma tabla
+//      llamado "Maquinaria"). El nombre no se clava: se busca en el service
+//      document, porque un nombre de servicio lo elige quien publica y puede cambiar.
+//   c) `BC_MAQUINAS_SERVICIO`, para clavarlo a mano desde Azure si el
+//      descubrimiento no acierta, sin esperar un despliegue.
+//
+// Los servicios de MOVIMIENTOS y GASTOS de maquinaria (Mov_maq, Gastos_Maquinaria,
+// MAQ_LINEAS, Partes…) se descartan a propósito aunque digan "maquinaria": traen
+// solo las máquinas que tuvieron movimiento, y un catálogo incompleto que se ve
+// completo es peor que uno vacío — la máquina que falta es justo la que nadie va a
+// poder elegir.
+//
+// POR QUÉ HAY CACHÉ Y NO SOLO `revalidate`: leer esa página por OData tarda unos
+// 75 s las 141 filas (medido, y no es el tenant: por el MISMO endpoint los activos
+// fijos salen en 300 ms; la página calcula campos de costo por registro). Así que
+// la lectura se hace UNA vez, se guarda en el proceso por horas, y mientras está
+// en curso la pantalla recibe lo que haya con `cargando: true` en vez de quedarse
+// esperando un minuto o comerse un timeout.
+
+// Seis horas: el parque cambia cuando entra o sale una máquina, no durante una
+// jornada de compras. Un reinicio de la app lo vuelve a leer.
+const MAQUINAS_TTL_MS = 6 * 60 * 60 * 1000;
+// Techo de la lectura lenta. Generoso a propósito (ver arriba): con menos, el
+// catálogo nunca llegaría a cachearse y cada intento moriría a mitad de camino.
+const MAQUINAS_TIMEOUT_MS = 180_000;
+// Suena a máquinas…
+const MAQUINAS_SUENA = /maquin|machine|gomeqp|equip/i;
+// …pero esto NO es el catálogo: son movimientos, partes, gastos y costos.
+const MAQUINAS_NO_CATALOGO = /gasto|expen|mov|line|parte|part|entr|ledger|hist|consum|cost/i;
+
+let maquinasCache: { lista: BcMaquina[]; origen: string; ts: number } | null = null;
+let maquinasEnVuelo: Promise<BcMaquina[]> | null = null;
+
+// Las llaves de una fila, sin puntuación y en minúscula. El mismo campo llega con
+// mil caras según el canal: `No.` (página), `No` (OData de página), `no` (API
+// custom), `License_Plate` vs `licensePlate`. Normalizar una vez sale más barato
+// que escribir seis alias por campo.
+function llavesNormalizadas(row: any): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(row ?? {})) {
+    if (k.startsWith("@")) continue;                       // @odata.etag y compañía
+    const llave = k.replace(/[^A-Za-z0-9]/g, "").toLowerCase();
+    const yaHay = out[llave];
+    if (yaHay === undefined || yaHay === null || yaHay === "") out[llave] = v;
+  }
+  return out;
+}
+
+function textoDeFila(row: Record<string, unknown>, ...alias: string[]): string {
+  for (const a of alias) {
+    const v = row[a];
+    if (v !== undefined && v !== null && String(v).trim()) return String(v).trim();
+  }
+  return "";
+}
+
+// Máquina que no se debe ofrecer. Se exige que la llave EXISTA y sea `true`: hay un
+// servicio publicado que no expone Blocked, y tratar el campo ausente como
+// "bloqueada" dejaría la lista vacía sin motivo.
+function maquinaFueraDeUso(row: Record<string, unknown>): boolean {
+  for (const a of ["blocked", "bloqueado", "inactive", "inactivo"]) {
+    if (a in row && row[a] === true) return true;
+  }
+  return false;
+}
+
+function mapearMaquinas(rows: any[]): BcMaquina[] {
+  return (rows ?? [])
+    .map(llavesNormalizadas)
+    .filter((r) => !maquinaFueraDeUso(r))
+    .map((r) => ({
+      no: textoDeFila(r, "no", "number", "code", "machineno"),
+      nombre: textoDeFila(r, "name", "nombre", "description", "descripcion", "displayname"),
+      placa: textoDeFila(r, "licenseplate", "placa") || undefined,
+    }))
+    .filter((m) => m.no);                                  // sin N.º no sirve para la línea
+}
+
+// Servicios publicados que pueden ser el catálogo, mejor primero. La lista de
+// TARJETAS va antes que la otra porque es la única que expone Blocked.
+function candidatosDeMaquinas(nombres: string[]): string[] {
+  const puntaje = (n: string) => {
+    if (/^tarjetas?[_ ]?maquinar[ií]a$/i.test(n)) return 100;
+    if (/^(maquinar[ií]a|machines?|gomeqpmachines?)$/i.test(n)) return 90;
+    return 50;
+  };
+  return nombres
+    .filter((n) => MAQUINAS_SUENA.test(n) && !MAQUINAS_NO_CATALOGO.test(n))
+    .sort((a, b) => puntaje(b) - puntaje(a))
+    .slice(0, 5);
+}
+
+// El service document de ODataV4 lista los web services publicados. Nadie más en
+// este archivo lo lee: es la única forma de encontrar una página publicada sin
+// clavarle el nombre a mano.
+async function serviciosOdataPublicados(): Promise<string[]> {
+  const res = await bcFetch(`${odataRoot()}/`, { cache: "no-store" });
+  if (!res.ok) throw new Error(`BC ${res.status} en el service document de ODataV4`);
+  const data: any = await res.json();
+  return (data.value ?? []).map((s: any) => String(s.name ?? s.url ?? "")).filter(Boolean);
+}
+
+// Un servicio OData de página, con paginación. El `$select` se intenta del más
+// completo al más pobre: `Maquinaria` no expone Blocked y BC responde 400 si se le
+// piden campos que la página no tiene.
+async function leerServicioDeMaquinas(servicio: string): Promise<any[]> {
+  const empresa = await getCompanyName();
+  const base = `${odataRoot()}/Company('${encodeURIComponent(empresa)}')/${encodeURIComponent(servicio)}`;
+  const selects = ["$select=No,Name,License_Plate,Blocked", "$select=No,Name,License_Plate", ""];
+  let ultimoError = "";
+  for (const sel of selects) {
+    const out: any[] = [];
+    let url: string | null = sel ? `${base}?${sel}` : base;
+    let guard = 0;
+    let ok = true;
+    while (url && guard++ < 50) {
+      const res = await bcFetch(url, { cache: "no-store" });
+      if (!res.ok) {
+        ultimoError = `BC ${res.status} en ${servicio}${sel ? ` (${sel})` : ""}: ${(await res.text()).slice(0, 200)}`;
+        ok = false;
+        break;
+      }
+      const data: any = await res.json();
+      out.push(...(data.value ?? []));
+      url = data["@odata.nextLink"] ?? null;
+    }
+    if (ok) return out;
+  }
+  throw new Error(ultimoError || `no se pudo leer ${servicio}`);
+}
+
+// Los tres caminos, en orden. Devuelve de dónde salió para poder decirlo.
+async function leerMaquinasDeBc(): Promise<{ lista: BcMaquina[]; origen: string }> {
+  try {
+    const lista = mapearMaquinas(await listCustom("inventory", "machines", { next: { revalidate: 3600 } } as RequestInit));
+    if (lista.length) return { lista, origen: "api-custom" };
+  } catch { /* la página API todavía no existe: se sigue con OData */ }
+
+  const fijado = (process.env.BC_MAQUINAS_SERVICIO ?? "").trim();
+  let candidatos: string[] = [];
+  if (fijado) {
+    candidatos = [fijado];
+  } else {
+    try {
+      candidatos = candidatosDeMaquinas(await serviciosOdataPublicados());
+    } catch (e) {
+      console.warn(`BC: no se pudo leer el service document de ODataV4 (${String((e as any)?.message ?? e)}).`);
+    }
+  }
+  for (const servicio of candidatos) {
+    try {
+      const lista = mapearMaquinas(await leerServicioDeMaquinas(servicio));
+      if (lista.length) return { lista, origen: `odata:${servicio}` };
+      console.warn(`BC: el servicio OData ${servicio} contestó sin máquinas; se prueba el siguiente.`);
+    } catch (e) {
+      console.warn(`BC: falló la lectura del servicio OData ${servicio}: ${String((e as any)?.message ?? e)}`);
+    }
+  }
+  return { lista: [], origen: "" };
+}
+
+// El catálogo para la pantalla. NUNCA tira, igual que `bcRecursos` y por la misma
+// razón (el catálogo vive en una extensión que se publica aparte de esta app), y
+// nunca deja esperando: `cargando: true` dice "estoy leyéndolo de BC, volvé a
+// preguntar en un rato" y la pantalla se acomoda.
+export async function bcMaquinas(): Promise<{ maquinas: BcMaquina[]; origen: string; cargando: boolean }> {
+  const fresco = maquinasCache && Date.now() - maquinasCache.ts < MAQUINAS_TTL_MS;
+  if (maquinasCache && fresco) {
+    return { maquinas: maquinasCache.lista, origen: maquinasCache.origen, cargando: false };
+  }
+  if (!maquinasEnVuelo) {
+    const arranque = Date.now();
+    maquinasEnVuelo = conTiempoLimite(leerMaquinasDeBc(), MAQUINAS_TIMEOUT_MS, "parque de maquinaria")
+      .then((r) => {
+        if (r.lista.length) {
+          maquinasCache = { lista: r.lista, origen: r.origen, ts: Date.now() };
+          console.log(`BC: parque de maquinaria leído de ${r.origen} — ${r.lista.length} máquinas en ${Date.now() - arranque} ms.`);
+        } else {
+          console.warn("BC: no se pudo leer el parque de maquinaria por ningún camino.");
+        }
+        return r.lista;
+      })
+      .catch((e) => {
+        console.warn(`BC: la lectura del parque de maquinaria falló (${String((e as any)?.message ?? e)}).`);
+        return maquinasCache?.lista ?? [];
+      })
+      .finally(() => { maquinasEnVuelo = null; });
+  }
+  // Con algo viejo en la mano se contesta YA y la lectura sigue en el fondo: un
+  // catálogo de ayer sirve para elegir una máquina; esperar 75 s, no.
+  if (maquinasCache) return { maquinas: maquinasCache.lista, origen: maquinasCache.origen, cargando: true };
+  // Primera lectura del proceso: no hay nada que dar. Se contesta vacío con
+  // `cargando` y la pantalla vuelve a preguntar sola.
+  return { maquinas: [], origen: "", cargando: true };
 }
 
 export type BcActivoFijo = { no: string; descripcion: string; clase: string };
@@ -1592,6 +1823,14 @@ export type LineaReplaceBc = {
   // stock lleva solo el CC.
   centroCosto?: string;
   chargeNo?: string; chargeMethod?: string; descripcion?: string;
+  // MÁQUINA a la que va el repuesto: el "N.º máquina" del parque de maquinaria de
+  // Goom (Purchase Line."GomEqp Machine No.", Code[20]). En BC vive en la LÍNEA, no
+  // en el encabezado, y por eso viaja acá: un pedido con repuestos para tres
+  // máquinas son tres líneas, cada una con la suya (ver lib/maquinas.ts). Es el dato
+  // con el que la maquinaria arma su historial de costos; sin él el gasto queda sin
+  // dueño. Solo el N.º — el nombre del parque (`maquinaNombre` en OrdenLinea) es
+  // rótulo de pantalla y no se le manda a BC.
+  maquinaNo?: string;
   // El IVA% que Proveeduría le puso a la línea en la orden. NO viaja al codeunit (BC
   // no recibe porcentajes: calcula el IVA con los grupos), pero SÍ manda cuando es
   // CERO: ahí se le pone el grupo exento a la línea en BC, para que allá salga en
@@ -1660,6 +1899,12 @@ export function payloadReplaceLines(lineas: LineaReplaceBc[]): { lines: Record<s
       // omite y se avisa, en vez de inventar un código que BC va a rechazar.
       const chargeNo = (l.chargeNo ?? "").trim();
       if (!chargeNo) { omitidas.push(`${nombre} (cargo sin tipo)`); continue; }
+      // Al cargo NO se le manda máquina, aunque la orden la traiga. El cargo es UNO
+      // solo para todo el pedido y BC lo REPARTE al registrar (AsignarCargosProducto
+      // le reescribe cantidad y precio): amarrarlo a una máquina sería decir que el
+      // flete de un camión con repuestos de tres máquinas fue de una sola. El costo
+      // del flete llega a cada máquina por el reparto, sobre las líneas de artículo
+      // que sí la llevan.
       lines.push({
         type: "Charge", itemChargeNo: chargeNo, description: l.descripcion || chargeNo,
         quantity: cantidad, directUnitCost: precio, chargeMethod: l.chargeMethod || "Amount",
@@ -1678,6 +1923,11 @@ export function payloadReplaceLines(lineas: LineaReplaceBc[]): { lines: Record<s
     //     medida en BC; para el recurso sí se manda la suya si viene.
     //   · el activo fijo tampoco lleva obra: BC no acepta Job No. en esas líneas
     //     (lo cobra el libro de depreciación, no el proyecto).
+    //   · ni máquina para el activo fijo: la máquina que se COMPRA es el activo, no
+    //     el destino del gasto. Ponerle el N.º de otra máquina le cargaría a esa el
+    //     costo de un activo que no es suyo. Al recurso sí se le manda: el torno o
+    //     la soldadura que se le pagó a un tercero es gasto de esa máquina, y es la
+    //     misma línea de compra de BC con otro `Type`.
     if (l.tipo === "recurso" || l.tipo === "activo_fijo") {
       const otro: Record<string, unknown> = {
         type: l.tipo === "recurso" ? "Resource" : "Fixed Asset",
@@ -1690,6 +1940,8 @@ export function payloadReplaceLines(lineas: LineaReplaceBc[]): { lines: Record<s
         otro.taskNo = l.taskNo ?? "";
         const u = (l.unidad ?? "").trim().toUpperCase();
         if (u) otro.unitOfMeasureCode = u;
+        const maq = (l.maquinaNo ?? "").trim();
+        if (maq) otro.maquinaNo = maq;
       }
       if (l.descripcion) otro.description = l.descripcion;
       lines.push(otro);
@@ -1701,6 +1953,11 @@ export function payloadReplaceLines(lineas: LineaReplaceBc[]): { lines: Record<s
     // la del ítem en vez de facturar 1 gramo al precio de un estañón.
     const unidad = (l.unidad ?? "").trim().toUpperCase();
     const variante = (l.variantCode ?? "").trim();
+    // El N.º de máquina se manda tal como vino del parque de BC (solo sin espacios):
+    // el catálogo lo lee la app de BC mismo, así que el código ya está escrito como
+    // allá lo tiene. Mismo criterio que la variante, que también sale de un catálogo
+    // de BC y por eso no se le cambia la caja.
+    const maquina = (l.maquinaNo ?? "").trim();
     const linea: Record<string, unknown> = {
       type: "Item", itemNo, locationCode: l.locationCode ?? "",
       quantity: cantidad, directUnitCost: precio, lineDiscountPct: Number(l.descuentoPct) || 0,
@@ -1714,6 +1971,18 @@ export function payloadReplaceLines(lineas: LineaReplaceBc[]): { lines: Record<s
     // reventaba después, en manos del aprobador. Omitido, sobrevive el default de BC.
     if (unidad) linea.unitOfMeasureCode = unidad;
     if (variante) linea.variantCode = variante;
+    // La MÁQUINA a la que va el repuesto, para que el costo tenga dueño en BC
+    // (Purchase Line."GomEqp Machine No.", del parque de Goom). Sin ella la línea
+    // llega igual y el gasto queda sin máquina, que es lo que pasaba hasta ahora.
+    // Va vacía → no se manda, por la misma razón que la unidad y la variante: una
+    // clave en blanco no es "dejá lo que había", es BORRARLO.
+    // Mandar esta clave es seguro incluso contra el codeunit VIEJO: AdelantePO_
+    // ReplaceOrderLines lee llave por llave con JObj.Get('itemNo'), Get('jobNo')…
+    // y nunca recorre el objeto, así que una clave que todavía no conoce ni la ve.
+    // O sea: si la 1.2.9.0 no está desplegada, la línea entra igual (sin máquina) y
+    // nada revienta — el dato empieza a llegar solo cuando se publique la versión
+    // que lo lee.
+    if (maquina) linea.maquinaNo = maquina;
     lines.push(linea);
   }
   return { lines, omitidas };
@@ -2037,6 +2306,11 @@ export function lineasOrdenParaBc(
     jobNo: l.proyecto, taskNo: l.taskNo,
     centroCosto: centroCostoDeLinea(l, obraDeSolicitud),
     chargeNo: l.chargeNo, chargeMethod: l.chargeMethod, descripcion: l.descripcion,
+    // La máquina del repuesto viaja con la línea, no con el pedido: si esto no se
+    // copia acá, el N.º que Proveeduría eligió se queda en el SQL de la app y en BC
+    // la maquinaria nunca ve el costo. Solo el N.º — `maquinaNombre` es rótulo de
+    // pantalla y no tiene a dónde llegar en BC.
+    maquinaNo: l.maquinaNo,
     ivaPct: l.ivaPct,
   }));
 }

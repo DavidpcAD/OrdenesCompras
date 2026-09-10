@@ -516,6 +516,12 @@ export function StoreProvider({ children, useApi }: { children: React.ReactNode;
             // El tipo de cargo (Item Charge de BC) y su reparto viajan al SQL: sin
             // esto se perdían y BC terminaba rechazando el flete.
             chargeNo: l.chargeNo, chargeMethod: l.chargeMethod,
+            // El N.º de MÁQUINA de la línea (parque GomEqp), por lo mismo: este mapeo
+            // es campo por campo, así que lo que no se nombre acá NO sale del
+            // navegador. En modo mock la máquina sobrevivía por el spread —la pantalla
+            // se veía bien— y en producción no llegaba ni al SQL ni al pedido de BC.
+            // `maquinaNombre` NO viaja a propósito: es rótulo del parque, para mostrar.
+            maquinaNo: l.maquinaNo,
           })),
         });
         const o = await api.getOrden(String(idOrdenCompra));
@@ -577,6 +583,12 @@ export function StoreProvider({ children, useApi }: { children: React.ReactNode;
             // El tipo de cargo (Item Charge de BC) y su reparto viajan al SQL: sin
             // esto se perdían y BC terminaba rechazando el flete.
             chargeNo: l.chargeNo, chargeMethod: l.chargeMethod,
+            // El N.º de MÁQUINA de la línea (parque GomEqp), por lo mismo: este mapeo
+            // es campo por campo, así que lo que no se nombre acá NO sale del
+            // navegador. En modo mock la máquina sobrevivía por el spread —la pantalla
+            // se veía bien— y en producción no llegaba ni al SQL ni al pedido de BC.
+            // `maquinaNombre` NO viaja a propósito: es rótulo del parque, para mostrar.
+            maquinaNo: l.maquinaNo,
           })),
         }) as { bcAviso?: string } | undefined;
         await refreshFromApi();

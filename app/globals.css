@@ -2181,6 +2181,29 @@ button.ana-kpi:active { transform: translateY(1px); }
 }
 
 /* =========================================================================
+   REPARTO ENTRE MÁQUINAS (diálogo de la compra directa)
+   Una fila por máquina: nombre, cuánto se lleva y quitar. Es una lista de
+   edición dentro de un diálogo angosto, así que no es una `.ds-table` ni una
+   `.rec-line` (esa tiene las cinco columnas de la recepción).
+   ========================================================================= */
+.maq-fila {
+  display: grid; grid-template-columns: minmax(0, 1fr) 96px 32px;
+  align-items: center; gap: var(--ds-space-3);
+  padding: 10px 0; border-top: 1.5px solid var(--ds-color-gray-100);
+}
+.maq-fila__no { font-size: var(--ds-font-size-label); font-weight: var(--ds-font-weight-semibold); }
+.maq-fila__nombre {
+  font-size: var(--ds-font-size-body-sm); color: var(--ds-color-gray-400);
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+/* El renglón que dice cuánto se repartió y cuánto falta. En rojo solo cuando se
+   repartió MÁS de lo que trae la línea, que es el único caso que no se puede
+   guardar. */
+.maq-cuenta { display: flex; flex-wrap: wrap; gap: var(--ds-space-2); align-items: baseline; justify-content: space-between;
+  margin-top: var(--ds-space-3); padding-top: var(--ds-space-3); border-top: 1.5px solid var(--ds-color-gray-200); }
+.maq-cuenta--pasado { color: var(--ds-color-red-100); }
+
+/* =========================================================================
    OBJETIVOS TÁCTILES — al final a propósito
    Las media queries NO suman especificidad: una regla puesta antes de la
    definición del componente pierde contra ella. `.kebab` se define en la ~1865,

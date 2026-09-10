@@ -7,17 +7,24 @@ import { DestinoLinea } from "@/components/destino-linea";
 import { AgregarLineasSolicitud } from "@/components/agregar-lineas-solicitud";
 import { IconWarning } from "@/components/icons";
 import { Combobox } from "@/components/combobox";
+import { CampoMaquina, RepartoMaquinasModal, nombreDeMaquina, useMaquinasBc } from "@/components/maquina-linea";
 import { useStore } from "@/lib/store";
 import { etiquetaTipoLinea, money, num, ordenEsDirecta, ordenEsperaCorreccion, lineasCorregidasDeOrden, ordenPedidos, almacenesParaRecepcion, esAlmacenFisico, repartoDeLineaSolicitud, pedidoLineaPendiente, obraParaOrden, ultimoPrecioProveedor, monedaApp, numeroOrden } from "@/lib/helpers";
 import { precioEnUnidad, precioEntreUnidades, cantidadEntreUnidades, equivalencia, equivalenciaDeUnidad, mismaMoneda, codigoDeItem, opcionesDeUnidad, type UnidadDeItem } from "@/lib/unidad";
 import { useVariantes } from "@/lib/use-variantes";
+import type { LineaDeMaquina } from "@/lib/maquinas";
 import type { OrdenLinea } from "@/lib/types";
 
 // OJO con los dos campos de destino, que NO son lo mismo (y estaban pegados en uno):
 //   almacen  -> locationCode: DÓNDE entra el material en BC.
 //   proyecto -> Project No. (Job): a qué OBRA se carga como consumo. Opcional, y
 //               tiene que existir en BC.
-interface Row { key: string; tipo: OrdenLinea["tipo"]; articuloId: string; variantCode?: string; descripcion: string; unidad: string; unidadBase?: string; factorCompra?: number; almacen: string; cantidad: string; precio: string; iva: string; descuento: string; proyecto?: string; taskNo?: string; pedidoLineaId?: string; pedidoNumero?: string; }
+// `maquinaNo` no es ninguna de las dos: es el "N.º máquina" (parque GomEqp) que BC
+// lleva en la LÍNEA, o sea QUÉ EQUIPO se come el repuesto. Tiene que estar en la fila
+// porque esta pantalla REESCRIBE el pedido en BC con lo que haya acá: un Row sin
+// máquina significa que reabrir y guardar una orden le borra la máquina a la línea
+// —en el SQL y en BC—, que es peor que no tener el campo.
+interface Row { key: string; tipo: OrdenLinea["tipo"]; articuloId: string; variantCode?: string; descripcion: string; unidad: string; unidadBase?: string; factorCompra?: number; almacen: string; cantidad: string; precio: string; iva: string; descuento: string; proyecto?: string; taskNo?: string; maquinaNo?: string; maquinaNombre?: string; pedidoLineaId?: string; pedidoNumero?: string; }
 type Obra = { codigo: string; nombre: string };
 type Tarea = { jobTaskNo: string; descripcion: string; tipo: string };
 const uid = () => Math.random().toString(36).slice(2, 9);
@@ -33,7 +40,12 @@ const filasDeOrden = (lineas: OrdenLinea[]): Row[] =>
     key: l.id, tipo: l.tipo, articuloId: l.articuloId ?? "", variantCode: l.variantCode, descripcion: l.descripcion, unidad: l.unidad,
     unidadBase: l.unidadBase, factorCompra: l.factorCompra, almacen: l.almacen ?? "",
     cantidad: String(l.cantidad), precio: String(l.precioUnitario), iva: String(l.ivaPct ?? 13), descuento: String(l.descuentoPct ?? 0),
-    proyecto: l.proyecto, taskNo: l.taskNo, pedidoLineaId: l.pedidoLineaId, pedidoNumero: l.pedidoNumero,
+    proyecto: l.proyecto, taskNo: l.taskNo,
+    // La MÁQUINA de la línea entra igual que la obra: lo que no se copie acá se
+    // pierde al guardar (ver el comentario del Row). El nombre es solo rótulo; si la
+    // orden viene del SQL no lo trae y se resuelve contra el parque de BC.
+    maquinaNo: l.maquinaNo, maquinaNombre: l.maquinaNombre,
+    pedidoLineaId: l.pedidoLineaId, pedidoNumero: l.pedidoNumero,
   }));
 
 // El almacén/centro de costo que comparten las líneas de artículo, o "" si tienen
@@ -69,8 +81,13 @@ export default function EditarOrdenPage() {
   // Obras y sus tareas (Job No. / Job Task No. de BC), para el diálogo de destino.
   const [obras, setObras] = useState<Obra[]>([]);
   const [tareasPorObra, setTareasPorObra] = useState<Record<string, Tarea[]>>({});
-  // Línea cuyo destino (obra + tarea) se está corrigiendo (null = cerrado).
+  // Línea cuyo destino (obra + tarea + máquina) se está corrigiendo (null = cerrado).
   const [editObra, setEditObra] = useState<Row | null>(null);
+  // Línea que se está repartiendo entre varias máquinas (null = cerrado).
+  const [reparto, setReparto] = useState<Row | null>(null);
+  // Parque de maquinaria de BC. Se pide aparte de los catálogos de abajo porque la
+  // primera lectura del día tarda ~70 s; el hook se encarga de seguir preguntando.
+  const { maquinas: catMaq, cargando: maqCargando } = useMaquinasBc();
   // Diálogo para SUMARLE a la orden líneas de solicitud que quedaron pendientes.
   const [addOpen, setAddOpen] = useState(false);
   const [itemCharges, setItemCharges] = useState<{ no: string; descripcion: string }[]>([]);
@@ -220,6 +237,10 @@ export default function EditarOrdenPage() {
   const nombreTarea = (jobNo: string, taskNo: string) => tareasDe(jobNo).find((t) => t.jobTaskNo === taskNo)?.descripcion ?? "";
   const nombreObra = (jobNo: string) => obras.find((o) => o.codigo === jobNo)?.nombre ?? "";
   const nombreAlmacen = (cod: string) => catAlm.find((a) => a.codigo === cod)?.nombre ?? "";
+  // El nombre de la máquina sale del PARQUE, no de la línea: una orden leída del SQL
+  // trae solo el N.º (es lo único que se guarda), así que sin esto la celda mostraría
+  // "MAQ00017" pelado. Si el parque todavía no llegó, vale el rótulo que traiga la fila.
+  const nombreMaquina = (no: string, deLaFila = "") => nombreDeMaquina(catMaq, no) || deLaFila;
 
   const unidadesDe = (itemNo: string) => unidadesPorItem[codigoDeItem(itemNo)] ?? [];
   const variantesDe = (itemNo: string) => variantes.variantesDe(itemNo);
@@ -265,6 +286,33 @@ export default function EditarOrdenPage() {
       const nueva: Row = { ...fila, key: `v-${uid()}`, variantCode: "", cantidad: resto > 0 ? String(resto) : "" };
       return [...rs.slice(0, i + 1), nueva, ...rs.slice(i + 1)];
     });
+  }
+
+  // ---- Partir una línea entre VARIAS MÁQUINAS -----------------------------------
+  //
+  // Tres filtros para tres vagonetas no caben en una línea: BC lleva el N.º máquina EN
+  // la línea, así que la única forma de que cada equipo quede con su costo (y con su
+  // historial de repuestos) es una línea por equipo. La cuenta la hace el diálogo con
+  // lib/maquinas.ts y devuelve las líneas que van a quedar; acá solo se reemplaza la
+  // fila por ellas. Conservan el enlace con la solicitud, igual que "+ otra variante":
+  // entre todas suman la misma cantidad, así que el saldo del pedido no se mueve.
+  function guardarReparto(ls: LineaDeMaquina[]) {
+    const fila = reparto;
+    if (!fila) return;
+    setRows((rs) => rs.flatMap((r) => (r.key !== fila.key ? [r] : ls.map((l) => ({
+      ...r, key: `mq-${uid()}`, cantidad: String(l.cantidad),
+      maquinaNo: l.maquinaNo || undefined, maquinaNombre: l.maquinaNombre || undefined,
+    })))));
+    const conMaq = ls.filter((l) => l.maquinaNo).length;
+    setReparto(null);
+    // Y se dice que falta guardar: acá el reparto NO se aplica al SQL ni a BC hasta
+    // que se le dé a "Guardar cambios" (a diferencia de compra directa, donde la orden
+    // todavía no existe).
+    toast(conMaq > 1
+      ? `La línea quedó partida en ${ls.length} — una por máquina. Todavía hay que darle a “Guardar cambios”.`
+      : conMaq === 1
+        ? "Máquina asignada a la línea. Todavía hay que darle a “Guardar cambios”."
+        : "La línea quedó sin máquina. Todavía hay que darle a “Guardar cambios”.", "success");
   }
   // Lo que se ofrece en la celda: las de BC + la que la línea ya tiene.
   const opcionesFila = (itemNo: string, actual: string) => opcionesDeUnidad(unidadesDe(itemNo), actual);
@@ -527,6 +575,12 @@ export default function EditarOrdenPage() {
         // El activo fijo no lleva obra: BC no acepta Job No. en esas líneas.
         proyecto: r.tipo === "activo_fijo" ? undefined : (r.proyecto || undefined),
         taskNo: r.tipo === "activo_fijo" ? undefined : (r.proyecto ? r.taskNo : undefined),
+        // El N.º máquina viaja a BC en la LÍNEA (parque GomEqp). El activo fijo no la
+        // lleva: esa compra se capitaliza contra el activo, no la consume un equipo.
+        // El nombre va solo para que la pantalla no muestre un código pelado; al SQL
+        // y a BC solo les llega el N.º (ver lib/store.tsx).
+        maquinaNo: r.tipo === "activo_fijo" ? undefined : (r.maquinaNo || undefined),
+        maquinaNombre: r.tipo === "activo_fijo" ? undefined : (r.maquinaNombre || undefined),
       }));
       // El cargo se rearma conservando lo que ya tenía la orden (tipo de Item Charge
       // de BC, método de reparto, descripción y cantidad). Antes se reescribía como
@@ -743,7 +797,7 @@ export default function EditarOrdenPage() {
           </div>
           <div className="ds-table-wrap" style={{ boxShadow: "none" }}>
             <table className="ds-table">
-              <thead><tr><th>Artículo</th><th>Solicitud</th><th>Destino</th><th className="ds-num">Cantidad</th><th className="ds-num">Precio</th><th className="ds-num">Desc%</th><th className="ds-num">IVA%</th><th className="ds-num">Importe</th><th></th></tr></thead>
+              <thead><tr><th>Artículo</th><th>Solicitud</th><th>Destino</th><th className="ds-num">Cantidad</th><th className="ds-num">Precio</th><th className="ds-num">Desc%</th><th className="ds-num">IVA%</th><th className="ds-num">Importe</th><th className="ds-col-fija" style={{ width: 56 }} /></tr></thead>
               <tbody>
                 {rows.length === 0 && <tr><td colSpan={9}><div className="empty">Sin líneas. Agregá al menos una.</div></td></tr>}
                 {rows.map((r) => (
@@ -812,11 +866,23 @@ export default function EditarOrdenPage() {
                         return <DestinoLinea
                           almacen={alm} almacenNombre={nombreAlmacen(alm)}
                           obra={r.proyecto} obraNombre={nombreObra(r.proyecto ?? "")}
-                          tarea={r.taskNo} tareaNombre={nombreTarea(r.proyecto ?? "", r.taskNo ?? "")} />;
+                          tarea={r.taskNo} tareaNombre={nombreTarea(r.proyecto ?? "", r.taskNo ?? "")}
+                          maquina={r.maquinaNo} maquinaNombre={nombreMaquina(r.maquinaNo ?? "", r.maquinaNombre)} />;
                       })()}
-                      <button type="button" className="link-btn" onClick={() => { setEditObra(r); if (r.proyecto) cargarTareas(r.proyecto); }}>
-                        {r.proyecto ? "Cambiar obra/tarea" : "Asignar obra"}
-                      </button>
+                      <span className="row wrap gap-3" style={{ marginTop: 2 }}>
+                        <button type="button" className="link-btn" onClick={() => { setEditObra(r); if (r.proyecto) cargarTareas(r.proyecto); }}>
+                          {r.proyecto || r.maquinaNo ? "Cambiar" : "Asignar destino"}
+                        </button>
+                        {/* Una línea de 1 no se reparte entre máquinas: para esa, la
+                            máquina se elige en «Cambiar». Y el activo fijo no lleva
+                            ninguna (BC lo capitaliza contra el activo). */}
+                        {r.tipo !== "activo_fijo" && Number(r.cantidad) > 1 && (
+                          <button type="button" className="link-btn" onClick={() => setReparto(r)}
+                            title="Repartir la cantidad de esta línea entre varias máquinas: queda una línea por máquina, que es como BC lleva el N.º máquina.">
+                            Repartir entre máquinas
+                          </button>
+                        )}
+                      </span>
                     </td>
                     <td className="ds-num">
                       {/* La unidad al lado de la cantidad: "40" solo no dice nada
@@ -840,7 +906,7 @@ export default function EditarOrdenPage() {
                     <td className="ds-num"><input className="ds-cell-input" aria-label="Descuento %" type="number" min={0} max={100} value={r.descuento} style={{ width: 60 }} onChange={(e) => setRow(r.key, { descuento: e.target.value })} /></td>
                     <td className="ds-num"><input className="ds-cell-input" aria-label="IVA %" type="number" min={0} value={r.iva} style={{ width: 56 }} onChange={(e) => setRow(r.key, { iva: e.target.value })} /></td>
                     <td className="ds-num ds-strong">{money(calcImporte(r) || 0, currency)}</td>
-                    <td className="ds-num"><button type="button" className="icon-btn" title="Quitar línea" aria-label="Quitar línea" onClick={() => removeRow(r.key)}>×</button></td>
+                    <td className="ds-num ds-col-fija"><button type="button" className="icon-btn icon-btn--quitar" title="Quitar línea" aria-label="Quitar línea" onClick={() => removeRow(r.key)}>×</button></td>
                   </tr>
                 ))}
               </tbody>
@@ -859,13 +925,16 @@ export default function EditarOrdenPage() {
       </main>
 
       {editObra && (
-        <Modal title="Obra y tarea de la línea" onClose={() => setEditObra(null)}
+        <Modal title="Destino de la línea" onClose={() => setEditObra(null)}
           footer={<>
             <Button variant="outline" onClick={() => setEditObra(null)}>Cancelar</Button>
             <Button
               disabled={!!editObra.proyecto && tareasDe(editObra.proyecto).length > 0 && !editObra.taskNo}
               onClick={() => {
-                setRow(editObra.key, { proyecto: editObra.proyecto || undefined, taskNo: editObra.proyecto ? (editObra.taskNo || undefined) : undefined });
+                setRow(editObra.key, {
+                  proyecto: editObra.proyecto || undefined, taskNo: editObra.proyecto ? (editObra.taskNo || undefined) : undefined,
+                  maquinaNo: editObra.maquinaNo || undefined, maquinaNombre: editObra.maquinaNombre || undefined,
+                });
                 setEditObra(null);
               }}>Guardar</Button>
           </>}>
@@ -894,7 +963,26 @@ export default function EditarOrdenPage() {
                 placeholder={tareasDe(editObra.proyecto).length ? "Elegí tarea…" : "Sin tareas en BC"} />
             </Field>
           )}
+          {/* La MÁQUINA es otra cosa que la obra: no dice a dónde entra el material
+              sino qué equipo se lo come. Va en la misma línea del pedido en BC, así
+              que se corrige acá y viaja al guardar la orden. El activo fijo no la
+              lleva (se capitaliza contra el activo). */}
+          {editObra.tipo !== "activo_fijo" && (
+            <CampoMaquina className="mt-4" maquinas={catMaq} cargando={maqCargando}
+              value={editObra.maquinaNo ?? ""} nombre={editObra.maquinaNombre ?? ""}
+              help="Opcional. El equipo al que va el repuesto (N.º máquina de la línea en BC). Si esta línea va a varias máquinas, cerrá y usá «Repartir entre máquinas»."
+              onChange={(no, nom) => setEditObra({ ...editObra, maquinaNo: no, maquinaNombre: nom })} />
+          )}
         </Modal>
+      )}
+
+      {reparto && (
+        <RepartoMaquinasModal
+          codigo={reparto.articuloId} descripcion={reparto.descripcion}
+          total={Number(reparto.cantidad) || 0} unidad={reparto.unidad}
+          maquinaInicial={reparto.maquinaNo ?? ""} maquinaNombreInicial={nombreMaquina(reparto.maquinaNo ?? "", reparto.maquinaNombre)}
+          maquinas={catMaq} cargando={maqCargando}
+          onClose={() => setReparto(null)} onGuardar={guardarReparto} />
       )}
 
       {addOpen && (
