@@ -9,7 +9,7 @@
 //   npm test
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { clasificarFalloBc, cotejoProveedor, estadoLanzamientoBc, conflictoDeDimensiones, explicarConflictoDimensiones, nombreRealizadoPor } from "./bc.ts";
+import { clasificarFalloBc, cotejoProveedor, estadoLanzamientoBc, conflictoDeDimensiones, explicarConflictoDimensiones, nombreRealizadoPor, tipoLineaBc } from "./bc.ts";
 
 const envuelto = (mensaje: string) =>
   `BC registrar 400: {"error":{"code":"Application_DialogException","message":"${mensaje} CorrelationId: 5ad0cc6c-2ef8-49b6-8f26-c9893727c69f."}}`;
@@ -198,4 +198,29 @@ test("el nombre que firma el movimiento en BC se limpia y se recorta a 50", () =
   assert.equal(nombreRealizadoPor("  Jessie Corrales  "), "Jessie Corrales");
   assert.equal(nombreRealizadoPor(undefined), "");
   assert.equal(nombreRealizadoPor("A".repeat(80)).length, 50);
+});
+
+// ── EL TIPO DE LÍNEA QUE DEVUELVE BC ────────────────────────────────────────────
+// El 10 sep 2026 las dos primeras órdenes de ACTIVO FIJO (CP-005454 y CP-005476)
+// salieron en rojo: "Business Central NO tiene 1 línea(s) de esta orden" con la
+// línea sentada en BC, bien creada. La causa no estaba en el cotejo sino acá: en
+// OData, BC escapa los espacios del valor del enum y "Fixed Asset" llega
+// "Fixed_x0020_Asset", que no calzaba con nada y caía en "otro" — o sea, la línea
+// se caía del cotejo Y del freno de recepción de Bodega.
+test("activo fijo: BC manda el enum escapado y hay que entenderlo igual", () => {
+  assert.equal(tipoLineaBc("Fixed_x0020_Asset"), "activo_fijo");   // API custom (page 50174), el caso real
+  assert.equal(tipoLineaBc("Fixed Asset"), "activo_fijo");
+  assert.equal(tipoLineaBc("Activo fijo"), "activo_fijo");          // caption del codeunit en español
+  assert.equal(tipoLineaBc("Fixed_x0020_Asset", 4), "activo_fijo"); // con typeNo manda el número
+});
+
+test("los demás tipos siguen igual, escapados o no", () => {
+  assert.equal(tipoLineaBc("Item"), "articulo");
+  assert.equal(tipoLineaBc("Producto"), "articulo");
+  assert.equal(tipoLineaBc("Resource"), "recurso");
+  assert.equal(tipoLineaBc("Charge_x0020__x0028_Item_x0029_"), "cargo");
+  assert.equal(tipoLineaBc("Cargo (prod.)"), "cargo");
+  assert.equal(tipoLineaBc("G_x002F_L_x0020_Account"), "otro");     // cuenta contable: esta app no la arma
+  assert.equal(tipoLineaBc("_x0020_"), "otro");                     // línea en blanco (comentario)
+  assert.equal(tipoLineaBc(""), "otro");
 });
