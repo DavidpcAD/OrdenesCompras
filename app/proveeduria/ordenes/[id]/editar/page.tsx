@@ -565,9 +565,12 @@ export default function EditarOrdenPage() {
         // El almacén de arriba manda sobre todas las líneas (es el punto de
         // "cambiarle el centro de costo a la orden"). Vacío = cada línea se queda
         // con el suyo, que es lo que pasa cuando la orden tiene varios.
-        // Solo el material entra a una bodega: al recurso y al activo fijo no se les
-        // pone almacén (BC solo lo acepta en líneas de artículo).
-        almacen: r.tipo === "articulo" ? (almacen || r.almacen) : "",
+        // Va en todas las líneas, del tipo que sean: en una que no es de artículo el
+        // almacén no manda nada a bodega, pero es de donde BC saca la dimensión de
+        // centro de costo. Antes se le quitaba al recurso y al activo fijo por una
+        // regla que resultó falsa (ver lib/bc.ts) — y esta pantalla ya se lo mostraba
+        // al usuario en la columna Destino, así que además mentía.
+        almacen: almacen || r.almacen,
         precioUnitario: Number(r.precio), ivaPct: Number(r.iva) || 0, descuentoPct: Number(r.descuento) || 0,
         // La obra viaja a BC como Project No. y SOLO si la línea de verdad tiene una:
         // antes se caía al almacén, y un "ALM-GRAL" en Project No. hace que BC rechace

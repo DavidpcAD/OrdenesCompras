@@ -495,38 +495,58 @@ test("el almacén amarrado pone el CC incluso si la línea no traía ninguno", (
 // ── RECURSO Y ACTIVO FIJO ────────────────────────────────────────────────────
 // Una compra directa puede ser un servicio (Resource) o un activo (Fixed Asset), no
 // solo material. Son la MISMA línea de compra de BC con otro `Type`, pero con menos
-// campos: lo que se prueba acá es justamente qué NO se les manda, porque mandarles
-// almacén, variante o unidad es lo que hace que BC rechace la línea (o peor, que la
-// acepte y el activo entre al inventario).
-test("una línea de recurso viaja como Resource, con obra y sin almacén ni variante", () => {
+// campos: lo que se prueba acá es qué se les manda y qué no.
+//
+// OJO con la historia: hasta el 10 sep 2026 acá decía que mandarles ALMACÉN "es lo
+// que hace que BC rechace la línea". Era falso y nunca se probó contra BC — se leyó
+// después el fuente de la Base Application 27.4 (viene dentro de los .app de
+// .alpackages) y el campo "Location Code" de la línea de compra no tiene ninguna
+// atadura al tipo; BC mismo le copia el del encabezado a cualquier línea. El almacén
+// ahora VIAJA, porque es de donde BC saca la dimensión de centro de costo. Lo que
+// sigue sin viajar es variante (es del catálogo de artículos), unidad en el activo
+// fijo (no tiene) y obra en el activo fijo (esa sí la rechaza BC).
+test("una línea de recurso viaja como Resource, con obra y CON almacén, sin variante", () => {
   const { lines, omitidas } = payloadReplaceLines([item({
     tipo: "recurso", itemNo: "MO-0001", descripcion: "ALQUILER DE VAGONETA",
     cantidad: 3, precio: 45000, unidad: "dia", jobNo: "VB-5.01", taskNo: "1000",
-    // Lo que NO debe viajar aunque venga puesto: BC solo acepta ubicación y variante
-    // en líneas de artículo.
-    locationCode: "ALM-GRAL", variantCode: "AZUL",
+    locationCode: "ALM-GRAL",
+    // La variante sí se queda: es del catálogo de artículos y un recurso no tiene.
+    variantCode: "AZUL",
   })]);
   assert.equal(omitidas.length, 0);
   assert.deepEqual(lines[0], {
     type: "Resource", itemNo: "MO-0001", description: "ALQUILER DE VAGONETA",
+    locationCode: "ALM-GRAL",
     quantity: 3, directUnitCost: 45000, lineDiscountPct: 0,
     unitOfMeasureCode: "DIA", jobNo: "VB-5.01", taskNo: "1000",
   });
 });
 
-test("una línea de activo fijo viaja como Fixed Asset, sin obra ni unidad", () => {
+test("una línea de activo fijo viaja como Fixed Asset con almacén, sin obra ni unidad", () => {
   const { lines, omitidas } = payloadReplaceLines([item({
     tipo: "activo_fijo", itemNo: "AF-000123", descripcion: "COMPRESOR 5HP",
     cantidad: 1, precio: 890000, unidad: "UND",
-    // BC no acepta Job No. en una línea de activo fijo: lo costea el libro de
-    // depreciación. Si viniera puesto, no debe viajar.
+    // El almacén SÍ viaja (es la fuente de la dimensión de centro de costo). La obra
+    // no: BC rechaza Job No. en una línea de activo fijo, lo costea el libro de
+    // depreciación.
     jobNo: "VB-5.01", taskNo: "1000", locationCode: "ALM-GRAL",
   })]);
   assert.equal(omitidas.length, 0);
   assert.deepEqual(lines[0], {
     type: "Fixed Asset", itemNo: "AF-000123", description: "COMPRESOR 5HP",
+    locationCode: "ALM-GRAL",
     quantity: 1, directUnitCost: 890000, lineDiscountPct: 0,
   });
+});
+
+// El caso de CP-005454: la línea de activo fijo salió a BC sin almacén y allá quedó
+// sin centro de costo. Con la orden llevando su almacén de recepción, la línea lo
+// lleva también — sin que nadie tenga que elegir nada nuevo en la pantalla.
+test("el activo fijo sin almacén propio no inventa uno, pero tampoco lo pierde si la orden lo trae", () => {
+  const sin = payloadReplaceLines([item({ tipo: "activo_fijo", itemNo: "AF-0190", locationCode: "" })]);
+  assert.equal(sin.lines[0].locationCode, "");
+  const con = payloadReplaceLines([item({ tipo: "activo_fijo", itemNo: "AF-0190", locationCode: "F-MAD-NUE" })]);
+  assert.equal(con.lines[0].locationCode, "F-MAD-NUE");
 });
 
 // Sin N.º el codeunit se salta la línea EN SILENCIO: el pedido queda en BC con una
@@ -546,7 +566,8 @@ test("un recurso o un activo fijo sin N.º se omite avisando de qué tipo era", 
 // Los frenos previos a tocar BC estaban escritos como "todo lo que no es cargo", y
 // con solo dos tipos daba lo mismo. Con cuatro ya no: exigirle unidad de compra o
 // almacén a un activo fijo dejaba la orden sin poder enviarse a aprobación por un
-// dato que BC ni acepta en esa línea.
+// dato que en esa línea es opcional (el almacén ahora viaja si la orden lo tiene,
+// pero su ausencia no rompe nada: BC no lo exige fuera del material inventariable).
 test("los frenos de unidad y almacén son solo del artículo", () => {
   const lineas: LineaReplaceBc[] = [
     item({ tipo: "recurso", itemNo: "MO-0001", unidad: "", locationCode: "" }),

@@ -7,7 +7,7 @@ import { IconWarning } from "@/components/icons";
 import { DateField } from "@/components/date-field";
 import { useStore } from "@/lib/store";
 import { useVolver } from "@/lib/use-volver";
-import { esLineaCargo, esLineaRecibible, esNombreObraVacio, etiquetaTipoLinea, money, distribuirCargo, num, ordenBadge, ordenLineaPendiente, ordenRecibidoPct, todayISO, numeroOrden } from "@/lib/helpers";
+import { esLineaCargo, esLineaRecibible, esNombreObraVacio, etiquetaTipoLinea, formatDate, money, distribuirCargo, num, ordenBadge, ordenLineaPendiente, ordenRecibidoPct, todayISO, numeroOrden } from "@/lib/helpers";
 import { codigoDeItem } from "@/lib/unidad";
 import { comprimirFoto, pesoLegible } from "@/lib/foto";
 import type { FotoComprimida } from "@/lib/foto";
@@ -54,7 +54,7 @@ export default function RegistrarFacturaPage() {
   // volver = pantalla anterior, con su filtro (el rótulo se ajusta solo)
   const { volver, etiqueta: volverTexto } = useVolver("/facturacion", "Volver a órdenes por recibir");
   const toast = useToast();
-  const { ordenes, pedidos, proveedores, recepciones, registrarRecepcion, guardarFotosRecepcion, marcarNotasCredito, role, cargando } = useStore();
+  const { ordenes, pedidos, proveedores, recepciones, registrarRecepcion, guardarFotosRecepcion, marcarNotasCredito, role, cargando, modoApi, recargar } = useStore();
   // La vista se elige por ROL, no por ancho de pantalla: Contabilidad usa la TABLA
   // (escritorio); Bodega (Pedro) usa siempre las TARJETAS, porque todo lo de Bodega
   // es en tablet/celular.
@@ -116,11 +116,20 @@ export default function RegistrarFacturaPage() {
   const [conciliar, setConciliar] = useState<null | {
     diag: DiagBc; error: string; lineas: { ordenLineaId: string; cantidadRecibida: number }[];
     items: string[]; antes: Record<string, number | null>; detalle: DetalleLinea[];
+    // El registro en BC salió BIEN recién, en esta misma pantalla, y lo que falló fue
+    // el guardado de acá. No es "BC ya lo tenía de antes": es una factura que se
+    // acaba de postear y que hay que terminar de guardar, y decirlo distinto importa
+    // porque acá no hay ninguna duda de que el movimiento existe.
+    soloGuardado?: boolean;
   }>(null);
   // El pedido de la orden NO está en BC (sondeado al abrir la pantalla). No es lo
   // mismo que "BC no contesta": con esto, registrar va a fallar seguro, así que se
   // avisa ANTES de que Bodega llene todo. false mientras no se sepa.
   const [bcSinPedido, setBcSinPedido] = useState(false);
+  // El pedido no está en BC porque YA se registró allá (factura(s) y montos). Es el
+  // caso bueno de los dos, y el que le dice a Bodega exactamente qué número escribir
+  // para que la app le ofrezca conciliar en vez de mandarla a reintentar a ciegas.
+  const [bcYaRegistrado, setBcYaRegistrado] = useState<null | { total: number; currencyCode: string; facturas: { numero: string; fecha: string }[] }>(null);
   // El servidor comprobó contra BC que una o más líneas de esta factura NO se
   // pueden registrar allá (el pedido no las tiene, la variante no calza, o no
   // queda saldo). Es un aviso que se QUEDA: el codeunit de BC se salta esas líneas
@@ -141,7 +150,13 @@ export default function RegistrarFacturaPage() {
     let vivo = true;
     fetch(`/api/bc/orden-totales?orderNo=${encodeURIComponent(bcNo)}`)
       .then((r) => r.json())
-      .then((d) => { if (vivo) setBcSinPedido(d?.motivo === "no-existe"); })
+      .then((d) => {
+        if (!vivo) return;
+        // "registrado" cuenta como ausencia para el aviso —registrar va a fallar
+        // igual—, pero se dice distinto: ahí el material YA entró en BC.
+        setBcSinPedido(d?.motivo === "no-existe" || d?.motivo === "registrado");
+        setBcYaRegistrado(d?.motivo === "registrado" ? (d.registrado ?? null) : null);
+      })
       .catch(() => { /* BC no contesta: no se avisa nada */ });
     return () => { vivo = false; };
   }, [orden?.bcNumber]);
@@ -349,6 +364,24 @@ export default function RegistrarFacturaPage() {
     return Object.fromEntries(pares);
   }
 
+  // La recepción, lista para que la GUARDE EL SERVIDOR en la misma llamada que
+  // postea a BC (ver lib/guardado-tras-bc.ts). Solo en modo API: en mock los datos
+  // viven en el navegador y los ids no son numéricos, así que ahí se sigue guardando
+  // como siempre, después y del lado del cliente.
+  function recepcionParaServidor(
+    lineas: { ordenLineaId: string; cantidadRecibida: number }[],
+    p: { numeroFactura: string; total: number },
+  ) {
+    if (!modoApi || !orden) return undefined;
+    return {
+      idOrdenCompra: Number(orden.id),
+      numeroFactura: p.numeroFactura,
+      fechaFactura, fechaRecepcion, fechaRegistro,
+      total: p.total,
+      lineas: lineas.map((l) => ({ idOrdenCompraDet: Number(l.ordenLineaId), cantidadRecibida: l.cantidadRecibida })),
+    };
+  }
+
   async function registrar() {
     if (!numeroFactura.trim()) { toast("Ingresá el número de factura.", "error"); return; }
     if (!algoRecibido) { toast("Indicá al menos una cantidad a recibir.", "error"); return; }
@@ -397,6 +430,8 @@ export default function RegistrarFacturaPage() {
       return;
     }
     let aviso = ""; let bcOk = false; let diag: DiagBc | null = null; let bcFacturaNo = "";
+    // Id de la recepción que el SERVIDOR ya guardó (modo API), y el motivo si no pudo.
+    let recepcionYa: string | undefined; let errorLocal = "";
     const antes = await stockDeItems(items); // stock ANTES de registrar
     try {
       // Registrar (Recibir + Facturar) en BC con todos sus movimientos contables.
@@ -411,6 +446,9 @@ export default function RegistrarFacturaPage() {
           // encabezado del pedido en BC. Va el id, no el proveedor, porque el freno
           // no puede depender de lo que mande el navegador.
           ordenId: orden!.id,
+          // Y la recepción, para que el servidor la guarde apenas BC confirme, sin
+          // depender de que este navegador llegue a hacer un segundo viaje.
+          recepcion: recepcionParaServidor(lineas, { numeroFactura: numeroFactura.trim(), total: totalFactura }),
         }),
       });
       const d = await r.json().catch(() => ({} as any));
@@ -421,6 +459,8 @@ export default function RegistrarFacturaPage() {
         const posted = String(d.postedNo ?? "").trim();
         bcFacturaNo = posted && !/^(registrado|ok)$/i.test(posted) ? posted : "";
         aviso = ` · registrada en BC (${posted || "OK"})`; bcOk = true;
+        if (d.recepcionId) recepcionYa = String(d.recepcionId);
+        errorLocal = String(d.errorLocal ?? "");
       }
       else if (d?.frenoLineas || d?.frenoEncabezado || d?.frenoDimensiones) {
         // El servidor comprobó contra BC que esto NO se puede registrar: las líneas
@@ -452,7 +492,20 @@ export default function RegistrarFacturaPage() {
       setGuardando(false);
       return;
     }
-    await guardarLocal({ aviso, bcOk: true, lineas, items, antes, detalle, bcFacturaNo });
+    if (errorLocal && !recepcionYa) {
+      // Lo peor que podía pasar antes —BC registrado y la app en cero, sin que nadie
+      // se enterara— ahora llega acá con nombre y apellido: el N.º del documento que
+      // BC registró y el motivo por el que no se guardó. El diálogo lo termina de
+      // guardar SIN volver a postear.
+      setConciliar({
+        diag: { motivo: "factura-duplicada", yaEnBc: true, pedido: "no-existe",
+          facturaBc: bcFacturaNo ? { numero: bcFacturaNo, vendorNo: orden!.proveedorNo || orden!.proveedorId || "", fecha: fechaRegistro, total: totalFactura, estado: "Registrada" } : null },
+        error: errorLocal, lineas, items, antes, detalle, soloGuardado: true,
+      });
+      setGuardando(false);
+      return;
+    }
+    await guardarLocal({ aviso, bcOk: true, lineas, items, antes, detalle, bcFacturaNo, recepcionYa });
   }
 
   // La parte LOCAL del registro: la recepción en la app, la foto de la factura y las
@@ -463,15 +516,24 @@ export default function RegistrarFacturaPage() {
     aviso: string; bcOk: boolean; nota?: string; bcFacturaNo?: string;
     lineas: { ordenLineaId: string; cantidadRecibida: number }[];
     items: string[]; antes: Record<string, number | null>; detalle: DetalleLinea[];
+    // La recepción que el servidor YA guardó junto con el posteo a BC. Cuando viene,
+    // acá no se vuelve a crear nada: solo se releen los datos y se sigue con lo que
+    // va después (foto, notas de crédito, el resumen de inventario).
+    recepcionYa?: string;
   }) {
     const { aviso, bcOk, items, antes, detalle } = p;
     setGuardando(true);
     try {
-      const rec = await registrarRecepcion({
-        ordenId: orden!.id, numeroFactura: numeroFactura.trim(),
-        fechaFactura, fechaRecepcion, fechaRegistro, total: totalFactura, lineas: p.lineas,
-        cargoAviso: cargoAvisoPayload(), nota: p.nota, bcFacturaNo: p.bcFacturaNo,
-      });
+      const rec = p.recepcionYa
+        ? { id: p.recepcionYa }
+        : await registrarRecepcion({
+            ordenId: orden!.id, numeroFactura: numeroFactura.trim(),
+            fechaFactura, fechaRecepcion, fechaRegistro, total: totalFactura, lineas: p.lineas,
+            cargoAviso: cargoAvisoPayload(), nota: p.nota, bcFacturaNo: p.bcFacturaNo,
+          });
+      // El store no se enteró (la recepción la creó el servidor): sin esto la pantalla
+      // seguiría mostrando la orden como estaba antes de recibir.
+      if (p.recepcionYa) await recargar().catch(() => { /* el toast igual dice que se guardó */ });
       // Foto de la factura: va aparte y después (la recepción ya está hecha).
       const avisoFoto = await subirFotos(rec.id);
       // Líneas marcadas → notas de crédito (no bloquea el registro).
@@ -540,15 +602,31 @@ export default function RegistrarFacturaPage() {
 
     setGuardando(true);
     let aviso = ""; let bcOk = false; let diag: DiagBc | null = null;
+    // Lo que el servidor ya guardó (y su N.º de recepción en BC, para poder nombrarlo
+    // si el guardado de acá falla: ese material YA entró y no se recibe dos veces).
+    let recepcionYa: string | undefined; let errorLocal = ""; let receiptNo = "";
     try {
       if (orden!.bcNumber && bcLineas.length) {
         try {
           const r = await fetch("/api/bc/recibir", {
             method: "POST", headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ orderNo: orden!.bcNumber, lineas: bcLineas, postingDate: fechaRecepcion, ordenId: orden!.id, vendorNo: orden!.proveedorNo || orden!.proveedorId }),
+            body: JSON.stringify({
+              orderNo: orden!.bcNumber, lineas: bcLineas, postingDate: fechaRecepcion, ordenId: orden!.id,
+              vendorNo: orden!.proveedorNo || orden!.proveedorId,
+              // Igual que al registrar: la recepción la guarda el servidor apenas BC
+              // confirme. Acá el hueco era peor —sin N.º de factura no hay cómo
+              // preguntarle después a BC si esto entró—, así que este es justo el
+              // movimiento que no se puede perder entre dos viajes.
+              recepcion: recepcionParaServidor(lineas, { numeroFactura: "", total: subtotalRecibido }),
+            }),
           });
           const d = await r.json().catch(() => ({}));
-          if (r.ok) { aviso = ` · recibido en BC (${d.receiptNo ?? "OK"})`; bcOk = true; }
+          if (r.ok) {
+            aviso = ` · recibido en BC (${d.receiptNo ?? "OK"})`; bcOk = true;
+            if (d.recepcionId) recepcionYa = String(d.recepcionId);
+            errorLocal = String(d.errorLocal ?? "");
+            receiptNo = String(d.receiptNo ?? "");
+          }
           else if ((d as any)?.frenoLineas || (d as any)?.frenoEncabezado || (d as any)?.frenoDimensiones) {
             // Mismo tratamiento que al registrar: esto no se reintenta, se corrige.
             // Va al aviso que se queda en pantalla y no se guarda nada.
@@ -575,11 +653,35 @@ export default function RegistrarFacturaPage() {
         setGuardando(false);
         return;
       }
-      const rec = await registrarRecepcion({
-        ordenId: orden!.id, numeroFactura: "", fechaFactura, fechaRecepcion, fechaRegistro,
-        total: subtotalRecibido, lineas, facturaEnRevision: true,
-        cargoAviso: cargoAvisoPayload(),
-      });
+      // Si el servidor ya la guardó (lo normal en modo API), acá no se crea nada. Si
+      // no pudo, se intenta desde el navegador: es otra ruta y otra conexión, así que
+      // un bache de un lado no tiene por qué serlo del otro.
+      let rec: { id: string };
+      if (recepcionYa) {
+        rec = { id: recepcionYa };
+        await recargar().catch(() => { /* el toast igual dice que se recibió */ });
+      } else {
+        try {
+          rec = await registrarRecepcion({
+            ordenId: orden!.id, numeroFactura: "", fechaFactura, fechaRecepcion, fechaRegistro,
+            total: subtotalRecibido, lineas, facturaEnRevision: true,
+            cargoAviso: cargoAvisoPayload(),
+          });
+        } catch (e: any) {
+          // El material YA entró en BC. Lo que falta es solo el guardado de acá, y hay
+          // que decirlo con esas palabras: volver a darle "recibir" lo metería DOS
+          // VECES al inventario de BC.
+          if (bcOk) {
+            throw new Error(
+              `El material YA se recibió en Business Central${receiptNo ? ` (recepción ${receiptNo})` : ""}, pero NO se pudo guardar acá: `
+              + `${String(e?.message ?? e)}${errorLocal && errorLocal !== String(e?.message ?? e) ? ` (el servidor ya lo había intentado: ${errorLocal})` : ""}. `
+              + `NO le des recibir de nuevo —lo recibiría dos veces en BC—: `
+              + `volvé a entrar en un momento y guardalo, o avisale a Proveeduría.`
+            );
+          }
+          throw e;
+        }
+      }
       const avisoFoto = await subirFotos(rec.id);
       const nc = recibibles.filter((l) => marcadas[l.id]).map((l) => ({ ordenLineaId: l.id, articuloNo: l.articuloId, descripcion: l.descripcion, motivo: marcadas[l.id].motivo, cantidad: Number(marcadas[l.id].cantidad) || 0, precioUnitario: Number(marcadas[l.id].precio) || 0, nota: marcadas[l.id].nota || undefined }));
       // No debe tumbar el registro (la factura ya viajó a BC), pero SÍ hay que
@@ -674,15 +776,33 @@ export default function RegistrarFacturaPage() {
         )}
 
         {bcSinPedido && (
-          <div className="ds-callout ds-callout--red mb-4" role="status">
+          <div className={`ds-callout mb-4 ${bcYaRegistrado ? "ds-callout--yellow" : "ds-callout--red"}`} role="status">
             <span className="ds-callout__icon"><IconWarning /></span>
             <div>
-              <div className="ds-callout__title">Business Central ya no tiene el pedido {orden.bcNumber}</div>
+              <div className="ds-callout__title">
+                {bcYaRegistrado
+                  ? <>Esta compra YA se registró en Business Central</>
+                  : <>Business Central ya no tiene el pedido {orden.bcNumber}</>}
+              </div>
               <div className="ds-callout__body">
-                Puede ser que <span className="ds-strong">esta recepción ya se registró allá</span> (cuando un pedido se recibe y
-                factura completo, BC lo borra), o que el número que guardó la app no llegó a existir.
-                Si la factura ya está en BC, escribí su número y dale <span className="ds-strong">Registrar factura</span>: la app lo
-                detecta y te ofrece guardar la recepción acá sin volver a registrarla. Si no, avisale a Proveeduría.
+                {bcYaRegistrado ? (
+                  <>
+                    BC tiene {bcYaRegistrado.facturas.map((f) => f.numero).join(", ")}
+                    {bcYaRegistrado.facturas[0]?.fecha ? ` del ${formatDate(bcYaRegistrado.facturas[0].fecha)}` : ""} contra el pedido {orden.bcNumber},
+                    por <span className="ds-strong">{money(bcYaRegistrado.total, bcYaRegistrado.currencyCode || orden.currencyCode)}</span> con IVA:
+                    el material ya entró y la contabilidad ya está hecha. Lo único que falta es guardarlo acá.
+                    Escribí el N.º de factura del proveedor, poné las cantidades que llegaron y dale{" "}
+                    <span className="ds-strong">Registrar factura</span>: la app lo detecta y te ofrece guardar la recepción
+                    sin volver a registrarla en BC.
+                  </>
+                ) : (
+                  <>
+                    Puede ser que <span className="ds-strong">esta recepción ya se registró allá</span> (cuando un pedido se recibe y
+                    factura completo, BC lo borra), o que el número que guardó la app no llegó a existir.
+                    Si la factura ya está en BC, escribí su número y dale <span className="ds-strong">Registrar factura</span>: la app lo
+                    detecta y te ofrece guardar la recepción acá sin volver a registrarla. Si no, avisale a Proveeduría.
+                  </>
+                )}
               </div>
             </div>
           </div>
@@ -1134,17 +1254,27 @@ export default function RegistrarFacturaPage() {
           // yaEnBc = hay prueba de que BC ya tiene el movimiento (lo dijo BC o se
           // encontró la factura registrada). Sin prueba no se pinta como seguro.
           const seguro = !!diag.yaEnBc;
-          const titulo = seguro
+          // El registro en BC lo acabamos de hacer NOSOTROS y lo que falló fue la
+          // base de acá. Es el único caso donde no hay nada que averiguar: sabemos
+          // con certeza qué se registró y con qué número.
+          const soloGuardado = !!conciliar.soloGuardado;
+          const titulo = soloGuardado
+            ? "Se registró en Business Central, pero no se pudo guardar acá"
+            : seguro
             ? (sinPedido ? "Esta recepción ya está registrada en BC" : "Business Central ya tiene esta factura")
             : `Business Central ya no tiene el pedido ${orden.bcNumber}`;
           const conciliarAhora = async () => {
             const c = conciliar;
             setConciliar(null);
             await guardarLocal({
-              aviso: ` · conciliada: BC ya tenía el movimiento, no se volvió a registrar allá${fBc?.numero ? ` (factura ${fBc.numero} en BC)` : ""}`,
+              aviso: soloGuardado
+                ? ` · guardada acá (en BC ya estaba registrada${fBc?.numero ? `: ${fBc.numero}` : ""})`
+                : ` · conciliada: BC ya tenía el movimiento, no se volvió a registrar allá${fBc?.numero ? ` (factura ${fBc.numero} en BC)` : ""}`,
               bcOk: false, nota: [
-                "Conciliada con BC: la recepción se guardó en la app SIN volver a registrarla en BC.",
-                sinPedido ? `BC ya no tenía el pedido ${orden.bcNumber}.` : "BC ya tenía esta factura del proveedor.",
+                soloGuardado
+                  ? "El registro en BC salió bien y el guardado en la app falló; se guardó después, sin volver a registrar en BC."
+                  : "Conciliada con BC: la recepción se guardó en la app SIN volver a registrarla en BC.",
+                soloGuardado ? `Falló con: ${c.error}` : sinPedido ? `BC ya no tenía el pedido ${orden.bcNumber}.` : "BC ya tenía esta factura del proveedor.",
                 fBc?.numero ? `Factura en BC: ${fBc.numero}${fBc.fecha ? ` del ${fBc.fecha.slice(0, 10)}` : ""}.` : "",
               ].filter(Boolean).join(" "),
               lineas: c.lineas, items: c.items, antes: c.antes, detalle: c.detalle,
@@ -1162,14 +1292,23 @@ export default function RegistrarFacturaPage() {
             </>}
           >
             <p className="ds-label">
-              {seguro
+              {soloGuardado
+                ? <>La factura {numeroFactura.trim()} <span className="ds-strong">quedó registrada en Business Central</span> con todos sus movimientos: el material entró y la contabilidad está hecha. Lo que falló fue guardarla en la app. Dale a “Guardar la recepción acá” para terminar — <span className="ds-strong">no se vuelve a registrar en BC</span>.</>
+                : seguro
                 ? <>El material <span className="ds-strong">ya entró en Business Central</span>: volver a intentarlo no va a servir nunca. Lo único que falta es guardar esta recepción en la app.</>
                 : <>BC contestó que no tiene ningún pedido con ese número, así que no se puede registrar desde acá. Puede que ya se haya registrado allá (al completarse, BC borra el pedido) — pero <span className="ds-strong">no encontramos la factura {numeroFactura.trim()} en BC para confirmarlo</span>.</>}
             </p>
 
+            {soloGuardado && (
+              <Card flat className="mt-4 ds-form-field--advertencia">
+                <div className="ds-label ds-muted">Por qué no se guardó</div>
+                <div className="ds-body-sm mt-1" style={{ whiteSpace: "pre-wrap" }}>{conciliar.error}</div>
+              </Card>
+            )}
+
             {fBc && (
               <Card flat className="mt-4">
-                <div className="ds-label ds-muted">Factura que BC ya tiene</div>
+                <div className="ds-label ds-muted">{soloGuardado ? "Lo que quedó registrado en BC" : "Factura que BC ya tiene"}</div>
                 <div className="row row--between wrap gap-2 mt-2" style={{ alignItems: "baseline" }}>
                   <span className="ds-strong">{fBc.numero}</span>
                   <span className="ds-body-sm ds-muted">
