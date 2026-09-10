@@ -1,5 +1,5 @@
 import type { Orden, OrdenLinea } from "./types.ts";
-import { esLineaCargo, esLineaRecibible, ordenLineaImporte } from "./helpers.ts";
+import { esLineaCargo, esLineaRecibible, ordenIva, ordenLineaImporte, ordenSubtotal } from "./helpers.ts";
 
 // Datos del DOCUMENTO de una orden (el que se le manda al proveedor), calculados una
 // sola vez para los DOS que lo dibujan: la vista de pantalla y el PDF del servidor.
@@ -65,8 +65,8 @@ export function documentoDeOrden(orden: Orden, unidades: Record<string, string> 
   const cargos = orden.lineas.filter(esLineaCargo);
   const lineas = [...articulos, ...cargos];
   const destinos = [...new Set(articulos.map(destinoLineaDoc).filter(Boolean))];
-  const subtotal = orden.lineas.reduce((s, l) => s + ordenLineaImporte(l), 0);
-  const iva = orden.lineas.reduce((s, l) => s + ordenLineaImporte(l) * ((l.ivaPct ?? 0) / 100), 0);
+  const subtotal = ordenSubtotal(orden);
+  const iva = ordenIva(orden);
   // Base e IVA agrupados por tasa: una orden puede mezclar 13% con exento, y meter
   // todo en una fila con la tasa de la primera línea daba una base que no cuadraba.
   const porTasaIva = [...orden.lineas.reduce((m, l) => {
