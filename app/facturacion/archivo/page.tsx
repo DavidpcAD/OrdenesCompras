@@ -12,7 +12,7 @@ import type { Recepcion } from "@/lib/types";
 const esEnRevision = (r: Recepcion) => !!r.facturaEnRevision || !r.numeroFactura;
 
 export default function ArchivoPage() {
-  const { ordenes, recepciones, proveedores, facturarRecepcion } = useStore();
+  const { ordenes, recepciones, proveedores, facturarRecepcion, modoApi, recargar } = useStore();
   const router = useRouter();
   const toast = useToast();
   const prov = (id: string) => proveedores.find((p) => p.id === id);
@@ -43,6 +43,8 @@ export default function ArchivoPage() {
       .filter((x) => x.itemNo);
     setGuardando(true);
     let aviso = "";
+    // El servidor ya la marcó facturada (modo API): acá no se repite el movimiento.
+    let yaFacturada = false;
     try {
       if (o?.bcNumber && bcLineas.length) {
         // Si BC dice que NO, acá se corta. Antes se guardaba igual: la recepción
@@ -57,10 +59,17 @@ export default function ArchivoPage() {
         try {
           const r = await fetch("/api/bc/facturar-recibido", {
             method: "POST", headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ orderNo: o.bcNumber, vendorInvoiceNo: numFac.trim(), lineas: bcLineas, ordenId: o.id, vendorNo: o.proveedorNo || o.proveedorId }),
+            body: JSON.stringify({
+              orderNo: o.bcNumber, vendorInvoiceNo: numFac.trim(), lineas: bcLineas, ordenId: o.id,
+              vendorNo: o.proveedorNo || o.proveedorId,
+              // Que la recepción quede marcada facturada en la MISMA llamada: si esto
+              // viaja aparte y se pierde, en BC hay una factura registrada y acá una
+              // recepción "en revisión" pidiendo que la registren otra vez.
+              facturar: modoApi ? { idRecepcionCompra: Number(rec.id), numeroFactura: numFac.trim() } : undefined,
+            }),
           });
           const d = await r.json().catch(() => ({}));
-          if (r.ok) aviso = ` · registrada en BC (${d.postedNo ?? "OK"})`;
+          if (r.ok) { aviso = ` · registrada en BC (${d.postedNo ?? "OK"})`; yaFacturada = !!d.facturada; }
           else { error = String(d.error ?? `BC ${r.status}`); freno = !!(d.frenoDimensiones || d.frenoEncabezado || d.frenoLineas); }
         } catch (e: any) { error = `Business Central no está disponible (${String(e?.message ?? e)})`; }
         if (error) {
@@ -69,11 +78,16 @@ export default function ArchivoPage() {
           return;
         }
       }
-      await facturarRecepcion(rec.id, numFac.trim());
+      if (yaFacturada) await recargar().catch(() => { /* el toast igual dice que se registró */ });
+      else await facturarRecepcion(rec.id, numFac.trim());
       toast(`Factura ${numFac} registrada${aviso}`, "success");
       setFacObj(null); setNumFac("");
     } catch (e: any) {
-      toast(String(e?.message ?? e), "error");
+      // Si BC ya registró (hay aviso) y lo que falló fue esto, hay que decirlo con
+      // todas las letras: volver a darle "registrar" la metería DOS VECES en BC.
+      toast(aviso
+        ? `La factura ${numFac} YA quedó registrada en Business Central${aviso.replace(" · registrada en BC", "")}, pero no se pudo marcar acá: ${String(e?.message ?? e)}. NO la registrés de nuevo: reintentá en un momento o avisale a Proveeduría.`
+        : String(e?.message ?? e), "error");
     } finally { setGuardando(false); }
   }
 

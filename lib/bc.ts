@@ -2985,6 +2985,46 @@ export async function bcLineasFacturadasDePedido(orderNo: string): Promise<Linea
   } catch { return null; }
 }
 
+// ── ¿EL PEDIDO NO ESTÁ EN BC PORQUE YA SE REGISTRÓ? ─────────────────────────
+// La pregunta barata ("¿hay un pedido ABIERTO con este N.º?") tiene dos respuestas
+// distintas metidas en la misma palabra:
+//
+//   a) el pedido se borró o nunca se creó  → el N.º apunta a nada, hay que avisar;
+//   b) se recibió y facturó COMPLETO       → `Purch.-Post` lo borra y lo archiva, y
+//                                            en su lugar queda la factura registrada.
+//
+// Son opuestas: (a) es plata que no va a entrar y (b) es plata que YA entró. La app
+// las mostraba iguales —el banner rojo de "o se borró allá, o no llegó a crearse"—
+// y así CP-005394 (registrada en BC como CFR-010109 el 10/09/2026, ₡973.359,85, con
+// las 4 líneas exactas) se veía en pantalla como un desastre. Esta función es la
+// segunda pregunta, la que separa una de la otra.
+export type FacturaRegistradaBc = {
+  numero: string; fecha: string; vendorNo: string;
+  subtotal: number; iva: number; total: number; currencyCode: string;
+};
+
+export async function bcFacturasRegistradasDePedido(orderNo: string): Promise<FacturaRegistradaBc[] | null> {
+  const no = (orderNo ?? "").trim();
+  if (!no) return null;
+  try {
+    const cid = await getStdCompanyId();
+    const filtro = `$filter=${encodeURIComponent(`orderNumber eq '${odataStr(no)}'`)}`
+      + `&$select=number,postingDate,vendorNumber,currencyCode,totalAmountExcludingTax,totalTaxAmount,totalAmountIncludingTax`;
+    const res = await bcFetch(`${stdRoot()}/companies(${cid})/purchaseInvoices?${filtro}`, { cache: "no-store" });
+    if (!res.ok) return null;
+    const filas: any[] = (await res.json())?.value ?? [];
+    return filas.map((f) => ({
+      numero: String(f.number ?? ""),
+      fecha: String(f.postingDate ?? "").slice(0, 10),
+      vendorNo: String(f.vendorNumber ?? "").trim(),
+      subtotal: Number(f.totalAmountExcludingTax) || 0,
+      iva: Number(f.totalTaxAmount) || 0,
+      total: Number(f.totalAmountIncludingTax) || 0,
+      currencyCode: String(f.currencyCode ?? "").trim(),
+    }));
+  } catch { return null; }
+}
+
 // ── EL FRENO ANTES DE REGISTRAR ──────────────────────────────────────────────
 // Antes de recibir o facturar, se comprueba que CADA línea que se va a postear
 // exista en el pedido de BC y tenga saldo suficiente.

@@ -2,12 +2,18 @@ import { NextResponse } from "next/server";
 import { bcRecibir, diagnosticarFalloBc, verificarLineasPosteables, frenoRegistroActivo, conflictoDeDimensiones, explicarConflictoDimensiones } from "@/lib/bc";
 import { frenarPorEncabezado } from "@/lib/freno-encabezado";
 import { actor } from "@/lib/actor";
+import { guardarRecepcionTrasBc } from "@/lib/guardado-tras-bc";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-// MODO 2 — Solo recepción en BC (material bien, factura en revisión).
-// body: { orderNo, lineas: [{itemNo, qty}], postingDate? }
+// MODO 2 — Solo recepción en BC (material bien, factura en revisión) Y guardada acá
+// en la misma llamada.
+// body: { orderNo, lineas: [{itemNo, qty}], postingDate?, recepcion? }
+//
+// El `recepcion` es lo mismo que en /api/bc/registrar y por el mismo motivo: acá el
+// hueco era peor todavía, porque sin N.º de factura no hay cómo preguntarle a BC
+// después si esa recepción entró o no. Ver lib/guardado-tras-bc.ts.
 //
 // Mismo diagnóstico que /api/bc/registrar: acá no hay N.º de factura, así que lo
 // único que se puede separar es "reintentá" de "BC no tiene el pedido" — pero esa
@@ -41,9 +47,11 @@ export async function POST(req: Request) {
     }
     // Quién recibe, de la cookie firmada (ver lib/actor.ts): queda sellado en el
     // pedido de BC y firma el movimiento de la obra si la factura se registra después.
-    const { usuario } = await actor(cuerpo);
-    const receiptNo = await bcRecibir(orderNo, lineas ?? [], postingDate ?? "", usuario);
-    return NextResponse.json({ ok: true, receiptNo });
+    const quien = await actor(cuerpo);
+    const receiptNo = await bcRecibir(orderNo, lineas ?? [], postingDate ?? "", quien.usuario);
+    // El material ya entró en BC: la recepción se guarda acá en esta misma llamada.
+    const guardado = await guardarRecepcionTrasBc(cuerpo?.recepcion, "", quien, ordenId);
+    return NextResponse.json({ ok: true, receiptNo, ...guardado });
   } catch (e: any) {
     const error = String(e?.message ?? e);
     // Choque de DIMENSIONES (el CC que el almacén amarra en BC): no se reintenta y

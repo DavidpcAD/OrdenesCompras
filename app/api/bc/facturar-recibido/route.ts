@@ -2,12 +2,17 @@ import { NextResponse } from "next/server";
 import { bcFacturarRecibido, verificarLineasPosteables, frenoRegistroActivo, conflictoDeDimensiones, explicarConflictoDimensiones } from "@/lib/bc";
 import { frenarPorEncabezado } from "@/lib/freno-encabezado";
 import { actor } from "@/lib/actor";
+import { marcarFacturadaTrasBc } from "@/lib/guardado-tras-bc";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-// MODO 2 — Registrar la factura de lo YA recibido (Kattya, tras revisar).
-// body: { orderNo, vendorInvoiceNo, lineas: [{itemNo, qty}] }
+// MODO 2 — Registrar la factura de lo YA recibido (Kattya, tras revisar) Y marcarla
+// facturada acá, en la misma llamada.
+// body: { orderNo, vendorInvoiceNo, lineas: [{itemNo, qty}], facturar? }
+//
+// El `facturar` cierra el mismo hueco que en /api/bc/registrar: que el movimiento
+// local no dependa de un segundo viaje del navegador. Ver lib/guardado-tras-bc.ts.
 export async function POST(req: Request) {
   // El body se lee FUERA del try porque el catch necesita el `orderNo` para poder
   // decir de qué pedido habla el error (adentro quedaba fuera de alcance).
@@ -38,9 +43,11 @@ export async function POST(req: Request) {
     }
     // Quién factura, de la cookie firmada (ver lib/actor.ts): sobrescribe en el pedido
     // el nombre que dejó la recepción, porque es este registro el que crea el consumo.
-    const { usuario } = await actor(cuerpo);
-    const postedNo = await bcFacturarRecibido(orderNo, vendorInvoiceNo, lineas ?? [], "", usuario);
-    return NextResponse.json({ ok: true, postedNo });
+    const quien = await actor(cuerpo);
+    const postedNo = await bcFacturarRecibido(orderNo, vendorInvoiceNo, lineas ?? [], "", quien.usuario);
+    // La factura ya está registrada en BC: la recepción se marca facturada acá mismo.
+    const guardado = await marcarFacturadaTrasBc(cuerpo?.facturar, quien);
+    return NextResponse.json({ ok: true, postedNo, ...guardado });
   } catch (e: any) {
     const error = String(e?.message ?? e);
     // Choque de DIMENSIONES (el CC que el almacén amarra en BC): no se reintenta —

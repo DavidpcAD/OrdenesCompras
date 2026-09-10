@@ -2,13 +2,21 @@ import { NextResponse } from "next/server";
 import { bcRegistrarFactura, diagnosticarFalloBc, verificarLineasPosteables, frenoRegistroActivo, conflictoDeDimensiones, explicarConflictoDimensiones } from "@/lib/bc";
 import { frenarPorEncabezado } from "@/lib/freno-encabezado";
 import { actor } from "@/lib/actor";
+import { guardarRecepcionTrasBc } from "@/lib/guardado-tras-bc";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-// Registra (Recibir + Facturar) una factura parcial del pedido en Business Central.
+// Registra (Recibir + Facturar) una factura parcial del pedido en Business Central
+// Y LA GUARDA ACÁ, en la misma llamada.
 // body: { orderNo, vendorInvoiceNo, vendorNo?, lineas: [{itemNo, qty}], postingDate?,
-//         cargo?: { itemChargeNo, descripcion?, monto, metodo? } }  ← flete del viaje
+//         cargo?: { itemChargeNo, descripcion?, monto, metodo? },  ← flete del viaje
+//         recepcion?: { idOrdenCompra, numeroFactura, fechas…, total, lineas[] } }
+//
+// Ese `recepcion` es el arreglo de fondo del hueco que dejó CP-005394: antes el
+// guardado local era un SEGUNDO viaje que hacía el navegador después de este, y todo
+// lo que pasara en el medio (pestaña cerrada, sesión vencida, red caída) dejaba la
+// factura registrada en BC y la app en cero. Ver lib/guardado-tras-bc.ts.
 //
 // Cuando BC dice NO, la respuesta no se queda en el texto crudo: se DIAGNOSTICA
 // (ver diagnosticarFalloBc). La diferencia importa porque la pantalla mandaba a
@@ -52,9 +60,12 @@ export async function POST(req: Request) {
     // bitácora — ver lib/actor.ts). Va a BC para que el consumo directo de la obra
     // quede firmado en los Movs. proyecto ("Realizado por"), que hasta ahora salía
     // en blanco porque el usuario de BC es siempre la cuenta de servicio.
-    const { usuario } = await actor(cuerpo);
-    const postedNo = await bcRegistrarFactura(orderNo, vendorInvoiceNo, lineas ?? [], postingDate ?? "", cargoValido, usuario);
-    return NextResponse.json({ ok: true, postedNo });
+    const quien = await actor(cuerpo);
+    const postedNo = await bcRegistrarFactura(orderNo, vendorInvoiceNo, lineas ?? [], postingDate ?? "", cargoValido, quien.usuario);
+    // BC ya registró. De acá en adelante NADA puede hacer que la respuesta diga que
+    // no se registró: lo único que queda por saber es si además se pudo guardar acá.
+    const guardado = await guardarRecepcionTrasBc(cuerpo?.recepcion, postedNo, quien, ordenId);
+    return NextResponse.json({ ok: true, postedNo, ...guardado });
   } catch (e: any) {
     const error = String(e?.message ?? e);
     // Choque de DIMENSIONES (el CC que el almacén amarra en BC): no se reintenta y
