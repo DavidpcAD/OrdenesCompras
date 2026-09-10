@@ -31,9 +31,15 @@ export default function ArchivoPage() {
     if (!rec) return;
     if (!numFac.trim()) { toast("Ingresá el número de factura.", "error"); return; }
     const o = ordenDe(rec);
+    // El TIPO viaja con cada línea, igual que en la pantalla de la factura: el
+    // codeunit (y el freno de registro) buscan la línea del pedido por N.º Y por
+    // tipo, así que sin él un recurso o un activo fijo se compara contra las líneas
+    // de artículo, no calza con ninguna, y el registro se cae con "el pedido no
+    // tiene ninguna línea de artículo con ese N.º". Acá se olvidaba, y era la única
+    // de las tres pantallas que lo hacía.
     const bcLineas = rec.lineas
       .filter((l) => Number(l.cantidadRecibida) > 0)
-      .map((l) => { const ol = o?.lineas.find((x) => x.id === l.ordenLineaId); return { itemNo: ol?.articuloId ?? "", qty: l.cantidadRecibida, variantCode: ol?.variantCode }; })
+      .map((l) => { const ol = o?.lineas.find((x) => x.id === l.ordenLineaId); return { itemNo: ol?.articuloId ?? "", qty: l.cantidadRecibida, variantCode: ol?.variantCode, tipo: ol?.tipo }; })
       .filter((x) => x.itemNo);
     setGuardando(true);
     let aviso = "";
