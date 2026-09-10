@@ -505,21 +505,40 @@ test("el almacén amarrado pone el CC incluso si la línea no traía ninguno", (
 // ahora VIAJA, porque es de donde BC saca la dimensión de centro de costo. Lo que
 // sigue sin viajar es variante (es del catálogo de artículos), unidad en el activo
 // fijo (no tiene) y obra en el activo fijo (esa sí la rechaza BC).
-test("una línea de recurso viaja como Resource, con obra y CON almacén, sin variante", () => {
+// LA OBRA NO VIAJA COMO Job No. en una línea de recurso, y no es un detalle: BC lo
+// prohíbe fuera de artículo y cuenta contable (`VerifyLineTypeForJob` hace FieldError
+// para Resource, Fixed Asset y Charge), y como la reescritura es TODO-O-NADA una sola
+// línea así no se cae sola — tumba el pedido entero y BC se queda con las líneas
+// viejas. Hasta el 10 sep 2026 la app se lo mandaba; no había explotado porque nadie
+// había comprado un servicio contra una obra.
+test("una línea de recurso viaja como Resource con almacén, y SIN obra ni tarea ni variante", () => {
   const { lines, omitidas } = payloadReplaceLines([item({
     tipo: "recurso", itemNo: "MO-0001", descripcion: "ALQUILER DE VAGONETA",
-    cantidad: 3, precio: 45000, unidad: "dia", jobNo: "VB-5.01", taskNo: "1000",
+    cantidad: 3, precio: 45000, unidad: "dia",
+    // Lo que NO debe viajar aunque venga puesto: obra y tarea (BC las rechaza en esta
+    // línea) y variante (es del catálogo de artículos). La obra igual no se pierde:
+    // sale como centro de costo, que se prueba aparte.
+    jobNo: "VB-5.01", taskNo: "1000", variantCode: "AZUL",
     locationCode: "ALM-GRAL",
-    // La variante sí se queda: es del catálogo de artículos y un recurso no tiene.
-    variantCode: "AZUL",
   })]);
   assert.equal(omitidas.length, 0);
   assert.deepEqual(lines[0], {
     type: "Resource", itemNo: "MO-0001", description: "ALQUILER DE VAGONETA",
     locationCode: "ALM-GRAL",
     quantity: 3, directUnitCost: 45000, lineDiscountPct: 0,
-    unitOfMeasureCode: "DIA", jobNo: "VB-5.01", taskNo: "1000",
+    unitOfMeasureCode: "DIA",
   });
+});
+
+// El otro lado de lo mismo: la obra de esas líneas no se tira, viaja como DIMENSIÓN.
+test("la obra de un recurso o un activo fijo viaja como centro de costo", () => {
+  const { lines } = payloadReplaceLines([
+    item({ tipo: "recurso", itemNo: "MO-0001", jobNo: "VB-5.01", centroCosto: "VB-5.01" }),
+    item({ tipo: "activo_fijo", itemNo: "AF-000123", centroCosto: "VB-5.01" }),
+  ]);
+  assert.equal(lines[0].ccValue, "VB-5.01");
+  assert.equal(lines[1].ccValue, "VB-5.01");
+  assert.equal(lines[0].jobNo, undefined);
 });
 
 test("una línea de activo fijo viaja como Fixed Asset con almacén, sin obra ni unidad", () => {
@@ -580,10 +599,12 @@ test("los frenos de unidad y almacén son solo del artículo", () => {
   assert.equal(lineasSinAlmacen([item({ locationCode: "" })]).length, 1);
 });
 
-// La tarea sí se le exige al recurso (BC no acepta Job No. sin Job Task No.), pero
-// no al activo fijo, cuya obra ni siquiera viaja.
-test("la obra sin tarea frena al recurso y no al activo fijo", () => {
-  assert.equal(obrasSinTarea([item({ tipo: "recurso", jobNo: "VB-5.01", taskNo: "" })]).length, 1);
+// La tarea se le exige SOLO al artículo: es el único tipo cuya obra viaja como Job No.,
+// y el Job No. es el que BC no acepta sin tarea. Al recurso se le exigía, y era peor que
+// inútil: lo obligaba a llevar justo el dato que tumba la reescritura completa.
+test("la obra sin tarea frena al artículo y a nadie más", () => {
+  assert.equal(obrasSinTarea([item({ tipo: "articulo", jobNo: "VB-5.01", taskNo: "" })]).length, 1);
+  assert.deepEqual(obrasSinTarea([item({ tipo: "recurso", jobNo: "VB-5.01", taskNo: "" })]), []);
   assert.deepEqual(obrasSinTarea([item({ tipo: "activo_fijo", jobNo: "VB-5.01", taskNo: "" })]), []);
 });
 

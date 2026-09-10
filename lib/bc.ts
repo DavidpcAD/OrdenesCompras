@@ -1959,8 +1959,15 @@ export function payloadReplaceLines(lineas: LineaReplaceBc[]): { lines: Record<s
         ...dimensionDeLinea(l),
       };
       if (l.tipo === "recurso") {
-        otro.jobNo = l.jobNo ?? "";
-        otro.taskNo = l.taskNo ?? "";
+        // NO se manda jobNo/taskNo. BC prohíbe el Job No. fuera de las líneas de
+        // artículo y de cuenta contable —`VerifyLineTypeForJob` en la tabla 39 hace
+        // `FieldError` para Resource, Fixed Asset y Charge—, y como la reescritura es
+        // TODO-O-NADA, una línea de recurso con obra no se cae sola: tumba el pedido
+        // completo y BC se queda con las líneas viejas. Acá se mandaba y nadie lo
+        // había topado porque todavía no se compró un servicio contra una obra.
+        // La obra de esa línea no se pierde: viaja como CENTRO DE COSTO (la dimensión
+        // que arma `dimensionDeLinea`), que es el único amarre a la obra que BC acepta
+        // en estas líneas.
         const u = (l.unidad ?? "").trim().toUpperCase();
         if (u) otro.unitOfMeasureCode = u;
         const maq = (l.maquinaNo ?? "").trim();
@@ -2357,10 +2364,13 @@ export function centroCostoDeLinea(l: OrdenLinea, obraDeSolicitud?: Map<string, 
 // no tiene cómo arreglarlo. Se corta antes de tocar BC.
 export function obrasSinTarea(lineas: LineaReplaceBc[]): string[] {
   return (lineas ?? [])
-    // Solo artículo y recurso llevan obra a BC: la línea de activo fijo no acepta
-    // Job No. (payloadReplaceLines no lo manda), así que exigirle tarea trabaría
-    // una orden por un dato que nunca va a viajar.
-    .filter((l) => (l.tipo === "articulo" || l.tipo === "recurso") && (l.jobNo ?? "").trim() && !(l.taskNo ?? "").trim())
+    // SOLO el artículo lleva obra a BC como Job No. Recurso, activo fijo y cargo no
+    // la aceptan (`VerifyLineTypeForJob`), así que `payloadReplaceLines` no se las
+    // manda y exigirles tarea trababa la orden por un dato que nunca iba a viajar —
+    // en el recurso, además, la obligaba a llevar justo el dato que hace fallar la
+    // reescritura. En esas líneas la obra viaja como centro de costo, y el CC no
+    // necesita tarea.
+    .filter((l) => l.tipo === "articulo" && (l.jobNo ?? "").trim() && !(l.taskNo ?? "").trim())
     .map((l) => `${l.descripcion || l.itemNo || "línea"} (obra ${(l.jobNo ?? "").trim()})`);
 }
 
