@@ -1198,7 +1198,7 @@ export function estadoLanzamientoBc(status?: string): EstadoBcPedido {
 // codeunit manda el CAPTION EN EL IDIOMA DE LA SESIÓN ("Producto", "Cargo (prod.)").
 // Por eso se acepta también el número del enum de BC (2 = Item, 5 = Charge (Item)),
 // que es lo único estable — y por eso GetOrderLines manda `typeNo`.
-function tipoLineaBc(t: unknown, typeNo?: unknown): "articulo" | "recurso" | "activo_fijo" | "cargo" | "otro" {
+export function tipoLineaBc(t: unknown, typeNo?: unknown): "articulo" | "recurso" | "activo_fijo" | "cargo" | "otro" {
   // Ordinales verificados contra los símbolos de la Base Application (enum 39
   // "Purchase Line Type"): 1 G/L Account · 2 Item · 3 Resource · 4 Fixed Asset ·
   // 5 Charge (Item) · 10 Allocation Account. "otro" = un tipo que esta app no arma.
@@ -1210,7 +1210,19 @@ function tipoLineaBc(t: unknown, typeNo?: unknown): "articulo" | "recurso" | "ac
     if (n === 5) return "cargo";
     return "otro";
   }
-  const s = String(t ?? "").trim().toLowerCase().replace(/[\s_.\-()]/g, "");
+  // OJO con el texto: en OData, BC ESCAPA todo lo que no es alfanumérico dentro del
+  // valor de un enum. "Fixed Asset" no llega "Fixed Asset", llega
+  // "Fixed_x0020_Asset" (verificado contra Production el 10 sep 2026 leyendo
+  // purchaseLines de CP-005476), y "Charge (Item)" llega con los paréntesis
+  // escapados igual. Sin desescapar, el único tipo que sobrevivía era el que se
+  // escribe en UNA palabra —"Item"—, y el ACTIVO FIJO caía en "otro": la línea
+  // desaparecía del cotejo y la orden acusaba "Business Central NO tiene 1 línea de
+  // esta orden" con la línea sentada en BC (CP-005454 y CP-005476, las dos primeras
+  // órdenes de activo fijo). Y no era solo el aviso: con la línea invisible,
+  // verificarLineasPosteables tampoco la encontraba y Bodega no la podía recibir.
+  const s = String(t ?? "")
+    .replace(/_x([0-9a-fA-F]{4})_/g, (_, hex) => String.fromCharCode(parseInt(hex, 16)))
+    .trim().toLowerCase().replace(/[\s_.\-()]/g, "");
   if (s === "item" || s === "articulo" || s === "artículo" || s === "producto" || s === "2") return "articulo";
   if (s === "resource" || s === "recurso" || s === "3") return "recurso";
   if (s === "fixedasset" || s === "activofijo" || s === "activosfijos" || s === "4") return "activo_fijo";
