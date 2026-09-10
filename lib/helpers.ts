@@ -707,6 +707,20 @@ export function ordenSubtotal(o: Orden): number {
   return o.lineas.reduce((s, l) => s + ordenLineaImporte(l), 0);
 }
 
+// IVA estimado de la orden: cada línea con SU tasa (una misma orden mezcla 13% con
+// exento, y una importación va toda en 0). Mismo criterio que el papel que se le
+// manda al proveedor (`documentoDeOrden`), incluidos los cargos: BC también le
+// cobra IVA al flete.
+export function ordenIva(o: Orden): number {
+  return o.lineas.reduce((s, l) => s + ordenLineaImporte(l) * ((l.ivaPct ?? 0) / 100), 0);
+}
+
+// Lo que el proveedor va a facturar. Es el número que Bodega compara contra el papel
+// que trae el chofer, así que manda sobre el subtotal.
+export function ordenTotalConIva(o: Orden): number {
+  return ordenSubtotal(o) + ordenIva(o);
+}
+
 // El avance de recepción se mide sobre las líneas RECIBIBLES: las de cargo (flete)
 // no se reciben en bodega, se reparten al registrar. Si se cuentan, una orden con
 // flete nunca llega a 100% ni se completa — y en SQL la regla es la misma

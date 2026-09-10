@@ -8,7 +8,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   ordenRecibidoPct, ordenEstaCompleta, ordenEsParcial, ordenAvance, ordenLineaImporte,
-  ordenSubtotal, recibidoPorLineaPedido, recibidoDeLineaPedido, pedidoLineaPendiente,
+  ordenSubtotal, ordenIva, ordenTotalConIva, recibidoPorLineaPedido, recibidoDeLineaPedido, pedidoLineaPendiente,
   distribuirCargo, monedaApp, formatDate, todayISO, nextNumero, almacenesParaRecepcion, esAlmacenFisico,
   ordenPedidos, ordenEsDirecta, money, pedidoOrdenadoPct, pedidoCompraBadge, pedidoTieneSaldo, ordenesPorPedido,
   destinoLabel, destinoCodigo, ordenLineaPendiente, ordenLineaCompleta, ultimoPrecioProveedor,
@@ -82,6 +82,22 @@ test("el subtotal de la orden suma artículos y cargos, sin IVA", () => {
     linea({ id: "f", tipo: "cargo", cantidad: 1, precioUnitario: 500 }),
   ]);
   assert.equal(ordenSubtotal(o), 2500);
+});
+
+test("el total con IVA usa la tasa de CADA línea, cargo incluido", () => {
+  const o = orden([
+    linea({ id: "a", cantidad: 2, precioUnitario: 1000, ivaPct: 13 }),
+    linea({ id: "b", cantidad: 1, precioUnitario: 1000, ivaPct: 0 }),   // exento
+    linea({ id: "f", tipo: "cargo", cantidad: 1, precioUnitario: 500, ivaPct: 13 }),
+  ]);
+  assert.equal(ordenIva(o), 325);                 // (2000 + 500) × 13%, el exento no suma
+  assert.equal(ordenTotalConIva(o), 3825);        // 3500 de subtotal + 325
+});
+
+test("una importación sin IVA no infla el total", () => {
+  const o = orden([linea({ id: "a", cantidad: 1, precioUnitario: 1000, ivaPct: 0 })]);
+  assert.equal(ordenIva(o), 0);
+  assert.equal(ordenTotalConIva(o), ordenSubtotal(o));
 });
 
 test("el cargo se reparte proporcional al importe de cada artículo", () => {

@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { Badge, Button, Card, EmptyState, Input, QtyRing, Tile } from "@/components/ui";
 import { IconDelivery } from "@/components/icons";
 import { useStore } from "@/lib/store";
-import { money, formatDate, ordenAvance, ordenEsParcial, ordenRecibidoPct, ordenSubtotal, numeroOrden } from "@/lib/helpers";
+import { money, formatDate, ordenAvance, ordenEsParcial, ordenRecibidoPct, ordenSubtotal, ordenTotalConIva, numeroOrden } from "@/lib/helpers";
 
 // Filtros de la bandeja de bodega. Son los estados que le importan a quien recibe:
 // lo que todavía no llegó, lo que llegó a medias (y hay que completar) y lo que ya
@@ -116,8 +116,12 @@ export default function FacturacionPage() {
           {lista.map((o) => {
             // Mismo cálculo que la lista de órdenes (`ordenSubtotal`): antes esta
             // tarjeta ignoraba el descuento de línea, así que la misma orden se veía
-            // con dos montos distintos según la pantalla. Sigue siendo SIN IVA.
+            // con dos montos distintos según la pantalla.
+            // El que manda acá es el CON IVA: es el que viene impreso en la factura
+            // que Bodega tiene en la mano cuando llega el material. El sin IVA queda
+            // de referencia (es el que sale en la lista de órdenes y en el dashboard).
             const total = ordenSubtotal(o);
+            const conIva = ordenTotalConIva(o);
             return (
               <Card key={o.id} interactive onClick={() => router.push(esCompletado ? `/facturacion/ver/${o.id}` : `/facturacion/${o.id}`)}>
                 <div className="row row--between wrap gap-4">
@@ -138,8 +142,13 @@ export default function FacturacionPage() {
                   </div>
                   <div className="row gap-6">
                     <div className="col" style={{ alignItems: "flex-end" }}>
-                      <span className="ds-strong">{money(total, o.currencyCode)}</span>
-                      <span className="ds-muted ds-body-sm">total sin IVA</span>
+                      {/* Los dos montos, uno debajo del otro y cada uno con su rótulo
+                          pegado: en 375px "IVA incluido · ₡… sin IVA" se partía y dejaba
+                          el separador colgando al final de la línea. */}
+                      <span className="ds-strong" style={{ whiteSpace: "nowrap" }}>
+                        {money(conIva, o.currencyCode)} <span className="ds-muted ds-body-sm">con IVA</span>
+                      </span>
+                      <span className="ds-muted ds-body-sm" style={{ whiteSpace: "nowrap" }}>{money(total, o.currencyCode)} sin IVA</span>
                     </div>
                     {/* Una orden completada ya no se recibe: el botón lleva a verla. */}
                     <Button variant={esCompletado ? "outline" : "green"}>{esCompletado ? "Ver detalle" : "Registrar factura"}</Button>
