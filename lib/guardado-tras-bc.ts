@@ -25,7 +25,7 @@
 // cambia algo, y en el modo "factura en revisión" —que no tiene N.º de factura y
 // por eso no pasa por el guard de duplicados— un reintento ciego podría dejar dos
 // recepciones del mismo material.
-import { createRecepcion, type NewRecepcionDB } from "./repo.ts";
+import { createRecepcion, setRecepcionFactura, type NewRecepcionDB } from "./repo.ts";
 import type { Role } from "./types.ts";
 
 // El insert, inyectable. En producción es siempre `createRecepcion`; el parámetro
@@ -80,6 +80,33 @@ export async function guardarRecepcionTrasBc(
       rol: actor.rol,
     });
     return { recepcionId: id };
+  } catch (e: any) {
+    return { errorLocal: String(e?.message ?? e) };
+  }
+}
+
+// ── LA OTRA MITAD: FACTURAR LO QUE YA SE HABÍA RECIBIDO ──────────────────────
+// Mismo hueco, otra pantalla (Bodega → "Archivo y recepciones", cuando la factura
+// venía en revisión y Contabilidad la registra después). Ahí el movimiento local es
+// más chico —marcar la recepción como facturada— pero perderlo duele igual: la
+// factura queda registrada en BC y la recepción se queda "en revisión" para siempre,
+// invitando a registrarla otra vez.
+export type FacturaTrasBc = { idRecepcionCompra: number; numeroFactura: string };
+export type MarcarFacturada = (idRec: number, numeroFactura: string, usuario: string, rol: Role) => Promise<void>;
+
+export async function marcarFacturadaTrasBc(
+  f: FacturaTrasBc | undefined | null,
+  actor: { usuario: string; rol: Role },
+  marcar: MarcarFacturada = setRecepcionFactura,
+): Promise<{ facturada?: boolean; errorLocal?: string }> {
+  if (!f || typeof f !== "object") return {};
+  const idRec = Number(f.idRecepcionCompra);
+  const numero = String(f.numeroFactura ?? "").trim();
+  if (!Number.isFinite(idRec) || idRec <= 0) return { errorLocal: "La recepción vino sin id, no se marcó facturada acá." };
+  if (!numero) return { errorLocal: "La factura vino sin número, no se marcó facturada acá." };
+  try {
+    await marcar(idRec, numero, actor.usuario, actor.rol);
+    return { facturada: true };
   } catch (e: any) {
     return { errorLocal: String(e?.message ?? e) };
   }
