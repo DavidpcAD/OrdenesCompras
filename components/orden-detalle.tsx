@@ -58,17 +58,24 @@ export function OrdenDetalle({
   // que BC esté caído, y hay que decirlo: el N.º guardado apunta a un documento que
   // ya no está, así que ni se abre en BC ni hay nada que lanzar allá.
   const [bcMotivo, setBcMotivo] = useState<string | null>(null);
+  // "registrado" = el pedido no está en BC porque YA se recibió y facturó completo.
+  // Es la otra cara de `pedidoFantasma` y la contraria: acá no falta nada allá, lo
+  // que falta es guardarlo acá. Trae la(s) factura(s) que BC registró y sus totales.
+  const [bcRegistrado, setBcRegistrado] = useState<null | {
+    subtotal: number; iva: number; total: number; currencyCode: string;
+    facturas: { numero: string; fecha: string; total: number }[]; url?: string;
+  }>(null);
   // Los totales se leían UNA sola vez, al abrir la orden, y el efecto solo miraba el
   // N.º de BC — que no cambia nunca. Así, después de cambiarle el IVA al pedido en BC
   // la pantalla seguía mostrando la foto vieja: el IVA "seguía ahí" aunque en BC ya
   // estuviera en cero (CP-005254). `refrescoBc` es la pantalla diciendo "eso que
   // tenías ya no vale, volvé a preguntarle a BC".
   useEffect(() => {
-    if (!orden.bcNumber) { setBcTot(null); setBcMotivo(null); return; }
+    if (!orden.bcNumber) { setBcTot(null); setBcMotivo(null); setBcRegistrado(null); return; }
     let vivo = true;
     fetch(`/api/bc/orden-totales?orderNo=${encodeURIComponent(orden.bcNumber)}`, { cache: "no-store" })
       .then((r) => (r.ok ? r.json() : { totales: null }))
-      .then((d) => { if (!vivo) return; if (d?.totales) setBcTot(d.totales); setBcMotivo(d?.motivo ?? null); })
+      .then((d) => { if (!vivo) return; if (d?.totales) setBcTot(d.totales); setBcMotivo(d?.motivo ?? null); setBcRegistrado(d?.registrado ?? null); })
       .catch(() => { /* sin BC: se muestran los totales locales */ });
     return () => { vivo = false; };
   }, [orden.bcNumber, refrescoBc]);
@@ -132,6 +139,18 @@ export function OrdenDetalle({
   // mientras le faltaban ₡22.820 de verdad. Un aviso que grita siempre no avisa nada.
   const ordenCerrada = orden.estado === "completado";
   const pedidoFantasma = !!orden.bcNumber && bcMotivo === "no-existe" && !ordenCerrada;
+  // Y el caso opuesto, que hasta el 10/09/2026 se veía IGUAL que el de arriba: el
+  // pedido no está en BC porque allá se recibió y facturó completo. La compra salió
+  // bien; la que quedó atrás es la app. No es rojo: no hay nada roto, hay algo que
+  // falta guardar de este lado. Ver `bcFacturasRegistradasDePedido` en lib/bc.ts.
+  const hayRegistroEnBc = !!orden.bcNumber && bcMotivo === "registrado" && !!bcRegistrado && !ordenCerrada;
+  // Y el aviso amarillo pide una condición más: que de ESTE lado no haya nada
+  // recibido ni facturado. Así se separa el caso tranquilo —BC registró todo y la
+  // app se quedó atrás, no hay nada que contradecir— del caso feo: que las dos
+  // partes tengan movimientos distintos. Ese segundo sigue saliendo en el cotejo
+  // rojo, que es el que compara línea por línea y sabe decir en qué difieren.
+  const nadaRecibidoAca = !orden.lineas.some((l) => (Number(l.cantidadRecibida) || 0) > 0 || (Number(l.cantidadFacturada) || 0) > 0);
+  const pedidoRegistrado = hayRegistroEnBc && nadaRecibidoAca;
 
   const prov = proveedores.find((p) => p.id === orden.proveedorId);
   const b = ordenBadgeDe(orden);
@@ -206,7 +225,7 @@ export function OrdenDetalle({
           </Button>
           {/* Con el pedido fantasma el botón se esconde: abría BC en una lista vacía
               y parecía que el link estaba roto. Lo que pasa se explica en el aviso. */}
-          {orden.bcDeepLink && !pedidoFantasma && (
+          {orden.bcDeepLink && !pedidoFantasma && !hayRegistroEnBc && (
             <button className="link-btn" title="Abrir el Pedido en Business Central (editar · vista previa de registro · registrar)"
               onClick={() => window.open(orden.bcDeepLink!, "_blank")}>↗ Abrir en BC</button>
           )}
@@ -226,7 +245,10 @@ export function OrdenDetalle({
           (no es un toast) y se queda hasta que alguien lo arregle: la orden 46
           (CP-005172) llegó a la factura del proveedor con una línea de menos porque
           el aviso duraba tres segundos. */}
-      {!espera && orden.bcCheck && orden.bcCheck.estado !== "ok" && !guardadoVencido && !(orden.bcCheck.estado === "sin-pedido" && ordenCerrada) && (
+      {/* `chequeo` es ESTE MISMO cotejo recién corrido (y el servidor ya lo guardó):
+          mostrar los dos era escribir dos veces el mismo párrafo, uno encima del
+          otro, y en CP-005394 se apilaron tres avisos rojos para decir dos cosas. */}
+      {!espera && !chequeo && !pedidoRegistrado && orden.bcCheck && orden.bcCheck.estado !== "ok" && !guardadoVencido && !(orden.bcCheck.estado === "sin-pedido" && ordenCerrada) && (
         <div className="ds-callout ds-callout--red mb-4" role="alert">
           <span className="ds-callout__icon"><IconWarning size={18} /></span>
           <div>
@@ -291,6 +313,38 @@ export function OrdenDetalle({
               )}
               <div className="mt-2">
                 <Button variant="outline" size="sm" onClick={() => setChequeo(null)}>Cerrar</Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {pedidoRegistrado && bcRegistrado && (
+        <div className="ds-callout ds-callout--yellow mb-4" role="status">
+          <span className="ds-callout__icon"><IconWarning size={18} /></span>
+          <div>
+            <div className="ds-callout__title">
+              Este pedido ya se registró completo en Business Central
+            </div>
+            <div className="ds-callout__body">
+              BC registró {bcRegistrado.facturas.map((f) => f.numero).join(", ")} contra el pedido {orden.bcNumber}
+              {bcRegistrado.facturas[0]?.fecha ? ` el ${formatDate(bcRegistrado.facturas[0].fecha)}` : ""} por{" "}
+              <span className="ds-strong">{money(bcRegistrado.total, bcRegistrado.currencyCode || orden.currencyCode)}</span> con IVA.
+              Al registrarse completo, BC borra el pedido y lo manda al archivo — por eso no se puede abrir desde acá.
+              <div className="mt-2">
+                Lo que falta es de este lado: la orden sigue en <span className="ds-strong">{ordenBadgeDe(orden).label.toLowerCase()}</span> y
+                recibido {ordenRecibidoPct(orden)}%. En <span className="ds-strong">Registrar factura</span> se escribe el N.º de factura del
+                proveedor y se le da registrar: la app ve que BC ya la tiene y ofrece guardar la recepción acá sin volver a registrarla allá.
+              </div>
+              <div className="row gap-3 mt-2 wrap" style={{ alignItems: "center" }}>
+                {bcRegistrado.url && (
+                  <button className="link-btn" onClick={() => window.open(bcRegistrado.url!, "_blank")}>
+                    ↗ Ver la factura registrada en BC
+                  </button>
+                )}
+                <Button variant="outline" size="sm" disabled={verificando} onClick={() => void verificarBc()}>
+                  {verificando ? "Verificando…" : "Cotejar línea por línea"}
+                </Button>
               </div>
             </div>
           </div>
@@ -383,6 +437,8 @@ export function OrdenDetalle({
                 <div style={{ gridColumn: "1 / -1" }} className="ds-body-sm ds-muted">
                   {espera
                     ? "Sin material: volvió al ingeniero. El total sale de cero cuando se le agregue el corregido."
+                    : hayRegistroEnBc && bcRegistrado
+                      ? `Estimado local · BC ya registró ${bcRegistrado.facturas.map((f) => f.numero).join(", ")} por ${money(bcRegistrado.total, bcRegistrado.currencyCode || orden.currencyCode)} con IVA.`
                     : pedidoFantasma ? `Estimado local · BC no tiene el pedido ${orden.bcNumber}.` : "Estimado local · los totales definitivos los calcula BC."}
                 </div>
               )}
