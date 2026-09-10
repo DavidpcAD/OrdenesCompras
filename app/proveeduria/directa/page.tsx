@@ -506,10 +506,13 @@ export default function OrdenDirectaPage() {
       const ls: Omit<OrdenLinea, "id" | "cantidadRecibida" | "cantidadFacturada">[] = rows.map((r) => ({
         tipo: r.tipo, articuloId: r.articuloId, variantCode: r.variantCode || undefined, pedidoNumero: "Manual",
         descripcion: r.descripcion, cantidad: Number(r.cantidad), unidad: r.unidad,
-        // El almacén es SOLO del material: BC no acepta ubicación en una línea de
-        // recurso ni de activo fijo, y ponérselo acá haría que la app dijera que ese
-        // servicio "entra al Almacén General", que no pasa en ninguna parte.
-        almacen: r.tipo === "articulo" ? almacen : "",
+        // El almacén va en TODAS las líneas, del tipo que sean. Acá se le quitaba al
+        // recurso y al activo fijo porque "BC no lo acepta en esas líneas", y es
+        // falso (ver lib/bc.ts): BC mismo les copia el almacén del encabezado. En una
+        // línea que no es de artículo el almacén no manda material a ninguna bodega
+        // —eso vive detrás de Type::Item—, pero SÍ es de donde BC saca la dimensión
+        // de centro de costo. Sin él, la compra de un activo queda sin CC.
+        almacen,
         precioUnitario: Number(r.precio), ivaPct: Number(r.iva) || 0, descuentoPct: Number(r.descuento) || 0,
         proyecto: r.obra || undefined, taskNo: r.tarea || undefined,
         maquinaNo: r.maquinaNo || undefined, maquinaNombre: r.maquinaNombre || undefined,
@@ -761,9 +764,12 @@ export default function OrdenDirectaPage() {
                         seis campos editables y no le caben dos buscadores más. */}
                     <td className="ds-body-sm">
                       {r.tipo === "activo_fijo" ? (
-                        // Un activo fijo no entra a bodega ni se carga a una obra: la
-                        // compra se capitaliza contra el activo en BC.
-                        <span className="ds-muted">Se capitaliza contra el activo</span>
+                        // Un activo fijo no se carga a una obra: la compra se
+                        // capitaliza contra el activo en BC. Pero el almacén SÍ va, y
+                        // por eso se muestra: es de donde sale el centro de costo de
+                        // la línea allá. No significa que el activo entre a esa
+                        // bodega (eso solo pasa con material inventariable).
+                        <DestinoLinea almacen={almacen} almacenNombre={nombreAlmacen(almacen)} />
                       ) : (<>
                         <DestinoLinea
                           almacen={r.tipo === "articulo" ? almacen : ""} almacenNombre={r.tipo === "articulo" ? nombreAlmacen(almacen) : ""}
