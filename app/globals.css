@@ -400,6 +400,48 @@ h1, h2, h3, h4, p { margin: 0; }
 .ds-table tbody tr.row-borrador td:first-child { box-shadow: inset 3px 0 0 var(--ds-color-yellow); font-weight: var(--ds-font-weight-semibold); }
 .ds-table tbody tr.row-borrador.is-clickable:hover td { background: color-mix(in srgb, var(--ds-color-yellow) 18%, var(--ds-tint-base)); }
 .ds-card.row-borrador { box-shadow: inset 3px 0 0 var(--ds-color-yellow), var(--ds-shadow-01); }
+
+/* La ACCIÓN de la fila, pegada al borde derecho de la tabla.
+   El editor de líneas (armar orden, compra directa, editar orden) mide 1183 px de
+   mínimo, y en una laptop de 1366 con el riel fijado quedan 1054: la "×" de quitar
+   la línea no quedaba cortada, quedaba FUERA de la pantalla. Del otro lado eso se
+   lee como "la app no me deja quitar la línea", que es tal cual el reporte que
+   llegó de Proveeduría. Pegada al borde viaja con el scroll y siempre está a mano.
+   Se activa celda por celda (y no con un `td:last-child` global) porque de las 28
+   tablas de la app solo esas tres desbordan: a las otras no hay por qué cobrarles
+   una celda opaca.
+   OJO: no ponerla en una tabla de filas clickeables. El hover de fila es el único
+   fondo que vive en el <tr> y no en el td, así que la celda opaca lo taparía. */
+.ds-table th.ds-col-fija,
+.ds-table td.ds-col-fija { position: sticky; right: 0; }
+/* El encabezado ya trae su propio negro opaco (`.ds-table thead th`): lo único que
+   necesita es quedar por encima de las celdas que le pasan por debajo al scrollear. */
+.ds-table thead th.ds-col-fija { z-index: 3; }
+/* El td es transparente por defecto, y una celda pegada sin fondo deja ver el texto
+   de las otras columnas corriendo por debajo. El fondo es el MISMO del
+   `.ds-table-wrap` para que no se lea como una columna aparte.
+   A propósito con POCA especificidad (0,1,1): los tintes por estado de fila
+   (`.row-pending`, `.row-borrador`, `.fila-cargo`) pintan el td y le ganan, así que
+   la celda pegada hereda el color de su fila sin repetir un solo estado.
+   El z-index queda por debajo de la topbar (50) y de la `.action-bar` (45). */
+td.ds-col-fija {
+  z-index: 1;
+  background: var(--ds-surface);
+  /* El filo reemplaza a la sombra de "hay más a la derecha" del wrap, que esta celda
+     tapa sí o sí. Sale de --ds-text con color-mix, igual que aquella, y por eso se ve
+     tanto en claro como en oscuro. */
+  box-shadow: -10px 0 10px -10px color-mix(in srgb, var(--ds-text) 22%, transparent);
+}
+/* En papel no hay scroll: la columna vuelve a su lugar y sin filo. */
+@media print {
+  .ds-table th.ds-col-fija,
+  .ds-table td.ds-col-fija { position: static; box-shadow: none; }
+}
+/* Fila de un cargo de producto dentro del editor de líneas. El tinte va en los td y
+   no en el <tr> —igual que `.row-pending` y `.row-borrador`— porque la celda de la
+   acción pinta su propio fondo: con el tinte en el <tr> quedaba una muesca sin
+   tintar justo en esa columna. */
+.ds-table tbody tr.fila-cargo td { background: color-mix(in srgb, var(--ds-color-yellow) 7%, var(--ds-tint-base)); }
 .ds-num { text-align: right; font-variant-numeric: tabular-nums; }
 
 /* Dropdown propio (componente Select): trigger + flecha grande + menú del sistema */
@@ -1275,7 +1317,10 @@ h1, h2, h3, h4, p { margin: 0; }
 }
 /* Botón "Quitar" (remover línea): más grande y en rojo del DS, bien visible. */
 .icon-btn--quitar { width: 36px; height: 36px; font-size: 22px; line-height: 1; color: var(--ds-color-red-200); border-radius: var(--ds-radius-md); }
-.icon-btn--quitar:hover { background: var(--ds-color-red-100); color: var(--ds-color-red-200); }
+/* Rojo sobre rojo (--ds-color-red-200 sobre --ds-color-red-100) daba ~1,4:1 y la ×
+   casi desaparecía justo al apuntarle. Misma fórmula que `.nc-flag`: el color-mix va
+   contra transparente, así que sirve en claro y en oscuro (los rojos no se remapean). */
+.icon-btn--quitar:hover { background: color-mix(in srgb, var(--ds-color-red-100) 14%, transparent); color: var(--ds-color-red-200); }
 
 /* Botón cerrar del modal, estilo DS (cuadrado redondeado negro, ícono blanco). */
 .modal-close { display: inline-grid; place-items: center; flex-shrink: 0; width: 36px; height: 36px; border: 0; cursor: pointer;

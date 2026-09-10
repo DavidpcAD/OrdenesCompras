@@ -711,7 +711,7 @@ export default function ArmarOrdenPage() {
                 <tr>
                   <th>Pedido</th><th>Artículo</th><th>Destino</th>
                   <th className="ds-num">Cantidad</th><th className="ds-num">Precio</th><th className="ds-num">Desc%</th><th className="ds-num">IVA%</th>
-                  <th className="ds-num">Importe</th><th></th>
+                  <th className="ds-num">Importe</th><th className="ds-col-fija" style={{ width: 56 }} />
                 </tr>
               </thead>
               <tbody>
@@ -829,13 +829,13 @@ export default function ArmarOrdenPage() {
                       {money(calcImporte(r) || 0, currency)}
                       {fleteShare(r) > 0 && <div className="ds-body-sm ds-muted" style={{ fontWeight: 400 }}>+ cargos {money(fleteShare(r), currency)}</div>}
                     </td>
-                    <td className="ds-num"><button type="button" className="icon-btn" title="Quitar línea" aria-label="Quitar línea" onClick={() => removeRow(r.key)}>×</button></td>
+                    <td className="ds-num ds-col-fija"><button type="button" className="icon-btn icon-btn--quitar" title="Quitar línea" aria-label="Quitar línea" onClick={() => removeRow(r.key)}>×</button></td>
                   </tr>
                 ))}
                 {/* Cargos de producto también como líneas (igual que en BC). Se editan
                     arriba en "Cargos de producto"; acá se muestran junto a los artículos. */}
                 {cargos.map((c, i) => cargoImporte(c) > 0 ? (
-                  <tr key={`cargo-${c.key}`} style={{ background: "color-mix(in srgb, var(--ds-color-yellow) 7%, var(--ds-tint-base))" }}>
+                  <tr key={`cargo-${c.key}`} className="fila-cargo">
                     <td><Badge tone="yellow">Cargo</Badge></td>
                     <td><div style={{ maxWidth: 320, minWidth: 180 }} title={`${c.chargeNo ? `${c.chargeNo} · ` : ""}${c.descripcion}`}>{c.chargeNo && <div className="ds-strong ds-body-sm">{c.chargeNo}</div>}<div className="ds-clamp-2">{c.descripcion}</div></div></td>
                     <td className="ds-muted ds-body-sm">—</td>
@@ -844,7 +844,7 @@ export default function ArmarOrdenPage() {
                     <td className="ds-num ds-muted">—</td>
                     <td className="ds-num ds-body-sm">{Number(c.iva) || 0}</td>
                     <td className="ds-num ds-strong">{money(cargoImporte(c) || 0, currency)}</td>
-                    <td className="ds-num"><button type="button" className="icon-btn" title="Quitar cargo" aria-label="Quitar cargo" onClick={() => removeCargo(i)}>×</button></td>
+                    <td className="ds-num ds-col-fija"><button type="button" className="icon-btn icon-btn--quitar" title="Quitar cargo" aria-label="Quitar cargo" onClick={() => removeCargo(i)}>×</button></td>
                   </tr>
                 ) : null)}
               </tbody>
