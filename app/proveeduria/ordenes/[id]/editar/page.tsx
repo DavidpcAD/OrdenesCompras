@@ -543,7 +543,9 @@ export default function EditarOrdenPage() {
     if (malPrecio) { toast(`El precio de "${malPrecio.descripcion}" no es un número válido.`, "error"); return; }
     // Obra sin tarea: BC no acepta un Job No. sin Job Task No. Solo se exige si las
     // tareas de esa obra ya cargaron (si BC no contesta, no se bloquea el guardado).
-    const sinTarea = rows.find((r) => r.proyecto && tareasDe(r.proyecto).length > 0 && !r.taskNo);
+    // Solo el artículo: es el único tipo cuya obra viaja como Job No. a BC. En los
+    // demás la obra es centro de costo y el CC no lleva tarea.
+    const sinTarea = rows.find((r) => r.tipo === "articulo" && r.proyecto && tareasDe(r.proyecto).length > 0 && !r.taskNo);
     if (sinTarea) { toast(`Elegí la tarea de la obra ${sinTarea.proyecto} en "${sinTarea.descripcion}": sin ella Business Central no acepta la línea.`, "error"); return; }
     // Variante sin elegir: mismo criterio que la tarea. Solo se exige cuando el
     // catálogo de variantes ya cargó y ofrece más de una.
@@ -575,9 +577,19 @@ export default function EditarOrdenPage() {
         // La obra viaja a BC como Project No. y SOLO si la línea de verdad tiene una:
         // antes se caía al almacén, y un "ALM-GRAL" en Project No. hace que BC rechace
         // la reescritura completa del pedido (se quedaba con las líneas viejas).
-        // El activo fijo no lleva obra: BC no acepta Job No. en esas líneas.
-        proyecto: r.tipo === "activo_fijo" ? undefined : (r.proyecto || undefined),
-        taskNo: r.tipo === "activo_fijo" ? undefined : (r.proyecto ? r.taskNo : undefined),
+        //
+        // La obra se GUARDA en cualquier tipo de línea, también en el activo fijo y el
+        // recurso. Antes acá se le borraba al activo fijo, y eso era el enredo que
+        // reportó David: la pantalla se la dejaba poner, se la mostraba en Destino, y
+        // al guardar desaparecía sin decir nada. La obra no se pierde ni viaja como
+        // Job No. —BC no lo acepta fuera del artículo—: viaja como CENTRO DE COSTO,
+        // que es el único amarre a la obra que esas líneas admiten, y de paso es de
+        // donde sale el CC del encabezado que dispara la aprobación en BC.
+        //
+        // La TAREA sí es solo del artículo: es la otra mitad del Job No., y sin Job No.
+        // no significa nada.
+        proyecto: r.proyecto || undefined,
+        taskNo: r.tipo === "articulo" ? (r.proyecto ? r.taskNo : undefined) : undefined,
         // El N.º máquina viaja a BC en la LÍNEA (parque GomEqp). El activo fijo no la
         // lleva: esa compra se capitaliza contra el activo, no la consume un equipo.
         // El nombre va solo para que la pantalla no muestre un código pelado; al SQL
@@ -958,7 +970,14 @@ export default function EditarOrdenPage() {
               el pedido completo si el Project No. no existe.
             </p>
           )}
-          {!!editObra.proyecto && (
+          {!!editObra.proyecto && editObra.tipo !== "articulo" && (
+            <p className="ds-body-sm ds-muted" style={{ margin: "8px 0 0" }}>
+              En una línea de {etiquetaTipoLinea(editObra.tipo).toLowerCase()}, la obra viaja a Business Central como
+              <span className="ds-strong"> centro de costo</span>, no como proyecto: BC no acepta N.º proyecto fuera de
+              las líneas de artículo. Por eso no lleva tarea.
+            </p>
+          )}
+          {!!editObra.proyecto && editObra.tipo === "articulo" && (
             <Field label="Tarea" help="Obligatoria cuando la línea va a una obra: BC no acepta un Job No. sin tarea." className="mt-4">
               <Combobox items={tareasDe(editObra.proyecto)} value={editObra.taskNo ?? ""}
                 onChange={(k) => setEditObra({ ...editObra, taskNo: k })}

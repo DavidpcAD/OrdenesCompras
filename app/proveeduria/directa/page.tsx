@@ -226,8 +226,13 @@ export default function OrdenDirectaPage() {
     setQaCode(""); setQaQty(""); setQaPrecio(""); setQaRef(null);
     setQaVariantes([]); setQaVariante(""); setQaVariantesError(false);
     setQaUnidad("");
-    // El activo fijo no puede ir a una obra: si venía una puesta, se suelta.
-    if (t === "activo_fijo") { setQaObra(""); setQaTarea(""); setQaMaquina(""); }
+    // La OBRA se queda en cualquier tipo: en las líneas que no son de artículo no
+    // viaja como N.º proyecto (BC no lo acepta) pero sí como centro de costo, que es
+    // el único amarre a la obra que esas líneas admiten. Lo que se suelta es la TAREA
+    // —es la otra mitad del Job No.— y, en el activo fijo, la máquina: la máquina que
+    // se COMPRA es el activo, no el destino del gasto.
+    if (t !== "articulo") setQaTarea("");
+    if (t === "activo_fijo") setQaMaquina("");
   }
 
   // Elegir un ARTÍCULO: su unidad de compra, la lista de unidades, el último precio
@@ -493,7 +498,9 @@ export default function OrdenDirectaPage() {
     if (malPrecio) { toast(`El precio de "${malPrecio.descripcion}" no es un número válido.`, "error"); return; }
     // Última red antes de guardar: si una línea quedó con obra y sin tarea (p. ej.
     // las tareas no habían cargado al agregarla), BC va a rechazarla.
-    const sinTarea = rows.find((r) => r.tipo !== "activo_fijo" && r.obra && !r.tarea);
+    // Solo el artículo: es el único tipo cuya obra viaja como Job No., y el Job No. es
+    // el que BC no acepta sin tarea. En los demás la obra es centro de costo.
+    const sinTarea = rows.find((r) => r.tipo === "articulo" && r.obra && !r.tarea);
     if (sinTarea) { toast(`Falta la tarea de la obra ${sinTarea.obra} en "${sinTarea.descripcion}". Sin ella BC no acepta la línea.`, "error"); return; }
     setGuardando(true);
     try {
@@ -514,7 +521,7 @@ export default function OrdenDirectaPage() {
         // de centro de costo. Sin él, la compra de un activo queda sin CC.
         almacen,
         precioUnitario: Number(r.precio), ivaPct: Number(r.iva) || 0, descuentoPct: Number(r.descuento) || 0,
-        proyecto: r.obra || undefined, taskNo: r.tarea || undefined,
+        proyecto: r.obra || undefined, taskNo: r.tipo === "articulo" ? (r.tarea || undefined) : undefined,
         maquinaNo: r.maquinaNo || undefined, maquinaNombre: r.maquinaNombre || undefined,
       }));
       for (const c of cargos) {
@@ -763,18 +770,17 @@ export default function OrdenDirectaPage() {
                         y no con dos selectores dentro de la celda: la tabla ya tiene
                         seis campos editables y no le caben dos buscadores más. */}
                     <td className="ds-body-sm">
-                      {r.tipo === "activo_fijo" ? (
-                        // Un activo fijo no se carga a una obra: la compra se
-                        // capitaliza contra el activo en BC. Pero el almacén SÍ va, y
-                        // por eso se muestra: es de donde sale el centro de costo de
-                        // la línea allá. No significa que el activo entre a esa
-                        // bodega (eso solo pasa con material inventariable).
-                        <DestinoLinea almacen={almacen} almacenNombre={nombreAlmacen(almacen)} />
-                      ) : (<>
+                      {(<>
+                        {/* Todas las líneas llevan el almacén de la orden (de ahí sale
+                            la dimensión de centro de costo en BC) y pueden llevar obra.
+                            En las que no son de artículo la obra NO viaja como N.º
+                            proyecto —BC lo prohíbe— sino como centro de costo, y por eso
+                            tampoco llevan tarea: no se les avisa que les falta. */}
                         <DestinoLinea
-                          almacen={r.tipo === "articulo" ? almacen : ""} almacenNombre={r.tipo === "articulo" ? nombreAlmacen(almacen) : ""}
+                          almacen={almacen} almacenNombre={nombreAlmacen(almacen)}
                           obra={r.obra} obraNombre={r.obraNombre}
                           tarea={r.tarea} tareaNombre={r.tareaNombre}
+                          avisarSinTarea={r.tipo === "articulo"}
                           maquina={r.maquinaNo} maquinaNombre={r.maquinaNombre} />
                         <span className="row wrap gap-3" style={{ marginTop: 2 }}>
                           <button type="button" className="link-btn" onClick={() => { setEditObra(r); if (r.obra) cargarTareas(r.obra); }}>
@@ -910,7 +916,14 @@ export default function OrdenDirectaPage() {
               onChange={(k) => { setEditObra({ ...editObra, obra: k, obraNombre: nombreObra(k), tarea: "", tareaNombre: "" }); if (k) cargarTareas(k); }}
               getKey={(o) => o.codigo} getLabel={etiquetaObra} getSearch={(o) => `${o.codigo} ${o.nombre}`} placeholder="Sin obra…" />
           </Field>
-          {editObra.obra && (
+          {editObra.obra && editObra.tipo !== "articulo" && (
+            <p className="ds-body-sm ds-muted" style={{ margin: "8px 0 0" }}>
+              En una línea de {etiquetaTipoLinea(editObra.tipo).toLowerCase()}, la obra viaja a Business Central como
+              <span className="ds-strong"> centro de costo</span>, no como proyecto: BC no acepta N.º proyecto fuera de
+              las líneas de artículo. Por eso no lleva tarea.
+            </p>
+          )}
+          {editObra.obra && editObra.tipo === "articulo" && (
             <Field label="Tarea" help="Obligatoria cuando la línea va a una obra: BC no acepta un Job No. sin tarea." className="mt-4">
               <Combobox items={tareasDe(editObra.obra)} value={editObra.tarea}
                 onChange={(k) => setEditObra({ ...editObra, tarea: k, tareaNombre: nombreTarea(editObra.obra, k) })}
