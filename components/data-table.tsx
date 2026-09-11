@@ -9,6 +9,7 @@ import {
 } from "@tanstack/react-table";
 import { Button, Card, Checkbox, ConfirmDialog, EmptyState, Field, Input, Modal, Select, Skeleton, useToast } from "@/components/ui";
 import { IconTable } from "@/components/icons";
+import { num } from "@/lib/helpers";
 import { useStore } from "@/lib/store";
 
 // Texto plano de un valor de celda (para opciones y comparación de filtro).
@@ -47,6 +48,12 @@ const isDateCol = (c: { meta?: unknown }) => !!(c.meta as { date?: boolean } | u
 // y reordenar columnas, paginación, y VISTAS guardadas por usuario en SQL (/api/vistas).
 // Cada columna debe tener `id`; opcional meta.label (nombre legible) y meta.num (derecha).
 
+// "Todas": una sola página con todo adentro, que se recorre bajando (como la lista
+// de Business Central). No es un modo aparte —sigue siendo la paginación de
+// TanStack— sino un tamaño de página tan grande que nunca hay página 2; así el
+// estado guardado, las vistas y el export siguen funcionando igual.
+export const TODAS_LAS_FILAS = 100000;
+
 type ColMeta = { label?: string; num?: boolean; date?: boolean };
 type VistaCfg = {
   columnOrder?: ColumnOrderState; columnVisibility?: VisibilityState; sorting?: SortingState;
@@ -56,7 +63,7 @@ type Vista = { id: number; nombre: string; config: VistaCfg; esPredeterminada: b
 
 export function DataTable<T>({
   data, columns, tablaKey, getRowId, onRowClick, rowClassName, vacio = "No hay registros.", modoInicial = "tabla", renderExpanded,
-  titulo = "Reporte", buscarPlaceholder = "Buscar en la tabla…", loading = false, columnVisibilityInicial,
+  titulo = "Reporte", buscarPlaceholder = "Buscar en la tabla…", loading = false, columnVisibilityInicial, pageSizeInicial,
 }: {
   data: T[];
   columns: ColumnDef<T, any>[];
@@ -81,6 +88,10 @@ export function DataTable<T>({
   // leerse — el buscador global mira todas las columnas, visibles o no, y el
   // export solo se lleva las visibles.
   columnVisibilityInicial?: VisibilityState;
+  // Cuántas filas por página arranca mostrando esta tabla. `TODAS_LAS_FILAS` = sin
+  // paginar: se ve la lista entera y se recorre bajando. Es solo el ARRANQUE: si el
+  // usuario ya eligió otra cosa, manda lo que él dejó (viaja en el estado guardado).
+  pageSizeInicial?: number;
 }) {
   const { usuario, cargando, errorCarga, ultimaSync, modoApi } = useStore();
   // Inyecta el filtro multi-selección a las columnas que no traigan uno propio.
@@ -106,7 +117,8 @@ export function DataTable<T>({
   const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({ ...(columnVisibilityInicial ?? {}), ...(guardado.columnVisibility ?? {}) });
   const [columnOrder, setColumnOrder] = useState<ColumnOrderState>(() => columns.map((c) => c.id!).filter(Boolean));
   const [globalFilter, setGlobalFilter] = useState(guardado.globalFilter ?? "");
-  const [pagination, setPagination] = useState<PaginationState>({ pageIndex: guardado.pageIndex ?? 0, pageSize: guardado.pageSize ?? 50 });
+  const [pagination, setPagination] = useState<PaginationState>({ pageIndex: guardado.pageIndex ?? 0, pageSize: guardado.pageSize ?? pageSizeInicial ?? 50 });
+  const sinPaginar = pagination.pageSize >= TODAS_LAS_FILAS;
   const [panel, setPanel] = useState<null | "cols" | "vistas" | "export">(null);
   // Cerrar el panel (Columnas/Vistas/Exportar) con Escape, como el resto de popovers.
   useEffect(() => {
@@ -556,21 +568,29 @@ export function DataTable<T>({
         </Card>
       )}
 
-      {/* Paginación */}
+      {/* Paginación. Con "Todas" no hay páginas que pasar: se dice cuántas filas
+          hay a la vista y se esconden las flechas, que no llevarían a ningún lado. */}
       <div className="row row--between wrap gap-3 mt-4 dt-pagination" style={{ alignItems: "center" }}>
-        <span className="ds-body-sm ds-muted">Página {table.getState().pagination.pageIndex + 1} de {Math.max(1, table.getPageCount())}</span>
+        <span className="ds-body-sm ds-muted">
+          {sinPaginar
+            ? `${num.format(table.getFilteredRowModel().rows.length)} fila(s), todas a la vista`
+            : `Página ${table.getState().pagination.pageIndex + 1} de ${Math.max(1, table.getPageCount())}`}
+        </span>
         <div className="row gap-2" style={{ alignItems: "center" }}>
           <Select ariaLabel="Filas por página" value={String(pagination.pageSize)} onChange={(e) => setPagination((p) => ({ ...p, pageSize: Number(e.target.value), pageIndex: 0 }))} style={{ width: "auto", minWidth: 120 }}>
             {[25, 50, 100, 200].map((n) => <option key={n} value={n}>{n} / pág.</option>)}
+            <option value={TODAS_LAS_FILAS}>Todas</option>
           </Select>
-          <button type="button" className="ds-navctrl" title="Anterior" aria-label="Página anterior"
-            onClick={() => table.previousPage()} disabled={!table.getCanPreviousPage()}>
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M15 6l-6 6 6 6" /></svg>
-          </button>
-          <button type="button" className="ds-navctrl" title="Siguiente" aria-label="Página siguiente"
-            onClick={() => table.nextPage()} disabled={!table.getCanNextPage()}>
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M9 6l6 6-6 6" /></svg>
-          </button>
+          {!sinPaginar && (<>
+            <button type="button" className="ds-navctrl" title="Anterior" aria-label="Página anterior"
+              onClick={() => table.previousPage()} disabled={!table.getCanPreviousPage()}>
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M15 6l-6 6 6 6" /></svg>
+            </button>
+            <button type="button" className="ds-navctrl" title="Siguiente" aria-label="Página siguiente"
+              onClick={() => table.nextPage()} disabled={!table.getCanNextPage()}>
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M9 6l6 6-6 6" /></svg>
+            </button>
+          </>)}
         </div>
       </div>
 
