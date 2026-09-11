@@ -63,7 +63,7 @@ type Vista = { id: number; nombre: string; config: VistaCfg; esPredeterminada: b
 
 export function DataTable<T>({
   data, columns, tablaKey, getRowId, onRowClick, rowClassName, vacio = "No hay registros.", modoInicial = "tabla", renderExpanded,
-  titulo = "Reporte", buscarPlaceholder = "Buscar en la tabla…", loading = false, columnVisibilityInicial, pageSizeInicial,
+  titulo = "Reporte", buscarPlaceholder = "Buscar en la tabla…", loading = false, columnVisibilityInicial, paginacion = true,
 }: {
   data: T[];
   columns: ColumnDef<T, any>[];
@@ -88,10 +88,11 @@ export function DataTable<T>({
   // leerse — el buscador global mira todas las columnas, visibles o no, y el
   // export solo se lleva las visibles.
   columnVisibilityInicial?: VisibilityState;
-  // Cuántas filas por página arranca mostrando esta tabla. `TODAS_LAS_FILAS` = sin
-  // paginar: se ve la lista entera y se recorre bajando. Es solo el ARRANQUE: si el
-  // usuario ya eligió otra cosa, manda lo que él dejó (viaja en el estado guardado).
-  pageSizeInicial?: number;
+  // `false` = esta tabla NO se pagina NUNCA: se ven todas las filas y se recorren
+  // bajando, y no se muestra la barra de páginas. No es un default que el estado
+  // guardado pueda pisar — es la pantalla la que decide, porque hay listas (las
+  // líneas pendientes de Proveeduría) donde partir en páginas es el problema.
+  paginacion?: boolean;
 }) {
   const { usuario, cargando, errorCarga, ultimaSync, modoApi } = useStore();
   // Inyecta el filtro multi-selección a las columnas que no traigan uno propio.
@@ -117,7 +118,11 @@ export function DataTable<T>({
   const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({ ...(columnVisibilityInicial ?? {}), ...(guardado.columnVisibility ?? {}) });
   const [columnOrder, setColumnOrder] = useState<ColumnOrderState>(() => columns.map((c) => c.id!).filter(Boolean));
   const [globalFilter, setGlobalFilter] = useState(guardado.globalFilter ?? "");
-  const [pagination, setPagination] = useState<PaginationState>({ pageIndex: guardado.pageIndex ?? 0, pageSize: guardado.pageSize ?? pageSizeInicial ?? 50 });
+  const [pagination, setPagination] = useState<PaginationState>(
+    paginacion
+      ? { pageIndex: guardado.pageIndex ?? 0, pageSize: guardado.pageSize ?? 50 }
+      : { pageIndex: 0, pageSize: TODAS_LAS_FILAS },
+  );
   const sinPaginar = pagination.pageSize >= TODAS_LAS_FILAS;
   const [panel, setPanel] = useState<null | "cols" | "vistas" | "export">(null);
   // Cerrar el panel (Columnas/Vistas/Exportar) con Escape, como el resto de popovers.
@@ -201,7 +206,7 @@ export function DataTable<T>({
     if (c.columnOrder) setColumnOrder(c.columnOrder);
     setColumnVisibility(c.columnVisibility ?? {}); setSorting(c.sorting ?? []); setColumnFilters(c.columnFilters ?? []);
     setGlobalFilter(c.globalFilter ?? ""); setModo(c.modo ?? "tabla");
-    setPagination((p) => ({ ...p, pageSize: c.pageSize ?? p.pageSize, pageIndex: 0 })); setPanel(null);
+    setPagination((p) => ({ ...p, pageSize: paginacion ? (c.pageSize ?? p.pageSize) : TODAS_LAS_FILAS, pageIndex: 0 })); setPanel(null);
   }
   function guardarVista() {
     setNombreVista(""); setPredVista(false); setGuardarVistaOpen(true);
@@ -569,7 +574,9 @@ export function DataTable<T>({
       )}
 
       {/* Paginación. Con "Todas" no hay páginas que pasar: se dice cuántas filas
-          hay a la vista y se esconden las flechas, que no llevarían a ningún lado. */}
+          hay a la vista y se esconden las flechas, que no llevarían a ningún lado.
+          Y si la pantalla pidió que esta tabla no se pagine, la barra ni aparece. */}
+      {paginacion && (
       <div className="row row--between wrap gap-3 mt-4 dt-pagination" style={{ alignItems: "center" }}>
         <span className="ds-body-sm ds-muted">
           {sinPaginar
@@ -593,6 +600,7 @@ export function DataTable<T>({
           </>)}
         </div>
       </div>
+      )}
 
       {/* Popover de filtro por columna (buscador + checkboxes) */}
       {filterCol && (() => {

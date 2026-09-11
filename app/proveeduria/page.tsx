@@ -4,10 +4,10 @@ import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import type { ColumnDef } from "@tanstack/react-table";
 import { Badge, Button, Card, EmptyState, Modal, Select, useToast } from "@/components/ui";
-import { DataTable, TODAS_LAS_FILAS } from "@/components/data-table";
+import { DataTable } from "@/components/data-table";
 import { DestinoLinea } from "@/components/destino-linea";
 import { VistaToggle } from "@/components/vista-toggle";
-import { IconEye, IconReceipt, IconList } from "@/components/icons";
+import { IconChevronLeft, IconEye, IconReceipt, IconList } from "@/components/icons";
 import { useStore } from "@/lib/store";
 import { destinoLabel, destinoCodigo, esConsumoDirecto, money, num, obraParaOrden, pedidoLineaPendiente, solicitudResumen, tipoSolicitudBadge, estadoDeDevolucion } from "@/lib/helpers";
 import { useVariantes } from "@/lib/use-variantes";
@@ -271,39 +271,26 @@ export default function ProveeduriaMaterialesPage() {
           </div>
         </div>
 
-        <div className="row wrap gap-3" style={{ alignItems: "center" }}>
-          <VistaToggle opciones={[
-            { label: "Por solicitud", href: "/proveeduria/solicitudes", active: false, icon: <IconReceipt size={16} /> },
-            { label: "Por línea", href: "/proveeduria", active: true, icon: <IconList size={16} /> },
-          ]} />
-          {baseRows.length > 0 && (
-            <Button variant="outline" size="sm" onClick={alternarPanel} aria-pressed={panelOculto}
-              title={panelOculto ? "Volver a mostrar la lista de pedidos de la izquierda" : "Esconder la lista de pedidos y ver las líneas a lo ancho"}>
-              {panelOculto ? "Mostrar pedidos" : "Ocultar pedidos"}
-            </Button>
-          )}
-          {/* Con el panel escondido, sus dos controles se quedarían sin pantalla: el
-              filtro por solicitante se muda acá y el pedido elegido se ve como marca
-              con su salida, para que nunca haya una tabla filtrada sin decirlo. */}
-          {panelOculto && baseRows.length > 0 && (
-            <Select value={solicFiltro} onChange={(e) => setSolicFiltro(e.target.value)} className="md-select" style={{ width: "auto", minWidth: 190 }} ariaLabel="Filtrar por solicitante">
-              <option value="">Todos los solicitantes</option>
-              {solicitantes.map((s) => <option key={s} value={s}>{s}</option>)}
-            </Select>
-          )}
-          {panelOculto && filtro !== "all" && (
-            <span className="row gap-2 ds-body-sm" style={{ alignItems: "center" }}>
-              <span className="ds-muted">Solo</span>
-              <span className="ds-strong">{pedidos.find((p) => p.id === filtro)?.numero ?? "un pedido"}</span>
-              <button type="button" className="link-btn" onClick={() => setFiltro("all")}>Ver todas</button>
-            </span>
-          )}
-        </div>
+        <VistaToggle opciones={[
+          { label: "Por solicitud", href: "/proveeduria/solicitudes", active: false, icon: <IconReceipt size={16} /> },
+          { label: "Por línea", href: "/proveeduria", active: true, icon: <IconList size={16} /> },
+        ]} />
 
         {baseRows.length === 0 ? (
           <Card className="mt-4"><EmptyState icon={<IconList size={24} />} title="No hay líneas pendientes por ordenar." hint="Cuando Ingeniería apruebe nuevas solicitudes, van a aparecer acá." /></Card>
         ) : (
         <div className={`md-layout mt-2${panelOculto ? " md-layout--solo" : ""}`}>
+          {/* Riel: lo único que queda de la columna cuando está escondida. El mismo
+              ícono al revés la devuelve, y se queda en el lugar donde estaba la lista
+              para que se entienda qué va a volver. */}
+          {panelOculto && (
+            <div className="md-rail">
+              <button type="button" className="icon-btn" title="Mostrar la lista de pedidos"
+                aria-label="Mostrar la lista de pedidos" onClick={alternarPanel}>
+                <IconChevronLeft style={{ transform: "rotate(180deg)" }} />
+              </button>
+            </div>
+          )}
           {/* pedidos */}
           {!panelOculto && (
           <div className="md-list" style={{ maxHeight: "calc(100vh - 210px)", overflowY: "auto", paddingRight: 4 }}>
@@ -317,13 +304,26 @@ export default function ProveeduriaMaterialesPage() {
                 {solicitantes.map((s) => <option key={s} value={s}>{s}</option>)}
               </Select>
             </div>
-            <button className={`md-item ${filtro === "all" ? "is-active" : ""}`} onClick={() => setFiltro("all")}>
+            <div role="button" tabIndex={0} aria-pressed={filtro === "all"}
+              className={`md-item ${filtro === "all" ? "is-active" : ""}`} style={{ cursor: "pointer" }}
+              onClick={() => setFiltro("all")}
+              onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setFiltro("all"); } }}>
               <div className="md-item__top">
                 <span className="ds-strong">Todos los pedidos</span>
-                <span className="md-pill">{rowsSolic.length}</span>
+                <span className="row gap-2" style={{ alignItems: "center" }}>
+                  <span className="md-pill">{rowsSolic.length}</span>
+                  {/* Esconder la columna: vive acá, pegado al contador, porque es donde
+                      está la vista que estorba. Al esconderla queda un riel con el mismo
+                      ícono para devolverla. */}
+                  <button type="button" className="icon-btn" title="Ocultar la lista de pedidos y ver las líneas a lo ancho"
+                    aria-label="Ocultar la lista de pedidos"
+                    onClick={(e) => { e.stopPropagation(); alternarPanel(); }}>
+                    <IconChevronLeft />
+                  </button>
+                </span>
               </div>
               <span className="ds-body-sm ds-muted">{qSolic ? `Líneas de ${solicFiltro.trim()}` : "Ver todas las líneas pendientes"}</span>
-            </button>
+            </div>
             {pedidosConSaldo
               .filter((p) => coincideSolic(p.solicitante))
               .filter((p) => { const q = pedFiltro.trim().toLowerCase(); if (!q) return true; const r = solicitudResumen(p); return [p.numero, destinoCodigo(p), r.principal, r.secundaria ?? "", p.notas ?? "", p.solicitante].some((t) => t.toLowerCase().includes(q)); })
@@ -359,6 +359,14 @@ export default function ProveeduriaMaterialesPage() {
 
           {/* líneas — misma DataTable que el resto, con celdas editables para armar la orden */}
           <Card className="md-detail" style={{ padding: 16 }}>
+            {panelOculto && (filtro !== "all" || qSolic) && (
+              <div className="row wrap gap-3 ds-body-sm" style={{ alignItems: "center", marginBottom: 10 }}>
+                <span className="ds-muted">Mostrando solo</span>
+                {filtro !== "all" && <span className="ds-strong">{pedidos.find((p) => p.id === filtro)?.numero ?? "un pedido"}</span>}
+                {qSolic && <span className="ds-strong">líneas de {solicFiltro.trim()}</span>}
+                <button type="button" className="link-btn" onClick={() => { setFiltro("all"); setSolicFiltro(""); }}>Ver todas</button>
+              </div>
+            )}
             <DataTable
               data={dataTabla}
               columns={columns}
@@ -366,10 +374,10 @@ export default function ProveeduriaMaterialesPage() {
               titulo="Materiales solicitados"
               buscarPlaceholder="Buscar por material, pedido u obra…"
               getRowId={(r) => r.pedidoLineaId}
-              // Esta lista arranca SIN paginar: lo que se viene a hacer acá es barrer
-              // todo lo pendiente de una sentada, y partirlo en páginas de 50 obliga a
-              // acordarse de lo que quedó atrás. Se puede volver a paginar abajo.
-              pageSizeInicial={TODAS_LAS_FILAS}
+              // Esta lista NO se pagina: lo que se viene a hacer acá es barrer todo lo
+              // pendiente de una sentada, y partirlo en páginas obliga a acordarse de lo
+              // que quedó atrás. Se ven todas y se recorren bajando.
+              paginacion={false}
               onRowClick={(r) => setRow(r.pedidoLineaId, { incluir: !r.incluir })}
               rowClassName={(r) => (r.incluir ? "dt-row-incluida" : "")}
               vacio="No hay líneas pendientes."
