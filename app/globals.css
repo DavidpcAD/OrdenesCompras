@@ -1272,10 +1272,12 @@ td.ds-col-fija {
 /* Colapsa a 1 columna en tablet y móvil: con sidebar 250px + tabla, por debajo
    de ~900px la tabla queda muy angosta y su toolbar desborda. Apilado le da a la
    tabla el ancho completo. */
-/* Panel de pedidos OCULTO: la tabla se queda con todo el ancho y con casi toda la
-   pantalla de alto, para ver lo pendiente de corrido (se recorre hacia abajo, no
-   se pagina). 230px es lo que ocupan la barra de arriba, el título y el "Ver por". */
-.md-layout--solo { grid-template-columns: 1fr; height: calc(100vh - 230px); }
+/* Panel de pedidos OCULTO: queda un riel angosto con el botón para devolverlo y la
+   tabla se lleva todo el resto del ancho, con casi toda la pantalla de alto, para
+   ver lo pendiente de corrido (se recorre hacia abajo, no se pagina). 230px es lo
+   que ocupan la barra de arriba, el título y el "Ver por". */
+.md-layout--solo { grid-template-columns: 36px 1fr; height: calc(100vh - 230px); }
+.md-rail { display: flex; justify-content: center; align-items: flex-start; padding-top: var(--ds-space-2); }
 @media (max-width: 900px) { .md-layout { grid-template-columns: 1fr; height: auto; min-height: 0; } .md-list { overflow: visible; height: auto; } .md-layout--solo { height: auto; } }
 
 /* misc */
