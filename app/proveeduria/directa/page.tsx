@@ -80,6 +80,12 @@ export default function OrdenDirectaPage() {
   const [cargos, setCargos] = useState<Cargo[]>((rescate?.cargos as Cargo[]) ?? []);
   const [metodoAsig, setMetodoAsig] = useState(rescate?.metodoAsig ?? "Amount"); // Amount|Weight|Volume|Equally
   const [itemCharges, setItemCharges] = useState<{ no: string; descripcion: string }[]>([]);
+  // Qué catálogos de BC ya contestaron. Sin esto, mientras la lista venía en camino
+  // la pantalla acusaba "el catálogo de Business Central llegó vacío… no se pueden
+  // agregar líneas", que es falso y se lee como pantalla rota — y justo la primera
+  // lectura del día es la lenta. Ahora "viniendo" y "no hay" se dicen distinto.
+  const [catalogoRespondio, setCatalogoRespondio] = useState<Partial<Record<LineType, boolean>>>({});
+  const marcarCatalogo = (t: LineType) => setCatalogoRespondio((m) => ({ ...m, [t]: true }));
 
   // Catálogos en vivo desde Business Central (con respaldo al catálogo seed).
   const [bcProv, setBcProv] = useState<typeof proveedores | null>(null);
@@ -94,14 +100,14 @@ export default function OrdenDirectaPage() {
       }).catch(() => setBcCaido(true));
     // La unidad que se muestra y se guarda es la de COMPRA: este material se pide
     // por ESTAÑON aunque el inventario lo lleve en gramos.
-    fetch("/api/bc/items").then((r) => (r.ok ? r.json() : { items: [] })).then((d) => { if (Array.isArray(d.items)) setItemsBc(d.items.map((i: any) => ({ code: i.code, descripcion: i.descripcion, unidad: (i.unidadCompra || i.unidad || "UND"), unidadBase: i.unidad || undefined, factorCompra: i.factorCompra }))); }).catch(() => {});
+    fetch("/api/bc/items").then((r) => (r.ok ? r.json() : { items: [] })).then((d) => { if (Array.isArray(d.items)) setItemsBc(d.items.map((i: any) => ({ code: i.code, descripcion: i.descripcion, unidad: (i.unidadCompra || i.unidad || "UND"), unidadBase: i.unidad || undefined, factorCompra: i.factorCompra }))); }).catch(() => {}).finally(() => marcarCatalogo("articulo"));
     fetch("/api/bc/almacenes").then((r) => (r.ok ? r.json() : { almacenes: [] })).then((d) => {
       // El default no puede pisar el almacén que venga del borrador rescatado.
       if (Array.isArray(d.almacenes) && d.almacenes.length) { setBcAlm(d.almacenes); if (!rescate && !d.almacenes.some((a: any) => a.codigo === "ALM-GRAL")) setAlmacen(d.almacenes[0].codigo); }
     }).catch(() => {});
     // Catálogo de Cargos de producto (Item Charge) de BC para el selector de tipo.
     fetch("/api/bc/itemcharges").then((r) => (r.ok ? r.json() : { itemCharges: [] }))
-      .then((d) => { if (Array.isArray(d.itemCharges)) setItemCharges(d.itemCharges); }).catch(() => {});
+      .then((d) => { if (Array.isArray(d.itemCharges)) setItemCharges(d.itemCharges); }).catch(() => {}).finally(() => marcarCatalogo("cargo"));
     // Obras (Jobs) de BC, para poder cargar una línea a una obra. Si no responde,
     // el selector queda vacío y la orden se arma sin obra, como antes.
     fetch("/api/bc/obras").then((r) => (r.ok ? r.json() : { obras: [] }))
@@ -111,9 +117,9 @@ export default function OrdenDirectaPage() {
     // vacía y el tipo queda deshabilitado con el motivo a la vista — no se ofrece un
     // buscador que no va a encontrar nada.
     fetch("/api/bc/recursos").then((r) => (r.ok ? r.json() : { recursos: [] }))
-      .then((d) => { if (Array.isArray(d.recursos)) setRecursos(d.recursos); }).catch(() => {});
+      .then((d) => { if (Array.isArray(d.recursos)) setRecursos(d.recursos); }).catch(() => {}).finally(() => marcarCatalogo("recurso"));
     fetch("/api/bc/activos-fijos").then((r) => (r.ok ? r.json() : { activos: [] }))
-      .then((d) => { if (Array.isArray(d.activos)) setActivosFijos(d.activos); }).catch(() => {});
+      .then((d) => { if (Array.isArray(d.activos)) setActivosFijos(d.activos); }).catch(() => {}).finally(() => marcarCatalogo("activo_fijo"));
   }, []);
   // El PARQUE DE MAQUINARIA de BC, con su espera y su respaldo en modo mock, sale
   // del hook compartido (components/maquina-linea.tsx).
@@ -196,15 +202,17 @@ export default function OrdenDirectaPage() {
   // repetir `qaTipo === "articulo"` en cada control:
   //   · variante y unidades convertibles → solo el ARTÍCULO (son del catálogo de
   //     artículos; 1 EST = 255.000 GR no existe para un recurso);
-  //   · obra/tarea → artículo y recurso. El ACTIVO FIJO no: BC no acepta Job No. en
-  //     su línea, lo costea el libro de depreciación;
+  //   · OBRA → todos menos el cargo. En el artículo viaja a BC como N.º proyecto
+  //     (Job No.) y por eso lleva TAREA; en el recurso y el activo fijo BC no acepta
+  //     Job No., así que la obra viaja como CENTRO DE COSTO y no lleva tarea;
   //   · el CARGO no entra a la tabla de líneas: va a la tarjeta de "Cargos de
   //     producto" de abajo, que es donde se elige el método de reparto.
   const esArticulo = qaTipo === "articulo";
-  const admiteObra = qaTipo === "articulo" || qaTipo === "recurso";
-  // La máquina es la misma historia que la obra: el N.º máquina vive en la LÍNEA del
-  // pedido, y en un activo fijo no aplica (la compra se capitaliza contra el activo).
-  const admiteMaquina = admiteObra;
+  const admiteObra = qaTipo !== "cargo";
+  // La máquina NO sigue a la obra: el N.º máquina vive en la LÍNEA del pedido, y en
+  // un activo fijo no aplica —la máquina que se COMPRA es el activo, no el destino
+  // del gasto—, así que se ofrece solo en artículo y recurso.
+  const admiteMaquina = qaTipo === "articulo" || qaTipo === "recurso";
   const cfgTipo = TIPOS_LINEA.find((t) => t.tipo === qaTipo)!;
   // Catálogo del tipo elegido, con la forma que espera el Combobox (clave + rótulo).
   type OpcionCat = { key: string; etiqueta: string; buscar: string; extra: string };
@@ -217,7 +225,8 @@ export default function OrdenDirectaPage() {
   // El catálogo de este tipo no llegó (API custom sin publicar, o BC caído). Se dice
   // en la pantalla: sin esto el buscador se ve vacío y parece que no hay recursos
   // dados de alta, cuando lo que falta es la página de BC.
-  const catalogoVacio = catalogoTipo.length === 0;
+  const catalogoVacio = catalogoTipo.length === 0 && !!catalogoRespondio[qaTipo];
+  const catalogoCargando = catalogoTipo.length === 0 && !catalogoRespondio[qaTipo];
 
   // Elegir el tipo limpia lo elegido: el N.º de un artículo no es el de un recurso, y
   // arrastrar el código de un catálogo a otro deja una línea que BC rechaza.
@@ -386,7 +395,10 @@ export default function OrdenDirectaPage() {
   // dejarla puesta manda a BC un Job Task No. que no existe en la obra nueva.
   function elegirObra(codigo: string) { setQaObra(codigo); setQaTarea(""); if (codigo) cargarTareas(codigo); }
   // La obra sin tarea no la acepta BC; solo se exige si las tareas ya cargaron.
-  const tareaPendiente = !!qaObra && tareasDe(qaObra).length > 0 && !qaTarea;
+  // Y solo en el ARTÍCULO: es el único tipo cuya obra viaja como N.º proyecto. En el
+  // recurso y el activo fijo la obra es centro de costo, y un CC no lleva tarea —
+  // exigirla ahí trababa la línea por un dato que ni siquiera se manda.
+  const tareaPendiente = esArticulo && !!qaObra && tareasDe(qaObra).length > 0 && !qaTarea;
 
   const setRow = (k: string, patch: Partial<Row>) => setRows((rs) => rs.map((r) => (r.key === k ? { ...r, ...patch } : r)));
   const removeRow = (k: string) => setRows((rs) => rs.filter((r) => r.key !== k));
@@ -414,7 +426,7 @@ export default function OrdenDirectaPage() {
     // BC exige la tarea cuando la línea va a una obra (Job Task No. obligatorio si
     // hay Job No.). Si las tareas no cargaron (BC caído) no se bloquea: se avisa en
     // crear() y la orden se arma igual.
-    if (admiteObra && tareaPendiente) { toast("Elegí la tarea de la obra: sin ella Business Central no acepta la línea.", "error"); return; }
+    if (tareaPendiente) { toast("Elegí la tarea de la obra: sin ella Business Central no acepta la línea.", "error"); return; }
     const it = esArticulo ? itemsBc.find((x) => x.code === qaCode) : undefined;
     const variante = qaVariantes.find((v) => v.code === qaVariante);
     // La unidad: la elegida para el artículo, la base del recurso, y ninguna para el
@@ -430,10 +442,10 @@ export default function OrdenDirectaPage() {
       factorCompra: esArticulo ? (factorDe(elegido.key, unidadElegida) ?? (unidadElegida === it?.unidad ? it?.factorCompra : undefined)) : undefined,
       cantidad: String(Number(qaQty)), precio: String(Number(qaPrecio) || 0), iva: "13", descuento: "0",
       variantCode: esArticulo ? qaVariante : "", variantNombre: esArticulo ? (variante?.descripcion ?? "") : "",
-      // El activo fijo no va a una obra ni con la obra puesta en la barra: BC no
-      // acepta Job No. en su línea.
+      // La obra viaja en todos los tipos menos el cargo. La TAREA solo en el artículo:
+      // en los demás la obra es centro de costo y la tarea no se manda a BC.
       obra: admiteObra ? qaObra : "", obraNombre: admiteObra ? nombreObra(qaObra) : "",
-      tarea: admiteObra ? qaTarea : "", tareaNombre: admiteObra ? nombreTarea(qaObra, qaTarea) : "",
+      tarea: esArticulo ? qaTarea : "", tareaNombre: esArticulo ? nombreTarea(qaObra, qaTarea) : "",
       maquinaNo: admiteMaquina ? qaMaquina : "", maquinaNombre: admiteMaquina ? nombreMaquina(qaMaquina) : "" }]);
     // La obra y la tarea NO se limpian a propósito (ver el estado): siguen a la vista
     // en la barra, así que es evidente a qué obra va a ir la línea siguiente.
@@ -663,15 +675,22 @@ export default function OrdenDirectaPage() {
             {/* Obra y tarea de la línea (Job No. + Job Task No. de BC). Opcionales: sin
                 obra la línea entra a bodega como siempre. Se quedan puestas después
                 de agregar, así que se ve a qué obra va a ir la línea siguiente.
-                No aparece en el ACTIVO FIJO: BC no acepta Job No. en esa línea. */}
+                No aparece en el CARGO: ese se reparte entre las demás líneas. */}
             {admiteObra && (
               <div style={{ flex: "0 1 240px", minWidth: 190 }}>
                 <label className="ds-label ds-muted" style={{ display: "block", marginBottom: 4 }}>Obra <span className="ds-body-sm">(opcional)</span></label>
                 <Combobox items={obrasConVacio} value={qaObra} onChange={(k) => elegirObra(k)}
                   getKey={(o) => o.codigo} getLabel={etiquetaObra} getSearch={(o) => `${o.codigo} ${o.nombre}`} placeholder="Sin obra…" />
+                {/* En estas líneas BC no acepta N.º proyecto: la obra llega igual, pero
+                    como centro de costo. Se dice acá para que no parezca que se perdió. */}
+                {!esArticulo && qaObra && (
+                  <div className="ds-body-sm ds-muted" style={{ marginTop: 4, maxWidth: 240 }}>
+                    Va como centro de costo (BC no acepta proyecto en una línea de {cfgTipo.etiqueta.toLowerCase()}), así que no lleva tarea.
+                  </div>
+                )}
               </div>
             )}
-            {admiteObra && qaObra && (
+            {esArticulo && qaObra && (
               <div style={{ flex: "0 1 230px", minWidth: 180 }}>
                 <label className="ds-label ds-muted" style={{ display: "block", marginBottom: 4 }}>Tarea</label>
                 <div style={tareaPendiente ? { outline: "1.5px solid var(--ds-color-red-100)", borderRadius: 12 } : undefined}>
@@ -679,6 +698,14 @@ export default function OrdenDirectaPage() {
                     getKey={(t) => t.jobTaskNo} getLabel={etiquetaTarea} getSearch={(t) => `${t.jobTaskNo} ${t.descripcion}`}
                     placeholder={tareasDe(qaObra).length ? "Elegí tarea…" : "Sin tareas en BC"} />
                 </div>
+                {/* Por qué el botón de agregar no va a dejar todavía. Antes el único
+                    aviso era el recuadro rojo y el botón apagado, que desde la silla de
+                    quien lo aprieta se lee como "no me deja poner la obra". */}
+                {tareaPendiente && (
+                  <div className="ds-body-sm" style={{ color: "var(--ds-color-red-100)", marginTop: 4, maxWidth: 230 }} role="status">
+                    Obligatoria: BC no acepta la obra sin tarea.
+                  </div>
+                )}
               </div>
             )}
             {/* MÁQUINA de la línea (N.º máquina del pedido en BC). Opcional y pegada,
@@ -724,11 +751,19 @@ export default function OrdenDirectaPage() {
               {esArticulo && qaEquiv && <div className="ds-body-sm ds-muted" style={{ marginTop: 2 }}>{qaEquiv}</div>}
             </div>
             <div><label className="ds-label ds-muted" htmlFor={priceId} style={{ display: "block", marginBottom: 4 }}>Precio</label><Input id={priceId} type="number" min={0} value={qaPrecio} onChange={(e) => setQaPrecio(e.target.value)} placeholder="0" style={{ width: 110 }} />{qaRef ? <div className="ds-body-sm ds-muted" style={{ marginTop: 2 }}>últ. compra {money(qaRef.precio, monedaApp(qaRef.moneda))}{qaRef.unidad ? ` / ${qaRef.unidad}` : ""}</div> : null}</div>
+            {/* Apagado solo por lo que se ve solo (sin código o sin cantidad). Si lo que
+                falta es la variante o la tarea, el botón SE DEJA APRETAR y lo dice con
+                un aviso: un botón muerto sin motivo se lee como pantalla rota. */}
             <Button variant="outline" onClick={agregarLinea}
-              disabled={!qaCode || !(Number(qaQty) > 0) || (esArticulo && variantePendiente) || (admiteObra && tareaPendiente)}>
+              disabled={!qaCode || !(Number(qaQty) > 0)}>
               + Agregar {qaTipo === "cargo" ? "cargo" : "línea"}
             </Button>
           </div>
+          {catalogoCargando && (
+            <div role="status" className="ds-body-sm ds-muted" style={{ padding: "0 16px 10px" }}>
+              Buscando el catálogo de {cfgTipo.etiqueta.toLowerCase()} en Business Central… La primera lectura del día tarda.
+            </div>
+          )}
           {catalogoVacio && (
             <div role="status" className="ds-body-sm ds-muted" style={{ padding: "0 16px 10px" }}>
               El catálogo de {cfgTipo.etiqueta.toLowerCase()} de Business Central llegó vacío. O no hay ninguno dado de alta, o la página de la API todavía no está publicada en este entorno: mientras tanto no se pueden agregar líneas de este tipo.
