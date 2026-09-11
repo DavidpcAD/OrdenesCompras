@@ -1,10 +1,10 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { ColumnDef } from "@tanstack/react-table";
 import { Badge, Button, Card, EmptyState, Modal, Select, useToast } from "@/components/ui";
-import { DataTable } from "@/components/data-table";
+import { DataTable, TODAS_LAS_FILAS } from "@/components/data-table";
 import { DestinoLinea } from "@/components/destino-linea";
 import { VistaToggle } from "@/components/vista-toggle";
 import { IconEye, IconReceipt, IconList } from "@/components/icons";
@@ -36,6 +36,9 @@ interface Row {
   precio: string;
   iva: string;
 }
+
+// Dónde se recuerda que la lista de pedidos quedó escondida (ver `panelOculto`).
+const PANEL_KEY = "adelante_oc_prov_lineas_panel";
 
 export default function ProveeduriaMaterialesPage() {
   const { pedidos, setBorrador } = useStore();
@@ -97,6 +100,20 @@ export default function ProveeduriaMaterialesPage() {
 
   const [filtro, setFiltro] = useState<string>("all");
   const [pedFiltro, setPedFiltro] = useState("");
+  // La lista de pedidos de la izquierda se puede ESCONDER: cuando lo que se quiere
+  // es ver las líneas pendientes de corrido (80, 200) y no buscar un pedido, esa
+  // columna solo le quita ancho a la tabla. La elección se recuerda por navegador.
+  // Se lee después del montaje a propósito: leer localStorage durante el render
+  // hace que el HTML del server y el del cliente no coincidan (hydration).
+  const [panelOculto, setPanelOculto] = useState(false);
+  useEffect(() => { try { setPanelOculto(localStorage.getItem(PANEL_KEY) === "1"); } catch { /* navegador sin storage */ } }, []);
+  function alternarPanel() {
+    setPanelOculto((v) => {
+      const n = !v;
+      try { localStorage.setItem(PANEL_KEY, n ? "1" : "0"); } catch { /* navegador sin storage */ }
+      return n;
+    });
+  }
   // Buscador nuevo: filtra por el usuario que creó el pedido (solicitante).
   const [solicFiltro, setSolicFiltro] = useState("");
   const [previewId, setPreviewId] = useState<string | null>(null);
@@ -254,16 +271,41 @@ export default function ProveeduriaMaterialesPage() {
           </div>
         </div>
 
-        <VistaToggle opciones={[
-          { label: "Por solicitud", href: "/proveeduria/solicitudes", active: false, icon: <IconReceipt size={16} /> },
-          { label: "Por línea", href: "/proveeduria", active: true, icon: <IconList size={16} /> },
-        ]} />
+        <div className="row wrap gap-3" style={{ alignItems: "center" }}>
+          <VistaToggle opciones={[
+            { label: "Por solicitud", href: "/proveeduria/solicitudes", active: false, icon: <IconReceipt size={16} /> },
+            { label: "Por línea", href: "/proveeduria", active: true, icon: <IconList size={16} /> },
+          ]} />
+          {baseRows.length > 0 && (
+            <Button variant="outline" size="sm" onClick={alternarPanel} aria-pressed={panelOculto}
+              title={panelOculto ? "Volver a mostrar la lista de pedidos de la izquierda" : "Esconder la lista de pedidos y ver las líneas a lo ancho"}>
+              {panelOculto ? "Mostrar pedidos" : "Ocultar pedidos"}
+            </Button>
+          )}
+          {/* Con el panel escondido, sus dos controles se quedarían sin pantalla: el
+              filtro por solicitante se muda acá y el pedido elegido se ve como marca
+              con su salida, para que nunca haya una tabla filtrada sin decirlo. */}
+          {panelOculto && baseRows.length > 0 && (
+            <Select value={solicFiltro} onChange={(e) => setSolicFiltro(e.target.value)} className="md-select" style={{ width: "auto", minWidth: 190 }} ariaLabel="Filtrar por solicitante">
+              <option value="">Todos los solicitantes</option>
+              {solicitantes.map((s) => <option key={s} value={s}>{s}</option>)}
+            </Select>
+          )}
+          {panelOculto && filtro !== "all" && (
+            <span className="row gap-2 ds-body-sm" style={{ alignItems: "center" }}>
+              <span className="ds-muted">Solo</span>
+              <span className="ds-strong">{pedidos.find((p) => p.id === filtro)?.numero ?? "un pedido"}</span>
+              <button type="button" className="link-btn" onClick={() => setFiltro("all")}>Ver todas</button>
+            </span>
+          )}
+        </div>
 
         {baseRows.length === 0 ? (
           <Card className="mt-4"><EmptyState icon={<IconList size={24} />} title="No hay líneas pendientes por ordenar." hint="Cuando Ingeniería apruebe nuevas solicitudes, van a aparecer acá." /></Card>
         ) : (
-        <div className="md-layout mt-2">
+        <div className={`md-layout mt-2${panelOculto ? " md-layout--solo" : ""}`}>
           {/* pedidos */}
+          {!panelOculto && (
           <div className="md-list" style={{ maxHeight: "calc(100vh - 210px)", overflowY: "auto", paddingRight: 4 }}>
             <div className="md-filtros">
               <input className="md-filtro" value={pedFiltro} onChange={(e) => setPedFiltro(e.target.value)} aria-label="Filtrar pedido u obra" placeholder="Filtrar pedido u obra…" />
@@ -313,6 +355,7 @@ export default function ProveeduriaMaterialesPage() {
               );
             })}
           </div>
+          )}
 
           {/* líneas — misma DataTable que el resto, con celdas editables para armar la orden */}
           <Card className="md-detail" style={{ padding: 16 }}>
@@ -323,6 +366,10 @@ export default function ProveeduriaMaterialesPage() {
               titulo="Materiales solicitados"
               buscarPlaceholder="Buscar por material, pedido u obra…"
               getRowId={(r) => r.pedidoLineaId}
+              // Esta lista arranca SIN paginar: lo que se viene a hacer acá es barrer
+              // todo lo pendiente de una sentada, y partirlo en páginas de 50 obliga a
+              // acordarse de lo que quedó atrás. Se puede volver a paginar abajo.
+              pageSizeInicial={TODAS_LAS_FILAS}
               onRowClick={(r) => setRow(r.pedidoLineaId, { incluir: !r.incluir })}
               rowClassName={(r) => (r.incluir ? "dt-row-incluida" : "")}
               vacio="No hay líneas pendientes."

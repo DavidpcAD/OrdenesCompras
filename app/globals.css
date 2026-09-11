@@ -1228,8 +1228,28 @@ td.ds-col-fija {
 /* columna derecha: encabezado fijo + tabla con scroll propio dentro del contenedor */
 /* min-width:0 evita el "grid blowout": sin él, el min-content de la tabla ancha
    expande la pista 1fr y desborda en móvil en vez de scrollear dentro. */
-.md-detail { height: 100%; display: flex; flex-direction: column; min-width: 0; }
+/* `min-height: 0` es lo que deja que la columna respete el alto del contenedor:
+   sin él un ítem de grid no se encoge por debajo de su contenido, la fila crecía
+   con la tabla y la tarjeta se salía por abajo en vez de scrollear adentro. */
+.md-detail { height: 100%; min-height: 0; display: flex; flex-direction: column; min-width: 0; }
 .md-detail > .ds-table-wrap { flex: 1 1 auto; overflow: auto; }
+/* La TABLA se come el alto que sobra y hace su propio scroll. Sin esto, con la
+   lista sin paginar (200 líneas, "Todas") la tarjeta crecía más que su columna y
+   se salía por debajo del contenedor; ahora se recorre adentro y la barra de
+   paginación no se va de la vista. El `min-height: 0` es obligatorio: sin él un
+   hijo flex no se deja encoger por debajo de su contenido y no aparece scroll. */
+/* El bloque del medio —la tabla, o las tarjetas de la vista Grid— es el que se
+   estira y el que scrollea; la barra de herramientas y la de paginación no. */
+.md-detail > :not(.dt-toolbar):not(.dt-pagination) { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
+/* En la vista Tabla el que scrollea es el envoltorio de adentro (la tarjeta trae
+   `overflow: hidden` propio), para que el encabezado pegajoso tenga contra qué pegarse. */
+.md-detail > .ds-card { display: flex; flex-direction: column; }
+.md-detail > .ds-card > .ds-table-wrap { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
+/* Encabezado pegado al recorrer, como la lista de Business Central: bajando 200
+   líneas hay que seguir sabiendo qué columna es cuál. Va acotado a esta pantalla
+   (el scroll es de la tarjeta, no de la página, así que no se mete debajo de la
+   barra de arriba). El fondo negro del thead ya lo pone `.dt-dark`. */
+.md-detail > .ds-card > .ds-table-wrap > .ds-table.dt-dark > thead > tr > th { position: sticky; top: 0; z-index: 3; }
 .md-item { text-align: left; background: var(--ds-surface); border: 1.5px solid var(--ds-color-gray-100); border-radius: var(--ds-radius-lg); padding: var(--ds-space-3) var(--ds-space-4); cursor: pointer; transition: border-color .12s ease, box-shadow .12s ease; display: flex; flex-direction: column; gap: 2px; }
 .md-item:hover { border-color: var(--ds-color-gray-300); }
 .md-item.is-active { border-color: var(--ds-color-green-100); box-shadow: 0 0 0 3px color-mix(in srgb, var(--ds-color-green-100) 18%, transparent); }
@@ -1252,7 +1272,11 @@ td.ds-col-fija {
 /* Colapsa a 1 columna en tablet y móvil: con sidebar 250px + tabla, por debajo
    de ~900px la tabla queda muy angosta y su toolbar desborda. Apilado le da a la
    tabla el ancho completo. */
-@media (max-width: 900px) { .md-layout { grid-template-columns: 1fr; height: auto; min-height: 0; } .md-list { overflow: visible; height: auto; } }
+/* Panel de pedidos OCULTO: la tabla se queda con todo el ancho y con casi toda la
+   pantalla de alto, para ver lo pendiente de corrido (se recorre hacia abajo, no
+   se pagina). 230px es lo que ocupan la barra de arriba, el título y el "Ver por". */
+.md-layout--solo { grid-template-columns: 1fr; height: calc(100vh - 230px); }
+@media (max-width: 900px) { .md-layout { grid-template-columns: 1fr; height: auto; min-height: 0; } .md-list { overflow: visible; height: auto; } .md-layout--solo { height: auto; } }
 
 /* misc */
 .divider { height: 1px; background: var(--ds-color-gray-100); border: 0; margin: var(--ds-space-5) 0; }
