@@ -9,7 +9,7 @@ import assert from "node:assert/strict";
 import {
   ordenRecibidoPct, ordenEstaCompleta, ordenEsParcial, ordenAvance, ordenLineaImporte,
   ordenSubtotal, ordenIva, ordenTotalConIva, recibidoPorLineaPedido, recibidoDeLineaPedido, pedidoLineaPendiente,
-  distribuirCargo, monedaApp, formatDate, todayISO, nextNumero, almacenesParaRecepcion, esAlmacenFisico,
+  distribuirCargo, monedaApp, formatDate, isoLocal, todayISO, nextNumero, almacenesParaRecepcion, esAlmacenFisico,
   ordenPedidos, ordenEsDirecta, money, pedidoOrdenadoPct, pedidoCompraBadge, pedidoTieneSaldo, ordenesPorPedido,
   destinoLabel, destinoCodigo, ordenLineaPendiente, ordenLineaCompleta, ultimoPrecioProveedor,
   ordenPendienteResumen, devolverPendienteAPedidos, proveedorLabel,
@@ -154,6 +154,25 @@ test("todayISO usa la fecha LOCAL, no la UTC", () => {
   const d = new Date();
   const esperado = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
   assert.equal(todayISO(), esperado);
+});
+
+// El caso de Angie: "las que me aprobaron el viernes". Lo que viene de la base es un
+// instante en UTC, y el filtro de las tablas compara el texto tal cual — si no se
+// pasa a hora de acá, todo lo aprobado después de las 6 p. m. cae en el día siguiente.
+test("isoLocal escribe el instante en hora de acá, para que el día sea el que se ve", () => {
+  const iso = "2026-09-12T01:00:00.000Z";           // viernes 11 a las 7 p. m. en CR
+  const d = new Date(iso);
+  const p = (n: number) => String(n).padStart(2, "0");
+  assert.equal(isoLocal(iso), `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`);
+  // El día del texto y el día que muestra formatDate tienen que ser el MISMO.
+  assert.equal(formatDate(isoLocal(iso)).slice(0, 2), p(d.getDate()));
+  // Y ordenar por ese texto sigue siendo ordenar por tiempo.
+  assert.ok(isoLocal("2026-09-11T09:00:00.000Z") < isoLocal("2026-09-11T15:00:00.000Z"));
+});
+
+test("isoLocal aguanta lo que no es fecha sin inventar una", () => {
+  assert.equal(isoLocal(""), "");
+  assert.equal(isoLocal("cualquier cosa"), "");
 });
 
 test("el próximo número sigue al máximo existente", () => {

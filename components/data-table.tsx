@@ -5,7 +5,7 @@ import { createPortal } from "react-dom";
 import {
   useReactTable, getCoreRowModel, getSortedRowModel, getFilteredRowModel, getPaginationRowModel,
   getFacetedRowModel, getFacetedUniqueValues, flexRender,
-  type Column, type ColumnDef, type FilterFn, type SortingState, type ColumnFiltersState, type VisibilityState, type ColumnOrderState, type PaginationState,
+  type Column, type ColumnDef, type FilterFn, type OnChangeFn, type SortingState, type ColumnFiltersState, type VisibilityState, type ColumnOrderState, type PaginationState,
 } from "@tanstack/react-table";
 import { Button, Card, Checkbox, ConfirmDialog, EmptyState, Field, Input, Modal, Select, Skeleton, useToast } from "@/components/ui";
 import { IconTable } from "@/components/icons";
@@ -64,6 +64,7 @@ type Vista = { id: number; nombre: string; config: VistaCfg; esPredeterminada: b
 export function DataTable<T>({
   data, columns, tablaKey, getRowId, onRowClick, rowClassName, vacio = "No hay registros.", modoInicial = "tabla", renderExpanded,
   titulo = "Reporte", buscarPlaceholder = "Buscar en la tabla…", loading = false, columnVisibilityInicial, paginacion = true,
+  pageSizeInicial, resumen,
 }: {
   data: T[];
   columns: ColumnDef<T, any>[];
@@ -93,6 +94,14 @@ export function DataTable<T>({
   // guardado pueda pisar — es la pantalla la que decide, porque hay listas (las
   // líneas pendientes de Proveeduría) donde partir en páginas es el problema.
   paginacion?: boolean;
+  // Cuántas filas por página arranca mostrando esta pantalla (por defecto 50).
+  // `TODAS_LAS_FILAS` = de corrido, sin páginas, pero conservando el selector para
+  // poder acotarlo si la lista se pone muy larga.
+  pageSizeInicial?: number;
+  // Una línea de resumen sobre lo que se está VIENDO (las filas ya filtradas), al
+  // lado de la búsqueda. Existe porque un contador que no respeta el filtro no
+  // contesta nada: lo que se quiere saber es "de estas, cuántas…".
+  resumen?: (filas: T[]) => ReactNode;
 }) {
   const { usuario, cargando, errorCarga, ultimaSync, modoApi } = useStore();
   // Inyecta el filtro multi-selección a las columnas que no traigan uno propio.
@@ -102,7 +111,7 @@ export function DataTable<T>({
   // sesión a propósito: no se arrastra a mañana ni a otra pestaña. Es distinto de las
   // "Vistas" (esas se guardan a mano y viven en la base).
   const claveEstado = `adelante_oc_tabla_${tablaKey}`;
-  const guardado = useMemo<Partial<VistaCfg & { sorting: SortingState; pageIndex: number }>>(() => {
+  const guardado = useMemo<Partial<VistaCfg & { sorting: SortingState; pageIndex: number; pageSizeElegido: boolean }>>(() => {
     if (typeof window === "undefined") return {};
     try { return JSON.parse(sessionStorage.getItem(claveEstado) ?? "{}") ?? {}; } catch { return {}; }
   }, [claveEstado]);
@@ -118,9 +127,16 @@ export function DataTable<T>({
   const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({ ...(columnVisibilityInicial ?? {}), ...(guardado.columnVisibility ?? {}) });
   const [columnOrder, setColumnOrder] = useState<ColumnOrderState>(() => columns.map((c) => c.id!).filter(Boolean));
   const [globalFilter, setGlobalFilter] = useState(guardado.globalFilter ?? "");
+  // El tamaño de página que ELIGIÓ la persona manda sobre el de la pantalla. Sin
+  // esta distinción, subirle el default a una lista no se notaba: el 50 que había
+  // quedado guardado de antes (aunque nadie lo hubiera pedido) le seguía ganando.
+  const [pageSizeElegido, setPageSizeElegido] = useState(!!guardado.pageSizeElegido);
   const [pagination, setPagination] = useState<PaginationState>(
     paginacion
-      ? { pageIndex: guardado.pageIndex ?? 0, pageSize: guardado.pageSize ?? 50 }
+      ? {
+          pageIndex: guardado.pageIndex ?? 0,
+          pageSize: (guardado.pageSizeElegido ? guardado.pageSize : undefined) ?? pageSizeInicial ?? guardado.pageSize ?? 50,
+        }
       : { pageIndex: 0, pageSize: TODAS_LAS_FILAS },
   );
   const sinPaginar = pagination.pageSize >= TODAS_LAS_FILAS;
@@ -146,16 +162,27 @@ export function DataTable<T>({
     try {
       sessionStorage.setItem(claveEstado, JSON.stringify({
         sorting, columnFilters, columnVisibility, globalFilter, modo,
-        pageSize: pagination.pageSize, pageIndex: pagination.pageIndex,
+        pageSize: pagination.pageSize, pageIndex: pagination.pageIndex, pageSizeElegido,
       }));
     } catch { /* sessionStorage lleno o bloqueado: no es crítico */ }
-  }, [claveEstado, sorting, columnFilters, columnVisibility, globalFilter, modo, pagination]);
+  }, [claveEstado, sorting, columnFilters, columnVisibility, globalFilter, modo, pagination, pageSizeElegido]);
+
+  // Filtrar o buscar SÍ devuelve a la página 1 (cambia cuántas filas hay, y quedarse
+  // en la 3 de una lista que ahora tiene 2 es caer en el vacío). Lo hace la app, no
+  // la tabla: `autoResetPageIndex` de TanStack se dispara cada vez que cambia el
+  // ARREGLO de datos, y este se renueva en cada refresco del bootstrap (45 s) y en
+  // cada vuelta de un detalle. Por eso Angie descargaba un PDF, daba atrás y
+  // aparecía en la página 1: no se perdía la página, se la reseteaban los datos.
+  const aLaPrimera = () => setPagination((p) => (p.pageIndex === 0 ? p : { ...p, pageIndex: 0 }));
+  const cambiarFiltros: OnChangeFn<ColumnFiltersState> = (u) => { setColumnFilters(u); aLaPrimera(); };
+  const cambiarBusqueda: OnChangeFn<any> = (u) => { setGlobalFilter(u); aLaPrimera(); };
 
   const table = useReactTable({
     data, columns: cols,
     state: { sorting, columnFilters, columnVisibility, columnOrder, globalFilter, pagination },
-    onSortingChange: setSorting, onColumnFiltersChange: setColumnFilters, onColumnVisibilityChange: setColumnVisibility,
-    onColumnOrderChange: setColumnOrder, onGlobalFilterChange: setGlobalFilter, onPaginationChange: setPagination,
+    autoResetPageIndex: false,
+    onSortingChange: setSorting, onColumnFiltersChange: cambiarFiltros, onColumnVisibilityChange: setColumnVisibility,
+    onColumnOrderChange: setColumnOrder, onGlobalFilterChange: cambiarBusqueda, onPaginationChange: setPagination,
     globalFilterFn: "includesString",
     getRowId: getRowId ? (row) => getRowId(row) : undefined,
     getCoreRowModel: getCoreRowModel(), getSortedRowModel: getSortedRowModel(),
@@ -206,6 +233,7 @@ export function DataTable<T>({
     if (c.columnOrder) setColumnOrder(c.columnOrder);
     setColumnVisibility(c.columnVisibility ?? {}); setSorting(c.sorting ?? []); setColumnFilters(c.columnFilters ?? []);
     setGlobalFilter(c.globalFilter ?? ""); setModo(c.modo ?? "tabla");
+    if (c.pageSize) setPageSizeElegido(true);   // la vista guardada TAMBIÉN es una elección
     setPagination((p) => ({ ...p, pageSize: paginacion ? (c.pageSize ?? p.pageSize) : TODAS_LAS_FILAS, pageIndex: 0 })); setPanel(null);
   }
   function guardarVista() {
@@ -236,7 +264,8 @@ export function DataTable<T>({
   }
   function resetVista() {
     setColumnOrder(columns.map((c) => c.id!).filter(Boolean)); setColumnVisibility({}); setSorting([]);
-    setColumnFilters([]); setGlobalFilter(""); setPagination((p) => ({ ...p, pageIndex: 0 })); setPanel(null);
+    setColumnFilters([]); setGlobalFilter(""); setPageSizeElegido(false);
+    setPagination((p) => ({ ...p, pageSize: paginacion ? (pageSizeInicial ?? 50) : TODAS_LAS_FILAS, pageIndex: 0 })); setPanel(null);
   }
 
   const leaf = table.getAllLeafColumns();
@@ -256,6 +285,50 @@ export function DataTable<T>({
   });
   const labelDe = (colId: string) => (leaf.find((x) => x.id === colId)?.columnDef.meta as ColMeta | undefined)?.label ?? colId;
   const rows = table.getRowModel().rows;
+  const filasFiltradas = table.getFilteredRowModel().rows;
+  const pageCount = table.getPageCount();
+  // Con el reseteo automático apagado, la página guardada puede quedar fuera de
+  // rango (se recibieron órdenes, alguien borró un borrador, la lista encogió).
+  // En vez de una página en blanco, se baja a la última que sí existe.
+  useEffect(() => {
+    if (sinPaginar || pagination.pageIndex === 0 || pageCount === 0) return;
+    if (pagination.pageIndex >= pageCount) setPagination((p) => ({ ...p, pageIndex: pageCount - 1 }));
+  }, [pageCount, pagination.pageIndex, sinPaginar]);
+
+  // VOLVER A LA FILA. Con la página ya respetada faltaba lo otro que se pierde al
+  // volver de un detalle: dónde estaba uno en la lista. Se recuerda la última fila
+  // abierta y, cuando la tabla vuelve a tener datos, se trae a la vista y se
+  // resalta un segundo. Es de UN SOLO uso —se consume al volver— para que entrar a
+  // la pantalla desde el menú no salte al medio de la lista sin razón.
+  const claveFila = `${claveEstado}_fila`;
+  const [filaVuelta, setFilaVuelta] = useState<string | null>(null);
+  const yaVolvio = useRef(false);
+  useEffect(() => {
+    if (yaVolvio.current || rows.length === 0) return;
+    yaVolvio.current = true;
+    let id: string | null = null;
+    try { id = sessionStorage.getItem(claveFila); sessionStorage.removeItem(claveFila); } catch { /* sin sessionStorage */ }
+    if (!id || !rows.some((r) => r.id === id)) return;
+    setFilaVuelta(id);
+    // Al final del pintado, si no el elemento todavía no tiene posición. El selector
+    // lleva la tabla además de la fila: puede haber dos tablas en la misma pantalla.
+    requestAnimationFrame(() => {
+      document.querySelector(`[data-tabla="${CSS.escape(tablaKey)}"][data-fila="${CSS.escape(id!)}"]`)
+        ?.scrollIntoView({ block: "center", behavior: "auto" });
+    });
+  }, [rows, claveFila, tablaKey]);
+  // El resaltado se apaga solo. Va en su propio efecto: si el timer viviera en el de
+  // arriba, el primer refresco de datos lo cancelaría (React corre el cleanup) y la
+  // fila se quedaba pintada para siempre.
+  useEffect(() => {
+    if (!filaVuelta) return;
+    const t = setTimeout(() => setFilaVuelta(null), 2200);
+    return () => clearTimeout(t);
+  }, [filaVuelta]);
+  const abrirFila = (row: { id: string; original: T }) => {
+    try { sessionStorage.setItem(claveFila, row.id); } catch { /* sin sessionStorage */ }
+    onRowClick?.(row.original);
+  };
   // Mostrar skeletons mientras carga y todavía no hay datos (evita "salto" de vacío→datos).
   // Toma el `loading` explícito o el `cargando` global del store (carga inicial SQL/BC).
   const showSkeleton = (loading || cargando) && rows.length === 0;
@@ -341,7 +414,12 @@ export function DataTable<T>({
     <>
       {/* Toolbar */}
       <div className="row row--between wrap gap-3 dt-toolbar" style={{ marginBottom: 14, alignItems: "center", position: "relative" }}>
-        <Input value={globalFilter} onChange={(e) => setGlobalFilter(e.target.value)} aria-label={buscarPlaceholder} placeholder={buscarPlaceholder} style={{ flex: "1 1 340px", minWidth: 220, maxWidth: 560 }} />
+        <div className="row gap-3 wrap dt-buscar" style={{ flex: "1 1 340px", alignItems: "center" }}>
+          {/* `cambiarBusqueda` y no `setGlobalFilter`: buscar también vuelve a la
+              página 1 (el buscador es un filtro más). */}
+          <Input value={globalFilter} onChange={(e) => cambiarBusqueda(e.target.value)} aria-label={buscarPlaceholder} placeholder={buscarPlaceholder} style={{ flex: "1 1 260px", minWidth: 200, maxWidth: 560 }} />
+          {resumen ? resumen(filasFiltradas.map((r) => r.original)) : null}
+        </div>
         <div className="row gap-2" style={{ alignItems: "center" }}>
           <div className="segmented" role="group" aria-label="Vista de la tabla">
             <button type="button" aria-pressed={modo === "tabla"} className={`segmented__btn ${modo === "tabla" ? "is-active" : ""}`} onClick={() => setModo("tabla")}><IconTable size={15} />Tabla</button>
@@ -456,7 +534,7 @@ export function DataTable<T>({
         ) : rows.length === 0 ? <EmptyState icon={EMPTY_ICON} title={emptyTitle} hint={emptyHint} /> : (
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))", gap: 12 }}>
             {rows.map((row) => (
-              <Card key={row.id} className={rowClassName?.(row.original) ?? ""} interactive={!!onRowClick} onClick={onRowClick ? () => onRowClick(row.original) : undefined} style={{ minWidth: 0 }}>
+              <Card key={row.id} data-fila={row.id} data-tabla={tablaKey} className={[rowClassName?.(row.original) ?? "", filaVuelta === row.id ? "is-vuelta" : ""].filter(Boolean).join(" ")} interactive={!!onRowClick} onClick={onRowClick ? () => abrirFila(row) : undefined} style={{ minWidth: 0 }}>
                 {row.getVisibleCells().map((cell) => (
                   <div key={cell.id} style={{ display: "grid", gridTemplateColumns: "minmax(64px, 38%) 1fr", gap: 8, alignItems: "start", padding: "4px 0" }}>
                     <span className="ds-muted ds-body-sm" style={{ overflowWrap: "anywhere" }}>{(cell.column.columnDef.meta as ColMeta | undefined)?.label ?? cell.column.id}</span>
@@ -536,10 +614,11 @@ export function DataTable<T>({
                   const open = expanded.has(row.id);
                   return (
                     <Fragment key={row.id}>
-                      <tr className={[onRowClick ? "is-clickable" : "", rowClassName?.(row.original) ?? ""].filter(Boolean).join(" ")}
-                        onClick={onRowClick ? () => onRowClick(row.original) : undefined}
+                      <tr data-fila={row.id} data-tabla={tablaKey}
+                        className={[onRowClick ? "is-clickable" : "", filaVuelta === row.id ? "is-vuelta" : "", rowClassName?.(row.original) ?? ""].filter(Boolean).join(" ")}
+                        onClick={onRowClick ? () => abrirFila(row) : undefined}
                         tabIndex={onRowClick ? 0 : undefined}
-                        onKeyDown={onRowClick ? (e) => { if ((e.key === "Enter" || e.key === " ") && e.target === e.currentTarget) { e.preventDefault(); onRowClick(row.original); } } : undefined}>
+                        onKeyDown={onRowClick ? (e) => { if ((e.key === "Enter" || e.key === " ") && e.target === e.currentTarget) { e.preventDefault(); abrirFila(row); } } : undefined}>
                         {renderExpanded && (
                           <td className="dt-xcell" onClick={(e) => e.stopPropagation()}>
                             <button type="button" className={`dt-exp-btn${open ? " is-open" : ""}`} aria-expanded={open}
@@ -584,7 +663,7 @@ export function DataTable<T>({
             : `Página ${table.getState().pagination.pageIndex + 1} de ${Math.max(1, table.getPageCount())}`}
         </span>
         <div className="row gap-2" style={{ alignItems: "center" }}>
-          <Select ariaLabel="Filas por página" value={String(pagination.pageSize)} onChange={(e) => setPagination((p) => ({ ...p, pageSize: Number(e.target.value), pageIndex: 0 }))} style={{ width: "auto", minWidth: 120 }}>
+          <Select ariaLabel="Filas por página" value={String(pagination.pageSize)} onChange={(e) => { setPageSizeElegido(true); setPagination((p) => ({ ...p, pageSize: Number(e.target.value), pageIndex: 0 })); }} style={{ width: "auto", minWidth: 120 }}>
             {[25, 50, 100, 200].map((n) => <option key={n} value={n}>{n} / pág.</option>)}
             <option value={TODAS_LAS_FILAS}>Todas</option>
           </Select>
@@ -663,6 +742,10 @@ function ColumnFilterPopover<T>({ col, label, anchor, onClose }: {
     const iso = (dt: Date) => `${dt.getFullYear()}-${pad(dt.getMonth() + 1)}-${pad(dt.getDate())}`;
     const mesFrom = `${y}-${pad(m + 1)}-01`, mesTo = iso(new Date(y, m + 1, 0));
     const hoyIso = iso(hoy);
+    // "Ayer" y "Últimos 7 días" son los dos atajos que de verdad se usan: el lunes,
+    // lo que se revisa es lo del viernes, y eso no cae ni en "hoy" ni en "este mes"
+    // cuando el mes acaba de cambiar.
+    const diasAtras = (n: number) => iso(new Date(y, m, hoy.getDate() - n));
     return createPortal(
       <>
         <div className="dt-filter-scrim" onClick={onClose} />
@@ -670,6 +753,8 @@ function ColumnFilterPopover<T>({ col, label, anchor, onClose }: {
           <div className="dt-filter-pop__list" style={{ padding: 14, gap: 12, display: "flex", flexDirection: "column" }}>
             <div className="dt-date-quick">
               <button type="button" onClick={() => setRange({ from: hoyIso, to: hoyIso })}>Hoy</button>
+              <button type="button" onClick={() => setRange({ from: diasAtras(1), to: diasAtras(1) })}>Ayer</button>
+              <button type="button" onClick={() => setRange({ from: diasAtras(6), to: hoyIso })}>Últimos 7 días</button>
               <button type="button" onClick={() => setRange({ from: mesFrom, to: mesTo })}>Este mes</button>
               <button type="button" onClick={() => setRange({ from: `${y}-01-01`, to: `${y}-12-31` })}>Este año</button>
             </div>

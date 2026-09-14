@@ -95,7 +95,9 @@ export default function OrdenesPage() {
           {filtro !== "todas" && <button className="link-btn" onClick={() => elegirFiltro("todas")}>Ver todas</button>}
         </div>
 
-        <OrdenesLista key={filtro} ordenes={lista} filtroMias hrefDetalle={(id) => `/proveeduria/ordenes/${id}`}
+        {/* `conEnvioProveedor`: la columna "Al proveedor" (bajar el PDF + marcar que
+            ya salió) es de Proveeduría; Bodega ve estas mismas listas y ahí no va. */}
+        <OrdenesLista key={filtro} ordenes={lista} filtroMias conEnvioProveedor deCorrido hrefDetalle={(id) => `/proveeduria/ordenes/${id}`}
           // El N.º de solicitud abre esa solicitud (el enlace va en los dos sentidos:
           // desde Solicitudes se abre la orden, y desde acá la solicitud).
           pedidoHref={(n) => { const p = pedidos.find((x) => x.numero === n); return p ? `/proveeduria/solicitudes/${p.id}` : null; }}

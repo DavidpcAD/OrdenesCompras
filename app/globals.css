@@ -401,6 +401,14 @@ h1, h2, h3, h4, p { margin: 0; }
 .ds-table tbody tr.row-borrador.is-clickable:hover td { background: color-mix(in srgb, var(--ds-color-yellow) 18%, var(--ds-tint-base)); }
 .ds-card.row-borrador { box-shadow: inset 3px 0 0 var(--ds-color-yellow), var(--ds-shadow-01); }
 
+/* LA FILA A LA QUE SE VUELVE. Al regresar de un detalle, la tabla se corre hasta la
+   última fila abierta y la resalta un momento: en una lista de 200 órdenes, "en qué
+   iba" es tan importante como la página. Se apaga sola a los 2 s (clase `is-vuelta`). */
+.ds-table tbody tr.is-vuelta td { background: color-mix(in srgb, var(--ds-color-green-100) 16%, var(--ds-tint-base)); }
+.ds-table tbody tr.is-vuelta td:first-child { box-shadow: inset 3px 0 0 var(--ds-color-green-200); }
+.ds-card.is-vuelta { box-shadow: inset 3px 0 0 var(--ds-color-green-200), var(--ds-shadow-02); }
+/* El resaltado lo quita el JS a los 2,2 s; la transición de `td` lo desvanece. */
+
 /* La ACCIÓN de la fila, pegada al borde derecho de la tabla.
    El editor de líneas (armar orden, compra directa, editar orden) mide 1183 px de
    mínimo, y en una laptop de 1366 con el riel fijado quedan 1054: la "×" de quitar
@@ -633,9 +641,11 @@ td.ds-col-fija {
 .ds-cbx:disabled { opacity: .45; cursor: not-allowed; }
 
 /* Filtro de fecha (rango): chips + inputs Desde/Hasta */
-.dt-date-quick { display: flex; gap: 6px; flex-wrap: wrap; }
+/* Rejilla de 3 y no un flex que estira: con cinco atajos, el que se pasaba de
+   fila quedaba solo y del ancho del popover, como si fuera otro control. */
+.dt-date-quick { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
 .dt-date-quick button {
-  flex: 1; border: 1.5px solid var(--ds-color-gray-200); background: var(--ds-surface);
+  border: 1.5px solid var(--ds-color-gray-200); background: var(--ds-surface);
   border-radius: 999px; padding: 6px 8px; font: inherit; font-size: 12px; font-weight: var(--ds-font-weight-semibold);
   color: var(--ds-text); cursor: pointer; white-space: nowrap; transition: border-color .12s, background .12s;
 }
@@ -1321,6 +1331,32 @@ td.ds-col-fija {
 .chip-link:hover .chip-link__ir { opacity: 1; transform: translate(1px, -1px); }
 .chip-link:active { transform: translateY(1px); }
 .chip-link:focus-visible { outline: 3px solid color-mix(in srgb, var(--ds-color-green-100) 60%, transparent); outline-offset: 2px; }
+/* ── "Al proveedor": bajar el PDF y la marca de que esa orden YA salió ──
+   Va en la fila y no en el detalle porque el barrido de 60 órdenes aprobadas se
+   hace en la lista: entrar a cada una era justamente lo que hacía perder la página. */
+.envio-cel { display: inline-flex; align-items: center; gap: var(--ds-space-1); }
+.envio-cel .icon-btn { padding: 6px; }
+.envio-check {
+  display: inline-flex; align-items: center; gap: 6px; border: 0; background: none;
+  font: inherit; font-size: var(--ds-font-size-label); color: var(--ds-color-gray-500);
+  cursor: pointer; padding: 4px 6px; border-radius: var(--ds-radius-md); white-space: nowrap;
+  transition: background-color .12s ease, color .12s ease;
+}
+.envio-check:hover { background: var(--ds-color-gray-100); color: var(--ds-text); }
+.envio-check:disabled { opacity: .55; cursor: progress; }
+.envio-check__box {
+  width: 18px; height: 18px; border-radius: var(--ds-radius-sm); display: grid; place-items: center;
+  border: 1.5px solid var(--ds-color-gray-300); color: var(--ds-color-white);
+  font-size: 12px; font-weight: var(--ds-font-weight-semibold); line-height: 1;
+}
+.envio-check.is-on { color: var(--ds-color-green-300); font-weight: var(--ds-font-weight-semibold); }
+.envio-check.is-on .envio-check__box { background: var(--ds-color-green-200); border-color: var(--ds-color-green-200); }
+
+/* Contador de la barra de la tabla: cuenta lo que se está VIENDO (filtrado). */
+.dt-resumen { display: inline-flex; align-items: center; gap: var(--ds-space-2); font-size: var(--ds-font-size-label); color: var(--ds-color-gray-500); }
+.dt-resumen__falta { color: var(--ds-color-red-200); font-weight: var(--ds-font-weight-semibold); }
+.dt-resumen__ok { color: var(--ds-color-green-300); font-weight: var(--ds-font-weight-semibold); }
+
 .icon-btn { background: none; border: 0; cursor: pointer; padding: var(--ds-space-2); border-radius: var(--ds-radius-md); color: var(--ds-color-gray-400); display: inline-grid; place-items: center; }
 .icon-btn:hover { background: var(--ds-color-gray-100); color: var(--ds-text); }
 /* Foco visible por teclado en los controles custom (a11y). Solo :focus-visible

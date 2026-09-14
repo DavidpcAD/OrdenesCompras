@@ -40,6 +40,12 @@ auditoría.
 3. **Aprobación** (app de Producción) aprueba y **lanza** el pedido que ya existe → `lanzado`.
    **Lanzar es solo de esa app**: esta no lo hace ni lo reintenta. Lo que Angie puede es
    *volver a abrir* una orden lanzada y reenviarla a aprobación.
+   Ya lanzada, la orden **se le manda al proveedor**: bajarle el PDF la marca como
+   enviada (con quién y cuándo) y también se marca a mano, para la que se mandó por
+   otro lado. Esa marca y la **fecha de aprobación** no son columnas: se leen de
+   `dbo.Movimiento` (`pdf_proveedor` / `enviada_proveedor` / `envio_deshecho`, más el
+   movimiento de aprobación que deja la app de Producción). Con eso la lista de Órdenes
+   filtra "las que me aprobaron el viernes" y dice cuántas de esas ya salieron.
 4. **Bodega** recibe. Dos modos:
    - **Modo 1** — todo bien: recibir + facturar (va a BC con sus movimientos contables).
    - **Modo 2** — material bien pero factura con problemas: *recibir sin factura*; queda

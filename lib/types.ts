@@ -230,6 +230,17 @@ export interface Orden {
     detalle?: string;       // las diferencias, una por línea
     fecha?: string;         // ISO
   };
+  // CUÁNDO LA APROBARON (y quién). No es `fecha`, que es la de emisión: una orden
+  // se arma un día y Aprobación la lanza otro, y lo que hay que revisar es "las que
+  // me aprobaron el viernes". Sale de dbo.OrdenCompra.fechaAprobado/aprobadoPor si
+  // la app de Producción las llenó, y si no de la bitácora (las dos apps escriben
+  // en dbo.Movimiento). Puede no estar: órdenes viejas, o aprobadas fuera del flujo.
+  aprobacion?: { fecha: string; usuario?: string };
+  // YA SE LE MANDÓ AL PROVEEDOR. Es lo que contesta "¿cuáles de las que me aprobaron
+  // el viernes ya salieron?": se marca sola al descargar el PDF y también a mano
+  // (cuando se manda por WhatsApp o se reenvía). No es una columna — vive en la
+  // bitácora, igual que la devolución de una solicitud, para que quede quién y cuándo.
+  envioProveedor?: { fecha: string; usuario?: string; manual?: boolean };
   notas?: string;           // motivo de la última devolución/denegación (Aprobación → Proveeduría)
   // Observaciones que escribe Proveeduría al armar la orden: instrucciones para el
   // proveedor (horario de entrega, contacto, referencia de cotización…). SALEN EN EL

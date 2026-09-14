@@ -4,6 +4,7 @@ import { unidadCorregida, codigoDeItem } from "./unidad.ts";
 import { etiquetaInterna, esTipoDevolucion, esTipoEdicion, ordenDeDetalleDevolucion } from "./helpers.ts";
 import { resumirCambiosDeLineas } from "./cambios-orden.ts";
 import { componerNotaCierre, detalleDeCierre, lineaCancelada, motivoObligatorio, quitarNotaCierre } from "./cierre-solicitud.ts";
+import { envioDeSello, leerSello, MOV_DESHECHO, MOV_ENVIADA, MOV_PDF, SELLO_SEP, type Sello } from "./envio-proveedor.ts";
 import type { UnidadCompraItem } from "./bc.ts";
 import type { DevolucionSolicitud, Orden, OrdenLinea, Pedido, PedidoLinea, Recepcion, RecepcionFoto, RecepcionLinea, Role, NotaCreditoLinea } from "./types.ts";
 
@@ -1044,6 +1045,68 @@ async function motivosRechazo(idsOrden: number[]): Promise<Map<string, string>> 
   return out;
 }
 
+// CUÁNDO LA APROBARON y CUÁNDO SALIÓ AL PROVEEDOR — los dos de la bitácora, en una
+// sola consulta.
+//
+// La aprobación la hace la app de Producción (Aprobación), no esta: acá no hay un
+// evento local que marcar. Lo que sí queda es el renglón que esa app deja en
+// dbo.Movimiento, y por eso se tolera cómo lo escriba (aprobado / aprobada /
+// aprobado_lanzado / lanzado). "enviado_aprobacion" NO cuenta: ese es el de ESTA
+// app mandándola a aprobar, que es el momento contrario.
+//
+// El envío al proveedor es de esta app (bajar el PDF o marcarlo a mano) y puede
+// deshacerse, así que de los tres tipos se toma el ÚLTIMO y el que manda es ese.
+//
+// Se trae con un GROUP BY y no con una consulta por orden porque esto corre en cada
+// bootstrap, con todas las órdenes: el sello viaja como texto "fecha|usuario|tipo"
+// para que MAX() devuelva el movimiento más nuevo (en ISO, alfabético = cronológico).
+// El tercer OR es el salvavidas por si la otra app le pone otro nombre al
+// movimiento: el PASO de "pendiente de aprobación" a "lanzado" ES la aprobación,
+// se llame como se llame. Va amarrado a esa transición y no a "quedó en lanzado" a
+// secas, porque un movimiento cualquiera que deje la orden lanzada (una edición,
+// una recepción parcial) daría una fecha de aprobación que no lo es —y MAX() se
+// quedaría con esa, que es la más nueva—.
+const SQL_ES_APROBACION = `((tipoMovimiento LIKE '%aprob%' AND tipoMovimiento NOT LIKE '%envi%')
+      OR tipoMovimiento LIKE '%lanz%'
+      OR (idEstadoNuevo = @idLanzado AND (idEstadoAnterior IS NULL OR idEstadoAnterior = @idPendiente)))
+      AND tipoMovimiento NOT LIKE '%rechaz%'`;
+// La 'Z' al final NO es decorativa: dbo.Movimiento.fecha la escribe getdate() en un
+// servidor que corre en UTC, y así viaja marcada como el instante que es —igual que
+// las demás fechas, que salen de un Date de mssql—. Sin ella el navegador la leería
+// como hora de acá y todo aparecería 6 horas después.
+const SQL_SELLO = `CONVERT(varchar(23), fecha, 126) + 'Z' + '${SELLO_SEP}' + ISNULL(usuario,'') + '${SELLO_SEP}' + ISNULL(tipoMovimiento,'')`;
+
+interface SellosOrden { aprobacion?: Sello; envio?: Sello }
+
+// `idOrden` acota a una sola orden (detalle, PDF, PATCH): sin eso, abrir una orden
+// barría la bitácora entera para leer dos fechas.
+async function sellosDeOrdenes(idOrden?: number): Promise<Map<string, SellosOrden>> {
+  const out = new Map<string, SellosOrden>();
+  try {
+    const pool = await getPool();
+    const req = pool.request()
+      .input("idLanzado", sql.Int, await idDeEstado("lanzado"))
+      .input("idPendiente", sql.Int, await idDeEstado("pendiente_aprobacion"))
+      .input("pdf", sql.NVarChar(50), MOV_PDF)
+      .input("enviada", sql.NVarChar(50), MOV_ENVIADA)
+      .input("deshecho", sql.NVarChar(50), MOV_DESHECHO);
+    let filtroId = "";
+    if (idOrden !== undefined) { req.input("idOrden", sql.Int, idOrden); filtroId = " AND idEntidad = @idOrden"; }
+    const r = await req
+      .query(`SELECT idEntidad,
+                MAX(CASE WHEN ${SQL_ES_APROBACION} THEN ${SQL_SELLO} END) AS aprobacion,
+                MAX(CASE WHEN tipoMovimiento IN (@pdf,@enviada,@deshecho) THEN ${SQL_SELLO} END) AS envio
+                FROM dbo.Movimiento
+               WHERE entidad='orden'${filtroId}
+                 AND (tipoMovimiento IN (@pdf,@enviada,@deshecho) OR ${SQL_ES_APROBACION})
+               GROUP BY idEntidad`);
+    for (const m of r.recordset) {
+      out.set(String(m.idEntidad), { aprobacion: leerSello(m.aprobacion), envio: leerSello(m.envio) });
+    }
+  } catch { /* sin bitácora la orden queda sin fecha de aprobación: la pantalla lo dice */ }
+  return out;
+}
+
 export async function listOrdenes(): Promise<Orden[]> {
   await ensureEstados();
   const pool = await getPool();
@@ -1059,11 +1122,13 @@ export async function listOrdenes(): Promise<Orden[]> {
   const motivos = await motivosRechazo(rechazadas);
   const porOrden = porCabecera(d.recordset, "idOrdenCompra");
   const unidades = await mapaUnidades();
+  const sellos = await sellosDeOrdenes();
   return h.recordset.map((o) => mapOrden(
     o,
     porOrden.get(o.idOrdenCompra) ?? [],
     motivos.get(String(o.idOrdenCompra)),
     unidades,
+    sellos.get(String(o.idOrdenCompra)),
   ));
 }
 
@@ -1079,10 +1144,21 @@ export async function getOrden(id: number): Promise<Orden | null> {
       WHERE det.idOrdenCompra=@id ORDER BY det.idOrdenCompraDet`);
   const esRechazada = codigoDeId(h.recordset[0].idEstado) === "rechazado";
   const motivos = await motivosRechazo(esRechazada ? [id] : []);
-  return mapOrden(h.recordset[0], d.recordset, motivos.get(String(id)), await mapaUnidades());
+  const sellos = await sellosDeOrdenes(id);
+  return mapOrden(h.recordset[0], d.recordset, motivos.get(String(id)), await mapaUnidades(), sellos.get(String(id)));
 }
 
-function mapOrden(o: any, lineas: any[], motivoRechazo?: string, unidades: Record<string, UnidadCompraItem> = {}): Orden {
+function mapOrden(o: any, lineas: any[], motivoRechazo?: string, unidades: Record<string, UnidadCompraItem> = {}, sellos?: SellosOrden): Orden {
+  // Cuándo la aprobaron: manda la COLUMNA de la orden si la app de Producción la
+  // llenó (es el dato de primera mano) y, si no, el renglón de la bitácora. Una de
+  // las dos suele estar; cuando no hay ninguna la orden se queda sin fecha y la
+  // lista lo dice, en vez de inventar la de emisión —que es otra cosa—.
+  const fechaAprobado = o.fechaAprobado?.toISOString?.() ?? (o.fechaAprobado ? String(o.fechaAprobado) : "");
+  const aprobacion = fechaAprobado
+    ? { fecha: fechaAprobado, usuario: o.aprobadoPor || sellos?.aprobacion?.usuario || undefined }
+    : sellos?.aprobacion
+      ? { fecha: sellos.aprobacion.fecha, usuario: sellos.aprobacion.usuario }
+      : undefined;
   return {
     id: String(o.idOrdenCompra), numero: o.ordenNo ?? "", proveedorId: o.proveedorNo ?? "",
     proveedorNo: o.proveedorNo ?? undefined, proveedorNombre: o.proveedorNombre ?? undefined,
@@ -1092,6 +1168,8 @@ function mapOrden(o: any, lineas: any[], motivoRechazo?: string, unidades: Recor
     versionesArchivadas: Number(o.versionesArchivadas ?? 0),
     motivoRechazo: motivoRechazo || undefined,
     creadoPor: o.creadoPor || undefined,     // quién generó la OC (reportes)
+    aprobacion,                              // cuándo la lanzó Aprobación (para "las aprobadas el viernes")
+    envioProveedor: envioDeSello(sellos?.envio),  // cuándo se le mandó el PDF al proveedor
     observaciones: o.notaCreador || undefined,   // se imprimen en el PDF del proveedor
     notaInterna: o.notaInterna || undefined,     // mensaje al aprobador; NUNCA sale en el PDF
 
@@ -2315,6 +2393,41 @@ async function logMov(tx: sql.Transaction, m: MovIn) {
     .input("rol", sql.NVarChar(20), m.rol)
     .query(`INSERT dbo.Movimiento (entidad,idEntidad,documentoNo,tipoMovimiento,idEstadoAnterior,idEstadoNuevo,detalle,usuario,rol,fecha)
             VALUES (@entidad,@idEntidad,@documentoNo,@tipoMovimiento,@idEstadoAnterior,@idEstadoNuevo,@detalle,@usuario,@rol,getdate())`);
+}
+
+// MARCAR QUE LA ORDEN SALIÓ AL PROVEEDOR. La escribe el PDF (bajarlo es mandarla) y
+// el botón de la lista, para cuando se mandó por WhatsApp o se volvió a mandar.
+// `deshacer` no borra nada: deja el movimiento contrario, que es el que pasa a
+// mandar. Un log al que se le borran renglones deja de servir para explicar qué
+// pasó, y acá lo que se está contestando es justamente "¿esta salió o no?".
+export async function marcarEnvioProveedor(
+  id: number, usuario: string, rol: Role, opts: { manual?: boolean; deshacer?: boolean } = {},
+): Promise<{ enviada: boolean }> {
+  await ensureEstados();
+  const pool = await getPool();
+  const head = await pool.request().input("id", sql.Int, id)
+    .query("SELECT ordenNo, idEstado FROM dbo.OrdenCompra WHERE idOrdenCompra=@id AND esEliminada=0");
+  if (!head.recordset.length) throw new Error("Orden no encontrada.");
+  const estado = codigoDeId(head.recordset[0].idEstado);
+  // Mismo candado que el PDF: al proveedor solo se le manda una orden aprobada.
+  // Quitar la marca sí se permite siempre (si la orden se reabrió, la marca vieja
+  // es justo lo que hay que poder borrar).
+  if (!opts.deshacer && estado !== "lanzado" && estado !== "completado") {
+    throw new Error(`Esta orden todavía no se le puede mandar al proveedor: está ${NOMBRE_POR_CODIGO[estado ?? ""] ?? estado}.`);
+  }
+  const tipo = opts.deshacer ? MOV_DESHECHO : opts.manual ? MOV_ENVIADA : MOV_PDF;
+  const detalle = opts.deshacer
+    ? "Se quitó la marca de enviada al proveedor."
+    : opts.manual ? "Marcada a mano como enviada al proveedor." : "Se descargó el PDF para el proveedor.";
+  const tx = new sql.Transaction(pool); await tx.begin();
+  try {
+    await logMov(tx, { entidad: "orden", idEntidad: id, documentoNo: head.recordset[0].ordenNo ?? "", tipoMovimiento: tipo, detalle, usuario, rol });
+    await tx.commit();
+  } catch (e) {
+    await tx.rollback();
+    throw e;
+  }
+  return { enviada: !opts.deshacer };
 }
 
 export async function listMovimientos(entidad: string, idEntidad: number) {

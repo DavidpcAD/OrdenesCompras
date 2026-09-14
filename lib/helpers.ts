@@ -213,6 +213,20 @@ export function nowISO(): string {
   return new Date().toISOString();
 }
 
+// El MISMO instante, escrito en hora de acá (sin la Z). Hace falta porque los
+// timestamps que vienen de la base son instantes en UTC y `formatDate` —y el filtro
+// por fecha de las tablas— leen los primeros 10 caracteres del texto TAL CUAL: una
+// orden aprobada el viernes a las 7 p. m. viaja como "…-09-12T01:00:00.000Z" y se
+// leería como del sábado. Convertido a local, el día que se ve y el día por el que
+// se filtra son el mismo, que es justo lo que se está preguntando ("las del viernes").
+export function isoLocal(iso: string): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (isNaN(+d)) return "";
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
+}
+
 export function formatDateTime(iso: string): string {
   if (!iso) return "—";
   const d = new Date(iso);

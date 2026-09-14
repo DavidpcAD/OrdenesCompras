@@ -37,6 +37,9 @@ const LABEL: Record<string, string> = {
   bc_renumerado: "N.º de Business Central corregido",
   encabezado_cambiado: "Cambió el proveedor o la moneda",
   bc_iva_exento: "IVA quitado en Business Central",
+  pdf_proveedor: "PDF bajado para el proveedor",
+  enviada_proveedor: "Marcada como enviada al proveedor",
+  envio_deshecho: "Se quitó la marca de enviada",
 };
 
 // Etiqueta contextual: el mismo tipo de movimiento se lee distinto según
@@ -64,6 +67,12 @@ function etiqueta(m: Movimiento): string {
     // CP-005183, CP-005249 y CP-005289.
     if (m.tipoMovimiento === "encabezado_cambiado") return "A la orden le cambiaron el proveedor o la moneda";
     if (m.tipoMovimiento === "bc_encabezado") return "El pedido en Business Central cambió de proveedor o moneda";
+    // Que la orden SALIÓ hacia el proveedor. Es lo que contesta, semanas después,
+    // "¿esta se la mandamos?" — y con qué, porque bajar el PDF y marcarla a mano no
+    // son lo mismo (uno es el documento saliendo, el otro la palabra de quien la mandó).
+    if (m.tipoMovimiento === "pdf_proveedor") return "Se bajó el PDF para mandárselo al proveedor";
+    if (m.tipoMovimiento === "enviada_proveedor") return "Marcada como enviada al proveedor";
+    if (m.tipoMovimiento === "envio_deshecho") return "Se quitó la marca de enviada al proveedor";
     if (m.tipoMovimiento === "bc_desalineado") return "⚠ La orden y Business Central NO coinciden";
     if (m.tipoMovimiento === "bc_alineado") return "La orden y Business Central coinciden";
   }
@@ -96,6 +105,9 @@ function colorPunto(m: Movimiento): string {
       case "encabezado_cambiado": return "var(--ds-color-yellow)"; // le cambiaron el proveedor/moneda a la orden
       case "bc_encabezado": return "var(--ds-color-yellow)";  // cambió el proveedor/moneda del pedido
       case "bc_iva_exento": return "var(--ds-color-yellow)";  // se le quitó el IVA al pedido en BC
+      case "pdf_proveedor":
+      case "enviada_proveedor": return "var(--ds-color-green-100)";  // salió al proveedor
+      case "envio_deshecho": return "var(--ds-color-gray-400)";      // se deshizo la marca
       case "bc_desalineado": return "var(--ds-color-red-200)"; // BC no tiene lo mismo · rojo
       case "bc_alineado": return "var(--ds-color-green-200)";  // verificado y coincide
       case "eliminado": return "var(--ds-color-red-100)";
