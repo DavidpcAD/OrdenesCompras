@@ -810,6 +810,27 @@ td.ds-col-fija {
    la mitad — con 170 px de pantalla sin usar al lado. Ojo: esta clase existía desde
    el principio con el MISMO max-width que .page, o sea que no hacía nada. */
 .page--wide { max-width: 1760px; }
+/* PANTALLA QUE OCUPA EL ALTO DE LA VENTANA, en vez de crecer hacia abajo: lo de
+   adentro se recorre solo (la lista de pedidos por su lado, la tabla por el suyo).
+   Es para las líneas pendientes: la tabla tenía un alto FIJO (72vh) que no sabía
+   dónde empezaba, así que terminaba a media pantalla y debajo quedaban ~190 px de
+   nada —el relleno de `.page` (96) más el que reserva el FAB (92)—. Ahora el
+   bloque de abajo se come lo que sobra, sea cual sea la ventana, y no hay dos
+   scrolls peleando. 64px es el alto de la barra de arriba, que es sticky. */
+/* El relleno de arriba baja de 40 a 24: en una pantalla que se reparte el alto de
+   la ventana, esos 16 px son media fila más de tabla. */
+.page--tall { height: calc(100dvh - 64px); display: flex; flex-direction: column; padding-top: var(--ds-space-6); padding-bottom: var(--ds-space-4); overflow: auto; }
+/* Todo lo de arriba (título, "Ver por") conserva su alto; el layout se estira. */
+.page--tall > * { flex: 0 0 auto; }
+.page--tall > .md-layout { flex: 1 1 auto; height: auto; min-height: 320px; }
+/* Con la barra de selección abajo (fija), las últimas filas necesitan su espacio. */
+.page--tall.is-con-barra { padding-bottom: 96px; }
+@media (min-width: 901px) {
+  /* El relleno que reserva el FAB sobra acá: nada crece por debajo de la ventana y,
+     sumado al alto de arriba, volvía a hacer scrollear la página. */
+  .app-content.has-fab:has(.page--tall) { padding-bottom: 0; }
+}
+@media (max-width: 900px) { .page--tall { height: auto; display: block; overflow: visible; } }
 .page__head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--ds-space-4); margin-bottom: var(--ds-space-6); flex-wrap: wrap; }
 .page__title { display: flex; flex-direction: column; gap: 4px; }
 
