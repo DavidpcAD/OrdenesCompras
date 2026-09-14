@@ -263,7 +263,10 @@ export default function ProveeduriaMaterialesPage() {
 
   return (
     <>
-      <main className="page" style={{ paddingBottom: incluidas.length ? 120 : undefined }}>
+      {/* `page--tall`: la pantalla ocupa el alto de la ventana y lo que se recorre es
+          la tabla, no la página. Solo cuando hay líneas (si no, el vacío no tiene
+          nada que estirar). `is-con-barra` le deja el espacio a la barra de abajo. */}
+      <main className={`page${baseRows.length > 0 ? " page--tall" : ""}${incluidas.length ? " is-con-barra" : ""}`}>
         <div className="page__head">
           <div className="page__title">
             <h1 className="ds-heading">Materiales solicitados</h1>
@@ -291,9 +294,10 @@ export default function ProveeduriaMaterialesPage() {
               </button>
             </div>
           )}
-          {/* pedidos */}
+          {/* pedidos. Sin alto inline: la columna mide lo que mide su fila del grid,
+              que ahora es exactamente lo que queda de ventana (ver `.page--tall`). */}
           {!panelOculto && (
-          <div className="md-list" style={{ maxHeight: "calc(100vh - 210px)", overflowY: "auto", paddingRight: 4 }}>
+          <div className="md-list">
             <div className="md-filtros">
               <input className="md-filtro" value={pedFiltro} onChange={(e) => setPedFiltro(e.target.value)} aria-label="Filtrar pedido u obra" placeholder="Filtrar pedido u obra…" />
               {/* Filtro nuevo por el usuario que creó el pedido (solicitante):
