@@ -118,6 +118,10 @@ interface StoreShape {
   // ya no existe. El servidor verifica que el nuevo exista antes de guardarlo.
   corregirBcNumber: (id: string, bcNumber: string, motivo: string) => Promise<{ bcAviso?: string }>;
 
+  // Marcar/desmarcar A MANO que la orden ya se le mandó al proveedor. La marca
+  // automática la pone la descarga del PDF; esta es para la que se mandó por
+  // WhatsApp o se volvió a mandar, y para deshacer la fila equivocada.
+  marcarEnviadaProveedor: (id: string, enviada: boolean) => Promise<void>;
   // Cerrar una orden LANZADA que ya no va a recibir el resto del material. Con
   // `devolverSaldo` (default true) lo no recibido vuelve a las solicitudes para
   // poder comprarlo de nuevo; si no, esas unidades quedan consumidas para siempre.
@@ -660,6 +664,26 @@ export function StoreProvider({ children, useApi }: { children: React.ReactNode;
       return {};
     };
 
+    // La marca de "ya se la mandé al proveedor". En modo prueba vive en el store;
+    // con base, en la bitácora (dbo.Movimiento), que es de donde la lee el bootstrap.
+    const marcarEnviadaProveedor: StoreShape["marcarEnviadaProveedor"] = async (id, enviada) => {
+      if (USE_API) {
+        await api.marcarEnviadaProveedor(id, enviada, { usuario: persona, rol: rolActual });
+        await refreshFromApi();
+        return;
+      }
+      setData((d) => {
+        const prevo = d.ordenes.find((o) => o.id === id);
+        const mov = mkMov({
+          entidad: "orden", idEntidad: id, documentoNo: prevo?.numero ?? "",
+          tipoMovimiento: enviada ? "enviada_proveedor" : "envio_deshecho",
+          detalle: enviada ? "Marcada a mano como enviada al proveedor." : "Se quitó la marca de enviada al proveedor.",
+        });
+        const envioProveedor = enviada ? { fecha: new Date().toISOString(), usuario: persona ?? undefined, manual: true } : undefined;
+        return { ...d, ordenes: d.ordenes.map((o) => (o.id === id ? { ...o, envioProveedor } : o)), movimientos: [mov, ...d.movimientos] };
+      });
+    };
+
     // ---------------- CERRAR ORDEN / PASAR EL PENDIENTE ----------------
     // Descartar el BORRADOR de una orden. Existe porque crear la orden ya consume el
     // saldo de la solicitud: sin esto, una orden armada por error dejaba ese material
@@ -1145,7 +1169,7 @@ export function StoreProvider({ children, useApi }: { children: React.ReactNode;
       maquinas: seed.maquinas, almacenes: seed.almacenes,
       pedidos: data.pedidos, ordenes: data.ordenes, recepciones: data.recepciones, movimientos: data.movimientos,
       addPedido, editPedido, setPedidoEstado, deletePedido,
-      createOrden, updateOrden, setOrdenEstado, corregirBcNumber, cerrarOrden, descartarOrden, retomarOrden, nuevaOrdenConPendiente, registrarRecepcion, guardarFotosRecepcion, facturarRecepcion, devolverPedido, cerrarSolicitud, reabrirSolicitud, devolverLineasOrden, alinearIvaConBc, exonerarIvaEnBc, devolverOrden, reset,
+      createOrden, updateOrden, setOrdenEstado, corregirBcNumber, marcarEnviadaProveedor, cerrarOrden, descartarOrden, retomarOrden, nuevaOrdenConPendiente, registrarRecepcion, guardarFotosRecepcion, facturarRecepcion, devolverPedido, cerrarSolicitud, reabrirSolicitud, devolverLineasOrden, alinearIvaConBc, exonerarIvaEnBc, devolverOrden, reset,
       notasCredito, marcarNotasCredito, cargarNotasCredito, resolverNotaCredito,
       notificaciones: data.notificaciones, marcarNotifsLeidas, marcarNotifLeida,
       borrador, setBorrador,

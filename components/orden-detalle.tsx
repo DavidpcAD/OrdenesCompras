@@ -7,10 +7,49 @@ import { IconChevronDown, IconWarning } from "@/components/icons";
 import { OrderLinesTable } from "@/components/order-lines";
 import { Timeline } from "@/components/timeline";
 import { useStore } from "@/lib/store";
-import { esLineaCargo, esLineaRecibible, money, num, formatDate, ordenBadgeDe, proveedorLabel, ordenLineaImporte, ordenRecibidoPct, ordenPedidos, ordenEsDirecta, numeroOrden, tieneBc, destinoDeRecepcion, ordenEsperaCorreccion } from "@/lib/helpers";
+import { esLineaCargo, esLineaRecibible, money, num, formatDate, formatDateTime, ordenBadgeDe, proveedorLabel, ordenLineaImporte, ordenRecibidoPct, ordenPedidos, ordenEsDirecta, numeroOrden, tieneBc, destinoDeRecepcion, ordenEsperaCorreccion } from "@/lib/helpers";
+import { vaAlProveedor } from "@/lib/envio-proveedor";
 import { ChipPedido } from "@/components/ordenes-lista";
 import { useVolver } from "@/lib/use-volver";
 import type { Orden } from "@/lib/types";
+
+// Lo que ya se sabe del envío al proveedor, en el encabezado del detalle: cuándo
+// salió, por quién y si fue bajando el PDF o marcándolo a mano. Con el botón para
+// corregirlo, porque la marca la puede poner un clic de más.
+function LineaEnvio({ orden }: { orden: Orden }) {
+  const { marcarEnviadaProveedor, role } = useStore();
+  const [ocupado, setOcupado] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  if (!vaAlProveedor(orden)) return null;
+  const env = orden.envioProveedor;
+  const alternar = async () => {
+    setOcupado(true); setError(null);
+    try { await marcarEnviadaProveedor(orden.id, !env); }
+    catch (e: any) { setError(String(e?.message ?? e)); }
+    finally { setOcupado(false); }
+  };
+  return (
+    <p className="ds-body-sm ds-muted row gap-2 wrap" style={{ alignItems: "baseline" }}>
+      {env ? (
+        <span>
+          <span className="ds-strong" style={{ color: "var(--ds-color-green-300)" }}>✓ Enviada al proveedor</span>{" "}
+          el {formatDateTime(env.fecha)}{env.usuario ? ` por ${env.usuario}` : ""} · {env.manual ? "marcada a mano" : "se bajó el PDF"}
+        </span>
+      ) : (
+        <span>Todavía no se le ha mandado al proveedor.</span>
+      )}
+      {/* Marcar es de Proveeduría, que es quien manda la orden. Bodega ve estas
+          mismas pantallas: ahí el dato SÍ sirve (saber si el proveedor ya la tiene)
+          pero el botón sería uno que la API le va a rechazar. */}
+      {role === "proveeduria" && (
+        <button className="link-btn" disabled={ocupado} onClick={() => void alternar()}>
+          {ocupado ? "Guardando…" : env ? "Quitar la marca" : "Marcar como enviada"}
+        </button>
+      )}
+      {error && <span style={{ color: "var(--ds-color-red-200)" }}>{error}</span>}
+    </p>
+  );
+}
 
 // Vista de detalle de una orden, reutilizada por Proveeduría, Aprobación y Bodega.
 // `acciones` son los botones específicos de cada rol (aprobar, recibir, etc.).
@@ -203,6 +242,10 @@ export function OrdenDetalle({
           </div>
           <p className="ds-muted">{orden.proveedorNo ?? prov?.code} · {proveedorLabel(orden, proveedores)} · emitida {formatDate(orden.fecha)} · recibido {ordenRecibidoPct(orden)}%{tieneBc(orden) ? "" : " · todavía no está en Business Central"}</p>
           {orden.almacenRecepcion && <p className="ds-body-sm ds-muted">Recepción en almacén <span className="ds-strong">{orden.almacenRecepcion}</span></p>}
+          {orden.aprobacion && (
+            <p className="ds-body-sm ds-muted">Aprobada el <span className="ds-strong">{formatDateTime(orden.aprobacion.fecha)}</span>{orden.aprobacion.usuario ? ` por ${orden.aprobacion.usuario}` : ""}</p>
+          )}
+          <LineaEnvio orden={orden} />
           <div className="row gap-2 wrap mt-2">
             {espera ? (
               <span className="ds-muted ds-body-sm">Su material volvió al ingeniero: la orden espera la corrección</span>

@@ -99,6 +99,10 @@ export const api = {
   // y creando otro, y la orden se queda hablando con un número que ya no existe).
   corregirBcNumber: (id: string, body: unknown): Promise<{ bcAviso?: string }> =>
     fetch(`/api/ordenes/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }).then(jsonOrThrow),
+  // Marcar/desmarcar a mano que la orden ya se le mandó al proveedor (la automática
+  // la pone la descarga del PDF).
+  marcarEnviadaProveedor: (id: string, enviada: boolean, body: unknown) =>
+    fetch(`/api/ordenes/${id}/enviada`, { method: enviada ? "POST" : "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }).then(jsonOrThrow),
   cerrarOrden: (id: string, body: unknown) =>
     fetch(`/api/ordenes/${id}/cerrar`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }).then(jsonOrThrow),
   nuevaOrdenConPendiente: (id: string, body: unknown) =>

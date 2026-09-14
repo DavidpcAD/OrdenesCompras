@@ -28,7 +28,7 @@ export default function ImprimirOrdenPage() {
   const params = useParams();
   const router = useRouter();
   const id = String(params?.id ?? "");
-  const { ordenes, proveedores, cargando } = useStore();
+  const { ordenes, proveedores, cargando, recargar } = useStore();
   const orden = ordenes.find((o) => o.id === id);
 
   // El navegador propone el TÍTULO del documento como nombre del archivo al guardar
@@ -156,8 +156,11 @@ export default function ImprimirOrdenPage() {
         <button className="po-btn po-btn--ghost" onClick={() => router.back()}>‹ Volver</button>
         <button className="po-btn po-btn--ghost" onClick={() => window.print()}>Imprimir</button>
         {/* Descarga el .pdf que arma el servidor: un clic, sin diálogo y sin riesgo de
-            terminar guardando la página web en vez del documento. */}
-        <a className="po-btn po-btn--primary" href={`/api/ordenes/${orden.id}/pdf`} style={{ textDecoration: "none", display: "inline-block" }}>
+            terminar guardando la página web en vez del documento. Al bajarlo, el
+            servidor marca la orden como enviada al proveedor; el refresco es para
+            que al volver al detalle esa marca ya se vea. */}
+        <a className="po-btn po-btn--primary" href={`/api/ordenes/${orden.id}/pdf`} style={{ textDecoration: "none", display: "inline-block" }}
+          onClick={() => window.setTimeout(() => { void recargar(); }, 1200)}>
           ⬇ Descargar PDF
         </a>
       </div>

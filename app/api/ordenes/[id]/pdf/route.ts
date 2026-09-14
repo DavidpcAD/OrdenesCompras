@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getOrden } from "@/lib/repo";
+import { getOrden, marcarEnvioProveedor } from "@/lib/repo";
+import { actor } from "@/lib/actor";
 import { ordenAPdf } from "@/lib/orden-pdf";
 import { bcDescripcionUnidades, bcNombresDeVariante } from "@/lib/bc";
 import { nombreArchivoOrden, ordenImprimible } from "@/lib/orden-doc";
@@ -36,6 +37,17 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     ]);
     const pdf = await ordenAPdf(orden, unidades, nombresVar);
     const verEnPantalla = new URL(req.url).searchParams.get("ver") === "1";
+    // Bajar el PDF ES mandársela al proveedor: queda marcada, con quién y cuándo.
+    // Es lo único que contesta "de las 60 que me aprobaron el viernes, ¿cuáles ya
+    // salieron?" — antes ese dato no existía en ningún lado. La vista previa
+    // (?ver=1) no marca nada: mirar no es mandar.
+    // Si la bitácora falla, el PDF baja igual: lo importante es el documento.
+    if (!verEnPantalla) {
+      try {
+        const a = await actor();
+        await marcarEnvioProveedor(id, a.usuario, a.rol);
+      } catch (e) { console.error("marcar envío al proveedor", id, e); }
+    }
     return new NextResponse(pdf as any, {
       headers: {
         "Content-Type": "application/pdf",

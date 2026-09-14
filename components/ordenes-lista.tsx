@@ -3,12 +3,13 @@
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { ColumnDef } from "@tanstack/react-table";
-import { Badge, Checkbox, ProgressBar, EmptyState } from "@/components/ui";
-import { DataTable } from "@/components/data-table";
-import { IconChevronDown } from "@/components/icons";
+import { Badge, Checkbox, ProgressBar, EmptyState, useToast } from "@/components/ui";
+import { DataTable, TODAS_LAS_FILAS } from "@/components/data-table";
+import { IconChevronDown, IconDescargar } from "@/components/icons";
 import { useStore } from "@/lib/store";
 import { useSoloMias } from "@/lib/use-solo-mias";
-import { money, formatDate, ordenAlmacenes, ordenAvance, ordenBadge, ordenBadgeDe, ordenObras, ordenRecibidoPct, ordenSubtotal, ordenPedidos, ordenEsDirecta, ordenLineaImporte, proveedorLabel, num, numeroOrden, tieneBc, ordenEsperaCorreccion } from "@/lib/helpers";
+import { money, formatDate, formatDateTime, isoLocal, ordenAlmacenes, ordenAvance, ordenBadge, ordenBadgeDe, ordenObras, ordenRecibidoPct, ordenSubtotal, ordenPedidos, ordenEsDirecta, ordenLineaImporte, proveedorLabel, num, numeroOrden, tieneBc, ordenEsperaCorreccion } from "@/lib/helpers";
+import { ordenEnviada, resumenEnvio, vaAlProveedor } from "@/lib/envio-proveedor";
 import type { Orden } from "@/lib/types";
 
 // N.º de solicitud de origen. Con link es un botón que abre esa solicitud (y no
@@ -43,6 +44,55 @@ function CeldaDestino({ orden }: { orden: Orden }) {
   );
 }
 
+// "¿Ya se la mandé al proveedor?" — la celda con la que se barren las aprobadas del
+// viernes: el PDF se baja DESDE LA LISTA (entrar al detalle para bajarlo era lo que
+// hacía perder la página) y la orden queda marcada como enviada. La marca también
+// se pone y se quita a mano, para la que se mandó por WhatsApp o para la fila que se
+// marcó por error.
+function CeldaEnvio({ orden }: { orden: Orden }) {
+  const { marcarEnviadaProveedor, recargar } = useStore();
+  const toast = useToast();
+  const [ocupado, setOcupado] = useState(false);
+  // Antes de que Aprobación la lance no hay nada que mandar: la celda no ofrece un
+  // botón que el servidor va a rechazar.
+  if (!vaAlProveedor(orden)) {
+    return <span className="ds-muted" title="Al proveedor solo se le manda una orden aprobada (Lanzada).">—</span>;
+  }
+  const env = orden.envioProveedor;
+  const marca = env
+    ? `Enviada al proveedor${env.usuario ? ` por ${env.usuario}` : ""} el ${formatDateTime(env.fecha)} · ${env.manual ? "marcada a mano" : "se bajó el PDF"}. Clic para quitar la marca.`
+    : "Marcar como enviada al proveedor (para la que mandaste por otro lado). Bajar el PDF la marca sola.";
+
+  const alternar = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setOcupado(true);
+    try { await marcarEnviadaProveedor(orden.id, !env); }
+    catch (err: any) { toast(`No se pudo marcar ${numeroOrden(orden)}: ${String(err?.message ?? err)}`, "error"); }
+    finally { setOcupado(false); }
+  };
+
+  return (
+    <div className="envio-cel" onClick={(e) => e.stopPropagation()}>
+      <a className="icon-btn" href={`/api/ordenes/${orden.id}/pdf`} download
+        title={`Bajar el PDF de ${numeroOrden(orden)} para el proveedor · queda marcada como enviada`}
+        aria-label={`Bajar el PDF de ${numeroOrden(orden)}`}
+        // La marca la deja el servidor al generar el PDF, así que la lista se entera
+        // en el siguiente refresco. Sin este empujón, bajar el PDF no se veía y
+        // parecía que el botón no había hecho nada.
+        onClick={() => window.setTimeout(() => { void recargar(); }, 1200)}>
+        <IconDescargar size={16} />
+      </a>
+      {/* aria-label aparte del texto: leído solo, "✓ 12/09/2026" no dice de qué es. */}
+      <button type="button" className={`envio-check${env ? " is-on" : ""}`} aria-pressed={!!env}
+        aria-label={env ? `${numeroOrden(orden)}: enviada al proveedor. Quitar la marca` : `${numeroOrden(orden)}: marcar como enviada al proveedor`}
+        disabled={ocupado} title={marca} onClick={alternar}>
+        <span className="envio-check__box" aria-hidden>{env ? "✓" : ""}</span>
+        <span className="envio-check__txt">{env ? formatDate(isoLocal(env.fecha)) : "Sin enviar"}</span>
+      </button>
+    </div>
+  );
+}
+
 // Lista de órdenes reutilizable (Proveeduría / Aprobación / Bodega), sobre DataTable
 // (ordenar, filtrar, columnas, vistas). Toggle "Por proveedor" agrupa las órdenes
 // del mismo proveedor en secciones colapsables con su total por moneda.
@@ -52,6 +102,8 @@ export function OrdenesLista({
   pedidoHref,
   vacio = "No hay órdenes.",
   filtroMias = false,
+  conEnvioProveedor = false,
+  deCorrido = false,
 }: {
   ordenes: Orden[];
   hrefDetalle: (id: string) => string;
@@ -63,6 +115,15 @@ export function OrdenesLista({
   // Muestra el atajo "Solo mis órdenes" (compara creadoPor con la sesión). Solo
   // tiene sentido donde quien mira también crea órdenes (Proveeduría).
   filtroMias?: boolean;
+  // Columna "Al proveedor" (bajar el PDF + la marca de enviada) y su contador.
+  // Solo para Proveeduría: es quien le manda la orden al proveedor —Bodega ve estas
+  // mismas listas, y ahí la columna sería un botón que la API le va a rechazar—.
+  conEnvioProveedor?: boolean;
+  // Arranca mostrando TODAS las órdenes de corrido, sin páginas (el selector de
+  // filas sigue ahí por si la lista se vuelve larguísima). Es lo que Angie pidió
+  // para las solicitudes y después para las órdenes: "poder ver en toda la pantalla
+  // todo lo pendiente, que sea solo de bajar… como está en BC".
+  deCorrido?: boolean;
 }) {
   const { proveedores, usuario } = useStore();
   const router = useRouter();
@@ -115,6 +176,20 @@ export function OrdenesLista({
       cell: (c) => <CeldaDestino orden={c.row.original} />,
     },
     { id: "fecha", header: "Fecha", accessorFn: (o) => o.fecha, meta: { label: "Fecha", date: true }, cell: (c) => formatDate(c.getValue()) },
+    // CUÁNDO LA APROBARON, que NO es la fecha de la orden: una se arma el martes y
+    // Aprobación la lanza el viernes. Es la columna por la que se filtra "todas las
+    // aprobadas el viernes" (el filtro de la cabecera trae Hoy / Ayer / Últimos 7
+    // días / rango). Sin fecha va "—": puede no haberla en órdenes viejas, y poner
+    // ahí la de emisión sería contestar otra pregunta.
+    {
+      // `isoLocal`: el filtro de fecha compara los 10 primeros caracteres del texto,
+      // así que tiene que ser el día DE ACÁ y no el de UTC (ver isoLocal).
+      id: "aprobada", header: "Aprobada el", accessorFn: (o) => isoLocal(o.aprobacion?.fecha ?? ""),
+      meta: { label: "Aprobada el", date: true },
+      cell: (c) => { const a = c.row.original.aprobacion;
+        return a ? <span title={`Aprobada${a.usuario ? ` por ${a.usuario}` : ""} el ${formatDateTime(a.fecha)}`}>{formatDate(c.getValue())}</span>
+          : <span className="ds-muted" title="Esta orden no tiene fecha de aprobación registrada.">—</span>; },
+    },
     // "Total" a secas se confundía con el "Total orden" del detalle, que SÍ lleva
     // IVA. Acá es la suma de líneas (artículos + cargos) con descuento y sin IVA.
     { id: "total", header: "Total sin IVA", accessorFn: (o) => ordenSubtotal(o), meta: { label: "Total sin IVA", num: true }, cell: (c) => money(c.getValue(), c.row.original.currencyCode) },
@@ -126,10 +201,17 @@ export function OrdenesLista({
       },
     },
     { id: "estado", header: "Estado", accessorFn: (o) => ordenBadgeDe(o).label, meta: { label: "Estado" }, cell: (c) => { const b = ordenBadgeDe(c.row.original); return <Badge tone={b.tone}>{b.label}</Badge>; } },
+    // ¿Ya salió hacia el proveedor? Se filtra por "Sin enviar" para quedarse con
+    // justo lo que falta mandar.
+    ...(conEnvioProveedor ? [{
+      id: "envio", header: "Al proveedor", meta: { label: "Al proveedor" }, enableSorting: false,
+      accessorFn: (o: Orden) => (!vaAlProveedor(o) ? "" : ordenEnviada(o) ? "Enviada" : "Sin enviar"),
+      cell: (c: any) => <CeldaEnvio orden={c.row.original} />,
+    }] : []),
     // Quién generó la OC (creadoPor). Además de leerse, da el filtro por persona del
     // encabezado: cada quien puede quedarse con las suyas o ver las de un compañero.
     { id: "creadaPor", header: "Creada por", accessorFn: (o) => o.creadoPor ?? "", meta: { label: "Creada por" }, cell: (c) => c.getValue() || <span className="ds-muted">—</span> },
-  ], [proveedores, pedidoHref]); // eslint-disable-line react-hooks/exhaustive-deps
+  ], [proveedores, pedidoHref, conEnvioProveedor]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const renderLineas = (o: Orden) => (
     <table className="ds-table" style={{ boxShadow: "none", background: "transparent" }}>
@@ -174,6 +256,30 @@ export function OrdenesLista({
       .sort((a, b) => a.nombre.localeCompare(b.nombre));
   }, [lista, proveedores]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // El contador de arriba, sobre lo que se está VIENDO: filtrá "aprobadas el
+  // viernes" y contesta de una la pregunta de siempre —"¿las mandé todas?"—. Un
+  // contador que ignorara el filtro no serviría para eso.
+  const resumen = (filas: Orden[]) => {
+    const r = resumenEnvio(filas);
+    if (!conEnvioProveedor || r.alProveedor === 0) return null;
+    return (
+      <div className="dt-resumen" role="status">
+        <span><span className="ds-strong">{r.enviadas}</span> de {r.alProveedor} enviadas al proveedor</span>
+        {r.faltan > 0
+          ? <span className="dt-resumen__falta">faltan {r.faltan}</span>
+          : <span className="dt-resumen__ok">✓ todas</span>}
+        {/* Ninguna trae fecha de aprobación: el filtro de "Aprobada el" no va a
+            encontrar nada y sin decirlo parece que la pantalla está rota. La fecha
+            la escribe la app de Producción al aprobar; si no está, es allá. */}
+        {r.conFechaAprobacion === 0 && (
+          <span className="dt-resumen__falta" title="La fecha de aprobación la registra la app de Producción cuando Aprobación lanza la orden. Avisale a TI si ninguna la trae.">
+            · sin fecha de aprobación
+          </span>
+        )}
+      </div>
+    );
+  };
+
   return (
     <div>
       <div className="row row--between wrap gap-3" style={{ marginBottom: 12, alignItems: "center" }}>
@@ -192,6 +298,8 @@ export function OrdenesLista({
           data={lista}
           columns={columns}
           tablaKey="ordenes"
+          resumen={resumen}
+          pageSizeInicial={deCorrido ? TODAS_LAS_FILAS : undefined}
           columnVisibilityInicial={{ interno: false }}
           buscarPlaceholder="Buscar por N.º de orden, proveedor o almacén…"
           getRowId={(o) => o.id}
@@ -222,7 +330,7 @@ export function OrdenesLista({
                   <div className="ds-table-wrap" style={{ boxShadow: "none", borderRadius: 0 }}>
                     <table className="ds-table">
                       <thead>
-                        <tr><th>N.º</th><th>Solicitudes</th><th>Almacén</th><th>Fecha</th><th className="ds-num">Total sin IVA</th><th>Recibido</th><th>Estado</th></tr>
+                        <tr><th>N.º</th><th>Solicitudes</th><th>Almacén</th><th>Fecha</th><th className="ds-num">Total sin IVA</th><th>Recibido</th><th>Estado</th>{conEnvioProveedor && <th>Al proveedor</th>}</tr>
                       </thead>
                       <tbody>
                         {g.ords.map((o) => {
@@ -237,6 +345,7 @@ export function OrdenesLista({
                               <td className="ds-num ds-strong">{money(ordenSubtotal(o), o.currencyCode)}</td>
                               <td><ProgressBar compact value={ordenAvance(o).recibida} total={ordenAvance(o).total} /></td>
                               <td><Badge tone={b.tone}>{b.label}</Badge></td>
+                              {conEnvioProveedor && <td><CeldaEnvio orden={o} /></td>}
                             </tr>
                           );
                         })}

@@ -116,6 +116,9 @@ export const ordenes: Orden[] = [
   {
     id: "ord1", numero: "CP-000862", proveedorId: "p2", fecha: "2026-06-05",
     currencyCode: "", estado: "lanzado", versionesArchivadas: 2,
+    // Aprobada por Aprobación (el mismo momento del movimiento m3). En modo prueba
+    // se pone a mano; con base sale de la bitácora o de OrdenCompra.fechaAprobado.
+    aprobacion: { fecha: "2026-06-05T14:02:00", usuario: "Luis Roberto" },
     lineas: [
       { id: "ol1", tipo: "articulo", articuloId: "a1", pedidoLineaId: "seed", pedidoNumero: "PED-000101",
         descripcion: "CASCO DE SEGURIDAD DELTA PLUS BLANCO", cantidad: 20, unidad: "UND", almacen: "ALM-SSO",

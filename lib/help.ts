@@ -101,6 +101,13 @@ const ORDENES: HelpEntry = {
     "Clic en una orden para ver su detalle, estados e historial y las facturas asociadas.",
     "Desde el detalle podés editar (si está Abierta), enviar a aprobación, imprimir o revisar recepciones.",
     "Con el toggle ves por orden o por línea, y podés agrupar por proveedor.",
+    "Para revisar lo que te aprobaron un día: tocá el ▾ de la columna “Aprobada el” y elegí Hoy, Ayer, Últimos 7 días o un rango. Es la fecha en que Aprobación la lanzó, no la de la orden.",
+    "La columna “Al proveedor” baja el PDF sin salir de la lista, y esa orden queda marcada como enviada (con tu nombre y la hora). Si la mandaste por otro lado, marcala vos con la casilla.",
+  ],
+  tips: [
+    "Arriba, al lado del buscador, dice cuántas de las que estás viendo ya se le mandaron al proveedor y cuántas faltan — con el filtro de “Aprobada el” puesto, eso contesta “¿mandé todas las del viernes?”.",
+    "La lista arranca de corrido, sin páginas: se recorre bajando. Si se hace muy larga, el selector de abajo la vuelve a partir.",
+    "Al volver de una orden, la lista te deja donde estabas y resalta un momento la fila que abriste.",
   ],
 };
 const ORDEN_DET: HelpEntry = {
