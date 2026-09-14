@@ -263,10 +263,9 @@ export default function ProveeduriaMaterialesPage() {
 
   return (
     <>
-      {/* `page--tall`: la pantalla ocupa el alto de la ventana y lo que se recorre es
-          la tabla, no la página. Solo cuando hay líneas (si no, el vacío no tiene
-          nada que estirar). `is-con-barra` le deja el espacio a la barra de abajo. */}
-      <main className={`page${baseRows.length > 0 ? " page--tall" : ""}${incluidas.length ? " is-con-barra" : ""}`}>
+      {/* `is-con-barra`: con la barra de "Armar orden de compra" abajo, el contenido
+          le deja su espacio para que las últimas líneas no queden debajo. */}
+      <main className={`page${incluidas.length ? " is-con-barra" : ""}`}>
         <div className="page__head">
           <div className="page__title">
             <h1 className="ds-heading">Materiales solicitados</h1>
@@ -294,8 +293,8 @@ export default function ProveeduriaMaterialesPage() {
               </button>
             </div>
           )}
-          {/* pedidos. Sin alto inline: la columna mide lo que mide su fila del grid,
-              que ahora es exactamente lo que queda de ventana (ver `.page--tall`). */}
+          {/* pedidos. El índice se queda pegado mientras la tabla baja (`.md-list` es
+              sticky): sin alto inline, con su propio scroll si la lista es larga. */}
           {!panelOculto && (
           <div className="md-list">
             <div className="md-filtros">

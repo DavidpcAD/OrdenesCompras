@@ -810,27 +810,9 @@ td.ds-col-fija {
    la mitad — con 170 px de pantalla sin usar al lado. Ojo: esta clase existía desde
    el principio con el MISMO max-width que .page, o sea que no hacía nada. */
 .page--wide { max-width: 1760px; }
-/* PANTALLA QUE OCUPA EL ALTO DE LA VENTANA, en vez de crecer hacia abajo: lo de
-   adentro se recorre solo (la lista de pedidos por su lado, la tabla por el suyo).
-   Es para las líneas pendientes: la tabla tenía un alto FIJO (72vh) que no sabía
-   dónde empezaba, así que terminaba a media pantalla y debajo quedaban ~190 px de
-   nada —el relleno de `.page` (96) más el que reserva el FAB (92)—. Ahora el
-   bloque de abajo se come lo que sobra, sea cual sea la ventana, y no hay dos
-   scrolls peleando. 64px es el alto de la barra de arriba, que es sticky. */
-/* El relleno de arriba baja de 40 a 24: en una pantalla que se reparte el alto de
-   la ventana, esos 16 px son media fila más de tabla. */
-.page--tall { height: calc(100dvh - 64px); display: flex; flex-direction: column; padding-top: var(--ds-space-6); padding-bottom: var(--ds-space-4); overflow: auto; }
-/* Todo lo de arriba (título, "Ver por") conserva su alto; el layout se estira. */
-.page--tall > * { flex: 0 0 auto; }
-.page--tall > .md-layout { flex: 1 1 auto; height: auto; min-height: 320px; }
-/* Con la barra de selección abajo (fija), las últimas filas necesitan su espacio. */
-.page--tall.is-con-barra { padding-bottom: 96px; }
-@media (min-width: 901px) {
-  /* El relleno que reserva el FAB sobra acá: nada crece por debajo de la ventana y,
-     sumado al alto de arriba, volvía a hacer scrollear la página. */
-  .app-content.has-fab:has(.page--tall) { padding-bottom: 0; }
-}
-@media (max-width: 900px) { .page--tall { height: auto; display: block; overflow: visible; } }
+/* Con la barra de acciones fija abajo (la de "Armar orden de compra"), el contenido
+   necesita ese espacio para que las últimas filas no queden debajo de ella. */
+.page.is-con-barra { padding-bottom: 120px; }
 .page__head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--ds-space-4); margin-bottom: var(--ds-space-6); flex-wrap: wrap; }
 .page__title { display: flex; flex-direction: column; gap: 4px; }
 
@@ -1249,9 +1231,19 @@ td.ds-col-fija {
   .topbar__tabs.topnav { width: max-content; min-width: 100%; }
 }
 
-/* master-detail (pedidos | líneas) */
-.md-layout { display: grid; grid-template-columns: 250px 1fr; gap: var(--ds-space-4); align-items: stretch; height: 72vh; min-height: 440px; }
-.md-list { display: flex; flex-direction: column; gap: var(--ds-space-2); overflow-y: auto; height: 100%; padding-right: 4px; min-width: 0; }
+/* master-detail (pedidos | líneas)
+   LA TABLA CORRE CON LA PÁGINA, no dentro de una cajita. Tuvo alto fijo (72vh) y
+   después alto de ventana, y las dos veces pasaba lo mismo: entre la barra, el
+   título, el "Ver por" y la barra de herramientas quedaba una ventanita de 300 px
+   para mirar 250 líneas —y al seleccionar, la barra de abajo la achicaba más—.
+   David, 14 sep: "no hay forma de que esto se pueda visualizar más grande, digamos
+   selecciono líneas y más bien se hace más pequeño". Ahora es una lista normal, la
+   misma de "Por solicitud": se ve completa y se recorre bajando. */
+.md-layout { display: grid; grid-template-columns: 250px 1fr; gap: var(--ds-space-4); align-items: start; }
+/* La columna de pedidos se queda pegada mientras la tabla baja: es un índice, y un
+   índice que se va de la pantalla al tercer scroll no sirve de índice. */
+.md-list { display: flex; flex-direction: column; gap: var(--ds-space-2); padding-right: 4px; min-width: 0;
+  position: sticky; top: 80px; max-height: calc(100dvh - 104px); overflow-y: auto; }
 /* Filtro pegajoso de la lista de pedidos (compacto). Foco al estilo DS. */
 .md-filtro { width: 100%; box-sizing: border-box; margin-bottom: var(--ds-space-2); border-radius: var(--ds-radius-md); padding: 7px 10px; font: inherit; font-size: 13px; border: 1.5px solid var(--ds-color-gray-100); background: var(--ds-surface); color: var(--ds-text); position: sticky; top: 0; z-index: 1; outline: none; transition: border-color .12s ease; }
 .md-filtro:focus { border-color: var(--ds-text); }
@@ -1259,28 +1251,7 @@ td.ds-col-fija {
 /* columna derecha: encabezado fijo + tabla con scroll propio dentro del contenedor */
 /* min-width:0 evita el "grid blowout": sin él, el min-content de la tabla ancha
    expande la pista 1fr y desborda en móvil en vez de scrollear dentro. */
-/* `min-height: 0` es lo que deja que la columna respete el alto del contenedor:
-   sin él un ítem de grid no se encoge por debajo de su contenido, la fila crecía
-   con la tabla y la tarjeta se salía por abajo en vez de scrollear adentro. */
-.md-detail { height: 100%; min-height: 0; display: flex; flex-direction: column; min-width: 0; }
-.md-detail > .ds-table-wrap { flex: 1 1 auto; overflow: auto; }
-/* La TABLA se come el alto que sobra y hace su propio scroll. Sin esto, con la
-   lista sin paginar (200 líneas, "Todas") la tarjeta crecía más que su columna y
-   se salía por debajo del contenedor; ahora se recorre adentro y la barra de
-   paginación no se va de la vista. El `min-height: 0` es obligatorio: sin él un
-   hijo flex no se deja encoger por debajo de su contenido y no aparece scroll. */
-/* El bloque del medio —la tabla, o las tarjetas de la vista Grid— es el que se
-   estira y el que scrollea; la barra de herramientas y la de paginación no. */
-.md-detail > :not(.dt-toolbar):not(.dt-pagination) { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
-/* En la vista Tabla el que scrollea es el envoltorio de adentro (la tarjeta trae
-   `overflow: hidden` propio), para que el encabezado pegajoso tenga contra qué pegarse. */
-.md-detail > .ds-card { display: flex; flex-direction: column; }
-.md-detail > .ds-card > .ds-table-wrap { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
-/* Encabezado pegado al recorrer, como la lista de Business Central: bajando 200
-   líneas hay que seguir sabiendo qué columna es cuál. Va acotado a esta pantalla
-   (el scroll es de la tarjeta, no de la página, así que no se mete debajo de la
-   barra de arriba). El fondo negro del thead ya lo pone `.dt-dark`. */
-.md-detail > .ds-card > .ds-table-wrap > .ds-table.dt-dark > thead > tr > th { position: sticky; top: 0; z-index: 3; }
+.md-detail { display: flex; flex-direction: column; min-width: 0; }
 .md-item { text-align: left; background: var(--ds-surface); border: 1.5px solid var(--ds-color-gray-100); border-radius: var(--ds-radius-lg); padding: var(--ds-space-3) var(--ds-space-4); cursor: pointer; transition: border-color .12s ease, box-shadow .12s ease; display: flex; flex-direction: column; gap: 2px; }
 .md-item:hover { border-color: var(--ds-color-gray-300); }
 .md-item.is-active { border-color: var(--ds-color-green-100); box-shadow: 0 0 0 3px color-mix(in srgb, var(--ds-color-green-100) 18%, transparent); }
@@ -1304,12 +1275,15 @@ td.ds-col-fija {
    de ~900px la tabla queda muy angosta y su toolbar desborda. Apilado le da a la
    tabla el ancho completo. */
 /* Panel de pedidos OCULTO: queda un riel angosto con el botón para devolverlo y la
-   tabla se lleva todo el resto del ancho, con casi toda la pantalla de alto, para
-   ver lo pendiente de corrido (se recorre hacia abajo, no se pagina). 230px es lo
-   que ocupan la barra de arriba, el título y el "Ver por". */
-.md-layout--solo { grid-template-columns: 36px 1fr; height: calc(100vh - 230px); }
+   tabla se lleva todo el ancho. */
+.md-layout--solo { grid-template-columns: 36px 1fr; }
 .md-rail { display: flex; justify-content: center; align-items: flex-start; padding-top: var(--ds-space-2); }
-@media (max-width: 900px) { .md-layout { grid-template-columns: 1fr; height: auto; min-height: 0; } .md-list { overflow: visible; height: auto; } .md-layout--solo { height: auto; } }
+/* Apilado: la lista de pedidos deja de ser índice lateral (y de ser pegajosa) y
+   pasa a ser el primer bloque de la página. */
+@media (max-width: 900px) {
+  .md-layout { grid-template-columns: 1fr; }
+  .md-list { position: static; max-height: 40vh; }
+}
 
 /* misc */
 .divider { height: 1px; background: var(--ds-color-gray-100); border: 0; margin: var(--ds-space-5) 0; }
