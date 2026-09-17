@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getOrden, setOrdenEstado, setOrdenBcNumber, updateOrden, descartarOrden, ordenTieneRecepciones, obrasDeLineasPedido, asignarBcNumber, guardarChequeoBc, guardarVariantesResueltas, anotarEncabezadoBc, MSG_NO_REABRIR } from "@/lib/repo";
 import { bcReopenPedido, bcReplaceOrderLines, bcCrearPedidoAbierto, crearEnBcAlEnviar, lineasOrdenParaBc, obrasSinTarea, lineasSinUnidad, lineasSinAlmacen, resolverVariantesRequeridas, sanearObrasDeLineas, avisoDeSaneo, bcOrdenTotales, bcEstadoDelPedido, chequearOrdenContraBc, lineasReplaceParaCotejo, lineasOrdenParaCotejo, paredAprobacionActiva, itemsBloqueadosDeLineas, bcSincronizarEncabezado, bcBorrarPedidoAbierto, conPedidoAbierto } from "@/lib/bc";
-import { ordenLineaImporte } from "@/lib/helpers";
+import { ordenTotalConIva } from "@/lib/helpers";
 import { actor } from "@/lib/actor";
 
 export const runtime = "nodejs";
@@ -328,8 +328,10 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
           const bcT = await bcOrdenTotales(bcNo);
           const moneda = (c?: string) => ((c ?? "").trim().toUpperCase() || "CRC");
           if (bcT && moneda(bcT.currencyCode) === moneda(o.currencyCode)) {
-            const estimado = o.lineas.reduce(
-              (s, l) => s + ordenLineaImporte(l) * (l.tipo === "cargo" ? 1 : 1 + (l.ivaPct || 0) / 100), 0);
+            // Con IVA en TODAS las líneas, cargo incluido: BC también le cobra IVA al
+            // flete. El `* 1` que llevaba el cargo dejaba el estimado corto por ese
+            // IVA y el aviso acusaba a BC de cobrar de más en toda orden con cargo.
+            const estimado = ordenTotalConIva(o);
             const dif = bcT.total - estimado;
             if (Math.abs(dif) > 0.01) {
               const fmt = (n: number) => n.toLocaleString("es-CR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });

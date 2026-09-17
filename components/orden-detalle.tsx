@@ -7,7 +7,7 @@ import { IconChevronDown, IconWarning } from "@/components/icons";
 import { OrderLinesTable } from "@/components/order-lines";
 import { Timeline } from "@/components/timeline";
 import { useStore } from "@/lib/store";
-import { esLineaCargo, esLineaRecibible, money, num, formatDate, formatDateTime, ordenBadgeDe, proveedorLabel, ordenLineaImporte, ordenRecibidoPct, ordenPedidos, ordenEsDirecta, numeroOrden, tieneBc, destinoDeRecepcion, ordenEsperaCorreccion } from "@/lib/helpers";
+import { esLineaCargo, esLineaRecibible, money, num, formatDate, formatDateTime, ordenBadgeDe, proveedorLabel, ordenIva, ordenLineaImporte, ordenRecibidoPct, ordenPedidos, ordenEsDirecta, ordenTotalConIva, numeroOrden, tieneBc, destinoDeRecepcion, ordenEsperaCorreccion } from "@/lib/helpers";
 import { vaAlProveedor } from "@/lib/envio-proveedor";
 import { ChipPedido } from "@/components/ordenes-lista";
 import { useVolver } from "@/lib/use-volver";
@@ -207,8 +207,15 @@ export function OrdenDetalle({
   // fijo. Con `tipo === "articulo"` una compra directa de un servicio salía con
   // subtotal ₡0 y el total no cuadraba con lo que el proveedor iba a facturar.
   const subtotal = orden.lineas.filter(esLineaRecibible).reduce((s, l) => s + ordenLineaImporte(l), 0);
-  const iva = orden.lineas.filter(esLineaRecibible).reduce((s, l) => s + ordenLineaImporte(l) * ((l.ivaPct || 0) / 100), 0);
-  const flete = orden.lineas.filter(esLineaCargo).reduce((s, l) => s + l.cantidad * l.precioUnitario, 0);
+  // El IVA es el de TODAS las líneas, cargos incluidos: BC también le cobra IVA al
+  // flete. Sumarlo solo sobre las recibibles dejaba el estimado corto por el IVA del
+  // cargo, y como el estimado es contra lo que se compara BC, TODA orden con cargo al
+  // 13% acusaba una diferencia que no existe (CP-005449: ₡2 477,41, justo el 13% del
+  // "Servicio de corte") — con el botón "Quitarle el IVA en BC" ofrecido al lado. El
+  // PDF que firma el proveedor ya usaba ordenIva, así que la pantalla no cuadraba ni
+  // con BC ni con su propio papel.
+  const iva = ordenIva(orden);
+  const flete = orden.lineas.filter(esLineaCargo).reduce((s, l) => s + ordenLineaImporte(l), 0);
   // BC contra el estimado de la orden. El IVA% que se escribe en la orden NO viaja a
   // BC: allá se calcula cruzando el grupo de IVA del proveedor con el del artículo
   // (en la línea que se manda no va ningún campo de IVA). Cuando esos dos no dan lo
@@ -218,7 +225,7 @@ export function OrdenDetalle({
   // BC por el grupo del proveedor.
   // Solo se compara en la MISMA moneda: contra un pedido en dólares la resta no
   // significaría nada.
-  const estimadoLocal = subtotal + flete + iva;
+  const estimadoLocal = ordenTotalConIva(orden);
   const monedaDe = (c?: string) => ((c ?? "").trim().toUpperCase() || "CRC");
   const difBc = bcTot && monedaDe(bcTot.currencyCode) === monedaDe(orden.currencyCode)
     ? bcTot.total - estimadoLocal : 0;
@@ -474,8 +481,8 @@ export function OrdenDetalle({
             <>
               <div className="totals__row"><span>Subtotal artículos</span><span>{money(subtotal, orden.currencyCode)}</span></div>
               <div className="totals__row"><span>Flete</span><span>{money(flete, orden.currencyCode)}</span></div>
-              <div className="totals__row"><span>IVA (materiales)</span><span>{money(iva, orden.currencyCode)}</span></div>
-              <div className="totals__row totals__row--grand" style={{ gridColumn: "1 / -1" }}><span>Total orden</span><span>{money(subtotal + flete + iva, orden.currencyCode)}</span></div>
+              <div className="totals__row"><span>IVA</span><span>{money(iva, orden.currencyCode)}</span></div>
+              <div className="totals__row totals__row--grand" style={{ gridColumn: "1 / -1" }}><span>Total orden</span><span>{money(estimadoLocal, orden.currencyCode)}</span></div>
               {orden.bcNumber && (
                 <div style={{ gridColumn: "1 / -1" }} className="ds-body-sm ds-muted">
                   {espera

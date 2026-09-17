@@ -105,6 +105,22 @@ test("el total con IVA usa la tasa de CADA línea, cargo incluido", () => {
   assert.equal(ordenTotalConIva(o), 3825);        // 3500 de subtotal + 325
 });
 
+// El aviso "el total de BC no coincide" se calculaba con un estimado que le daba IVA 0
+// al cargo, asi que TODA orden con cargo al 13% acusaba una diferencia falsa — y al lado
+// ofrecia el boton que le quita el IVA al pedido en BC. CP-005449: ₡2 477,41 de diferencia
+// inventada, exactamente el 13% del "Servicio de corte".
+test("el estimado de una orden con cargo incluye el IVA del cargo", () => {
+  const o = orden([
+    linea({ id: "a", cantidad: 2, precioUnitario: 443264.07, ivaPct: 13 }),   // los 16 articulos de CP-005449
+    linea({ id: "f", tipo: "cargo", cantidad: 17, precioUnitario: 1121, ivaPct: 13 }),
+  ]);
+  assert.equal(Math.round(ordenSubtotal(o) * 100) / 100, 905585.14);
+  assert.equal(Math.round(ordenIva(o) * 100) / 100, 117726.07);              // BC cobra este mismo
+  assert.equal(Math.round(ordenTotalConIva(o) * 100) / 100, 1023311.21);
+  // el IVA del cargo son ₡2 477,41: sin el, el estimado quedaba en ₡1 020 833,80
+  assert.equal(Math.round((ordenTotalConIva(o) - 1020833.80) * 100) / 100, 2477.41);
+});
+
 test("una importación sin IVA no infla el total", () => {
   const o = orden([linea({ id: "a", cantidad: 1, precioUnitario: 1000, ivaPct: 0 })]);
   assert.equal(ordenIva(o), 0);
