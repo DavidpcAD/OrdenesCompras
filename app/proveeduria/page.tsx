@@ -145,6 +145,19 @@ export default function ProveeduriaMaterialesPage() {
   const dataTabla = rows.filter((r) => (filtro === "all" || r.pedidoId === filtro) && coincideSolic(r.solicitante));
   const rowsSolic = rows.filter((r) => coincideSolic(r.solicitante)); // para el contador de "Todos los pedidos"
 
+  // Pedidos que se ven en la lista de la izquierda (ya filtrados por solicitante y
+  // por el campo de "Filtrar pedido u obra"). Sale del JSX porque el contador de la
+  // pestaña del cajón tiene que decir cuántos pedidos se están escondiendo.
+  const pedidosLista = pedidosConSaldo
+    .filter((p) => coincideSolic(p.solicitante))
+    .filter((p) => {
+      const q = pedFiltro.trim().toLowerCase();
+      if (!q) return true;
+      const r = solicitudResumen(p);
+      return [p.numero, destinoCodigo(p), r.principal, r.secundaria ?? "", p.notas ?? "", p.solicitante]
+        .some((t) => t.toLowerCase().includes(q));
+    });
+
   const incluidas = rows.filter((r) => r.incluir && Number(r.cantidad) > 0);
   const seleccionPorPedido = (pid: string) => rows.filter((r) => r.pedidoId === pid && r.incluir).length;
   const subtotal = incluidas.reduce((s, r) => s + Number(r.cantidad) * Number(r.precio), 0);
@@ -208,7 +221,7 @@ export default function ProveeduriaMaterialesPage() {
     },
     { id: "pedido", header: "Pedido", accessorFn: (r) => `${r.pedidoNumero}${corregidas.has(r.pedidoId) ? " corregida" : ""}`, meta: { label: "Pedido" },
       cell: (c) => { const r = c.row.original; return (
-        <span className="col" style={{ gap: 2 }}>
+        <span className="col" style={{ gap: 2, whiteSpace: "nowrap" }}>
           <span className="row gap-2" style={{ alignItems: "center" }}>{dot(r.tipo === "repuesto" ? "yellow" : "green")}<span className="ds-body-sm ds-strong">{r.pedidoNumero}</span></span>
           {corregidas.has(r.pedidoId) && (
             <span className="ds-body-sm ds-strong" style={{ color: "var(--ds-color-green-200)" }}
@@ -226,7 +239,7 @@ export default function ProveeduriaMaterialesPage() {
       // El código va ARRIBA en su propia línea y la descripción abajo en dos líneas:
       // metidos en la misma fila, el código se comía ~90px y la medida del material
       // ("… 3/4") quedaba siempre cortada.
-      cell: (c) => { const r = c.row.original; return <div style={{ maxWidth: 380, minWidth: 200 }} title={`${r.articuloId} — ${r.descripcion}`}><div className="ds-strong ds-body-sm">{r.articuloId}</div><div className="ds-clamp-2">{r.descripcion}</div></div>; } },
+      cell: (c) => { const r = c.row.original; return <div style={{ maxWidth: 380, minWidth: 180 }} title={`${r.articuloId} — ${r.descripcion}`}><div className="ds-strong ds-body-sm">{r.articuloId}</div><div className="ds-clamp-2">{r.descripcion}</div></div>; } },
     // Variante: es lo que distingue lo que hay que comprar cuando el material es
     // genérico. Si la solicitud no la trae y el material tiene varias, se avisa acá
     // (antes esta pantalla no mostraba el dato y había que preguntar por WhatsApp).
@@ -238,7 +251,7 @@ export default function ProveeduriaMaterialesPage() {
         if (r.variantCode) {
           const nombre = variantes.nombreVariante(r.articuloId, r.variantCode);
           return (
-            <div style={{ maxWidth: 220 }} title={variantes.etiqueta(r.articuloId, r.variantCode)}>
+            <div style={{ maxWidth: 140 }} title={variantes.etiqueta(r.articuloId, r.variantCode)}>
               <div className="ds-strong ds-body-sm">{r.variantCode}</div>
               {nombre && <div className="ds-clamp-2 ds-body-sm ds-muted">{nombre}</div>}
             </div>
@@ -257,15 +270,28 @@ export default function ProveeduriaMaterialesPage() {
     { id: "obra", header: "Destino",
       accessorFn: (r) => (r.proyecto ? `Obra ${r.proyecto}${r.taskNo ? ` · tarea ${r.taskNo}` : ""}` : r.almacen || "—"),
       meta: { label: "Destino" },
+      // En BLOQUE, no en un renglón: "Obra F-METALES · tarea F-FOX" en una columna
+      // angosta se partía en tres pedazos. Apilado, la obra y la tarea quedan cada
+      // una en su renglón y la columna pide la mitad de ancho.
       cell: (c) => { const r = c.row.original; return (
-        <span className="ds-muted ds-body-sm">
-          <DestinoLinea inline almacen={r.almacen} obra={r.proyecto} tarea={r.taskNo} tareaNombre={r.taskDescr} />
-        </span>
+        <div className="ds-body-sm" style={{ maxWidth: 160 }}>
+          <DestinoLinea almacen={r.almacen} obra={r.proyecto} tarea={r.taskNo} tareaNombre={r.taskDescr} />
+        </div>
       ); } },
+    // Apagada de fábrica: su dato vive dentro de "A ordenar" (ver abajo). Sigue
+    // acá para quien la quiera prender en Columnas y ordenar o exportar por ella.
     { id: "pend", header: "Pend.", accessorFn: (r) => r.pendiente, meta: { label: "Pend.", num: true }, enableColumnFilter: false,
       cell: (c) => { const r = c.row.original; return <span className="ds-body-sm">{num.format(r.pendiente)} {r.unidad}</span>; } },
+    // El pendiente NO es una columna aparte: es el TOPE de lo que se puede escribir
+    // acá, y separado por media tabla no se leía junto al número que se escribe.
+    // "Pend." sigue existiendo (apagada) para quien la quiera ordenar o exportar.
     { id: "aordenar", header: "A ordenar", accessorFn: (r) => r.cantidad, meta: { label: "A ordenar", num: true }, enableColumnFilter: false, enableSorting: false,
-      cell: (c) => { const r = c.row.original; return <input className="ds-cell-input" aria-label="Cantidad a ordenar" type="number" min={0} max={r.pendiente} value={r.cantidad} style={{ width: 78 }} disabled={!r.incluir} onClick={stop} onChange={(e) => setRow(r.pedidoLineaId, { cantidad: e.target.value })} />; } },
+      cell: (c) => { const r = c.row.original; return (
+        <span className="md-qty">
+          <input className="ds-cell-input" aria-label="Cantidad a ordenar" type="number" min={0} max={r.pendiente} value={r.cantidad} style={{ width: 72 }} disabled={!r.incluir} onClick={stop} onChange={(e) => setRow(r.pedidoLineaId, { cantidad: e.target.value })} />
+          <span className="md-qty__max ds-muted ds-body-sm">de {num.format(r.pendiente)} {r.unidad}</span>
+        </span>
+      ); } },
   ];
 
   return (
@@ -288,19 +314,23 @@ export default function ProveeduriaMaterialesPage() {
         {baseRows.length === 0 ? (
           <Card className="mt-4"><EmptyState icon={<IconList size={24} />} title="No hay líneas pendientes por ordenar." hint="Cuando Ingeniería apruebe nuevas solicitudes, van a aparecer acá." /></Card>
         ) : (
-        <div className={`md-layout mt-2${panelOculto ? " md-layout--solo" : ""}`}>
-          {/* Riel: lo único que queda de la columna cuando está escondida. El mismo
-              ícono al revés la devuelve, y se queda en el lugar donde estaba la lista
-              para que se entienda qué va a volver. */}
+        <div className="md-wrap mt-2">
+        <div className={`md-layout${panelOculto ? " md-layout--solo" : ""}`}>
+          {/* Columna izquierda: o la lista de pedidos, o —escondida— la pestaña del
+              cajón. Las dos viven en el mismo `aside` pegajoso para que la de
+              volver quede exactamente donde estaba la lista. */}
+          <aside className="md-aside">
+          {/* Pestaña del cajón: dice cuántos pedidos está guardando y toda ella es
+              el botón que los devuelve. */}
           {panelOculto && (
-            <div className="md-rail">
-              <button type="button" className="icon-btn" title="Mostrar la lista de pedidos"
-                aria-label="Mostrar la lista de pedidos" onClick={alternarPanel}>
-                <IconChevronLeft style={{ transform: "rotate(180deg)" }} />
-              </button>
-            </div>
+            <button type="button" className="md-rail" onClick={alternarPanel} aria-expanded={false}
+              title="Mostrar la lista de pedidos" aria-label={`Mostrar la lista de ${pedidosLista.length} pedidos`}>
+              <IconChevronLeft style={{ transform: "rotate(180deg)" }} aria-hidden />
+              <span className="md-rail__n">{pedidosLista.length}</span>
+              <span className="md-rail__txt">Pedidos</span>
+            </button>
           )}
-          {/* pedidos. El índice se queda pegado mientras la tabla baja (`.md-list` es
+          {/* pedidos. El índice se queda pegado mientras la tabla baja (`.md-aside` es
               sticky): sin alto inline, con su propio scroll si la lista es larga. */}
           {!panelOculto && (
           <div className="md-list">
@@ -334,10 +364,7 @@ export default function ProveeduriaMaterialesPage() {
               </div>
               <span className="ds-body-sm ds-muted">{qSolic ? `Líneas de ${solicFiltro.trim()}` : "Ver todas las líneas pendientes"}</span>
             </div>
-            {pedidosConSaldo
-              .filter((p) => coincideSolic(p.solicitante))
-              .filter((p) => { const q = pedFiltro.trim().toLowerCase(); if (!q) return true; const r = solicitudResumen(p); return [p.numero, destinoCodigo(p), r.principal, r.secundaria ?? "", p.notas ?? "", p.solicitante].some((t) => t.toLowerCase().includes(q)); })
-              .map((p) => {
+            {pedidosLista.map((p) => {
               const n = p.lineas.filter((l) => pedidoLineaPendiente(l) > 0).length;
               const sel = seleccionPorPedido(p.id);
               return (
@@ -366,9 +393,10 @@ export default function ProveeduriaMaterialesPage() {
             })}
           </div>
           )}
+          </aside>
 
           {/* líneas — misma DataTable que el resto, con celdas editables para armar la orden */}
-          <Card className="md-detail" style={{ padding: 16 }}>
+          <Card className="md-detail md-tabla" style={{ padding: 16 }}>
             {panelOculto && (filtro !== "all" || qSolic) && (
               <div className="row wrap gap-3 ds-body-sm" style={{ alignItems: "center", marginBottom: 10 }}>
                 <span className="ds-muted">Mostrando solo</span>
@@ -381,6 +409,7 @@ export default function ProveeduriaMaterialesPage() {
               data={dataTabla}
               columns={columns}
               tablaKey="prov-lineas"
+              columnVisibilityInicial={{ pend: false }}
               titulo="Materiales solicitados"
               buscarPlaceholder="Buscar por material, pedido u obra…"
               getRowId={(r) => r.pedidoLineaId}
@@ -393,6 +422,7 @@ export default function ProveeduriaMaterialesPage() {
               vacio="No hay líneas pendientes."
             />
           </Card>
+        </div>
         </div>
         )}
       </main>

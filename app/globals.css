@@ -1239,11 +1239,20 @@ td.ds-col-fija {
    David, 14 sep: "no hay forma de que esto se pueda visualizar más grande, digamos
    selecciono líneas y más bien se hace más pequeño". Ahora es una lista normal, la
    misma de "Por solicitud": se ve completa y se recorre bajando. */
-.md-layout { display: grid; grid-template-columns: 250px 1fr; gap: var(--ds-space-4); align-items: start; }
+/* El ancho lo decide EL CONTENEDOR, no la ventana. El riel de la app se fija y se
+   suelta: con el riel fijado, una laptop de 1180 le dejaba 570 px a una tabla de
+   seis columnas y media tabla quedaba del otro lado del scroll —y `max-width` de
+   ventana no se entera de eso—. Midiendo el contenedor, la lista se va arriba
+   justo cuando de verdad estorba. */
+.md-wrap { container-type: inline-size; }
+.md-layout { display: grid; grid-template-columns: 250px 1fr; gap: var(--ds-space-4); align-items: start;
+  transition: grid-template-columns .2s ease; }
 /* La columna de pedidos se queda pegada mientras la tabla baja: es un índice, y un
-   índice que se va de la pantalla al tercer scroll no sirve de índice. */
-.md-list { display: flex; flex-direction: column; gap: var(--ds-space-2); padding-right: 4px; min-width: 0;
-  position: sticky; top: 80px; max-height: calc(100dvh - 104px); overflow-y: auto; }
+   índice que se va de la pantalla al tercer scroll no sirve de índice. Lo pegajoso
+   es el ASIDE y la lista scrollea adentro, para que la pestaña del cajón —lo que
+   queda cuando la lista está escondida— también viaje con la página. */
+.md-aside { position: sticky; top: 80px; max-height: calc(100dvh - 104px); display: flex; flex-direction: column; min-width: 0; }
+.md-list { display: flex; flex-direction: column; gap: var(--ds-space-2); padding-right: 4px; min-width: 0; overflow-y: auto; }
 /* Filtro pegajoso de la lista de pedidos (compacto). Foco al estilo DS. */
 .md-filtro { width: 100%; box-sizing: border-box; margin-bottom: var(--ds-space-2); border-radius: var(--ds-radius-md); padding: 7px 10px; font: inherit; font-size: 13px; border: 1.5px solid var(--ds-color-gray-100); background: var(--ds-surface); color: var(--ds-text); position: sticky; top: 0; z-index: 1; outline: none; transition: border-color .12s ease; }
 .md-filtro:focus { border-color: var(--ds-text); }
@@ -1271,19 +1280,68 @@ td.ds-col-fija {
 .md-select .ds-select__trigger:focus,
 .md-select .ds-select__trigger[aria-expanded="true"] { border-color: var(--ds-text); }
 .md-select .ds-select__ph { color: var(--ds-color-gray-300); }
-/* Colapsa a 1 columna en tablet y móvil: con sidebar 250px + tabla, por debajo
-   de ~900px la tabla queda muy angosta y su toolbar desborda. Apilado le da a la
-   tabla el ancho completo. */
-/* Panel de pedidos OCULTO: queda un riel angosto con el botón para devolverlo y la
-   tabla se lleva todo el ancho. */
-.md-layout--solo { grid-template-columns: 36px 1fr; }
-.md-rail { display: flex; justify-content: center; align-items: flex-start; padding-top: var(--ds-space-2); }
-/* Apilado: la lista de pedidos deja de ser índice lateral (y de ser pegajosa) y
-   pasa a ser el primer bloque de la página. */
-@media (max-width: 900px) {
-  .md-layout { grid-template-columns: 1fr; }
-  .md-list { position: static; max-height: 40vh; }
+/* Panel de pedidos OCULTO. Antes quedaba una flecha suelta flotando en 36 px de
+   nada: no se leía como algo, se leía como que la pantalla estaba rota. Ahora
+   queda la PESTAÑA del cajón —una superficie con su borde, el contador de pedidos
+   y la palabra de canto—, que es toda ella el botón para devolver la lista. */
+.md-layout--solo { grid-template-columns: 44px 1fr; }
+.md-rail {
+  width: 100%; min-height: 260px; display: flex; flex-direction: column; align-items: center;
+  gap: var(--ds-space-3); padding: var(--ds-space-3) 0; cursor: pointer; font: inherit;
+  background: var(--ds-surface); color: var(--ds-color-gray-400);
+  border: 1.5px solid var(--ds-color-gray-100); border-radius: var(--ds-radius-lg);
+  transition: border-color .12s ease, color .12s ease, box-shadow .12s ease;
 }
+.md-rail:hover { border-color: var(--ds-color-gray-300); color: var(--ds-text); box-shadow: var(--ds-shadow-01); }
+.md-rail:focus-visible { outline: 2px solid var(--ds-color-green-100); outline-offset: 2px; }
+.md-rail__n { font-size: var(--ds-font-size-body-sm); font-weight: var(--ds-font-weight-semibold);
+  background: var(--ds-color-green-100); color: var(--ds-color-black); border-radius: 999px; padding: 1px 7px; }
+/* De abajo hacia arriba (`rotate(180deg)`), que es como se lee una pestaña pegada
+   al borde izquierdo. El contador NO se acuesta: un número de canto no se lee. */
+.md-rail__txt { writing-mode: vertical-rl; transform: rotate(180deg); font-size: var(--ds-font-size-body-sm);
+  font-weight: var(--ds-font-weight-semibold); letter-spacing: .3px; }
+@media (prefers-reduced-motion: reduce) { .md-layout { transition: none; } }
+/* Apilado: la lista de pedidos deja de ser índice lateral (y de ser pegajosa) y
+   pasa a ser el primer bloque de la página; la pestaña se acuesta con ella y se
+   encoge a botón. El corte es 1060 y no 900 porque lo que se está protegiendo es
+   la TABLA: por debajo de eso, quitarle 266 px para la lista la deja en ~730 y las
+   seis columnas vuelven a no caber. Arriba de 1060 la lista al lado sale gratis. */
+@container (max-width: 1060px) {
+  .md-layout, .md-layout--solo { grid-template-columns: 1fr; }
+  .md-aside { position: static; max-height: none; }
+  .md-list { max-height: 40vh; }
+  .md-rail { min-height: 0; width: max-content; flex-direction: row; align-items: center;
+    gap: var(--ds-space-2); padding: var(--ds-space-2) var(--ds-space-4); }
+  .md-rail__txt { writing-mode: horizontal-tb; transform: none; }
+}
+
+/* LA TABLA DE LÍNEAS PENDIENTES (Materiales solicitados). Es la tabla más apretada
+   de la app: seis columnas en el ancho que sobra al lado de la lista de pedidos.
+   Con el padding normal, "A ordenar" —el único campo que se ESCRIBE en esta
+   pantalla— terminaba del otro lado del scroll. Acá se aprieta el padding y esa
+   columna se ancla al borde derecho: se corte lo que se corte, la casilla donde se
+   escribe siempre está a mano. */
+.md-tabla .ds-table thead th { padding: 10px var(--ds-space-3); }
+.md-tabla .ds-table tbody td { padding: var(--ds-space-3); }
+.md-tabla .ds-table tbody tr:first-child td { padding-top: var(--ds-space-3); }
+.md-tabla .ds-table thead th:last-child { position: sticky; right: 0; z-index: 3; }
+/* El fondo de la celda anclada va en `:where(...)`, que NO suma especificidad
+   (queda en 0,1,2), por la misma razón que `.ds-col-fija`: los tintes por estado de
+   fila que pintan el td —`.dt-row-incluida`, `.row-pending`, `.fila-cancelada`— le
+   ganan solos, y la columna anclada hereda el color de su fila sin repetir ni un
+   estado acá. */
+:where(.md-tabla .ds-table tbody) td:last-child { position: sticky; right: 0; background: var(--ds-surface);
+  box-shadow: -1px 0 0 var(--ds-color-gray-100); }
+/* El hover sí hay que repetirlo: ese fondo vive en el <tr> y la celda anclada es
+   opaca, así que lo taparía. Pintado en el <td> viaja con la fila entera. */
+.md-tabla .ds-table tbody tr.is-clickable:hover > td { background: var(--ds-color-gray-100); }
+.md-tabla .ds-table tbody tr.dt-row-incluida.is-clickable:hover > td { background: color-mix(in srgb, var(--ds-color-green-100) 20%, var(--ds-tint-base)); }
+/* Cantidad a ordenar: el campo y, debajo, cuánto queda pendiente (que es su tope).
+   Eran dos columnas —"Pend." y "A ordenar"— y el pendiente solo significa algo al
+   lado del número que se escribe. Pegados se leen de un vistazo: "10 de 10 UND".
+   "Pend." sigue existiendo como columna, apagada, en el menú de Columnas. */
+.md-qty { display: inline-flex; flex-direction: column; align-items: flex-end; gap: 3px; }
+.md-qty__max { white-space: nowrap; }
 
 /* misc */
 .divider { height: 1px; background: var(--ds-color-gray-100); border: 0; margin: var(--ds-space-5) 0; }
