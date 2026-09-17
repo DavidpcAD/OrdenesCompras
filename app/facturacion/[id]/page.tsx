@@ -7,7 +7,7 @@ import { IconWarning } from "@/components/icons";
 import { DateField } from "@/components/date-field";
 import { useStore } from "@/lib/store";
 import { useVolver } from "@/lib/use-volver";
-import { esLineaCargo, esLineaRecibible, esNombreObraVacio, etiquetaTipoLinea, formatDate, money, distribuirCargo, num, ordenBadge, ordenLineaPendiente, ordenRecibidoPct, todayISO, numeroOrden } from "@/lib/helpers";
+import { esLineaCargo, esLineaRecibible, esNombreObraVacio, etiquetaTipoLinea, formatDate, money, distribuirCargo, num, ordenBadge, ordenLineaImporte, ordenLineaPendiente, ordenRecibidoPct, todayISO, numeroOrden } from "@/lib/helpers";
 import { codigoDeItem } from "@/lib/unidad";
 import { comprimirFoto, pesoLegible } from "@/lib/foto";
 import type { FotoComprimida } from "@/lib/foto";
@@ -247,7 +247,12 @@ export default function RegistrarFacturaPage() {
     () => recibibles.every((l) => (l.cantidadRecibida ?? 0) <= 1e-9),
     [recibibles]
   );
-  const fleteAplicado = nadaRecibidoAun && cargo ? cargo.precioUnitario : 0;
+  // El importe del cargo es CANTIDAD × PRECIO, no el precio unitario. Un cargo
+  // no siempre viene como 1 × monto: el "Servicio de corte" de CP-005449 son
+  // 17 × ₡1 121,00 = ₡19 057,00 (así lo arma la pantalla de compra directa y
+  // así viaja a BC). Leerlo como precio unitario dejaba esa factura ₡17 936
+  // por debajo del papel del proveedor — y el total con IVA, ₡20 267 abajo.
+  const fleteAplicado = nadaRecibidoAun && cargo ? ordenLineaImporte(cargo) : 0;
   const totalFactura = subtotalRecibido + fleteAplicado;
   // IVA de la factura: por línea según su ivaPct + IVA del flete (BC aplica IVA
   // también al cargo). Así la app muestra el mismo total con IVA que BC.
@@ -1040,7 +1045,10 @@ export default function RegistrarFacturaPage() {
                 <div style={{ minWidth: 0, flex: 1 }}>
                   <div className="ds-strong">{cargo.descripcion}</div>
                   <div className="ds-body-sm ds-muted">
-                    {nadaRecibidoAun ? `Se factura en esta entrega · ${money(fleteAplicado, orden.currencyCode)}` : "Ya se facturó en la primera entrega"}
+                    {nadaRecibidoAun
+                      ? `Se factura en esta entrega · ${money(fleteAplicado, orden.currencyCode)}`
+                        + (cargo.cantidad > 1 ? ` (${num.format(cargo.cantidad)}${cargo.unidad ? ` ${cargo.unidad}` : ""} × ${money(cargo.precioUnitario, orden.currencyCode)})` : "")
+                      : "Ya se facturó en la primera entrega"}
                   </div>
                 </div>
               </div>

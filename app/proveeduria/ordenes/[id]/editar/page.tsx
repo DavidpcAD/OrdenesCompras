@@ -9,7 +9,7 @@ import { IconWarning } from "@/components/icons";
 import { Combobox } from "@/components/combobox";
 import { CampoMaquina, RepartoMaquinasModal, nombreDeMaquina, useMaquinasBc } from "@/components/maquina-linea";
 import { useStore } from "@/lib/store";
-import { etiquetaTipoLinea, money, num, ordenEsDirecta, ordenEsperaCorreccion, lineasCorregidasDeOrden, ordenPedidos, almacenesParaRecepcion, esAlmacenFisico, repartoDeLineaSolicitud, pedidoLineaPendiente, obraParaOrden, ultimoPrecioProveedor, monedaApp, numeroOrden } from "@/lib/helpers";
+import { etiquetaTipoLinea, money, num, ordenEsDirecta, ordenEsperaCorreccion, lineasCorregidasDeOrden, ordenLineaImporte, ordenPedidos, almacenesParaRecepcion, esAlmacenFisico, repartoDeLineaSolicitud, pedidoLineaPendiente, obraParaOrden, ultimoPrecioProveedor, monedaApp, numeroOrden } from "@/lib/helpers";
 import { precioEnUnidad, precioEntreUnidades, cantidadEntreUnidades, equivalencia, equivalenciaDeUnidad, mismaMoneda, codigoDeItem, opcionesDeUnidad, type UnidadDeItem } from "@/lib/unidad";
 import { useVariantes } from "@/lib/use-variantes";
 import type { LineaDeMaquina } from "@/lib/maquinas";
@@ -118,7 +118,10 @@ export default function EditarOrdenPage() {
   const cargo = cargos[0];
   const [proveedorId, setProveedorId] = useState(orden?.proveedorId ?? "");
   const [currency, setCurrency] = useState(monedaApp(orden?.currencyCode));
-  const [flete, setFlete] = useState(cargo ? String(cargo.precioUnitario) : "");
+  // Lo que se edita acá es el IMPORTE del cargo (lo que el proveedor cobra),
+  // no su precio unitario: un cargo puede venir como 17 × ₡1 121,00 y no como
+  // 1 × ₡19 057,00. Al guardar se vuelve a repartir entre la misma cantidad.
+  const [flete, setFlete] = useState(cargo ? String(ordenLineaImporte(cargo)) : "");
   const [cargoNo, setCargoNo] = useState(cargo?.chargeNo ?? "");
   const [cargoDesc, setCargoDesc] = useState(cargo?.descripcion ?? "");
   const [almacen, setAlmacen] = useState(almacenComun(orden?.lineas ?? []));
@@ -141,7 +144,7 @@ export default function EditarOrdenPage() {
     setObservaciones(orden.observaciones ?? "");
     setNotaInterna(orden.notaInterna ?? "");
     const cg = orden.lineas.find((l) => l.tipo === "cargo");
-    setFlete(cg ? String(cg.precioUnitario) : "");
+    setFlete(cg ? String(ordenLineaImporte(cg)) : "");
     setCargoNo(cg?.chargeNo ?? "");
     setCargoDesc(cg?.descripcion ?? "");
     setRows(filasDeOrden(orden.lineas));
@@ -602,15 +605,21 @@ export default function EditarOrdenPage() {
       // "FLETE / TRANSPORTE" sin `chargeNo`, y sin tipo BC rechaza el cargo: editar
       // una orden le borraba el tipo que la propia pantalla obliga a elegir.
       if (fleteNum > 0) {
+        // `fleteNum` es el IMPORTE del cargo; a BC va cantidad × precio. Se conserva
+        // la cantidad que ya traía (17 servicios de corte siguen siendo 17) y el
+        // importe se reparte entre ellas. Antes el monto entraba como precio
+        // unitario: dejar el campo igual y guardar multiplicaba el cargo por su
+        // cantidad.
+        const cantCargo = cargo?.cantidad && cargo.cantidad > 0 ? cargo.cantidad : 1;
         ls.push({
           tipo: "cargo",
           chargeNo: cargoNo || cargo?.chargeNo,
           chargeMethod: cargo?.chargeMethod,
           descripcion: cargoDesc || cargo?.descripcion || "CARGO",
-          cantidad: cargo?.cantidad && cargo.cantidad > 0 ? cargo.cantidad : 1,
+          cantidad: cantCargo,
           unidad: cargo?.unidad || "UND",
           almacen: almacen || cargo?.almacen || rows[0]?.almacen || "",
-          precioUnitario: fleteNum,
+          precioUnitario: fleteNum / cantCargo,
           ivaPct: cargo?.ivaPct ?? 13,
         });
       }
@@ -698,7 +707,14 @@ export default function EditarOrdenPage() {
               </Select>
             </Field>
             <Field label={`Monto del cargo${cargoDesc ? ` · ${cargoDesc}` : ""}`}
-              help={cargos.length > 1 ? `OJO: esta orden tiene ${cargos.length} cargos. Acá se edita el primero; los otros se conservan como están.` : undefined}
+              help={[
+                cargo && cargo.cantidad > 1
+                  ? `Es el importe total del cargo: ${num.format(cargo.cantidad)}${cargo.unidad ? ` ${cargo.unidad}` : ""} × ${money(cargo.precioUnitario, currency)}. Si lo cambiás, se reparte entre esas ${num.format(cargo.cantidad)}.`
+                  : null,
+                cargos.length > 1
+                  ? `OJO: esta orden tiene ${cargos.length} cargos. Acá se edita el primero; los otros se conservan como están.`
+                  : null,
+              ].filter(Boolean).join(" ") || undefined}
               warning={cargos.length > 1}>
               <Input type="number" min={0} value={flete} onChange={(e) => setFlete(e.target.value)} placeholder="0" />
             </Field>

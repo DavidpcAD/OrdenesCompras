@@ -84,6 +84,17 @@ test("el subtotal de la orden suma artículos y cargos, sin IVA", () => {
   assert.equal(ordenSubtotal(o), 2500);
 });
 
+// Un cargo NO siempre viene como 1 × monto. CP-005449 (Polycenter) trae
+// "Servicio de corte" como 17 × ₡1 121,00 = ₡19 057,00, y así viaja a BC. La
+// pantalla de facturar leía el precio unitario y le mostraba a Bodega ₡1 121,00
+// contra una factura de ₡19 057,00: ₡17 936 menos de los que iba a pagar.
+test("un cargo con cantidad vale cantidad × precio, no el precio unitario", () => {
+  const corte = linea({ id: "f", tipo: "cargo", cantidad: 17, precioUnitario: 1121, ivaPct: 13 });
+  assert.equal(ordenLineaImporte(corte), 19057);
+  const o = orden([linea({ id: "a", cantidad: 2, precioUnitario: 47131.875, ivaPct: 13 }), corte]);
+  assert.equal(ordenSubtotal(o), 113320.75);      // 94 263,75 de lámina + 19 057 de corte
+});
+
 test("el total con IVA usa la tasa de CADA línea, cargo incluido", () => {
   const o = orden([
     linea({ id: "a", cantidad: 2, precioUnitario: 1000, ivaPct: 13 }),
