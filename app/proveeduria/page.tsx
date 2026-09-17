@@ -9,12 +9,15 @@ import { DestinoLinea } from "@/components/destino-linea";
 import { VistaToggle } from "@/components/vista-toggle";
 import { IconChevronLeft, IconEye, IconReceipt, IconList } from "@/components/icons";
 import { useStore } from "@/lib/store";
-import { destinoLabel, destinoCodigo, esConsumoDirecto, money, num, obraParaOrden, pedidoLineaPendiente, solicitudResumen, tipoSolicitudBadge, estadoDeDevolucion } from "@/lib/helpers";
+import { destinoLabel, destinoCodigo, esConsumoDirecto, formatDate, money, num, obraParaOrden, pedidoLineaPendiente, solicitudResumen, tipoSolicitudBadge, estadoDeDevolucion } from "@/lib/helpers";
 import { useVariantes } from "@/lib/use-variantes";
 
 interface Row {
   pedidoId: string;
   pedidoNumero: string;
+  // Fecha en que Ingeniería pidió el material (la del pedido, no la de la línea:
+  // las líneas no tienen fecha propia). Acá dice hace cuánto está esperando.
+  fecha: string;
   destino: string;
   solicitante: string;
   tipo: "material" | "repuesto" | "stock";
@@ -65,7 +68,7 @@ export default function ProveeduriaMaterialesPage() {
         const pend = pedidoLineaPendiente(l);
         if (pend <= 0) return;
         rows.push({
-          pedidoId: p.id, pedidoNumero: p.numero, destino: destinoLabel(p), solicitante: p.solicitante, tipo: p.tipoSolicitud,
+          pedidoId: p.id, pedidoNumero: p.numero, fecha: p.fecha, destino: destinoLabel(p), solicitante: p.solicitante, tipo: p.tipoSolicitud,
           pedidoLineaId: l.id, articuloId: l.articuloId, variantCode: l.variantCode ?? "", descripcion: l.descripcion,
           unidad: l.unidad, almacen: l.almacen, pendiente: pend,
           proyecto: obraParaOrden(l), taskNo: l.taskNo ?? "", taskDescr: l.taskDescr ?? "",
@@ -215,6 +218,10 @@ export default function ProveeduriaMaterialesPage() {
           )}
         </span>
       ); } },
+    // Fecha de la solicitud: es la que dice cuánto lleva esperando esta línea, y con
+    // el filtro de rango de la columna se barre "lo que pidieron esta semana".
+    { id: "fecha", header: "Fecha", accessorFn: (r) => r.fecha, meta: { label: "Fecha", date: true },
+      cell: (c) => <span className="ds-body-sm" style={{ whiteSpace: "nowrap" }}>{formatDate(c.getValue())}</span> },
     { id: "articulo", header: "Artículo", accessorFn: (r) => `${r.articuloId} ${r.descripcion}`, meta: { label: "Artículo" },
       // El código va ARRIBA en su propia línea y la descripción abajo en dos líneas:
       // metidos en la misma fila, el código se comía ~90px y la medida del material
