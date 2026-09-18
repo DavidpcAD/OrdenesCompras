@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useStore } from "@/lib/store";
-import { Button, ConfirmDialog, Modal } from "@/components/ui";
+import { Button, ConfirmDialog, Modal, Skeleton } from "@/components/ui";
 import type { Role, Notificacion } from "@/lib/types";
 import { devolucionesPendientes, formatDate } from "@/lib/helpers";
 import { helpForPath } from "@/lib/help";
@@ -90,6 +90,34 @@ const ROLE_META: Record<Role, { label: string; persona: string; home: string; na
     ],
   },
 };
+
+// LO PRIMERO QUE SE VE AL ABRIR LA APP. Mientras se decide quién entra —leer el rol
+// guardado y, si la pantalla no es la de su rol, mandarlo a la suya— todavía no hay
+// nada que mostrar. Y como el shell se pinta en el navegador, este es además el HTML
+// que sirve el servidor: es lo que queda en pantalla hasta que baja el JS, que con
+// datos móviles no es un parpadeo.
+//
+// Por eso no dice "Cargando…" sobre una página en blanco (David, viendo una orden que
+// tardaba: "ese cargando que aparece quítelo de todas las pantallas"). Se pinta el
+// CHASIS —el riel y la barra de arriba, en su lugar de siempre— con el contenido en
+// skeleton: la pantalla que llega no aterriza sobre el vacío, solo se rellena.
+function ChasisCargando() {
+  return (
+    <div className="app-shell" aria-busy="true">
+      <header className="topbar"><div className="topbar__spacer" /></header>
+      <nav className="app-nav" aria-hidden />
+      <div className="app-content">
+        <main className="page">
+          <div className="col gap-4">
+            <Skeleton width={240} height={30} radius={8} style={{ display: "block" }} />
+            <Skeleton width={360} height={16} radius={6} style={{ display: "block" }} />
+            <Skeleton width="100%" height={340} radius={16} style={{ display: "block", marginTop: 8 }} />
+          </div>
+        </main>
+      </div>
+    </div>
+  );
+}
 
 export function AppShell({ role, children }: { role: Role; children: React.ReactNode }) {
   const { role: current, setRole, usuario, setUsuario, pedidos, ordenes, notificaciones, marcarNotifsLeidas, marcarNotifLeida, hydrated, errorCarga, cargando, recargar, ultimaSync, modoApi, sesionExpirada } = useStore();
@@ -182,7 +210,7 @@ export function AppShell({ role, children }: { role: Role; children: React.React
   }, [current, role, router, hydrated]);
 
   if (!hydrated || current !== role) {
-    return <div className="page"><div className="empty">Cargando…</div></div>;
+    return <ChasisCargando />;
   }
 
   const meta = ROLE_META[role];

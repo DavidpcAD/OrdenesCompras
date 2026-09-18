@@ -6,7 +6,7 @@ import { useStore } from "@/lib/store";
 import { num, formatDate, ordenLineaImporte, numeroOrden } from "@/lib/helpers";
 import { documentoDeOrden, destinoLineaDoc, etiquetaUnidad } from "@/lib/orden-doc";
 import { useVariantes } from "@/lib/use-variantes";
-import { Button } from "@/components/ui";
+import { Button, Skeleton } from "@/components/ui";
 import { AdelanteMark } from "@/components/icons";
 
 // Datos de la empresa (Adelante) para el encabezado del documento.
@@ -60,7 +60,19 @@ export default function ImprimirOrdenPage() {
   if (!orden) {
     // Durante la carga (SQL/BC) el store aún está vacío: no mostrar "no encontrada".
     if (cargando) {
-      return <div style={{ padding: 40, fontFamily: "var(--ds-font-family)", color: "var(--ds-color-gray-500)" }}>Cargando la orden…</div>;
+      // Skeleton con la forma de la hoja (encabezado, datos del proveedor, líneas):
+      // lo que se va a imprimir se arma delante de uno, en vez de un rótulo suelto
+      // sobre una página en blanco.
+      return (
+        <div style={{ padding: 40, fontFamily: "var(--ds-font-family)" }} aria-busy="true">
+          <div className="col gap-4">
+            <Skeleton width={220} height={28} radius={8} style={{ display: "block" }} />
+            <Skeleton width={320} height={14} radius={6} style={{ display: "block" }} />
+            <Skeleton width="100%" height={120} radius={12} style={{ display: "block", marginTop: 12 }} />
+            <Skeleton width="100%" height={260} radius={12} style={{ display: "block" }} />
+          </div>
+        </div>
+      );
     }
     return (
       <div style={{ padding: 40, fontFamily: "var(--ds-font-family)", display: "flex", flexDirection: "column", alignItems: "flex-start", gap: "var(--ds-space-4)" }}>

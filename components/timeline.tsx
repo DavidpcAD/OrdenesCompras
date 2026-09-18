@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { Skeleton } from "@/components/ui";
 import { useStore } from "@/lib/store";
 import { formatDateTime, ROL_LABEL, numeroOrden } from "@/lib/helpers";
 import type { Movimiento } from "@/lib/types";
@@ -178,7 +179,21 @@ export function Timeline({
 
   let items: Movimiento[];
   if (modoApi) {
-    if (remotos === null) return <div className="ds-muted ds-label">Cargando historial…</div>;
+    // Tres renglones en skeleton con la forma de un movimiento (punto + texto):
+    // la bitácora se ve llegar, no se anuncia.
+    if (remotos === null) return (
+      <div className="col gap-3" aria-busy="true">
+        {[0, 1, 2].map((i) => (
+          <div key={i} className="row gap-3" style={{ alignItems: "center" }}>
+            <Skeleton width={22} height={22} radius={999} />
+            <div className="col gap-2" style={{ flex: 1 }}>
+              <Skeleton width={`${62 - i * 12}%`} height={12} radius={6} style={{ display: "block" }} />
+              <Skeleton width={`${38 - i * 6}%`} height={10} radius={6} style={{ display: "block" }} />
+            </div>
+          </div>
+        ))}
+      </div>
+    );
     // No decir "sin movimientos" cuando en realidad no se pudo consultar.
     if (fallo) return <div className="ds-muted ds-label">No se pudo cargar el historial.</div>;
     items = remotos;
