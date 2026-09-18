@@ -346,22 +346,58 @@ export async function bcItemUltimaCompra(itemNo: string): Promise<number | null>
 // dos unidades difieren: hoy son 7 en todo el catálogo, no vale traer 5.500.
 let cacheUnidades: { at: number; mapa: Record<string, UnidadCompraItem> } | null = null;
 const TTL_UNIDADES = 5 * 60 * 1000;
+// Carga en curso, para que TODOS los que llegan mientras tanto esperen la misma.
+// Sin esto el bootstrap armaba este mapa DOS VECES por carga y en paralelo (lo
+// piden listPedidos y listOrdenes, y con el cache frío ninguna de las dos lo
+// encontraba), o sea el doble de trabajo contra BC para llegar al mismo mapa.
+let unidadesEnVuelo: Promise<Record<string, UnidadCompraItem>> | null = null;
 
 export type UnidadCompraItem = { base: string; compra: string; factor?: number };
 
+// POR QUÉ ESTO IMPORTA TANTO. Armar este mapa significa bajar de BC el catálogo
+// entero (paginado), 5.000 precios de última compra y un puñado de consultas de
+// unidades. Es lo más caro de toda la carga inicial, y la pantalla no muestra NADA
+// hasta que termina (David, con el dashboard en skeleton: "y qué está pasando, por
+// qué dura tanto??").
+//
+// Por eso el mapa vencido NO se tira: se sirve tal cual y se refresca por detrás.
+// Una unidad de compra no cambia de un minuto a otro —cuando cambia, la siguiente
+// carga ya la trae—, así que hacer esperar a alguien por eso no se justifica nunca.
+// Solo el primer pedido después de arrancar el servidor espera de verdad.
 export async function bcUnidadesDeCompra(): Promise<Record<string, UnidadCompraItem>> {
-  if (cacheUnidades && Date.now() - cacheUnidades.at < TTL_UNIDADES) return cacheUnidades.mapa;
+  const frescura = cacheUnidades ? Date.now() - cacheUnidades.at : Infinity;
+  if (frescura < TTL_UNIDADES) return cacheUnidades!.mapa;
+  if (cacheUnidades) {
+    void cargarUnidades().catch(() => {});   // vencido: se refresca solo, sin hacer esperar
+    return cacheUnidades.mapa;
+  }
+  return cargarUnidades();
+}
+
+function cargarUnidades(): Promise<Record<string, UnidadCompraItem>> {
+  if (!unidadesEnVuelo) {
+    unidadesEnVuelo = construirUnidades().finally(() => { unidadesEnVuelo = null; });
+  }
+  return unidadesEnVuelo;
+}
+
+async function construirUnidades(): Promise<Record<string, UnidadCompraItem>> {
+  const t0 = Date.now();
   const mapa: Record<string, UnidadCompraItem> = {};
   try {
-    const items = await bcItems();
-    const ultimas = await unidadUltimaCompraPorItem();
+    // Las dos consultas no dependen una de otra: iban en fila por costumbre.
+    const [items, ultimas] = await Promise.all([bcItems(), unidadUltimaCompraPorItem()]);
     for (const it of items) {
       const base = (it.unidad ?? "").trim().toUpperCase();
       const compra = (it.unidadCompra ?? "").trim().toUpperCase() || ultimas[it.code] || base;
       if (base || compra) mapa[it.code] = { base, compra: compra || base };
     }
     const distintos = Object.keys(mapa).filter((c) => mapa[c].compra && mapa[c].compra !== mapa[c].base);
-    for (const lote of trozos(distintos, 20)) {
+    // Los lotes iban uno tras otro: con cada consulta a BC pesando unas décimas,
+    // eran segundos que alguien miraba en blanco. De a seis a la vez, que es el
+    // mismo trabajo sin hacer fila (más no, para no ganarse un 429 de BC).
+    const lotes = trozos(distintos, 20);
+    await enTandas(lotes, 6, async (lote) => {
       const filtro = lote.map((c) => `itemNo eq '${c.replace(/'/g, "''")}'`).join(" or ");
       let rows: any[] = [];
       try {
@@ -374,14 +410,28 @@ export async function bcUnidadesDeCompra(): Promise<Record<string, UnidadCompraI
         const f = Number(r.qtyPerUnitOfMeasure ?? 0) || 0;
         if (mapa[item] && code === mapa[item].compra && f > 0) mapa[item].factor = f;
       }
-    }
+    });
     cacheUnidades = { at: Date.now(), mapa };
+    // Queda en el log del server (Azure) para poder responder con un número, y no
+    // con una sospecha, cuándo la carga inicial se fue en BC y cuándo no.
+    console.info(`[bc] unidades de compra: ${Object.keys(mapa).length} materiales, ${lotes.length} lote(s) de factores, ${Date.now() - t0} ms`);
     return mapa;
   } catch {
     // Sin BC se devuelve lo último bueno, o vacío: el llamador respeta la unidad
     // que ya tenía guardada la línea.
     return cacheUnidades?.mapa ?? {};
   }
+}
+
+// Corre `fn` sobre todos los elementos con un tope de cuántos a la vez. Es el punto
+// medio entre el `for await` (una a la vez, lento) y el Promise.all pelado (todas de
+// golpe, que contra BC termina en 429).
+async function enTandas<T>(xs: T[], a_la_vez: number, fn: (x: T) => Promise<void>): Promise<void> {
+  let i = 0;
+  const obreros = Array.from({ length: Math.min(a_la_vez, xs.length) }, async () => {
+    while (i < xs.length) await fn(xs[i++]);
+  });
+  await Promise.all(obreros);
 }
 
 function trozos<T>(xs: T[], n: number): T[][] {

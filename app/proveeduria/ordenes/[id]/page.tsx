@@ -6,13 +6,14 @@ import { Button, Checkbox, EmptyState, Field, Input, Modal, Select, Skeleton, Te
 import { IconWarning } from "@/components/icons";
 import { OrdenDetalle } from "@/components/orden-detalle";
 import { useStore } from "@/lib/store";
+import { useOrden } from "@/lib/use-orden";
 import { money, num, ordenPendienteResumen, numeroOrden, etiquetaInterna, ordenAdmiteDevolucion, puedeDevolverLineaOrden, motivoNoDevolverLineaOrden, ordenQuedaSinMaterial, ordenEsperaCorreccion, lineasCorregidasDeOrden } from "@/lib/helpers";
 
 export default function ProvOrdenDetallePage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
   const toast = useToast();
-  const { ordenes, pedidos, recepciones, setOrdenEstado, corregirBcNumber, cerrarOrden, descartarOrden, devolverLineasOrden, alinearIvaConBc, exonerarIvaEnBc, nuevaOrdenConPendiente, cargando } = useStore();
+  const { pedidos, recepciones, setOrdenEstado, corregirBcNumber, cerrarOrden, descartarOrden, devolverLineasOrden, alinearIvaConBc, exonerarIvaEnBc, nuevaOrdenConPendiente, cargando } = useStore();
   const [procesando, setProcesando] = useState(false);
   // Quitarle el IVA al pedido EN BC: escribe allá, así que se confirma antes.
   const [exonerando, setExonerando] = useState(false);
@@ -48,7 +49,9 @@ export default function ProvOrdenDetallePage() {
   const [devolver, setDevolver] = useState(true);
   const [crearNueva, setCrearNueva] = useState(false);
 
-  const orden = ordenes.find((o) => o.id === id);
+  // La orden se pide SOLA si la carga grande todavía no llegó: abrir una orden no
+  // espera a que bajen las otras 449 (ver lib/use-orden.ts).
+  const orden = useOrden(id);
   if (!orden) {
     // Durante la carga inicial (SQL/BC) el store aún está vacío: mostrar skeleton
     // en vez de parpadear "no encontrada".

@@ -6,6 +6,7 @@ import { Badge, Button, Card, Checkbox, EmptyState, Field, Input, Modal, Select,
 import { IconWarning } from "@/components/icons";
 import { DateField } from "@/components/date-field";
 import { useStore } from "@/lib/store";
+import { useOrden } from "@/lib/use-orden";
 import { useVolver } from "@/lib/use-volver";
 import { esLineaCargo, esLineaRecibible, esNombreObraVacio, etiquetaTipoLinea, formatDate, money, distribuirCargo, num, ordenBadge, ordenLineaImporte, ordenLineaPendiente, ordenRecibidoPct, todayISO, numeroOrden } from "@/lib/helpers";
 import { codigoDeItem } from "@/lib/unidad";
@@ -54,13 +55,15 @@ export default function RegistrarFacturaPage() {
   // volver = pantalla anterior, con su filtro (el rótulo se ajusta solo)
   const { volver, etiqueta: volverTexto } = useVolver("/facturacion", "Volver a órdenes por recibir");
   const toast = useToast();
-  const { ordenes, pedidos, proveedores, recepciones, registrarRecepcion, guardarFotosRecepcion, marcarNotasCredito, role, cargando, modoApi, recargar } = useStore();
+  const { pedidos, proveedores, recepciones, registrarRecepcion, guardarFotosRecepcion, marcarNotasCredito, role, cargando, modoApi, recargar } = useStore();
   // La vista se elige por ROL, no por ancho de pantalla: Contabilidad usa la TABLA
   // (escritorio); Bodega (Pedro) usa siempre las TARJETAS, porque todo lo de Bodega
   // es en tablet/celular.
   const esContabilidad = role === "contabilidad";
 
-  const orden = ordenes.find((o) => o.id === id);
+  // La orden se pide SOLA si la carga grande todavía no llegó: abrir una orden no
+  // espera a que bajen las otras 449 (ver lib/use-orden.ts).
+  const orden = useOrden(id);
 
   // Lo que Bodega recibe y factura en esta pantalla: material, y también RECURSO y
   // ACTIVO FIJO, que se liquidan de una vez acá igual que el material (una compra

@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useStore } from "@/lib/store";
+import { useOrden } from "@/lib/use-orden";
 import { num, formatDate, ordenLineaImporte, numeroOrden } from "@/lib/helpers";
 import { documentoDeOrden, destinoLineaDoc, etiquetaUnidad } from "@/lib/orden-doc";
 import { useVariantes } from "@/lib/use-variantes";
@@ -28,8 +29,10 @@ export default function ImprimirOrdenPage() {
   const params = useParams();
   const router = useRouter();
   const id = String(params?.id ?? "");
-  const { ordenes, proveedores, cargando, recargar } = useStore();
-  const orden = ordenes.find((o) => o.id === id);
+  const { proveedores, cargando, recargar } = useStore();
+  // La orden se pide SOLA si la carga grande todavía no llegó: abrir una orden no
+  // espera a que bajen las otras 449 (ver lib/use-orden.ts).
+  const orden = useOrden(id);
 
   // El navegador propone el TÍTULO del documento como nombre del archivo al guardar
   // como PDF. Sin esto el archivo salía con el título genérico de la app, y había que
