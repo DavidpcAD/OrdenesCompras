@@ -345,7 +345,14 @@ export async function bcItemUltimaCompra(itemNo: string): Promise<number | null>
 // El FACTOR (255.000 GR por estañón) se pide solo para los materiales donde las
 // dos unidades difieren: hoy son 7 en todo el catálogo, no vale traer 5.500.
 let cacheUnidades: { at: number; mapa: Record<string, UnidadCompraItem> } | null = null;
-const TTL_UNIDADES = 5 * 60 * 1000;
+// Media hora, no cinco minutos. Medido en producción: armar este mapa cuesta entre
+// 1 y 11 segundos contra BC (mediana ~5 s), y con el TTL de 5 minutos se rearmaba 12
+// veces por hora — trabajo pesado, en el mismo proceso que atiende las pantallas, por
+// un dato que cambia cada muerte de obispo: de 5.613 materiales, los que se compran en
+// una unidad distinta a la de inventario son un puñado. Ya no hace esperar a nadie
+// (se sirve el vencido y se refresca por detrás), pero seguía compitiendo por la CPU
+// con la carga de todos.
+const TTL_UNIDADES = 30 * 60 * 1000;
 // Carga en curso, para que TODOS los que llegan mientras tanto esperen la misma.
 // Sin esto el bootstrap armaba este mapa DOS VECES por carga y en paralelo (lo
 // piden listPedidos y listOrdenes, y con el cache frío ninguna de las dos lo
