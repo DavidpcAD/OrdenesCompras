@@ -169,6 +169,10 @@ export function AppShell({ role, children }: { role: Role; children: React.React
   // salen dos cosas: que "volver" pueda usar el historial (y devolver la pantalla
   // anterior tal como estaba) sin riesgo de sacar al usuario del sistema, y que las
   // tablas distingan una VUELTA de una entrada nueva. La primera pintada no cuenta.
+  // Se anota en un efecto a propósito: durante el render, un `router.replace` (guardar
+  // una compra directa, por ejemplo) subiría el contador sin que el historial crezca, y
+  // "Volver" creería que hay a dónde volver. Las tablas, que se pintan antes de esto,
+  // preguntan aparte con `visitaDe(pathname)`.
   useEffect(() => { marcarNavegacion(pathname); }, [pathname]);
   // Cerrar con Escape el drawer móvil y el panel de notificaciones.
   useEffect(() => {

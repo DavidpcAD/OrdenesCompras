@@ -1,12 +1,13 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useRef } from "react";
 import { useRouter } from "next/navigation";
 import { Button, Tile } from "@/components/ui";
 import { OrdenesLista } from "@/components/ordenes-lista";
 import { VistaToggle } from "@/components/vista-toggle";
 import { IconReceipt, IconList } from "@/components/icons";
 import { useStore } from "@/lib/store";
+import { useFiltroPantalla } from "@/lib/use-filtro-pantalla";
 import { ordenEsperaCorreccion } from "@/lib/helpers";
 
 // "espera" no es un estado de la orden en la base: es la orden que se quedó SIN
@@ -19,16 +20,18 @@ export default function OrdenesPage() {
   const { ordenes, pedidos } = useStore();
   const router = useRouter();
   // El recuadro elegido arriba es un filtro más: se recuerda por sesión, así que
-  // volver de un detalle te deja la pantalla como estaba.
-  const CLAVE_FILTRO = "adelante_oc_kpi_ordenes-prov";
-  const [filtro, setFiltro] = useState<Filtro>("todas");
-  useEffect(() => {
-    try { const v = sessionStorage.getItem(CLAVE_FILTRO); if (v) setFiltro(v as Filtro); } catch { /* sin sessionStorage */ }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-  const elegirFiltro = (f: Filtro) => { setFiltro(f); try { sessionStorage.setItem(CLAVE_FILTRO, f); } catch { /* noop */ } };
+  // volver de un detalle te deja la pantalla como estaba. Y vence como los otros: un
+  // panel del viernes no puede seguir puesto el lunes (ver `use-filtro-pantalla`).
+  const PANELES: Filtro[] = ["todas", "abierto", "espera", "pendiente_aprobacion", "rechazado", "lanzado", "completado"];
+  const [filtro, elegirFiltro, setFiltro] = useFiltroPantalla<Filtro>("adelante_oc_kpi_ordenes-prov", "todas", (v) => PANELES.includes(v as Filtro));
   const listaRef = useRef<HTMLDivElement>(null);
 
+  // Tocar un panel NO se guarda, a propósito. La lista va con `key={filtro}`: si el
+  // panel se restaurara en un efecto, la pantalla montaría primero en "todas" —pintando
+  // las 465 órdenes de corrido— y al cambiar el key remontaría en el panel guardado. Ese
+  // primer montaje desechado se come la marca de la fila, y volver de una orden dejaba
+  // de devolverte a la fila donde ibas. Guardar el panel acá pide antes sacarle el key
+  // a la lista, y eso es otro trabajo.
   function seleccionar(f: Filtro) {
     setFiltro(f);
     setTimeout(() => listaRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);

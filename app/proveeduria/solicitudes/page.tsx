@@ -1,13 +1,14 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo } from "react";
 import type { ColumnDef } from "@tanstack/react-table";
 import { Badge, QtyRing, Tile } from "@/components/ui";
 import { DataTable } from "@/components/data-table";
 import { VistaToggle } from "@/components/vista-toggle";
 import { IconReceipt, IconList } from "@/components/icons";
 import { useStore } from "@/lib/store";
+import { useFiltroPantalla } from "@/lib/use-filtro-pantalla";
 import { formatDate, pedidoCompraBadge, pedidoOrdenadoPct, ordenesPorPedido, recibidoPorLineaPedido, destinoCodigo, destinoLabel, tipoSolicitudBadge, numeroOrden, comentarioDeSolicitud } from "@/lib/helpers";
 import { useVariantes } from "@/lib/use-variantes";
 import type { Pedido } from "@/lib/types";
@@ -23,20 +24,14 @@ export default function ProveeduriaSolicitudesPage() {
   const { pedidos, ordenes } = useStore();
   const router = useRouter();
   // El recuadro elegido arriba es un filtro más: se recuerda por sesión, así que
-  // volver de un detalle te deja la pantalla como estaba.
-  const CLAVE_FILTRO = "adelante_oc_kpi_solicitudes-prov";
-  const [filtro, setFiltro] = useState<Filtro>("todas");
-  useEffect(() => {
-    // Se valida contra la lista: un filtro guardado que ya no existe (o "archivadas"
-    // cuando ya no queda ninguna, porque su panel no se dibuja) dejaba la tabla vacía
-    // sin nada en qué hacer clic para salir.
-    try {
-      const v = sessionStorage.getItem(CLAVE_FILTRO);
-      if (v && (["todas", "pendiente", "parcial", "ordenado", "archivadas"] as Filtro[]).includes(v as Filtro)) setFiltro(v as Filtro);
-    } catch { /* sin sessionStorage */ }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-  const elegirFiltro = (f: Filtro) => { setFiltro(f); try { sessionStorage.setItem(CLAVE_FILTRO, f); } catch { /* noop */ } };
+  // volver de un detalle te deja la pantalla como estaba. Vence si la pantalla se dejó
+  // de usar (ver `use-filtro-pantalla`), y se valida contra la lista: un filtro
+  // guardado que ya no existe (o "archivadas" cuando ya no queda ninguna, porque su
+  // panel no se dibuja) dejaba la tabla vacía sin nada en qué hacer clic para salir.
+  const [filtro, elegirFiltro] = useFiltroPantalla<Filtro>(
+    "adelante_oc_kpi_solicitudes-prov", "todas",
+    (v) => (["todas", "pendiente", "parcial", "ordenado", "archivadas"] as string[]).includes(v),
+  );
 
   // Proveeduría solo ve solicitudes ENVIADAS (no borrador ni devueltas). Las
   // ARCHIVADAS salen de acá: ya no se compran, así que no pueden sumar al conteo de
@@ -133,7 +128,7 @@ export default function ProveeduriaSolicitudesPage() {
           <Tile value={cuenta("ordenado")} label="100% ordenadas" accent="var(--ds-color-green-200)" onClick={() => elegirFiltro("ordenado")} active={filtro === "ordenado"} />
           {/* Solo si hay: un panel en 0 permanente es ruido (mismo criterio que
               "Esperando corrección" en Órdenes). Si el filtro guardado es este y ya no
-              queda ninguna, el useEffect de abajo lo devuelve a "todas". */}
+              queda ninguna, `useFiltroPantalla` no lo recupera y arranca en "todas". */}
           {archivadas.length > 0 && (
             <Tile value={cuenta("archivadas")} label="Archivadas" accent="var(--ds-color-gray-400)" onClick={() => elegirFiltro("archivadas")} active={filtro === "archivadas"} />
           )}

@@ -7,7 +7,7 @@
 //   npm test
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { leerNav, siguienteNav, type RegistroNav } from "./navegacion.ts";
+import { leerNav, siguienteNav, visitaTras, type RegistroNav } from "./navegacion.ts";
 
 const VACIO: RegistroNav = { n: 0, ruta: null };
 
@@ -73,4 +73,26 @@ test("alternar pestañas dentro de la pantalla no mueve el contador", () => {
   const reg = siguienteNav(siguienteNav(VACIO, "/proveeduria/dashboard")!, "/proveeduria/ordenes")!;
   assert.equal(siguienteNav(reg, "/proveeduria/ordenes"), null);
   assert.equal(reg.n, 1);
+});
+
+// EL DESFASE QUE SE ARREGLÓ. El AppShell anota el cambio de pantalla en un efecto, y los
+// efectos corren de adentro hacia afuera: cuando la tabla de la pantalla nueva se pinta,
+// el registro todavía trae la pantalla anterior. Preguntando así, la tabla sabe en qué
+// visita está sin tener que esperar la anotación (y sin adelantarla, que le mentía al
+// botón Volver).
+test("la visita de una pantalla que se acaba de pintar es la que va a quedar anotada", () => {
+  const enOrdenes: RegistroNav = { n: 4, ruta: "/proveeduria/ordenes" };
+  // Pintando el detalle, antes de que el shell anote: ya cuenta como la visita 5.
+  assert.equal(visitaTras(enOrdenes, "/proveeduria/ordenes/OC-1"), 5);
+  // Y después de anotar, la misma pantalla sigue dando 5: dos lecturas, la misma visita.
+  const enDetalle = siguienteNav(enOrdenes, "/proveeduria/ordenes/OC-1")!;
+  assert.equal(visitaTras(enDetalle, "/proveeduria/ordenes/OC-1"), 5);
+});
+
+test("repintar la misma ruta (F5) no cambia de visita", () => {
+  assert.equal(visitaTras({ n: 7, ruta: "/proveeduria/ordenes" }, "/proveeduria/ordenes"), 7);
+});
+
+test("la primera pantalla de la pestaña es la visita 0", () => {
+  assert.equal(visitaTras({ n: 0, ruta: null }, "/proveeduria/ordenes"), 0);
 });

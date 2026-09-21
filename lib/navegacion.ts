@@ -59,3 +59,18 @@ export const hayNavegacionInterna = (): boolean => registroNav().n >= 1;
 // El número de la visita en curso. Dos lecturas con el mismo número son la misma
 // estadía en la pantalla, aunque el componente se haya desmontado y vuelto a montar.
 export const visitaActual = (): number => registroNav().n;
+
+// EN QUÉ VISITA ESTÁ UNA PANTALLA QUE SE ACABA DE PINTAR. El AppShell anota el cambio
+// de ruta en un efecto, y los efectos corren de adentro hacia afuera: cuando la tabla
+// de la pantalla nueva se pinta, el registro todavía trae la pantalla anterior y
+// `visitaActual()` contesta el número viejo. La tabla creía entonces seguir en la
+// visita de antes y se traía su búsqueda. Esto contesta el número que la pantalla VA a
+// tener, sin adelantar la anotación: mover la anotación al render arreglaba la tabla
+// pero le mentía al botón Volver (un `router.replace` sube el contador sin agregar
+// entrada al historial, y "Volver" terminaba haciendo back() sin a dónde volver).
+export function visitaTras(previo: RegistroNav, ruta: string): number {
+  const sig = siguienteNav(previo, ruta);
+  return sig ? sig.n : previo.n;
+}
+
+export const visitaDe = (ruta: string): number => visitaTras(registroNav(), ruta);

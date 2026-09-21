@@ -1,6 +1,7 @@
 "use client";
 
 import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { usePathname } from "next/navigation";
 import { createPortal } from "react-dom";
 import {
   useReactTable, getCoreRowModel, getSortedRowModel, getFilteredRowModel, getPaginationRowModel,
@@ -11,7 +12,8 @@ import { Button, Card, Checkbox, ConfirmDialog, EmptyState, Field, Input, Modal,
 import { IconTable } from "@/components/icons";
 import { num } from "@/lib/helpers";
 import { useStore } from "@/lib/store";
-import { visitaActual } from "@/lib/navegacion";
+import { visitaDe } from "@/lib/navegacion";
+import { conservaBusqueda, escribirMarcaFila, leerMarcaFila, type MarcaFila } from "@/lib/memoria-tabla";
 
 // Texto plano de un valor de celda (para opciones y comparación de filtro).
 const asText = (v: unknown): string => v == null ? "" : String(v);
@@ -112,13 +114,23 @@ export function DataTable<T>({
   // sesión a propósito: no se arrastra a mañana ni a otra pestaña. Es distinto de las
   // "Vistas" (esas se guardan a mano y viven en la base).
   const claveEstado = `adelante_oc_tabla_${tablaKey}`;
+  // En qué visita a la pantalla estamos. Se pregunta por ruta y no con `visitaActual()`
+  // porque el AppShell anota el cambio de pantalla en un efecto, o sea DESPUÉS de que
+  // esta tabla se pintó: el contador todavía trae la pantalla anterior.
+  const ruta = usePathname();
+  const visita = useMemo(() => visitaDe(ruta), [ruta]);
   // La marca de la fila que se abrió DESDE esta tabla (ver "VOLVER A LA FILA" abajo).
-  // Acá arriba se lee sin consumirla: su sola presencia dice que venimos de vuelta.
+  // Acá arriba se lee sin consumirla: su presencia dice que venimos de vuelta y su hora,
+  // si esa vuelta fue hace un rato o quedó de otro día.
   const claveFila = `${claveEstado}_fila`;
-  const guardado = useMemo<Partial<VistaCfg & { sorting: SortingState; pageIndex: number; pageSizeElegido: boolean; visita: number }>>(() => {
+  const guardado = useMemo<Partial<VistaCfg & { sorting: SortingState; pageIndex: number; pageSizeElegido: boolean; visita: number; t: number; vistaAplicada: number }>>(() => {
     if (typeof window === "undefined") return {};
     try { return JSON.parse(sessionStorage.getItem(claveEstado) ?? "{}") ?? {}; } catch { return {}; }
   }, [claveEstado]);
+  const marca = useMemo<MarcaFila | null>(() => {
+    if (typeof window === "undefined") return null;
+    try { return leerMarcaFila(sessionStorage.getItem(claveFila)); } catch { return null; }
+  }, [claveFila]);
 
   // QUÉ SE RECUERDA Y QUÉ NO. Cómo está ARMADA la tabla —columnas visibles y su orden,
   // Tabla/Grid, orden de las filas, cuántas por página— se recuerda toda la sesión: es
@@ -127,19 +139,19 @@ export function DataTable<T>({
   // hace horas esconde la lista entera sin que se note (Angie abría Órdenes y veía 5 de
   // 450: eran las del proveedor que había buscado en la mañana).
   //
-  // Se conserva solo cuando uno está VOLVIENDO a la pantalla, que es el caso para el
-  // que se hizo:
+  // Se conserva solo cuando uno está VOLVIENDO a la pantalla —y hace un rato, no el
+  // viernes pasado (ver `lib/memoria-tabla.ts`)—, que es el caso para el que se hizo:
   //   · volver de un detalle abierto desde esta misma tabla (la marca de fila la dejó
   //     `abrirFila` justo antes de navegar), o
   //   · seguir en la misma visita, cuando la tabla se desmonta y se vuelve a montar sin
-  //     salir de la pantalla (alternar Lista / Por proveedor, recargar con F5).
+  //     salir de la pantalla (alternar Lista / Por proveedor, tocar un panel de arriba,
+  //     recargar con F5).
   // Entrar desde el menú es entrar de nuevo: la lista se abre completa. Para guardar
   // una búsqueda a propósito están las Vistas, que viven en la base.
   const conservarBusqueda = useMemo(() => {
     if (typeof window === "undefined") return false;
-    if (guardado.visita === visitaActual()) return true;
-    try { return sessionStorage.getItem(claveFila) !== null; } catch { return false; }
-  }, [guardado, claveFila]);
+    return conservaBusqueda({ guardado, marca, visita, ahora: Date.now() });
+  }, [guardado, marca, visita]);
   const siVolvemos = <V,>(v: V | undefined): V | undefined => (conservarBusqueda ? v : undefined);
 
   const [sorting, setSorting] = useState<SortingState>(guardado.sorting ?? []);
@@ -151,7 +163,16 @@ export function DataTable<T>({
   const cerrarFiltro = () => { setFilterCol(null); filterBtnRef.current?.focus(); };
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>(siVolvemos(guardado.columnFilters) ?? []);
   const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({ ...(columnVisibilityInicial ?? {}), ...(guardado.columnVisibility ?? {}) });
-  const [columnOrder, setColumnOrder] = useState<ColumnOrderState>(() => columns.map((c) => c.id!).filter(Boolean));
+  // El orden de las columnas se recuerda como el resto de la armazón. Antes no se
+  // guardaba y lo único que lo reponía era la vista predeterminada, que se aplicaba en
+  // cada montaje; con el candado por visita eso ya no pasa y el orden se habría ido al
+  // de fábrica con solo tocar un panel. Se reconcilia contra las columnas de HOY: una
+  // columna nueva de un despliegue no puede quedar fuera por un orden viejo.
+  const [columnOrder, setColumnOrder] = useState<ColumnOrderState>(() => {
+    const ids = columns.map((c) => c.id!).filter(Boolean);
+    const guardadas = (guardado.columnOrder ?? []).filter((id) => ids.includes(id));
+    return [...guardadas, ...ids.filter((id) => !guardadas.includes(id))];
+  });
   const [globalFilter, setGlobalFilter] = useState(siVolvemos(guardado.globalFilter) ?? "");
   // El tamaño de página que ELIGIÓ la persona manda sobre el de la pantalla. Sin
   // esta distinción, subirle el default a una lista no se notaba: el 50 que había
@@ -180,6 +201,15 @@ export function DataTable<T>({
   const [guardarVistaOpen, setGuardarVistaOpen] = useState(false);
   const [nombreVista, setNombreVista] = useState("");
   const [predVista, setPredVista] = useState(false);
+  // En qué visita a la pantalla ya se aplicó la vista predeterminada. Va al lado del
+  // resto del estado (sessionStorage) porque la lista REMONTA sin que uno salga de la
+  // pantalla: al tocar un panel de arriba, por ejemplo. Sin esto, uno borraba la
+  // búsqueda, tocaba un panel y la vista se la volvía a poner encima — "cada
+  // movimiento que hago me devuelve al filtro".
+  const [vistaAplicada, setVistaAplicada] = useState<number | undefined>(guardado.vistaAplicada);
+  // Qué vista está puesta, para decirlo en la barra: una vista con búsqueda adentro
+  // esconde filas, y sin nombre a la vista uno no sabe ni qué quitar.
+  const [vistaEnUso, setVistaEnUso] = useState<string | null>(null);
   const toast = useToast();
 
   // Guardar el estado en cada cambio (barato: es un JSON chico por tabla).
@@ -187,14 +217,15 @@ export function DataTable<T>({
     if (typeof window === "undefined") return;
     try {
       sessionStorage.setItem(claveEstado, JSON.stringify({
-        sorting, columnFilters, columnVisibility, globalFilter, modo,
+        sorting, columnFilters, columnVisibility, columnOrder, globalFilter, modo,
         pageSize: pagination.pageSize, pageIndex: pagination.pageIndex, pageSizeElegido,
-        // En qué visita a la pantalla se escribió esto: es lo que después distingue
-        // "sigo acá" de "volví a entrar" (ver `conservarBusqueda`).
-        visita: visitaActual(),
+        // En qué visita a la pantalla se escribió esto y a qué hora: es lo que después
+        // distingue "sigo acá" de "volví a entrar", y "hace un rato" de "el viernes"
+        // (ver `conservarBusqueda`).
+        visita, t: Date.now(), vistaAplicada,
       }));
     } catch { /* sessionStorage lleno o bloqueado: no es crítico */ }
-  }, [claveEstado, sorting, columnFilters, columnVisibility, globalFilter, modo, pagination, pageSizeElegido]);
+  }, [claveEstado, visita, sorting, columnFilters, columnVisibility, columnOrder, globalFilter, modo, pagination, pageSizeElegido, vistaAplicada]);
 
   // Filtrar o buscar SÍ devuelve a la página 1 (cambia cuántas filas hay, y quedarse
   // en la 3 de una lista que ahora tiene 2 es caer en el vacío). Lo hace la app, no
@@ -203,6 +234,9 @@ export function DataTable<T>({
   // cada vuelta de un detalle. Por eso Angie descargaba un PDF, daba atrás y
   // aparecía en la página 1: no se perdía la página, se la reseteaban los datos.
   const aLaPrimera = () => setPagination((p) => (p.pageIndex === 0 ? p : { ...p, pageIndex: 0 }));
+  // Quitar de un solo clic todo lo que esconde filas: la barra de búsqueda, los filtros
+  // de columna y la vista que los haya puesto.
+  const quitarFiltros = () => { setVistaEnUso(null); setGlobalFilter(""); setColumnFilters([]); aLaPrimera(); };
   const cambiarFiltros: OnChangeFn<ColumnFiltersState> = (u) => { setColumnFilters(u); aLaPrimera(); };
   const cambiarBusqueda: OnChangeFn<any> = (u) => { setGlobalFilter(u); aLaPrimera(); };
 
@@ -253,11 +287,15 @@ export function DataTable<T>({
   useEffect(() => { cargarVistas(); }, [usuario, tablaKey, modoApi]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (aplicadaDefault.current || vistas.length === 0) return;
+    aplicadaDefault.current = true;
     const def = vistas.find((v) => v.esPredeterminada);
-    if (def) { aplicarVista(def); aplicadaDefault.current = true; }
+    if (!def || vistaAplicada === visita) return;
+    aplicarVista(def);
+    setVistaAplicada(visita);
   }, [vistas]); // eslint-disable-line react-hooks/exhaustive-deps
 
   function aplicarVista(v: Vista) {
+    setVistaEnUso(v.nombre);
     const c = v.config ?? {};
     if (c.columnOrder) setColumnOrder(c.columnOrder);
     setColumnVisibility(c.columnVisibility ?? {}); setSorting(c.sorting ?? []); setColumnFilters(c.columnFilters ?? []);
@@ -292,6 +330,7 @@ export function DataTable<T>({
     } finally { setVistaABorrar(null); }
   }
   function resetVista() {
+    setVistaEnUso(null);
     setColumnOrder(columns.map((c) => c.id!).filter(Boolean)); setColumnVisibility({}); setSorting([]);
     setColumnFilters([]); setGlobalFilter(""); setPageSizeElegido(false);
     setPagination((p) => ({ ...p, pageSize: paginacion ? (pageSizeInicial ?? 50) : TODAS_LAS_FILAS, pageIndex: 0 })); setPanel(null);
@@ -315,6 +354,7 @@ export function DataTable<T>({
   const labelDe = (colId: string) => (leaf.find((x) => x.id === colId)?.columnDef.meta as ColMeta | undefined)?.label ?? colId;
   const rows = table.getRowModel().rows;
   const filasFiltradas = table.getFilteredRowModel().rows;
+  const escondidas = data.length - filasFiltradas.length;
   const pageCount = table.getPageCount();
   // Con el reseteo automático apagado, la página guardada puede quedar fuera de
   // rango (se recibieron órdenes, alguien borró un borrador, la lista encogió).
@@ -335,7 +375,7 @@ export function DataTable<T>({
     if (yaVolvio.current || rows.length === 0) return;
     yaVolvio.current = true;
     let id: string | null = null;
-    try { id = sessionStorage.getItem(claveFila); sessionStorage.removeItem(claveFila); } catch { /* sin sessionStorage */ }
+    try { id = leerMarcaFila(sessionStorage.getItem(claveFila))?.id ?? null; sessionStorage.removeItem(claveFila); } catch { /* sin sessionStorage */ }
     if (!id || !rows.some((r) => r.id === id)) return;
     setFilaVuelta(id);
     // Al final del pintado, si no el elemento todavía no tiene posición. El selector
@@ -354,7 +394,9 @@ export function DataTable<T>({
     return () => clearTimeout(t);
   }, [filaVuelta]);
   const abrirFila = (row: { id: string; original: T }) => {
-    try { sessionStorage.setItem(claveFila, row.id); } catch { /* sin sessionStorage */ }
+    // Con la hora: es la que después dice si la vuelta fue de hace un rato —y entonces
+    // se conserva lo que se estaba buscando— o si esta marca quedó de otro día.
+    try { sessionStorage.setItem(claveFila, escribirMarcaFila(row.id, Date.now())); } catch { /* sin sessionStorage */ }
     onRowClick?.(row.original);
   };
   // Mostrar skeletons mientras carga y todavía no hay datos (evita "salto" de vacío→datos).
@@ -446,6 +488,18 @@ export function DataTable<T>({
           {/* `cambiarBusqueda` y no `setGlobalFilter`: buscar también vuelve a la
               página 1 (el buscador es un filtro más). */}
           <Input value={globalFilter} onChange={(e) => cambiarBusqueda(e.target.value)} aria-label={buscarPlaceholder} placeholder={buscarPlaceholder} style={{ flex: "1 1 260px", minWidth: 200, maxWidth: 560 }} />
+          {/* LO QUE ESCONDE FILAS SE DICE Y SE QUITA DE UN CLIC. La barra con texto ya
+              se veía, pero "465 órdenes" en los paneles de arriba y 5 filas abajo no se
+              leen juntas: faltaba decir la resta y poner la salida en el mismo lugar.
+              Vale para la búsqueda, para los filtros de columna y para la vista
+              predeterminada, que trae lo suyo puesto sin que uno lo haya escrito. */}
+          {escondidas > 0 && (
+            <div className="dt-resumen">
+              <span>{vistaEnUso ? `Vista «${vistaEnUso}»: ` : ""}viendo <span className="ds-strong">{num.format(filasFiltradas.length)}</span> de {num.format(data.length)}</span>
+              <button type="button" className="link-btn" onClick={quitarFiltros}
+                title="Quitar la búsqueda y los filtros de columna">Quitar</button>
+            </div>
+          )}
           {resumen ? resumen(filasFiltradas.map((r) => r.original)) : null}
         </div>
         <div className="row gap-2" style={{ alignItems: "center" }}>
