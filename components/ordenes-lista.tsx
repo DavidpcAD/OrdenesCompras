@@ -125,8 +125,23 @@ export function OrdenesLista({
   // todo lo pendiente, que sea solo de bajar… como está en BC".
   deCorrido?: boolean;
 }) {
-  const { proveedores, usuario } = useStore();
+  const { proveedores, usuario, recepciones } = useStore();
   const router = useRouter();
+  // LAS FACTURAS QUE QUEDARON REGISTRADAS EN BC, por orden. Un pase sobre las
+  // recepciones en vez de recorrerlas por cada fila. Una orden puede tener varias: se
+  // recibe y se factura por partes. Se guarda al lado el N.º del papel del proveedor
+  // para el title, porque son dos números distintos y se confunden.
+  const facturasBcPorOrden = useMemo(() => {
+    const m = new Map<string, { bc: string; prov: string }[]>();
+    for (const r of recepciones) {
+      const bc = r.bcFacturaNo?.trim();
+      if (!bc) continue;
+      const arr = m.get(r.ordenId) ?? [];
+      if (!arr.some((x) => x.bc === bc)) arr.push({ bc, prov: (r.numeroFactura ?? "").trim() });
+      m.set(r.ordenId, arr);
+    }
+    return m;
+  }, [recepciones]);
   const prov = (id: string) => proveedores.find((p) => p.id === id);
   const nombreProv = (o: Orden) => proveedorLabel(o, proveedores);
 
@@ -201,6 +216,29 @@ export function OrdenesLista({
       },
     },
     { id: "estado", header: "Estado", accessorFn: (o) => ordenBadgeDe(o).label, meta: { label: "Estado" }, cell: (c) => { const b = ordenBadgeDe(c.row.original); return <Badge tone={b.tone}>{b.label}</Badge>; } },
+    // EL N.º DE LA FACTURA EN BC: el documento que quedó registrado allá al facturar la
+    // recepción, que es el que se busca en el histórico de facturas registradas de
+    // Business Central. NO es el número del papel que trae el camión (ese es el del
+    // proveedor y va en el title). Una orden completada suele traer una, pero puede
+    // traer varias: se recibe y se factura por partes.
+    //
+    // Va vacío en lo viejo: solo lo traen las recepciones registradas después de que se
+    // empezó a guardar (sql/recepcion_bc_factura.sql). Ahí no hay nada que inventar, y
+    // por eso dice "—" en vez de mentir.
+    {
+      id: "facturaBc", header: "Factura BC", meta: { label: "Factura BC" },
+      accessorFn: (o) => (facturasBcPorOrden.get(o.id) ?? []).map((f) => f.bc).join(" "),
+      cell: (c) => {
+        const fs = facturasBcPorOrden.get(c.row.original.id) ?? [];
+        if (fs.length === 0) return <span className="ds-muted">—</span>;
+        const detalle = fs.map((f) => (f.prov ? `${f.bc} · factura del proveedor ${f.prov}` : f.bc)).join("\n");
+        return (
+          <span title={detalle} style={{ userSelect: "all" }}>
+            {fs[0].bc}{fs.length > 1 ? <span className="ds-muted ds-body-sm"> +{fs.length - 1}</span> : null}
+          </span>
+        );
+      },
+    },
     // ¿Ya salió hacia el proveedor? Se filtra por "Sin enviar" para quedarse con
     // justo lo que falta mandar.
     ...(conEnvioProveedor ? [{
@@ -211,7 +249,7 @@ export function OrdenesLista({
     // Quién generó la OC (creadoPor). Además de leerse, da el filtro por persona del
     // encabezado: cada quien puede quedarse con las suyas o ver las de un compañero.
     { id: "creadaPor", header: "Creada por", accessorFn: (o) => o.creadoPor ?? "", meta: { label: "Creada por" }, cell: (c) => c.getValue() || <span className="ds-muted">—</span> },
-  ], [proveedores, pedidoHref, conEnvioProveedor]); // eslint-disable-line react-hooks/exhaustive-deps
+  ], [proveedores, pedidoHref, conEnvioProveedor, facturasBcPorOrden]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const renderLineas = (o: Orden) => (
     <table className="ds-table" style={{ boxShadow: "none", background: "transparent" }}>

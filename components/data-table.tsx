@@ -331,7 +331,10 @@ export function DataTable<T>({
   }
   function resetVista() {
     setVistaEnUso(null);
-    setColumnOrder(columns.map((c) => c.id!).filter(Boolean)); setColumnVisibility({}); setSorting([]);
+    // Vuelve a lo de FÁBRICA de esta pantalla, no a "todo visible": con `{}` aparecía
+    // la columna que la pantalla esconde a propósito (el N.º interno de la app, que
+    // solo sirve para soporte) y parecía que Restablecer había roto algo.
+    setColumnOrder(columns.map((c) => c.id!).filter(Boolean)); setColumnVisibility({ ...(columnVisibilityInicial ?? {}) }); setSorting([]);
     setColumnFilters([]); setGlobalFilter(""); setPageSizeElegido(false);
     setPagination((p) => ({ ...p, pageSize: paginacion ? (pageSizeInicial ?? 50) : TODAS_LAS_FILAS, pageIndex: 0 })); setPanel(null);
   }

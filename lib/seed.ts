@@ -160,6 +160,9 @@ export const recepciones: Recepcion[] = [
   {
     id: "rec1", ordenId: "ord1", numeroFactura: "F-0099281", fechaFactura: "2026-06-10",
     fechaRecepcion: "2026-06-10", fechaRegistro: "2026-06-10", total: 464000, parcial: true,
+    // El N.º que devolvió BC al registrar (el del histórico de facturas registradas).
+    // Va en los datos de prueba para poder ver la columna "Factura BC" sin base.
+    bcFacturaNo: "CFR-010214",
     lineas: [
       { ordenLineaId: "ol1", cantidadRecibida: 20 },
       { ordenLineaId: "ol2", cantidadRecibida: 12 },

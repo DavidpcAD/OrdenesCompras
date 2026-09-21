@@ -10,7 +10,7 @@ import { Combobox } from "@/components/combobox";
 import { CampoMaquina, RepartoMaquinasModal, nombreDeMaquina, useMaquinasBc } from "@/components/maquina-linea";
 import { useStore } from "@/lib/store";
 import { etiquetaTipoLinea, money, num, ordenEsDirecta, ordenEsperaCorreccion, lineasCorregidasDeOrden, ordenLineaImporte, ordenPedidos, almacenesParaRecepcion, esAlmacenFisico, repartoDeLineaSolicitud, pedidoLineaPendiente, obraParaOrden, ultimoPrecioProveedor, monedaApp, numeroOrden } from "@/lib/helpers";
-import { precioEnUnidad, precioEntreUnidades, cantidadEntreUnidades, equivalencia, equivalenciaDeUnidad, mismaMoneda, codigoDeItem, opcionesDeUnidad, type UnidadDeItem } from "@/lib/unidad";
+import { precioEnUnidad, precioEntreUnidades, cantidadEntreUnidades, equivalencia, equivalenciaDeUnidad, mismaMoneda, codigoDeItem, opcionesDeUnidad, type UnidadDeItem, type PrecioRef } from "@/lib/unidad";
 import { useVariantes } from "@/lib/use-variantes";
 import type { LineaDeMaquina } from "@/lib/maquinas";
 import type { OrdenLinea } from "@/lib/types";
@@ -341,6 +341,78 @@ export default function EditarOrdenPage() {
     });
   }
   const [qaRef, setQaRef] = useState<{ precio: number; unidad: string; moneda: string; factor?: number } | null>(null);
+
+  // EL ÚLTIMO PRECIO PAGADO, EN CADA FILA.
+  //
+  // Corregir el precio de una línea que YA existe era escribir a ciegas: la
+  // referencia ("últ. compra …") solo salía en el recuadro de agregar artículo, así
+  // que para saber a cómo se le compró ese material a ESTE proveedor había que ir a
+  // otra pantalla y traérselo de memoria. Con tres tubos casi iguales en la misma
+  // orden —"TUBO 2X4X1.8MM HN", "TUBO 3X3X1.8MM H.N." y "TUBO 3X3 HG 1.8 MM"— eso
+  // se cruza: en CP-000449 (18/09/2026) el precio del galvanizado terminó en el tubo
+  // negro y al revés, ₡19.668,75 de diferencia contra el pedido de BC que nadie vio
+  // hasta tres días después.
+  //
+  // Va MUDO a propósito —gris, sin ícono y sin color, aunque no se parezca a lo
+  // escrito— y NO toca lo que hay en el campo: el precio que manda es el que se
+  // negoció. Esto es para comparar de reojo, no una alarma.
+  const [ultimos, setUltimos] = useState<Record<string, (PrecioRef & { fuente?: string }) | null>>({});
+  const yaPedidos = useRef<Set<string>>(new Set());
+  const montado = useRef(true);
+  useEffect(() => () => { montado.current = false; }, []);
+  const vendorCode = provSel?.code ?? "";
+  // Los códigos de las filas, como texto estable: `rows` cambia con cada tecla
+  // (cantidad, precio), y sin esto el efecto saldría a preguntarle a BC en cada una.
+  const itemsDeFilas = useMemo(
+    () => [...new Set(rows.filter((r) => r.tipo === "articulo" && r.articuloId).map((r) => r.articuloId))].sort().join(","),
+    [rows]);
+  useEffect(() => {
+    if (!vendorCode || !itemsDeFilas) return;
+    for (const item of itemsDeFilas.split(",")) {
+      const k = `${vendorCode}|${item}`;
+      // Una sola vez por artículo y proveedor: la respuesta no cambia mientras se
+      // edita, y la orden puede tener veinte líneas.
+      if (yaPedidos.current.has(k)) continue;
+      yaPedidos.current.add(k);
+      fetch(`/api/bc/lastprice?item=${encodeURIComponent(item)}&vendor=${encodeURIComponent(vendorCode)}`)
+        .then((r) => (r.ok ? r.json() : null))
+        .then((d) => {
+          if (!montado.current) return;
+          const precio = Number(d?.precio);
+          setUltimos((m) => ({
+            ...m,
+            [k]: precio > 0
+              ? { precio, unidad: String(d.unidad ?? ""), moneda: String(d.moneda ?? ""), factor: d.factor, fuente: String(d.fuente ?? "") }
+              : null,
+          }));
+        })
+        // Que BC no conteste no rompe nada: la fila se queda sin referencia. Se
+        // suelta la llave para que el próximo cambio de líneas lo reintente.
+        .catch(() => { yaPedidos.current.delete(k); });
+    }
+  }, [itemsDeFilas, vendorCode]);
+
+  // La referencia de una fila, ya pasada a la unidad de la línea cuando se puede.
+  // Cuando NO se puede (el precio viene por unidad base y la línea va en otra, o es
+  // de otra moneda) se muestra igual pero CON SU UNIDAD: callarla sería esconder el
+  // dato, y mostrarla pelada es el ₡1,74 por estañón de `precioEnUnidad`.
+  function ultimoDeFila(r: Row): { texto: string; titulo: string } | null {
+    if (r.tipo !== "articulo") return null;
+    const ref = ultimos[`${vendorCode}|${r.articuloId}`];
+    if (!ref) return null;
+    const mismaM = mismaMoneda(ref.moneda, currency);
+    const pu = mismaM ? precioEnUnidad(ref, r.unidad, r.unidadBase ?? ref.unidad) : null;
+    const deDonde = ref.fuente === "proveedor" ? `lo que se le facturó a ${provSel?.nombre ?? "este proveedor"}`
+      : ref.fuente === "compra" ? "la última recepción registrada de este material, de cualquier proveedor"
+      : ref.fuente === "movimiento" ? "el último movimiento de inventario de este material"
+      : "el último costo directo que Business Central le guarda al artículo";
+    const titulo = `Último precio de compra según ${deDonde}. Es referencia: el de la orden es el que se negoció.`;
+    if (pu != null && pu > 0) return { texto: `últ. ${money(pu, currency)}`, titulo };
+    return {
+      texto: `últ. ${money(ref.precio, monedaApp(ref.moneda))}${ref.unidad ? ` / ${ref.unidad}` : ""}`,
+      titulo: `${titulo} OJO: ese precio es por ${ref.unidad || "otra unidad"}${mismaM ? "" : ` y en ${monedaApp(ref.moneda)}`}, no por ${r.unidad || "la unidad de la línea"}.`,
+    };
+  }
 
   // PRECIOS QUE LA ORDEN YA TENÍA, leídos del pedido en Business Central.
   //
@@ -933,7 +1005,15 @@ export default function EditarOrdenPage() {
                         )}
                       </span>
                     </td>
-                    <td className="ds-num"><input className="ds-cell-input" aria-label="Precio" type="number" min={0} value={r.precio} style={{ width: 92 }} onChange={(e) => setRow(r.key, { precio: e.target.value })} /></td>
+                    <td className="ds-num">
+                      <input className="ds-cell-input" aria-label="Precio" type="number" min={0} value={r.precio} style={{ width: 92 }} onChange={(e) => setRow(r.key, { precio: e.target.value })} />
+                      {/* El último precio pagado, debajo del campo y en gris: es para
+                          comparar de reojo mientras se escribe (ver `ultimoDeFila`). */}
+                      {(() => {
+                        const u = ultimoDeFila(r);
+                        return u ? <div className="ds-body-sm ds-muted" style={{ marginTop: 2, whiteSpace: "nowrap" }} title={u.titulo}>{u.texto}</div> : null;
+                      })()}
+                    </td>
                     <td className="ds-num"><input className="ds-cell-input" aria-label="Descuento %" type="number" min={0} max={100} value={r.descuento} style={{ width: 60 }} onChange={(e) => setRow(r.key, { descuento: e.target.value })} /></td>
                     <td className="ds-num"><input className="ds-cell-input" aria-label="IVA %" type="number" min={0} value={r.iva} style={{ width: 56 }} onChange={(e) => setRow(r.key, { iva: e.target.value })} /></td>
                     <td className="ds-num ds-strong">{money(calcImporte(r) || 0, currency)}</td>
