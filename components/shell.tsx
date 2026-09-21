@@ -9,6 +9,7 @@ import type { Role, Notificacion } from "@/lib/types";
 import { devolucionesPendientes, formatDate } from "@/lib/helpers";
 import { helpForPath } from "@/lib/help";
 import { marcarNavegacion } from "@/lib/navegacion";
+import { borrarCacheBootstrap } from "@/lib/cache-bootstrap";
 import {
   IconBell, IconList, IconReceipt, IconCheck, IconDelivery, IconFolder,
   IconPlus, IconLogout, IconBox, IconWarning, IconDashboard, IconEdit, IconMatrix,
@@ -120,7 +121,7 @@ function ChasisCargando() {
 }
 
 export function AppShell({ role, children }: { role: Role; children: React.ReactNode }) {
-  const { role: current, setRole, usuario, setUsuario, pedidos, ordenes, notificaciones, marcarNotifsLeidas, marcarNotifLeida, hydrated, errorCarga, cargando, recargar, ultimaSync, modoApi, sesionExpirada } = useStore();
+  const { role: current, setRole, usuario, setUsuario, pedidos, ordenes, notificaciones, marcarNotifsLeidas, marcarNotifLeida, hydrated, errorCarga, cargando, recargar, ultimaSync, datosDeCache, modoApi, sesionExpirada } = useStore();
   const router = useRouter();
   const pathname = usePathname();
   const [notifOpen, setNotifOpen] = useState(false);
@@ -183,7 +184,10 @@ export function AppShell({ role, children }: { role: Role; children: React.React
   }, [navOpen, notifOpen]);
   function cerrarSesion() {
     setLogoutOpen(false);
-    // Borra la cookie de sesión del server además del estado local.
+    // Borra la cookie de sesión del server además del estado local, y la última carga
+    // guardada en el navegador: el que abra después no tiene por qué ver las órdenes
+    // de quien acaba de salir (ver lib/cache-bootstrap.ts).
+    borrarCacheBootstrap();
     fetch("/api/logout", { method: "POST" }).catch(() => {}).finally(() => {
       setRole(null); setUsuario(null); router.replace("/");
     });
@@ -243,7 +247,11 @@ export function AppShell({ role, children }: { role: Role; children: React.React
   // Frescura de los datos. La app se refresca sola cada 45 s (y al volver a la
   // pestaña), pero eso el usuario no lo puede ver: sin este indicador, "estar al
   // día" era un acto de fe y la única forma de asegurarse era recargar a mano.
-  const edadMs = ultimaSync ? Math.max(0, ahora - ultimaSync) : null;
+  // De cuándo es lo que se está viendo: lo confirmado con el servidor o, mientras
+  // todavía no contesta, lo que se pintó de la caché del navegador. Las dos cosas son
+  // "la última vez que esto vino de la base", que es lo que la barra promete.
+  const sincronizado = ultimaSync ?? datosDeCache;
+  const edadMs = sincronizado ? Math.max(0, ahora - sincronizado) : null;
   const sesionVencida = sesionExpirada;
   const sync = errorCarga
     ? { clase: " is-error", texto: sesionVencida ? "Sesión vencida" : "Sin conexión",
@@ -408,7 +416,7 @@ export function AppShell({ role, children }: { role: Role; children: React.React
                 <div className="ds-callout__body">
                   {sesionVencida
                     ? "Por seguridad se cierra sola después de 12 horas sin usarla. Iniciá sesión otra vez para seguir."
-                    : ultimaSync
+                    : sincronizado
                       ? `Estás viendo lo último que cargó bien (${haceCuanto(edadMs ?? 0)}). Puede haber cambios más nuevos.`
                       : "Todavía no se pudieron traer los datos, así que esta pantalla está vacía: no es que no haya nada."}
                 </div>

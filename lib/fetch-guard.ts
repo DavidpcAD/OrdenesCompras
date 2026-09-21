@@ -1,5 +1,7 @@
 "use client";
 
+import { CLAVE_CACHE_BOOTSTRAP } from "./cache-bootstrap.ts";
+
 // Guard único para TODAS las llamadas a /api/* del navegador.
 //
 // Por qué existe: en la app hay ~30 `fetch("/api/…")` sueltos (proveedores, items,
@@ -75,6 +77,9 @@ export function sesionVencida() {
   try {
     localStorage.removeItem("adelante_oc_role");
     localStorage.removeItem("adelante_oc_usuario");
+    // Y la última carga guardada: la próxima persona que abra este navegador no tiene
+    // por qué ver las órdenes de quien se quedó sin sesión (ver lib/cache-bootstrap.ts).
+    localStorage.removeItem(CLAVE_CACHE_BOOTSTRAP);
   } catch {}
   window.dispatchEvent(new Event(EVENTO_SESION_VENCIDA));
   // Ya estamos en el login: no hay a dónde mandar a nadie. Y sobre todo NO se toca

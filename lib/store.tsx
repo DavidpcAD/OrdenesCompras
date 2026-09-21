@@ -10,7 +10,8 @@ import type {
 import * as seed from "./seed";
 import { devolverPendienteAPedidos, esLineaRecibible, nextNumero, nowISO, ordenEstaCompleta, PERSONA_POR_ROL, todayISO } from "./helpers";
 import { componerNotaCierre, detalleDeCierre, lineaCancelada, motivoObligatorio, quitarNotaCierre } from "./cierre-solicitud.ts";
-import { api, USE_API as USE_API_BUILD } from "./api";
+import { api, setEtagBootstrap, USE_API as USE_API_BUILD } from "./api";
+import { CLAVE_CACHE_BOOTSTRAP, borrarCacheBootstrap, leerCache, serializarCache } from "./cache-bootstrap";
 import { instalarGuardFetch, EVENTO_SESION_VENCIDA } from "./fetch-guard";
 
 export interface NewPedidoInput {
@@ -86,6 +87,10 @@ interface StoreShape {
   // Momento (epoch ms) en que el servidor confirmó por última vez que lo que se ve
   // es lo que hay en la base. null = todavía no se ha confirmado ninguna vez.
   ultimaSync: number | null;
+  // Cuándo se recibió lo que se está pintando DE LA CACHÉ del navegador, mientras el
+  // servidor todavía no contesta. Es la misma pregunta que `ultimaSync` —"¿de cuándo
+  // es esto que estoy viendo?"— para el rato en que la app abre con lo último que vio.
+  datosDeCache: number | null;
   recargar: () => Promise<void>;
 
   proveedores: Proveedor[];
@@ -240,6 +245,7 @@ export function StoreProvider({ children, useApi }: { children: React.ReactNode;
   // Cuándo se confirmó por última vez que lo que se ve es lo que hay en la base.
   // Se muestra en la barra superior: "al día" no puede ser un acto de fe.
   const [ultimaSync, setUltimaSync] = useState<number | null>(null);
+  const [datosDeCache, setDatosDeCache] = useState<number | null>(null);
   const [sesionExpirada, setSesionExpirada] = useState(false);
   // Notas de crédito (aparte del bootstrap para no romper la carga si la tabla no existe).
   const [notasCredito, setNotasCredito] = useState<NotaCreditoLinea[]>([]);
@@ -247,6 +253,11 @@ export function StoreProvider({ children, useApi }: { children: React.ReactNode;
   const ultimoBootstrap = useRef<string>("");
   // Íd. para las notas de crédito, que se refrescan junto con el bootstrap.
   const ultimaNc = useRef<string>("");
+  // El usuario de AHORA para los callbacks que viven dentro de efectos: la caché se
+  // guarda a nombre del dueño de los datos, y una closure vieja podía firmarla con el
+  // nombre anterior (y entonces mostrarle a alguien lo del que estaba antes).
+  const usuarioRef = useRef<string | null>(null);
+  useEffect(() => { usuarioRef.current = usuario; }, [usuario]);
   // Fallos seguidos del auto-refresh: uno suelto puede ser la red, dos ya hay que avisarlo.
   const fallosSeguidos = useRef(0);
 
@@ -268,6 +279,25 @@ export function StoreProvider({ children, useApi }: { children: React.ReactNode;
       // solo podía terminar en 401: encima disparaba el manejo de "sesión vencida"
       // y le borraba a la URL el ?next= con el que el middleware nos trajo.
       if (!(r && ROLES_VALIDOS.includes(r as Role))) setCargando(false);
+      else {
+        // LA ÚLTIMA CARGA SE PINTA DE UNA. Lo que llega del servidor tarda 1 a 3
+        // segundos en armarse y pesa ~1,2 MB; hasta ahora la pantalla se quedaba en
+        // huesitos todo ese rato, con los recuadros en 0. Acá se pinta lo último que
+        // vio ESTA persona (si es de hoy) y se revalida por detrás: la barra de
+        // arriba dice "Actualizando…" y, con el ETag guardado, el servidor casi
+        // siempre contesta 304 y no baja nada. Si no hay caché, todo sigue igual.
+        try {
+          const c = leerCache(localStorage.getItem(CLAVE_CACHE_BOOTSTRAP), u ?? "", Date.now());
+          if (c) {
+            const b = JSON.parse(c.body) as { pedidos: Pedido[]; ordenes: Orden[]; recepciones: Recepcion[]; notas?: NotaCreditoLinea[] };
+            setData((d) => ({ ...d, pedidos: b.pedidos, ordenes: b.ordenes, recepciones: b.recepciones }));
+            setNotasCredito(b.notas ?? []);
+            setEtagBootstrap(c.etag);
+            setDatosDeCache(c.t);
+            setCargando(false);   // ya hay algo que leer; "Actualizando…" sigue arriba
+          }
+        } catch { /* caché ilegible: se arranca como siempre, sin ruido */ }
+      }
     } else {
       try {
         const raw = localStorage.getItem(LS_KEY);
@@ -375,14 +405,27 @@ export function StoreProvider({ children, useApi }: { children: React.ReactNode;
   }, [role, usuario, hydrated]);
 
   async function refreshFromApi() {
-    const b = await api.bootstrap();
+    const fresco = await api.bootstrap();
     setErrorCarga(null);   // volvió a responder: se limpia el aviso
     setSesionExpirada(false);
     setUltimaSync(Date.now());
     // null = el servidor contestó 304: nada cambió desde la última vez. No bajó
     // cuerpo, no hay nada que comparar ni que volver a pintar. Es el caso NORMAL
     // del poll de 45 s (y el que ahorra datos móviles y batería).
-    if (!b) return;
+    if (!fresco) return;
+    const b = fresco.datos;
+    // La última carga queda guardada en el navegador para que la PRÓXIMA vez que se
+    // abra la app haya algo que pintar de una (ver lib/cache-bootstrap.ts). Se escribe
+    // cuando el navegador esté desocupado: son ~1,2 MB y localStorage es síncrono, así
+    // que hacerlo acá mismo le robaría unos milisegundos al pintado.
+    if (usuarioRef.current) {
+      const guardar = () => {
+        try { localStorage.setItem(CLAVE_CACHE_BOOTSTRAP, serializarCache(usuarioRef.current!, fresco.etag, fresco.texto, Date.now())); }
+        catch { /* sin espacio o sin storage: la app funciona igual, solo arranca en cero */ }
+      };
+      if (typeof requestIdleCallback === "function") requestIdleCallback(guardar, { timeout: 2000 });
+      else setTimeout(guardar, 0);
+    }
     // Segunda red: aunque el servidor haya mandado 200, si el contenido es igual al
     // que ya teníamos no se toca el estado (no se re-renderiza la app entera por
     // gusto). Comparar el JSON es mucho más barato que el re-render.
@@ -1164,7 +1207,7 @@ export function StoreProvider({ children, useApi }: { children: React.ReactNode;
     const reset: StoreShape["reset"] = () => setData(freshData(USE_API));
 
     return {
-      role, setRole, usuario, setUsuario, cargando, hydrated, modoApi: USE_API, errorCarga, sesionExpirada, ultimaSync, recargar,
+      role, setRole, usuario, setUsuario, cargando, hydrated, modoApi: USE_API, errorCarga, sesionExpirada, ultimaSync, datosDeCache, recargar,
       proveedores: seed.proveedores, articulos: seed.articulos, obras: seed.obras,
       maquinas: seed.maquinas, almacenes: seed.almacenes,
       pedidos: data.pedidos, ordenes: data.ordenes, recepciones: data.recepciones, movimientos: data.movimientos,
@@ -1177,7 +1220,7 @@ export function StoreProvider({ children, useApi }: { children: React.ReactNode;
     // OJO: TODO estado que el store exponga debe estar en estas deps o el value
     // queda "congelado" con su valor viejo — así las notas de crédito cargadas
     // por cargarNotasCredito() nunca llegaban a Contabilidad (lista vacía).
-  }, [role, usuario, data, borrador, cargando, notasCredito, hydrated, errorCarga, sesionExpirada, ultimaSync]);
+  }, [role, usuario, data, borrador, cargando, notasCredito, hydrated, errorCarga, sesionExpirada, ultimaSync, datosDeCache]);
 
   return <StoreCtx.Provider value={api2}>{children}</StoreCtx.Provider>;
 }

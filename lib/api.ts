@@ -28,26 +28,37 @@ export interface Bootstrap {
 // con una consulta barata (conteos + última modificación) y contesta 304 si nada
 // cambió: el poll de 45 s deja de bajar TODAS las órdenes y líneas cada vez.
 let etagBootstrap: string | null = null;
+// La caché del navegador (lib/cache-bootstrap.ts) guarda el ETag junto con el cuerpo:
+// al abrir la app se lo devuelve acá para que el primer viaje ya pueda contestar 304.
+export const setEtagBootstrap = (e: string | null) => { etagBootstrap = e; };
 // Un solo bootstrap a la vez: el refresco se dispara por varias vías (poll, volver
 // a la pestaña, cambiar de pantalla) y dos llegando juntos hacían el mismo trabajo
 // de SQL dos veces.
-let bootstrapEnVuelo: Promise<Bootstrap | null> | null = null;
+let bootstrapEnVuelo: Promise<BootstrapFresco | null> | null = null;
+
+// Lo que devuelve un bootstrap que SÍ trajo datos: los datos ya parseados, el texto
+// tal cual vino (para guardarlo sin volver a serializar) y su ETag.
+export type BootstrapFresco = { datos: Bootstrap; texto: string; etag: string | null };
 
 export const api = {
   // null = el servidor dijo 304 (nada cambió desde la última vez).
-  bootstrap: (): Promise<Bootstrap | null> => {
+  bootstrap: (): Promise<BootstrapFresco | null> => {
     if (bootstrapEnVuelo) return bootstrapEnVuelo;
     bootstrapEnVuelo = (async () => {
       const res = await fetch("/api/bootstrap", {
         headers: etagBootstrap ? { "If-None-Match": etagBootstrap } : undefined,
       });
       if (res.status === 304) return null;
+      if (!res.ok) await jsonOrThrow(res);   // lanza con el mensaje del server
       const etag = res.headers.get("ETag");
-      const data = (await jsonOrThrow(res)) as Bootstrap;
+      // Se lee como TEXTO y se parsea acá: ese mismo texto es el que se guarda en la
+      // caché del navegador, así no hay que volver a serializar 1,2 MB para guardarlo.
+      const texto = await res.text();
+      const datos = JSON.parse(texto) as Bootstrap;
       // El ETag se guarda DESPUÉS de tener los datos en mano: si el parseo falla,
       // no queremos quedar diciendo "ya la tengo" sin tenerla.
       if (etag) etagBootstrap = etag;
-      return data;
+      return { datos, texto, etag };
     })().finally(() => { bootstrapEnVuelo = null; });
     return bootstrapEnVuelo;
   },
