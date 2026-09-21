@@ -1377,6 +1377,9 @@ td.ds-col-fija {
   color: var(--ds-color-green-300);
   font-family: inherit; font-size: var(--ds-font-size-label); font-weight: var(--ds-font-weight-semibold);
   padding: 3px 10px; border-radius: 999px; cursor: pointer; white-space: nowrap;
+  /* También se usa en un <a> (la factura de BC, que abre Business Central): sin esto
+     el subrayado del link estaría puesto siempre y solo debe aparecer en hover. */
+  text-decoration: none;
   transition: background .12s ease, border-color .12s ease, transform .12s ease;
 }
 .chip-link__ir { opacity: .55; font-size: 11px; transition: opacity .12s ease, transform .12s ease; }

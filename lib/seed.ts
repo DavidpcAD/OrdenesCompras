@@ -162,6 +162,10 @@ export const recepciones: Recepcion[] = [
     fechaRecepcion: "2026-06-10", fechaRegistro: "2026-06-10", total: 464000, parcial: true,
     // El N.º que devolvió BC al registrar (el del histórico de facturas registradas).
     // Va en los datos de prueba para poder ver la columna "Factura BC" sin base.
+    // Sin `bcFacturaUrl` a propósito: el link lo arma el servidor con el
+    // tenant/entorno/empresa de BC, y en modo mock no hay BC que abrir. Así que en
+    // mock el número se ve pero no es link, que es exactamente lo que pasa cuando
+    // falta la config de BC.
     bcFacturaNo: "CFR-010214",
     lineas: [
       { ordenLineaId: "ol1", cantidadRecibida: 20 },

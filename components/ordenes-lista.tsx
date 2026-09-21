@@ -129,15 +129,15 @@ export function OrdenesLista({
   const router = useRouter();
   // LAS FACTURAS QUE QUEDARON REGISTRADAS EN BC, por orden. Un pase sobre las
   // recepciones en vez de recorrerlas por cada fila. Una orden puede tener varias: se
-  // recibe y se factura por partes. Se guarda al lado el N.º del papel del proveedor
-  // para el title, porque son dos números distintos y se confunden.
+  // recibe y se factura por partes. De cada una van los DOS números —el documento de
+  // BC y el del papel del proveedor— más el link para abrirla allá.
   const facturasBcPorOrden = useMemo(() => {
-    const m = new Map<string, { bc: string; prov: string }[]>();
+    const m = new Map<string, { bc: string; prov: string; url?: string }[]>();
     for (const r of recepciones) {
       const bc = r.bcFacturaNo?.trim();
       if (!bc) continue;
       const arr = m.get(r.ordenId) ?? [];
-      if (!arr.some((x) => x.bc === bc)) arr.push({ bc, prov: (r.numeroFactura ?? "").trim() });
+      if (!arr.some((x) => x.bc === bc)) arr.push({ bc, prov: (r.numeroFactura ?? "").trim(), url: r.bcFacturaUrl });
       m.set(r.ordenId, arr);
     }
     return m;
@@ -216,26 +216,59 @@ export function OrdenesLista({
       },
     },
     { id: "estado", header: "Estado", accessorFn: (o) => ordenBadgeDe(o).label, meta: { label: "Estado" }, cell: (c) => { const b = ordenBadgeDe(c.row.original); return <Badge tone={b.tone}>{b.label}</Badge>; } },
-    // EL N.º DE LA FACTURA EN BC: el documento que quedó registrado allá al facturar la
-    // recepción, que es el que se busca en el histórico de facturas registradas de
-    // Business Central. NO es el número del papel que trae el camión (ese es el del
-    // proveedor y va en el title). Una orden completada suele traer una, pero puede
-    // traer varias: se recibe y se factura por partes.
+    // LA FACTURA: los DOS números que uno termina cotejando, juntos y en ese orden.
+    //
+    //   CFR-010402 ↗   el documento que quedó REGISTRADO EN BC al facturar la
+    //                  recepción; el link lo abre en el histórico de facturas
+    //                  registradas de Business Central.
+    //   Factura 19849  el N.º del papel que trajo el camión, el que puso el
+    //                  proveedor. Va debajo porque es el que uno tiene en la mano
+    //                  cuando anda buscando en cuál factura de BC quedó.
+    //
+    // Van en la misma celda a propósito: son un par (cada factura de BC salió de un
+    // papel), y una orden puede traer varias porque se recibe y se factura por
+    // partes. Se muestra la primera y "+N", con el detalle completo en el title.
     //
     // Va vacío en lo viejo: solo lo traen las recepciones registradas después de que se
     // empezó a guardar (sql/recepcion_bc_factura.sql). Ahí no hay nada que inventar, y
     // por eso dice "—" en vez de mentir.
     {
       id: "facturaBc", header: "Factura BC", meta: { label: "Factura BC" },
-      accessorFn: (o) => (facturasBcPorOrden.get(o.id) ?? []).map((f) => f.bc).join(" "),
+      // Los dos números entran en la búsqueda, el filtro y el export: se busca tanto
+      // por el CFR- de BC como por el del proveedor, que es el dato con el que llama
+      // el proveedor preguntando.
+      accessorFn: (o) => (facturasBcPorOrden.get(o.id) ?? []).map((f) => (f.prov ? `${f.bc} · ${f.prov}` : f.bc)).join(" · "),
       cell: (c) => {
         const fs = facturasBcPorOrden.get(c.row.original.id) ?? [];
         if (fs.length === 0) return <span className="ds-muted">—</span>;
-        const detalle = fs.map((f) => (f.prov ? `${f.bc} · factura del proveedor ${f.prov}` : f.bc)).join("\n");
+        const [f, ...resto] = fs;
+        const detalle = fs.map((x) => (x.prov ? `${x.bc} · factura del proveedor ${x.prov}` : x.bc)).join("\n");
         return (
-          <span title={detalle} style={{ userSelect: "all" }}>
-            {fs[0].bc}{fs.length > 1 ? <span className="ds-muted ds-body-sm"> +{fs.length - 1}</span> : null}
-          </span>
+          <div className="col" style={{ gap: 1 }} title={resto.length ? detalle : undefined}>
+            <span>
+              {f.url ? (
+                // target="_blank": BC se abre en su propia pestaña y no se pierde la
+                // lista con los filtros puestos. stopPropagation porque el clic de la
+                // fila abre la orden, y acá se pidió la factura.
+                <a className="chip-link" href={f.url} target="_blank" rel="noopener noreferrer"
+                  onClick={(e) => e.stopPropagation()}
+                  title={`Abrir la factura ${f.bc} en Business Central`}>
+                  {f.bc}<span className="chip-link__ir" aria-hidden>↗</span>
+                </a>
+              ) : (
+                // Sin link (falta config de BC) el número igual se ve y se puede
+                // copiar: se busca a mano en el histórico de facturas registradas.
+                <span style={{ userSelect: "all" }} title={detalle}>{f.bc}</span>
+              )}
+              {resto.length > 0 ? <span className="ds-muted ds-body-sm"> +{resto.length}</span> : null}
+            </span>
+            {f.prov ? (
+              <span className="ds-body-sm ds-muted" style={{ userSelect: "all" }}
+                title={`Factura ${f.prov} del proveedor (el N.º del papel, no el de BC)`}>
+                Factura {f.prov}
+              </span>
+            ) : null}
+          </div>
         );
       },
     },

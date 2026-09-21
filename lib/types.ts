@@ -291,6 +291,10 @@ export interface Recepcion {
   // para encontrar el movimiento en Business Central. Puede no estar: recepciones
   // viejas, órdenes que no van a BC, o la columna sin migrar (sql/recepcion_bc_factura.sql).
   bcFacturaNo?: string;
+  // Deep link a ESA factura en el histórico de facturas registradas de BC. Lo arma
+  // el servidor (el link lleva tenant/entorno/empresa, que el navegador no conoce)
+  // y solo viene si hay bcFacturaNo y la config de BC está completa.
+  bcFacturaUrl?: string;
   // Fotos de la factura física (0..n). Metadato solamente: ver RecepcionFoto.
   fotos?: RecepcionFoto[];
 }

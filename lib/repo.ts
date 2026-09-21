@@ -1,5 +1,5 @@
 import { getAuthPool, getPool, sql } from "./db.ts";
-import { bcDeepLinkPedido, bcDeepLinkFacturaRegistrada, bcUnidadesDeCompra, sanearObrasDeLineas } from "./bc.ts";
+import { bcDeepLinkPedido, bcDeepLinkFacturaRegistrada, bcDeepLinkFacturaPorNo, bcUnidadesDeCompra, sanearObrasDeLineas } from "./bc.ts";
 import { unidadCorregida, codigoDeItem } from "./unidad.ts";
 import { etiquetaInterna, esTipoDevolucion, esTipoEdicion, ordenDeDetalleDevolucion } from "./helpers.ts";
 import { resumirCambiosDeLineas } from "./cambios-orden.ts";
@@ -2354,23 +2354,30 @@ export async function listRecepciones(): Promise<Recepcion[]> {
   const porRecepcion = porCabecera(d.recordset, "idRecepcionCompra");
   // Si la migración de fotos no está corrida, esto devuelve un mapa vacío.
   const fotos = await fotosPorRecepcion().catch(() => new Map<number, RecepcionFoto[]>());
-  return h.recordset.map((r): Recepcion => ({
-    id: String(r.idRecepcionCompra), ordenId: String(r.idOrdenCompra), numeroFactura: r.numeroFactura ?? "",
-    fechaFactura: (r.fechaFactura?.toISOString?.() ?? "").slice(0, 10),
-    fechaRecepcion: (r.fechaRecepcion?.toISOString?.() ?? "").slice(0, 10),
-    fechaRegistro: (r.fechaRegistro?.toISOString?.() ?? "").slice(0, 10),
-    total: Number(r.total ?? 0), parcial: !!r.esParcial, recibidoPor: r.creadoPor ?? undefined,
+  return h.recordset.map((r): Recepcion => {
     // Sin la migración corrida la columna no viene en el SELECT * y esto queda
     // en undefined: la pantalla simplemente no muestra el N.º de BC.
-    bcFacturaNo: (r.bcFacturaNo ?? "").toString().trim() || undefined,
-    fotos: fotos.get(r.idRecepcionCompra),
-    lineas: (porRecepcion.get(r.idRecepcionCompra) ?? [])
-      .map((l): RecepcionLinea => ({
-        ordenLineaId: String(l.idOrdenCompraDet),
-        cantidadRecibida: Number(l.quantityRecibida ?? 0),
-        precioFactura: l.precioFactura != null ? Number(l.precioFactura) : undefined,
-      })),
-  }));
+    const bcFacturaNo = (r.bcFacturaNo ?? "").toString().trim() || undefined;
+    return {
+      id: String(r.idRecepcionCompra), ordenId: String(r.idOrdenCompra), numeroFactura: r.numeroFactura ?? "",
+      fechaFactura: (r.fechaFactura?.toISOString?.() ?? "").slice(0, 10),
+      fechaRecepcion: (r.fechaRecepcion?.toISOString?.() ?? "").slice(0, 10),
+      fechaRegistro: (r.fechaRegistro?.toISOString?.() ?? "").slice(0, 10),
+      total: Number(r.total ?? 0), parcial: !!r.esParcial, recibidoPor: r.creadoPor ?? undefined,
+      bcFacturaNo,
+      // El link a ESA factura en BC se arma acá porque lleva tenant/entorno/empresa,
+      // que solo el servidor conoce. Si falta config de BC devuelve "" y se omite:
+      // el número igual se ve, solo que hay que buscarlo a mano allá.
+      bcFacturaUrl: (bcFacturaNo && bcDeepLinkFacturaPorNo(bcFacturaNo)) || undefined,
+      fotos: fotos.get(r.idRecepcionCompra),
+      lineas: (porRecepcion.get(r.idRecepcionCompra) ?? [])
+        .map((l): RecepcionLinea => ({
+          ordenLineaId: String(l.idOrdenCompraDet),
+          cantidadRecibida: Number(l.quantityRecibida ?? 0),
+          precioFactura: l.precioFactura != null ? Number(l.precioFactura) : undefined,
+        })),
+    };
+  });
 }
 
 // ----------------------------------------------------------------- MOVIMIENTOS

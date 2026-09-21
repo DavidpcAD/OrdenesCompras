@@ -48,8 +48,11 @@ test("sin tenant, también falla (y lo dice)", () => {
 test("el deep link a BC devuelve vacío en vez de tirar cuando falta la config", async () => {
   const guardado = { ...process.env };
   delete process.env.BC_BASE_URL; delete process.env.BC_ENVIRONMENT; delete process.env.BC_TENANT_ID;
-  const { bcDeepLinkPedido, bcDeepLinkFacturaRegistrada } = await import("./bc.ts");
+  const { bcDeepLinkPedido, bcDeepLinkFacturaRegistrada, bcDeepLinkFacturaPorNo } = await import("./bc.ts");
   assert.equal(bcDeepLinkPedido("CP-000123"), "");
   assert.equal(bcDeepLinkFacturaRegistrada("CP-000123"), "");
+  // Este lo llama listRecepciones por CADA recepción facturada: si tirara, faltar una
+  // variable de BC dejaría la app sin recepciones (y sin órdenes recibidas).
+  assert.equal(bcDeepLinkFacturaPorNo("CFR-010402"), "");
   Object.assign(process.env, guardado);
 });

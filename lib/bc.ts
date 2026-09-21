@@ -3949,6 +3949,15 @@ export function bcDeepLinkFacturaRegistrada(orderNo: string): string {
   return bcDeepLink(146, `'Order No.' IS '${orderNo}'`);
 }
 
+// Deep link a UNA factura registrada, por su PROPIO N.º (el CFR-… que devolvió BC al
+// registrarla). Es el hermano del de arriba, y la diferencia importa: aquel abre
+// "las facturas de este pedido" (lo que Contabilidad necesita para la nota de
+// crédito, donde todavía se anda buscando cuál es), y este abre la que ya se está
+// mirando en la lista. Misma página 146: el histórico de facturas registradas.
+export function bcDeepLinkFacturaPorNo(facturaNo: string): string {
+  return bcDeepLink(146, `'No.' IS '${facturaNo}'`);
+}
+
 function decodeJwt(token: string): any {
   try {
     const part = token.split(".")[1];
