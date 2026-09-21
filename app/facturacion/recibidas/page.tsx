@@ -144,9 +144,22 @@ export default function RecibidasPage() {
                         posteriores a la migración (sql/recepcion_bc_factura.sql), así
                         que si no hay número no se muestra la columna vacía. */}
                     {r.bcFacturaNo && (
-                      <span className="col" style={{ gap: 1, textAlign: "right" }}>
+                      <span className="col" style={{ gap: 2, textAlign: "right", alignItems: "flex-end" }}>
                         <span className="ds-label ds-muted">En BC</span>
-                        <span className="ds-body-sm ds-strong" style={{ userSelect: "all" }}>{r.bcFacturaNo}</span>
+                        {/* El N.º abre ESA factura en el histórico de facturas registradas
+                            de BC. Es la misma píldora de la lista de órdenes a propósito:
+                            el mismo dato se ve y se toca igual en las dos pantallas — y
+                            acá, que Bodega anda en el celular, un link de texto chiquito
+                            no se atina con el dedo. Sin link (falta config de BC) queda el
+                            número como estaba, que igual se copia. */}
+                        {r.bcFacturaUrl ? (
+                          <a className="chip-link" href={r.bcFacturaUrl} target="_blank" rel="noopener noreferrer"
+                            title={`Abrir la factura ${r.bcFacturaNo} en Business Central`}>
+                            {r.bcFacturaNo}<span className="chip-link__ir" aria-hidden>↗</span>
+                          </a>
+                        ) : (
+                          <span className="ds-body-sm ds-strong" style={{ userSelect: "all" }}>{r.bcFacturaNo}</span>
+                        )}
                       </span>
                     )}
                   </div>
