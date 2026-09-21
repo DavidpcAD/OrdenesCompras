@@ -978,3 +978,38 @@ export function comprasDeInsumo(ordenes: Orden[], code: string): CompraInsumo[] 
   }
   return out.sort((a, b) => (b.fecha ?? "").localeCompare(a.fecha ?? ""));
 }
+
+// ── ¿EL COTEJO CONTRA BC YA NO SIRVE PARA DECIDIR? ───────────────────────────
+//
+// `orden.bcCheck` se escribe SOLO cuando la app le ESCRIBE a BC (al editar y al
+// enviar a aprobación): es una FOTO de ese instante, no una vigilancia. Si después
+// alguien mueve el pedido allá, la orden se queda enseñando el "ok" viejo para
+// siempre — y un "ok" viejo es peor que nada, porque la pantalla se calla justo
+// cuando habría que gritar.
+//
+// Caso real, CP-000449 / CP-005579 (18/09/2026): la app escribió las líneas a las
+// 12:42 p. m. y el cotejo dijo ok; a las 4:25 p. m. dos líneas ya tenían otro precio
+// en BC (₡19.668,75 de diferencia) y nadie se enteró en tres días, con Bodega lista
+// para recibir contra la orden equivocada.
+//
+// Por eso el detalle vuelve a cotejar al abrirse, pero SOLO cuando hace falta:
+//   · la orden tiene pedido en BC (sin N.º no hay contra qué cotejar);
+//   · está en la ventana donde la respuesta todavía sirve para algo —esperando
+//     aprobación o lanzada—: una orden abierta se va a reescribir entera al enviarla,
+//     y en una completada el daño ya está hecho (esas las barre Conciliación BC, que
+//     además compara contra las facturas registradas y cuesta varias llamadas);
+//   · y la foto tiene más de media hora, o no hay ninguna.
+export const CHEQUEO_BC_FRESCO_MS = 30 * 60 * 1000;
+
+export function chequeoBcVencido(
+  orden: Pick<Orden, "estado" | "bcNumber" | "bcCheck">,
+  ahora: number = Date.now(),
+): boolean {
+  if (!(orden.bcNumber ?? "").trim()) return false;
+  if (orden.estado !== "pendiente_aprobacion" && orden.estado !== "lanzado") return false;
+  const f = orden.bcCheck?.fecha;
+  if (!f) return true;                        // nunca se cotejó: esa es la peor foto de todas
+  const t = Date.parse(f);
+  if (!Number.isFinite(t)) return true;        // fecha ilegible: se coteja, no se supone
+  return ahora - t > CHEQUEO_BC_FRESCO_MS;     // en el futuro (reloj corrido) cuenta como fresca
+}

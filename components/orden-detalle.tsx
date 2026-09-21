@@ -1,13 +1,13 @@
 "use client";
 
-import { Fragment, useEffect, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Badge, Button, Card, Textarea } from "@/components/ui";
 import { IconChevronDown, IconWarning } from "@/components/icons";
 import { OrderLinesTable } from "@/components/order-lines";
 import { Timeline } from "@/components/timeline";
 import { useStore } from "@/lib/store";
-import { esLineaCargo, esLineaRecibible, money, num, formatDate, formatDateTime, ordenBadgeDe, proveedorLabel, ordenIva, ordenLineaImporte, ordenRecibidoPct, ordenPedidos, ordenEsDirecta, ordenTotalConIva, numeroOrden, tieneBc, destinoDeRecepcion, ordenEsperaCorreccion } from "@/lib/helpers";
+import { esLineaCargo, esLineaRecibible, money, num, formatDate, formatDateTime, ordenBadgeDe, proveedorLabel, ordenIva, ordenLineaImporte, ordenRecibidoPct, ordenPedidos, ordenEsDirecta, ordenTotalConIva, numeroOrden, tieneBc, destinoDeRecepcion, ordenEsperaCorreccion, chequeoBcVencido } from "@/lib/helpers";
 import { vaAlProveedor } from "@/lib/envio-proveedor";
 import { ChipPedido } from "@/components/ordenes-lista";
 import { useVolver } from "@/lib/use-volver";
@@ -87,7 +87,7 @@ export function OrdenDetalle({
   // vuelven a leer de allá: si no, quedan clavados en lo que se leyó al abrir.
   refrescoBc?: number;
 }) {
-  const { proveedores, recepciones, role } = useStore();
+  const { proveedores, recepciones, role, modoApi } = useStore();
   const router = useRouter();
   const [alineando, setAlineando] = useState(false);
   const [verFactura, setVerFactura] = useState<string | null>(null);
@@ -144,6 +144,26 @@ export function OrdenDetalle({
   const [chequeo, setChequeo] = useState<null | { estado: string; mensaje: string; diferencias: { texto: string }[] }>(null);
   // El cotejo guardado quedó viejo porque acabamos de verificar y ahora sí coincide.
   const [guardadoVencido, setGuardadoVencido] = useState(false);
+
+  // AL ABRIR LA ORDEN SE VUELVE A COTEJAR, si la foto guardada está vieja.
+  //
+  // El `bcCheck` se escribía solo cuando la app le escribía a BC, así que un cambio
+  // hecho DESPUÉS en BC no lo veía nadie: la orden seguía en verde. En CP-000449
+  // fueron tres días con dos precios distintos de los de BC (₡19.668,75) y Bodega
+  // lista para recibir. Cuándo se considera vieja y por qué solo en las órdenes
+  // lanzadas o esperando aprobación: `chequeoBcVencido`.
+  //
+  // Una vez por visita, sin bloquear nada: si BC no contesta, la pantalla queda como
+  // estaba (`verificarBc` ya trata ese caso como "sin-lectura", que no es "está mal").
+  const recotejado = useRef("");
+  useEffect(() => {
+    if (!modoApi) return;                       // en mock no hay BC a quién preguntarle
+    if (recotejado.current === String(orden.id)) return;
+    if (!chequeoBcVencido(orden)) return;
+    recotejado.current = String(orden.id);
+    void verificarBc();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [modoApi, orden.id, orden.estado, orden.bcNumber, orden.bcCheck?.fecha]);
   // "Ya lo corregí en BC": la corrección de una orden vieja se registra en BC como un
   // documento APARTE (una factura por la línea que faltó) que no cuelga del pedido, así
   // que la app no la puede ver. Sin esta salida, esas órdenes quedan en rojo para

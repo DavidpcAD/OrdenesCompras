@@ -22,6 +22,7 @@ import {
   esTipoDevolucion, esTipoEdicion,
   ordenDeDetalleDevolucion, ordenEsperaCorreccion, ordenDeDevolucion, lineasCorregidasDeOrden,
   esLineaMaterial, esLineaRecibible, esLineaCargo, etiquetaTipoLinea,
+  chequeoBcVencido, CHEQUEO_BC_FRESCO_MS,
 } from "./helpers.ts";
 import type { Orden, OrdenLinea, Pedido, PedidoLinea } from "./types.ts";
 
@@ -1042,4 +1043,51 @@ test("una solicitud viva no se ve afectada por nada de esto", () => {
   assert.equal(pedidoCompraBadge(p).label, "Parcialmente ordenado");
   assert.equal(motivoDeCierreSolicitud(p), "");
   assert.equal(lineasACotizar(p).length, 1);
+});
+
+// ── El cotejo contra BC se vence ─────────────────────────────────────────────
+// El "ok" guardado es la foto del momento en que la app escribió, no una vigilancia:
+// en CP-000449 quedó ok a las 12:42 p. m. y a las 4:25 p. m. BC ya tenía otros
+// precios. Estas pruebas cuidan CUÁNDO vale la pena volver a preguntar.
+const ordenChequeo = (o: Partial<Pick<Orden, "estado" | "bcNumber" | "bcCheck">>) =>
+  ({ estado: "lanzado", bcNumber: "CP-005579", ...o }) as Pick<Orden, "estado" | "bcNumber" | "bcCheck">;
+const AHORA = Date.parse("2026-09-21T15:00:00.000Z");
+const haceMin = (m: number) => new Date(AHORA - m * 60_000).toISOString();
+
+test("cotejo vencido: sin pedido en BC no hay nada que cotejar", () => {
+  assert.equal(chequeoBcVencido(ordenChequeo({ bcNumber: "" }), AHORA), false);
+});
+
+test("cotejo vencido: solo en la ventana donde la respuesta sirve", () => {
+  const viejo = { estado: "ok" as const, fecha: haceMin(180) };
+  // Abierta: se va a reescribir entera al enviarla a aprobación.
+  assert.equal(chequeoBcVencido(ordenChequeo({ estado: "abierto", bcCheck: viejo }), AHORA), false);
+  // Completada: el daño ya está hecho; esa la barre Conciliación BC.
+  assert.equal(chequeoBcVencido(ordenChequeo({ estado: "completado", bcCheck: viejo }), AHORA), false);
+  // Lanzada y esperando aprobación: acá todavía se puede frenar a Bodega.
+  assert.equal(chequeoBcVencido(ordenChequeo({ estado: "lanzado", bcCheck: viejo }), AHORA), true);
+  assert.equal(chequeoBcVencido(ordenChequeo({ estado: "pendiente_aprobacion", bcCheck: viejo }), AHORA), true);
+});
+
+test("cotejo vencido: la foto que falta es la peor de todas", () => {
+  assert.equal(chequeoBcVencido(ordenChequeo({ bcCheck: undefined }), AHORA), true);
+  assert.equal(chequeoBcVencido(ordenChequeo({ bcCheck: { estado: "ok", fecha: "" } }), AHORA), true);
+  assert.equal(chequeoBcVencido(ordenChequeo({ bcCheck: { estado: "ok", fecha: "ayer" } }), AHORA), true);
+});
+
+test("cotejo vencido: media hora de frescura, ni un minuto menos", () => {
+  assert.equal(chequeoBcVencido(ordenChequeo({ bcCheck: { estado: "ok", fecha: haceMin(5) } }), AHORA), false);
+  assert.equal(chequeoBcVencido(ordenChequeo({ bcCheck: { estado: "ok", fecha: haceMin(29) } }), AHORA), false);
+  assert.equal(chequeoBcVencido(ordenChequeo({ bcCheck: { estado: "ok", fecha: haceMin(31) } }), AHORA), true);
+  assert.equal(CHEQUEO_BC_FRESCO_MS, 30 * 60_000);
+});
+
+test("cotejo vencido: un reloj corrido no dispara una consulta por gusto", () => {
+  const futuro = new Date(AHORA + 10 * 60_000).toISOString();
+  assert.equal(chequeoBcVencido(ordenChequeo({ bcCheck: { estado: "ok", fecha: futuro } }), AHORA), false);
+});
+
+test("cotejo vencido: un desalineado viejo también se vuelve a preguntar", () => {
+  // Si alguien ya lo arregló en BC, la orden tiene que poder salir del rojo sola.
+  assert.equal(chequeoBcVencido(ordenChequeo({ bcCheck: { estado: "desalineado", fecha: haceMin(45) } }), AHORA), true);
 });
