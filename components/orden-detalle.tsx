@@ -550,7 +550,10 @@ export function OrdenDetalle({
         <Card style={{ padding: 0, overflow: "hidden" }}>
           <div className="ds-table-wrap" style={{ boxShadow: "none" }}>
             <table className="ds-table">
-              <thead><tr><th>Factura</th><th>Fecha factura</th><th>Fecha registro</th><th>Destino</th><th className="ds-num">Total</th><th>Tipo</th><th></th></tr></thead>
+              {/* "Factura" es el N.º del papel del proveedor; "En BC", el documento que
+                  quedó registrado en Business Central. Son dos y hay que cotejarlos, así
+                  que van en columnas vecinas y el de BC abre esa factura allá. */}
+              <thead><tr><th>Factura</th><th>En BC</th><th>Fecha factura</th><th>Fecha registro</th><th>Destino</th><th className="ds-num">Total</th><th>Tipo</th><th></th></tr></thead>
               <tbody>
                 {recs.map((r) => {
                   const abierto = verFactura === r.id;
@@ -558,6 +561,19 @@ export function OrdenDetalle({
                     <Fragment key={r.id}>
                       <tr className="is-clickable" onClick={() => setVerFactura(abierto ? null : r.id)}>
                         <td className="ds-strong">{r.numeroFactura}</td>
+                        {/* Solo lo traen las recepciones posteriores a
+                            sql/recepcion_bc_factura.sql; en las viejas va "—" porque no
+                            hay nada que inventar. stopPropagation: el clic de la fila
+                            abre el detalle de la factura, acá se pidió abrir BC. */}
+                        <td>{r.bcFacturaNo ? (
+                          r.bcFacturaUrl ? (
+                            <a className="chip-link" href={r.bcFacturaUrl} target="_blank" rel="noopener noreferrer"
+                              onClick={(e) => e.stopPropagation()}
+                              title={`Abrir la factura ${r.bcFacturaNo} en Business Central`}>
+                              {r.bcFacturaNo}<span className="chip-link__ir" aria-hidden>↗</span>
+                            </a>
+                          ) : <span style={{ userSelect: "all" }}>{r.bcFacturaNo}</span>
+                        ) : <span className="ds-muted">—</span>}</td>
                         <td>{formatDate(r.fechaFactura)}</td>
                         <td>{formatDate(r.fechaRegistro)}</td>
                         {/* A dónde fue el material de ESTA factura: consumo de obra
@@ -594,7 +610,7 @@ export function OrdenDetalle({
                       </tr>
                       {abierto && (
                         <tr>
-                          <td colSpan={7} style={{ background: "var(--ds-color-surface)", padding: "6px 12px 14px" }}>
+                          <td colSpan={8} style={{ background: "var(--ds-color-surface)", padding: "6px 12px 14px" }}>
                             <div className="fac-det">
                               <div className="fac-det__head">
                                 <span className="ds-strong">Factura {r.numeroFactura}</span>
