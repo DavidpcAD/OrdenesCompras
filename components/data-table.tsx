@@ -14,6 +14,7 @@ import { num } from "@/lib/helpers";
 import { useStore } from "@/lib/store";
 import { visitaDe } from "@/lib/navegacion";
 import { conservaBusqueda, escribirMarcaFila, leerMarcaFila, type MarcaFila } from "@/lib/memoria-tabla";
+import { CalendarioRango } from "@/components/calendario-rango";
 
 // Texto plano de un valor de celda (para opciones y comparación de filtro).
 const asText = (v: unknown): string => v == null ? "" : String(v);
@@ -817,39 +818,20 @@ function ColumnFilterPopover<T>({ col, label, anchor, onClose }: {
   // tabla). Requiere estar montado en cliente.
   if (!mounted) return null;
 
-  // Columna de fecha: filtro por rango (día / mes / año / rango libre).
+  // Columna de fecha: filtro por RANGO, con el mismo calendario que el resto de la app
+  // (components/calendario-rango.tsx). Antes eran dos <input type="date"> sueltos: se
+  // veía un mes a la vez, no se veía el rango y elegir "del viernes al lunes" era
+  // adivinar. Acá el rango se pinta mientras se elige. Un mes solo, porque el popover
+  // de la columna es angosto; los atajos de arriba resuelven lo de todos los días.
   if (isDateCol(col.columnDef)) {
     const range = (col.getFilterValue() as DateRange | undefined) ?? {};
     const setRange = (r: DateRange) => col.setFilterValue(r.from || r.to ? r : undefined);
-    const pad = (n: number) => String(n).padStart(2, "0");
-    const hoy = new Date();
-    const y = hoy.getFullYear(), m = hoy.getMonth();
-    const iso = (dt: Date) => `${dt.getFullYear()}-${pad(dt.getMonth() + 1)}-${pad(dt.getDate())}`;
-    const mesFrom = `${y}-${pad(m + 1)}-01`, mesTo = iso(new Date(y, m + 1, 0));
-    const hoyIso = iso(hoy);
-    // "Ayer" y "Últimos 7 días" son los dos atajos que de verdad se usan: el lunes,
-    // lo que se revisa es lo del viernes, y eso no cae ni en "hoy" ni en "este mes"
-    // cuando el mes acaba de cambiar.
-    const diasAtras = (n: number) => iso(new Date(y, m, hoy.getDate() - n));
     return createPortal(
       <>
         <div className="dt-filter-scrim" onClick={onClose} />
         <div ref={popRef} className="dt-filter-pop" style={{ left: anchor.left, top }} onClick={(e) => e.stopPropagation()}>
-          <div className="dt-filter-pop__list" style={{ padding: 14, gap: 12, display: "flex", flexDirection: "column" }}>
-            <div className="dt-date-quick">
-              <button type="button" onClick={() => setRange({ from: hoyIso, to: hoyIso })}>Hoy</button>
-              <button type="button" onClick={() => setRange({ from: diasAtras(1), to: diasAtras(1) })}>Ayer</button>
-              <button type="button" onClick={() => setRange({ from: diasAtras(6), to: hoyIso })}>Últimos 7 días</button>
-              <button type="button" onClick={() => setRange({ from: mesFrom, to: mesTo })}>Este mes</button>
-              <button type="button" onClick={() => setRange({ from: `${y}-01-01`, to: `${y}-12-31` })}>Este año</button>
-            </div>
-            <label className="dt-date-field"><span>Desde</span>
-              <input type="date" value={range.from ?? ""} max={range.to || undefined} onChange={(e) => setRange({ ...range, from: e.target.value })} />
-            </label>
-            <label className="dt-date-field"><span>Hasta</span>
-              <input type="date" value={range.to ?? ""} min={range.from || undefined} onChange={(e) => setRange({ ...range, to: e.target.value })} />
-            </label>
-            <button type="button" className="dt-date-clear" onClick={() => setRange({})}>Limpiar</button>
+          <div className="dt-filter-pop__list" style={{ padding: 14, gap: 12, display: "flex", flexDirection: "column", maxHeight: "none" }}>
+            <CalendarioRango valor={range} meses={1} onCambio={setRange} />
           </div>
         </div>
       </>,

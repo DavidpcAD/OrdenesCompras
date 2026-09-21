@@ -4,6 +4,8 @@ import { Fragment, useMemo, useState } from "react";
 import Link from "next/link";
 import { Button, Card, Checkbox, EmptyState, Field, Input, Select, Skeleton, Tile } from "@/components/ui";
 import { IconChevronDown, IconList } from "@/components/icons";
+import { CampoRangoFechas } from "@/components/calendario-rango";
+import type { Rango } from "@/lib/fechas";
 import { useStore } from "@/lib/store";
 import { formatDate, money, num, todayISO } from "@/lib/helpers";
 import {
@@ -34,8 +36,11 @@ function Importes({ m }: { m: ImportePorMoneda }) {
 export default function ReportesPage() {
   const { ordenes, pedidos, cargando } = useStore();
   const [tab, setTab] = useState<Tab>("materiales");
-  const [desde, setDesde] = useState(haceUnAno());
-  const [hasta, setHasta] = useState(todayISO());
+  // Un solo campo para las dos puntas: "del 1 al 15 de agosto" se elige en un gesto
+  // y se ve pintado, en vez de dos calendarios sueltos que no se hablan.
+  const [rango, setRango] = useState<Rango>({ from: haceUnAno(), to: todayISO() });
+  const desde = rango.from ?? "";
+  const hasta = rango.to ?? "";
   const [texto, setTexto] = useState("");
   const [obra, setObra] = useState("");
   const [proveedorNo, setProveedorNo] = useState("");
@@ -66,7 +71,7 @@ export default function ReportesPage() {
     URL.revokeObjectURL(url);
   }
 
-  const limpiar = () => { setTexto(""); setObra(""); setProveedorNo(""); setDesde(haceUnAno()); setHasta(todayISO()); setIncluirNoAprobadas(false); };
+  const limpiar = () => { setTexto(""); setObra(""); setProveedorNo(""); setRango({ from: haceUnAno(), to: todayISO() }); setIncluirNoAprobadas(false); };
   const hayFiltro = !!(texto || obra || proveedorNo || incluirNoAprobadas);
   const alternar = (k: string) => setAbierto(abierto === k ? null : k);
 
@@ -135,11 +140,8 @@ export default function ReportesPage() {
           <div style={{ flex: "2 1 260px" }}><Field label="Material (código o descripción)">
             <Input value={texto} onChange={(e) => setTexto(e.target.value)} placeholder="Ej. M20-0141 o filtro de aceite" />
           </Field></div>
-          <div style={{ flex: "1 1 150px" }}><Field label="Desde">
-            <Input type="date" value={desde} onChange={(e) => setDesde(e.target.value)} />
-          </Field></div>
-          <div style={{ flex: "1 1 150px" }}><Field label="Hasta">
-            <Input type="date" value={hasta} onChange={(e) => setHasta(e.target.value)} />
+          <div style={{ flex: "1 1 240px" }}><Field label="Fechas">
+            <CampoRangoFechas valor={rango} onCambio={setRango} vacio="Todas las fechas" max={todayISO()} />
           </Field></div>
           <div style={{ flex: "1 1 180px" }}><Field label="Obra / centro de costo">
             <Select value={obra} onChange={(e) => setObra(e.target.value)} placeholder="Todas">

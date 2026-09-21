@@ -2,9 +2,11 @@
 
 import { useRef, useState } from "react";
 import Link from "next/link";
-import { Button, Card, EmptyState, Field, Input, Tile } from "@/components/ui";
+import { Button, Card, EmptyState, Field, Tile } from "@/components/ui";
+import { CampoRangoFechas } from "@/components/calendario-rango";
+import type { Rango } from "@/lib/fechas";
 import { IconWarning } from "@/components/icons";
-import { formatDate, money } from "@/lib/helpers";
+import { formatDate, money, todayISO } from "@/lib/helpers";
 
 // CONCILIACIÓN CON BUSINESS CENTRAL
 //
@@ -39,7 +41,11 @@ const TITULO: Record<string, string> = {
 };
 
 export default function ConciliacionBcPage() {
-  const [desde, setDesde] = useState(haceTresMeses());
+  // El rango de fechas de las órdenes a revisar. Antes era solo "desde" y se barría
+  // siempre hasta hoy: no había forma de decir "revisame nada más agosto", que es lo
+  // que uno quiere cuando ya revisó lo de setiembre y no quiere volver a gastar las
+  // llamadas a BC (cada orden son una o dos).
+  const [rango, setRango] = useState<Rango>({ from: haceTresMeses() });
   const [corriendo, setCorriendo] = useState(false);
   // El botón de parar se lee con un ref: dentro del while, el valor del useState
   // queda congelado en el del render que arrancó la corrida y el "Parar" no haría nada.
@@ -59,7 +65,10 @@ export default function ConciliacionBcPage() {
     let seguir = true;
     try {
       while (seguir) {
-        const r = await fetch(`/api/reportes/conciliacion-bc?desde=${encodeURIComponent(desde)}&limite=15&saltar=${saltar}`, { cache: "no-store" });
+        const q = new URLSearchParams({ limite: "15", saltar: String(saltar) });
+        if (rango.from) q.set("desde", rango.from);
+        if (rango.to) q.set("hasta", rango.to);
+        const r = await fetch(`/api/reportes/conciliacion-bc?${q}`, { cache: "no-store" });
         const d = await r.json();
         if (!r.ok) { setError(String(d?.error ?? `Error ${r.status}`)); break; }
         const nuevas: Fila[] = (d.filas ?? []).filter((f: Fila) => f.estado !== "ok");
@@ -98,8 +107,8 @@ export default function ConciliacionBcPage() {
 
       <Card className="mb-4">
         <div className="row gap-3 wrap" style={{ alignItems: "flex-end" }}>
-          <Field label="Órdenes emitidas desde">
-            <Input type="date" value={desde} onChange={(e) => setDesde(e.target.value)} />
+          <Field label="Órdenes emitidas">
+            <CampoRangoFechas valor={rango} onCambio={setRango} vacio="Todas las fechas" max={todayISO()} />
           </Field>
           <Button onClick={() => void revisar()} disabled={corriendo}>
             {corriendo ? `Revisando… ${revisadas}/${total}` : "Revisar"}

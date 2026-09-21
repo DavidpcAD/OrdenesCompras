@@ -643,21 +643,7 @@ td.ds-col-fija {
 /* Filtro de fecha (rango): chips + inputs Desde/Hasta */
 /* Rejilla de 3 y no un flex que estira: con cinco atajos, el que se pasaba de
    fila quedaba solo y del ancho del popover, como si fuera otro control. */
-.dt-date-quick { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
-.dt-date-quick button {
-  border: 1.5px solid var(--ds-color-gray-200); background: var(--ds-surface);
-  border-radius: 999px; padding: 6px 8px; font: inherit; font-size: 12px; font-weight: var(--ds-font-weight-semibold);
-  color: var(--ds-text); cursor: pointer; white-space: nowrap; transition: border-color .12s, background .12s;
-}
-.dt-date-quick button:hover { border-color: var(--ds-color-green-200); background: color-mix(in srgb, var(--ds-color-green-100) 12%, var(--ds-tint-base)); }
-.dt-date-field { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--ds-color-gray-400); }
-.dt-date-field input {
-  border: 1.5px solid var(--ds-color-gray-200); border-radius: var(--ds-radius-md); padding: 8px 10px;
-  font: inherit; font-size: 14px; color: var(--ds-text); outline: none;
-}
-.dt-date-field input:focus { border-color: var(--ds-color-green-100); box-shadow: 0 0 0 3px color-mix(in srgb, var(--ds-color-green-100) 20%, transparent); }
-.dt-date-clear { border: 0; background: none; color: var(--ds-color-gray-500); font: inherit; font-size: 13px; font-weight: var(--ds-font-weight-semibold); cursor: pointer; padding: 4px; align-self: flex-start; }
-.dt-date-clear:hover { color: var(--ds-color-red-200); }
+/* (el filtro de fecha de la tabla ahora usa el calendario de rango: ver .cal-*) */
 
 /* ── DataTable: header oscuro con pills (estilo Prototipo/Usuarios) ── */
 .ds-table.dt-dark { border-collapse: separate; border-spacing: 0; }
@@ -2336,4 +2322,96 @@ button.ana-kpi:active { transform: translateY(1px); }
      márgenes negativos se mantienen, así que crecer no corre la fila. */
   .kebab { width: 44px; height: 44px; }
   .icon-btn { min-width: 44px; min-height: 44px; }
+}
+
+/* ── Calendario de rango (components/calendario-rango.tsx) ──────────────────
+   Un rango se elige en un gesto y se VE: las dos puntas en verde y los días de
+   adentro tintados. Todo con tokens, para que el oscuro salga solo.            */
+.cal { display: flex; flex-direction: column; gap: var(--ds-space-3, 12px); }
+
+.cal-atajos { display: flex; flex-wrap: wrap; gap: 6px; }
+.cal-atajos button {
+  border: 1.5px solid var(--ds-color-gray-200); background: var(--ds-surface);
+  border-radius: 999px; padding: 6px 10px; font: inherit; font-size: 12px;
+  font-weight: var(--ds-font-weight-semibold); color: var(--ds-text); cursor: pointer;
+  white-space: nowrap; transition: border-color .12s, background .12s;
+}
+.cal-atajos button:hover { border-color: var(--ds-color-green-200); background: color-mix(in srgb, var(--ds-color-green-100) 12%, var(--ds-tint-base)); }
+
+.cal-meses { display: flex; gap: var(--ds-space-5, 20px); }
+.cal-mes { flex: 1 1 0; min-width: 0; }
+.cal-mes__head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.cal-mes__titulo { font-size: 14px; font-weight: var(--ds-font-weight-semibold); color: var(--ds-text); text-transform: capitalize; }
+.cal-nav {
+  display: grid; place-items: center; width: 28px; height: 28px; border: 0; border-radius: 999px;
+  background: none; color: var(--ds-color-gray-500); cursor: pointer;
+}
+.cal-nav:hover { background: var(--ds-surface-2); color: var(--ds-text); }
+.cal-nav--hueco { visibility: hidden; cursor: default; }
+/* La flecha de "mes siguiente" vive en el segundo mes, que en pantalla angosta se
+   esconde: esta es la misma flecha en el primero, visible solo ahi. */
+.cal-nav--movil { visibility: hidden; }
+
+.cal-semana, .cal-dias { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; }
+.cal-semana { margin-bottom: 4px; }
+.cal-semana span {
+  text-align: center; font-size: 11px; font-weight: var(--ds-font-weight-semibold);
+  color: var(--ds-color-gray-400); text-transform: uppercase;
+}
+
+.cal-dia {
+  position: relative; aspect-ratio: 1 / 1; min-height: 32px; border: 0; background: none;
+  border-radius: 999px; font: inherit; font-size: 13px; color: var(--ds-text); cursor: pointer;
+  display: grid; place-items: center; transition: background .1s, color .1s;
+}
+.cal-dia--vacio { cursor: default; }
+.cal-dia:disabled { color: var(--ds-color-gray-300); cursor: not-allowed; }
+.cal-dia:not(:disabled):not(.is-dentro):not(.is-punta):hover { background: var(--ds-surface-2); }
+/* Hoy: un punto, no un relleno — para que no compita con las puntas del rango. */
+.cal-dia.is-hoy::after {
+  content: ""; position: absolute; bottom: 4px; width: 4px; height: 4px; border-radius: 999px;
+  background: var(--ds-color-green-200);
+}
+/* Los días DE ADENTRO: tinte suave y esquinas cuadradas, así el rango se lee como
+   una barra continua y no como bolitas sueltas. */
+.cal-dia.is-dentro { background: color-mix(in srgb, var(--ds-color-green-100) 20%, var(--ds-tint-base)); border-radius: 0; }
+.cal-dia.is-inicio { border-top-left-radius: 999px; border-bottom-left-radius: 999px; }
+.cal-dia.is-fin { border-top-right-radius: 999px; border-bottom-right-radius: 999px; }
+.cal-dia.is-punta { background: var(--ds-color-green-100); color: var(--ds-color-black); font-weight: var(--ds-font-weight-semibold); }
+.cal-dia.is-punta.is-hoy::after { background: var(--ds-color-black); }
+.cal-dia.is-solo { border-radius: 999px; }
+.cal-dia:focus-visible { outline: 2px solid var(--ds-color-green-200); outline-offset: 1px; }
+
+.cal-pie {
+  display: flex; align-items: center; justify-content: space-between; gap: var(--ds-space-3, 12px);
+  border-top: 1px solid var(--ds-color-gray-200); padding-top: 10px;
+}
+.cal-pie__texto { font-size: 13px; color: var(--ds-color-gray-500); }
+
+/* El campo que lo abre */
+.cal-campo { position: relative; display: inline-block; }
+.cal-campo__btn {
+  display: inline-flex; align-items: center; gap: 8px; min-width: 210px; justify-content: space-between;
+  border: 1.5px solid var(--ds-color-gray-200); background: var(--ds-surface); color: var(--ds-text);
+  border-radius: var(--ds-radius-md, 10px); padding: 9px 12px; font: inherit; font-size: 14px; cursor: pointer;
+  transition: border-color .12s;
+}
+.cal-campo__btn:hover { border-color: var(--ds-color-gray-300); }
+.cal-campo__btn.is-puesto { border-color: var(--ds-color-green-200); font-weight: var(--ds-font-weight-semibold); }
+.cal-campo__btn:focus-visible { outline: none; border-color: var(--ds-color-green-100); box-shadow: 0 0 0 3px color-mix(in srgb, var(--ds-color-green-100) 20%, transparent); }
+
+.cal-scrim { position: fixed; inset: 0; z-index: 60; }
+.cal-pop {
+  position: absolute; z-index: 61; top: calc(100% + 6px); left: 0; width: max-content; max-width: min(92vw, 620px);
+  background: var(--ds-surface); border-radius: var(--ds-radius-xl, 18px);
+  box-shadow: var(--ds-shadow-02, 0 6px 20px rgba(0,0,0,.14)); padding: 14px;
+}
+
+/* En pantallas angostas (Bodega trabaja en celular) el segundo mes no cabe: se deja
+   uno solo y el panel se pega al borde izquierdo de la pantalla. */
+@media (max-width: 640px) {
+  .cal-meses .cal-mes + .cal-mes { display: none; }
+  .cal-nav--movil { visibility: visible; }
+  .cal-pop { position: fixed; left: 8px; right: 8px; top: auto; width: auto; max-width: none; }
+  .cal-campo__btn { width: 100%; }
 }
