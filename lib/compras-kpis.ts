@@ -1,5 +1,5 @@
-import { esLineaRecibible, monedaApp } from "./helpers";
-import type { Orden, OrdenLinea } from "./types";
+import { esLineaRecibible, monedaApp } from "./helpers.ts";
+import type { Orden, OrdenLinea } from "./types.ts";
 
 // LOS NÚMEROS DEL RESUMEN. Todo el cálculo de la pestaña "Resumen" vive acá, aparte
 // de los componentes, porque son reglas del oficio y no de pintura — y porque una
@@ -13,9 +13,13 @@ import type { Orden, OrdenLinea } from "./types";
 // 2. SIN IVA, con descuento aplicado. Es el mismo importe que la columna "Total sin
 //    IVA" de la lista de órdenes; si acá se calculara distinto, dos pantallas darían
 //    dos números para lo mismo.
-// 3. CADA MONEDA POR SU LADO. Las órdenes traen `currencyCode` ("" = colones, "USD").
-//    Sumar colones con dólares da un número que no existe. Acá se agrupa por moneda y
-//    la pantalla muestra la que manda, diciendo si hay otra aparte.
+// 3. TODO EN COLONES, con el tipo de cambio de BC. Las órdenes traen `currencyCode`
+//    ("" = colones, "USD", "EURO"). Antes se mostraba la moneda con más órdenes y el
+//    resto quedaba FUERA de los montos ("quedan fuera 23 órdenes en USD"): un total
+//    al que le falta plata se lee igual que el total. Ahora cada orden se pasa a
+//    colones con el MISMO tipo de cambio con el que BC registra las facturas
+//    (`/api/bc/tipo-cambio`), y lo único que queda afuera es la moneda para la que
+//    no haya factor — convertir a 1 a 1 sería mentir con más confianza que antes.
 
 const importePedido = (l: OrdenLinea) => l.cantidad * l.precioUnitario * (1 - (l.descuentoPct ?? 0) / 100);
 const importeRecibido = (l: OrdenLinea) => (l.cantidadRecibida ?? 0) * l.precioUnitario * (1 - (l.descuentoPct ?? 0) / 100);
@@ -41,9 +45,16 @@ const sumaSerie = (s: Serie[]) => s.reduce(
 
 export type Segmento = { clave: string; etiqueta: string; monto: number; color: string };
 
+// Lo que hace falta para pasar una orden a colones: ₡ por unidad y de qué día es el
+// tipo de cambio (la fecha se muestra, porque BC no cotiza todas las monedas todos
+// los días — ver `bcTipoCambio`).
+export type TipoCambioApp = { factor: Record<string, number>; fecha?: Record<string, string> };
+
 export type KpisCompras = {
-  moneda: string;                 // la moneda que manda (la de más órdenes)
-  otrasMonedas: { moneda: string; ordenes: number }[]; // las que quedaron fuera de los montos
+  moneda: string;                 // los montos van en colones
+  otrasMonedas: { moneda: string; ordenes: number }[]; // las que quedaron fuera por no tener tipo de cambio
+  // Lo que SÍ se convirtió, para poder decir a cómo: "23 órdenes en USD a ₡450,00".
+  convertido: { moneda: string; ordenes: number; factor: number; fecha?: string }[];
   anio: number;
   anioPrevio: number;
   // 12 meses del año en curso y del anterior. El previo se recorta al mes de hoy para
@@ -75,29 +86,43 @@ const ESTADOS_EN_CURSO: { clave: string; etiqueta: string; color: string }[] = [
   { clave: "lanzado", etiqueta: "Lanzadas", color: "var(--ds-color-green-100)" },
 ];
 
-export function kpisDeCompras(ordenes: Orden[], hoyISO: string): KpisCompras {
+export function kpisDeCompras(ordenes: Orden[], hoyISO: string, tipoCambio?: TipoCambioApp): KpisCompras {
   const hoy = anioMes(hoyISO) ?? { anio: new Date().getFullYear(), mes: new Date().getMonth() };
   const anio = hoy.anio;
   const anioPrevio = anio - 1;
 
-  // ── Qué moneda manda ──────────────────────────────────────────────────────
-  // No se elige CRC a ciegas: se cuenta. Si algún día la mayoría de las órdenes
-  // fueran en dólares, los montos saldrían en dólares y los colones quedarían
-  // declarados aparte, en vez de sumarse en silencio a un total imposible.
-  const cuentaMoneda = new Map<string, number>();
-  for (const o of ordenes) cuentaMoneda.set(monedaDe(o), (cuentaMoneda.get(monedaDe(o)) ?? 0) + 1);
-  const ranking = [...cuentaMoneda.entries()].sort((a, b) => b[1] - a[1]);
-  const moneda = ranking[0]?.[0] ?? "CRC";
-  const otrasMonedas = ranking.slice(1).map(([m, n]) => ({ moneda: m, ordenes: n }));
-
-  const delaMoneda = ordenes.filter((o) => monedaDe(o) === moneda);
+  // ── Todo a colones ────────────────────────────────────────────────────────
+  // El colón es la moneda local de la compañía en BC, así que es la única en la que
+  // todo se puede juntar sin inventar nada. La orden que venga en otra se multiplica
+  // por su factor; la que no tenga factor queda fuera Y SE DICE cuál.
+  const factorDe = (o: Orden): number | null => {
+    const m = monedaDe(o);
+    if (m === "CRC") return 1;
+    const f = Number(tipoCambio?.factor?.[m]);
+    return Number.isFinite(f) && f > 0 ? f : null;
+  };
+  const fuera = new Map<string, number>();
+  const convertidas = new Map<string, number>();
+  const usables: { o: Orden; factor: number }[] = [];
+  for (const o of ordenes) {
+    const m = monedaDe(o);
+    const f = factorDe(o);
+    if (f == null) { fuera.set(m, (fuera.get(m) ?? 0) + 1); continue; }
+    if (m !== "CRC") convertidas.set(m, (convertidas.get(m) ?? 0) + 1);
+    usables.push({ o, factor: f });
+  }
+  const moneda = "CRC";
+  const otrasMonedas = [...fuera.entries()].sort((a, b) => b[1] - a[1]).map(([m, n]) => ({ moneda: m, ordenes: n }));
+  const convertido = [...convertidas.entries()].sort((a, b) => b[1] - a[1]).map(([m, n]) => ({
+    moneda: m, ordenes: n, factor: Number(tipoCambio?.factor?.[m]), fecha: tipoCambio?.fecha?.[m],
+  }));
 
   // ── Series mensuales ──────────────────────────────────────────────────────
   const meses = Array.from({ length: 12 }, serieVacia);
   const mesesPrevio = Array.from({ length: 12 }, serieVacia);
   let hayAnioPrevio = false;
 
-  for (const o of delaMoneda) {
+  for (const { o, factor } of usables) {
     const f = anioMes(o.fecha);
     if (!f) continue;
     const destino = f.anio === anio ? meses : f.anio === anioPrevio ? mesesPrevio : null;
@@ -107,8 +132,8 @@ export function kpisDeCompras(ordenes: Orden[], hoyISO: string): KpisCompras {
     casilla.ordenes += 1;
     for (const l of o.lineas) {
       if (!esLineaRecibible(l)) continue;
-      casilla.pedido += importePedido(l);
-      casilla.recibido += importeRecibido(l);
+      casilla.pedido += importePedido(l) * factor;
+      casilla.recibido += importeRecibido(l) * factor;
     }
   }
 
@@ -122,14 +147,14 @@ export function kpisDeCompras(ordenes: Orden[], hoyISO: string): KpisCompras {
   let pedidoVivo = 0;
   let recibidoVivo = 0;
   let masViejoISO: string | null = null;
-  for (const o of delaMoneda) {
+  for (const { o, factor } of usables) {
     let pedido = 0;
     let recibido = 0;
     let debe = false;
     for (const l of o.lineas) {
       if (!esLineaRecibible(l)) continue;
-      pedido += importePedido(l);
-      recibido += importeRecibido(l);
+      pedido += importePedido(l) * factor;
+      recibido += importeRecibido(l) * factor;
       if ((l.cantidadRecibida ?? 0) < l.cantidad) debe = true;
     }
     if (debe && o.fecha && (!masViejoISO || o.fecha < masViejoISO)) masViejoISO = o.fecha;
@@ -147,7 +172,7 @@ export function kpisDeCompras(ordenes: Orden[], hoyISO: string): KpisCompras {
 
   const pendiente = Math.max(0, pedidoVivo - recibidoVivo);
   return {
-    moneda, otrasMonedas, anio, anioPrevio,
+    moneda, otrasMonedas, convertido, anio, anioPrevio,
     meses, mesesPrevio, hayAnioPrevio,
     total, totalPrevio,
     vivo: {

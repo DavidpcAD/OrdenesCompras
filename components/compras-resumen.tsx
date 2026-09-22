@@ -2,7 +2,7 @@
 
 import { useMemo } from "react";
 import { Sparkline, Donut, BarRanking, SerieMensual } from "@/components/charts";
-import { money, num, todayISO } from "@/lib/helpers";
+import { money, num, todayISO, formatDate } from "@/lib/helpers";
 import { variacion, diasDesde, MESES_CORTOS } from "@/lib/compras-kpis";
 import type { KpisCompras } from "@/lib/compras-kpis";
 import { usePanoramaBc } from "@/lib/use-sin-facturar";
@@ -74,13 +74,27 @@ export function ComprasResumen({ k, filas, onVerProveedores, onConciliacion, onI
 
   return (
     <div className="resumen">
-      {/* Los montos son de UNA moneda. Mezclar colones con dólares da un total que no
-          existe, así que las otras se declaran acá en vez de sumarse en silencio. */}
-      {k.otrasMonedas.length > 0 && (
+      {/* Los montos van TODOS en colones. Lo que venía en otra moneda se pasó con el
+          tipo de cambio de BC —el mismo con el que se registran las facturas allá— y
+          acá se dice a cómo y de qué día, porque un total convertido en silencio es
+          un total que nadie puede cuadrar. Lo que no se pudo convertir se declara
+          aparte: sumarlo 1 a 1 sería peor que dejarlo afuera. */}
+      {(k.convertido.length > 0 || k.otrasMonedas.length > 0) && (
         <p className="ds-body-sm ds-muted resumen__aviso">
-          Los montos son en {k.moneda === "CRC" ? "colones" : k.moneda}.
-          {" "}Quedan fuera {k.otrasMonedas.map((m) => `${m.ordenes} ${m.ordenes === 1 ? "orden" : "órdenes"} en ${m.moneda}`).join(" y ")}:
-          {" "}no hay tipo de cambio en la app para juntarlas en un solo número.
+          Los montos están en colones.
+          {k.convertido.length > 0 && (
+            <>
+              {" "}{k.convertido.map((c) => `${c.ordenes} ${c.ordenes === 1 ? "orden" : "órdenes"} en ${c.moneda}`).join(" y ")}
+              {" "}{k.convertido.length === 1 && k.convertido[0].ordenes === 1 ? "se pasó" : "se pasaron"} al tipo de cambio de Business Central
+              {" "}({k.convertido.map((c) => `${fmt(c.factor)} por ${c.moneda}${c.fecha ? `, del ${formatDate(c.fecha)}` : ""}`).join(" · ")}).
+            </>
+          )}
+          {k.otrasMonedas.length > 0 && (
+            <>
+              {" "}Quedan fuera {k.otrasMonedas.map((m) => `${m.ordenes} ${m.ordenes === 1 ? "orden" : "órdenes"} en ${m.moneda}`).join(" y ")}:
+              {" "}Business Central no tiene tipo de cambio para {k.otrasMonedas.length === 1 ? "esa moneda" : "esas monedas"}.
+            </>
+          )}
         </p>
       )}
 
