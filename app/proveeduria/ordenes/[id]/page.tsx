@@ -7,13 +7,13 @@ import { IconWarning } from "@/components/icons";
 import { OrdenDetalle } from "@/components/orden-detalle";
 import { useStore } from "@/lib/store";
 import { useOrden } from "@/lib/use-orden";
-import { money, num, ordenPendienteResumen, numeroOrden, etiquetaInterna, ordenAdmiteDevolucion, puedeDevolverLineaOrden, motivoNoDevolverLineaOrden, ordenQuedaSinMaterial, ordenEsperaCorreccion, lineasCorregidasDeOrden } from "@/lib/helpers";
+import { money, num, ordenPendienteResumen, numeroOrden, etiquetaInterna, ordenAdmiteDevolucion, puedeDevolverLineaOrden, motivoNoDevolverLineaOrden, ordenQuedaSinMaterial, ordenEsperaCorreccion, lineasCorregidasDeOrden, ordenPedidos } from "@/lib/helpers";
 
 export default function ProvOrdenDetallePage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
   const toast = useToast();
-  const { pedidos, recepciones, setOrdenEstado, corregirBcNumber, cerrarOrden, descartarOrden, devolverLineasOrden, alinearIvaConBc, exonerarIvaEnBc, nuevaOrdenConPendiente, cargando } = useStore();
+  const { pedidos, recepciones, setOrdenEstado, corregirBcNumber, cerrarOrden, cerrarSolicitud, descartarOrden, devolverLineasOrden, alinearIvaConBc, exonerarIvaEnBc, nuevaOrdenConPendiente, cargando } = useStore();
   const [procesando, setProcesando] = useState(false);
   // Quitarle el IVA al pedido EN BC: escribe allá, así que se confirma antes.
   const [exonerando, setExonerando] = useState(false);
@@ -48,6 +48,11 @@ export default function ProvOrdenDetallePage() {
   const [nota, setNota] = useState("");
   const [devolver, setDevolver] = useState(true);
   const [crearNueva, setCrearNueva] = useState(false);
+  // Archivar de una vez la solicitud de origen. Sin esto había que cerrar la orden
+  // acá y después ir a buscar la solicitud a otra pantalla para escribir el mismo
+  // motivo — y como el cierre le DEVUELVE el saldo, mientras tanto reaparece en la
+  // bandeja como trabajo pendiente que ya nadie va a comprar.
+  const [cerrarSolis, setCerrarSolis] = useState(false);
 
   // La orden se pide SOLA si la carga grande todavía no llegó: abrir una orden no
   // espera a que bajen las otras 449 (ver lib/use-orden.ts).
@@ -118,6 +123,12 @@ export default function ProvOrdenDetallePage() {
     "Error en la orden",
   ];
   const pendiente = ordenPendienteResumen(orden);
+  // Solicitudes de origen que siguen vivas: las únicas que el cierre puede archivar.
+  // Una compra directa no tiene ninguna y una ya archivada no se vuelve a archivar
+  // (cerrarSolicitud la rechaza con "ya está archivada" y tumbaría el aviso del cierre).
+  const solisAbiertas = ordenPedidos(orden)
+    .map((n) => pedidos.find((p) => p.numero === n))
+    .filter((p): p is NonNullable<typeof p> => !!p && p.estado !== "cerrado");
 
   async function confirmarDescarte() {
     if (procesando) return;
@@ -224,9 +235,24 @@ export default function ProvOrdenDetallePage() {
       }
       const r = await cerrarOrden(orden!.id, texto, devolver);
       setCerrando(false);
+      // Las solicitudes van DESPUÉS y una por una: el cierre de la orden ya está
+      // hecho y no se deshace porque una de ellas falle. Por eso cada error se
+      // guarda y se avisa aparte, en vez de dejar que reviente el catch de abajo y
+      // el mensaje diga "no se pudo cerrar la orden" cuando la orden sí se cerró.
+      const archivadas: string[] = [];
+      const fallaron: string[] = [];
+      if (cerrarSolis) {
+        for (const pd of solisAbiertas) {
+          try { await cerrarSolicitud(pd.id, texto); archivadas.push(pd.numero); }
+          catch (e: any) { fallaron.push(`${pd.numero} (${String(e?.message ?? e)})`); }
+        }
+      }
+      const colaArchivo = archivadas.length
+        ? ` · ${archivadas.join(", ")} ${archivadas.length === 1 ? "archivada" : "archivadas"}` : "";
       toast(r.pendienteDevuelto > 0
-        ? `${numeroOrden(orden!)} cerrada · ${num.format(r.pendienteDevuelto)} u. sin recibir ${devolver ? "volvieron a las solicitudes" : "quedaron consumidas"}`
-        : `${numeroOrden(orden!)} cerrada`, "success");
+        ? `${numeroOrden(orden!)} cerrada · ${num.format(r.pendienteDevuelto)} u. sin recibir ${devolver ? "volvieron a las solicitudes" : "quedaron consumidas"}${colaArchivo}`
+        : `${numeroOrden(orden!)} cerrada${colaArchivo}`, "success");
+      if (fallaron.length) toast(`La orden sí se cerró, pero no se pudo archivar ${fallaron.join(" · ")}. Archivala desde la solicitud.`, "error");
     } catch (e: any) {
       toast(`No se pudo cerrar la orden: ${String(e?.message ?? e)}`, "error");
     } finally {
@@ -330,7 +356,7 @@ export default function ProvOrdenDetallePage() {
       {orden.estado === "lanzado" && (
         <Button variant="outline" disabled={procesando}
           title="Dar por terminada la orden aunque quede material sin recibir"
-          onClick={() => { setMotivo(""); setNota(""); setDevolver(true); setCrearNueva(false); setCerrando(true); }}>
+          onClick={() => { setMotivo(""); setNota(""); setDevolver(true); setCrearNueva(false); setCerrarSolis(false); setCerrando(true); }}>
           Cerrar orden
         </Button>
       )}
@@ -583,7 +609,7 @@ export default function ProvOrdenDetallePage() {
             {pendiente.unidades > 0 && (
               <div className="col gap-2">
                 <Checkbox checked={crearNueva}
-                  onChange={(e) => { setCrearNueva(e.target.checked); if (e.target.checked) setDevolver(true); }}
+                  onChange={(e) => { setCrearNueva(e.target.checked); if (e.target.checked) { setDevolver(true); setCerrarSolis(false); } }}
                   label="Crear una orden nueva con lo pendiente (para comprárselo a otro proveedor)" />
                 <Checkbox checked={devolver} disabled={crearNueva}
                   onChange={(e) => setDevolver(e.target.checked)}
@@ -591,6 +617,25 @@ export default function ProvOrdenDetallePage() {
                 {/* Sin devolver el saldo, esas unidades quedan "ya ordenadas" y nadie
                     las puede volver a pedir sin abrir una solicitud nueva. */}
                 {!devolver && <span className="ds-body-sm ds-muted">Ojo: si no las devolvés, esas unidades quedan consumidas y no van a aparecer para comprar de nuevo.</span>}
+              </div>
+            )}
+            {/* Fuera del bloque de arriba a propósito: aunque la orden se haya
+                recibido completa, a la solicitud le puede quedar material que nunca
+                se ordenó, y ese es justo el que hay que dar de baja con el motivo. */}
+            {solisAbiertas.length > 0 && (
+              <div className="col gap-2">
+                <Checkbox checked={cerrarSolis} disabled={crearNueva}
+                  onChange={(e) => setCerrarSolis(e.target.checked)}
+                  label={solisAbiertas.length === 1
+                    ? `Archivar también la solicitud ${solisAbiertas[0].numero}`
+                    : `Archivar también las solicitudes de origen (${solisAbiertas.map((pd) => pd.numero).join(", ")})`} />
+                <span className="ds-body-sm ds-muted">
+                  {crearNueva
+                    ? "No se archiva junto con la orden nueva: esa orden sale de esta misma solicitud."
+                    : cerrarSolis
+                      ? "Lo que le quede sin ordenar se da por cancelado, y el motivo con la nota quedan en su historial."
+                      : "Si no la archivás, lo que se devuelva le vuelve a aparecer al equipo como material por comprar."}
+                </span>
               </div>
             )}
           </div>

@@ -150,6 +150,7 @@ const ORDEN_DET: HelpEntry = {
     "“Anular orden” solo funciona si el pedido sigue Abierto en Business Central y sin recepciones. Si ya está lanzado, primero “Volver a abrir”. BC deja un documento en ₡0,00 al borrar un pedido: es normal, no hay que anularlo.",
     "“Cerrar orden” es para cuando el proveedor no va a traer el resto. Pide el motivo y, por defecto, devuelve lo no recibido a las solicitudes para poder volver a comprarlo.",
     "Si el resto se lo vas a comprar a otro, marcá “Crear una orden nueva con lo pendiente”: cierra esta y te deja la nueva armada y abierta.",
+    "Si además la solicitud ya no se va a comprar, marcá “Archivar también la solicitud”: queda archivada con el mismo motivo y la misma nota, sin tener que ir a buscarla a otra pantalla.",
     "Una orden con facturas registradas ya no se puede volver a abrir: lo que llegó mal va por devolución.",
   ],
 };
