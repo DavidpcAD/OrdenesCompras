@@ -22,7 +22,7 @@ import {
   esTipoDevolucion, esTipoEdicion,
   ordenDeDetalleDevolucion, ordenEsperaCorreccion, ordenDeDevolucion, lineasCorregidasDeOrden,
   esLineaMaterial, esLineaRecibible, esLineaCargo, etiquetaTipoLinea,
-  chequeoBcVencido, CHEQUEO_BC_FRESCO_MS,
+  chequeoBcVencido, CHEQUEO_BC_FRESCO_MS, MONEDAS, monedaIso,
 } from "./helpers.ts";
 import type { Orden, OrdenLinea, Pedido, PedidoLinea } from "./types.ts";
 
@@ -1090,4 +1090,33 @@ test("cotejo vencido: un reloj corrido no dispara una consulta por gusto", () =>
 test("cotejo vencido: un desalineado viejo también se vuelve a preguntar", () => {
   // Si alguien ya lo arregló en BC, la orden tiene que poder salir del rojo sola.
   assert.equal(chequeoBcVencido(ordenChequeo({ bcCheck: { estado: "desalineado", fecha: haceMin(45) } }), AHORA), true);
+});
+
+// ── Monedas: el código de BC no es el ISO ────────────────────────────────────
+// En BC el euro se llama "EURO" (así está en /currencies de Production). Ese es el
+// que viaja al encabezado del pedido; el ISO "EUR" solo sirve para formatear, y
+// confundirlos rompe una cosa distinta en cada punta.
+// Intl separa los miles con un espacio que NO es el de la barra espaciadora (es
+// angosto y sin salto), así que comparar textos pide normalizarlo antes.
+const sinEspacios = (t: string) => t.replace(/\s/g, " ");
+
+test("moneda: el euro viaja como EURO y se formatea como EUR", () => {
+  assert.deepEqual(MONEDAS.map((m) => m.value), ["", "USD", "EURO"]);
+  assert.equal(monedaIso("EURO"), "EUR");
+  assert.equal(monedaIso("euro"), "EUR");
+  assert.equal(monedaIso(""), "CRC");
+  assert.equal(monedaIso("CRC"), "CRC");
+  assert.equal(monedaIso("USD"), "USD");
+  // Intl no conoce "EURO": sin la traducción, pintar un importe reventaba la pantalla.
+  // (En es-CR la moneda extranjera sale con el código, no con el símbolo: "EUR 2 109,70".)
+  assert.equal(sinEspacios(money(2109.7, "EURO")), "EUR 2 109,70");
+  assert.equal(monedaApp("EURO"), "EURO");   // y el Select lo encuentra
+});
+
+test("moneda: un código que Intl no conozca muestra el número, no una pantalla en blanco", () => {
+  // "EUROS" no es un código ISO válido: Intl tira RangeError y sin el respaldo se
+  // caía la pantalla entera (que es como se descubrió lo del euro).
+  assert.equal(sinEspacios(money(1234.5, "EUROS")), "EUROS 1 234,5");
+  // Uno bien formado pero ajeno lo formatea Intl sin quejarse; tampoco se rompe.
+  assert.equal(sinEspacios(money(1234.5, "XYZ")), "XYZ 1 234,50");
 });

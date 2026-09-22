@@ -9,7 +9,7 @@ import { IconWarning } from "@/components/icons";
 import { Combobox } from "@/components/combobox";
 import { CampoMaquina, RepartoMaquinasModal, nombreDeMaquina, useMaquinasBc } from "@/components/maquina-linea";
 import { useStore } from "@/lib/store";
-import { etiquetaTipoLinea, money, num, ordenEsDirecta, ordenEsperaCorreccion, lineasCorregidasDeOrden, ordenLineaImporte, ordenPedidos, almacenesParaRecepcion, esAlmacenFisico, repartoDeLineaSolicitud, pedidoLineaPendiente, obraParaOrden, ultimoPrecioProveedor, monedaApp, numeroOrden } from "@/lib/helpers";
+import { etiquetaTipoLinea, money, num, ordenEsDirecta, ordenEsperaCorreccion, lineasCorregidasDeOrden, ordenLineaImporte, ordenPedidos, almacenesParaRecepcion, esAlmacenFisico, repartoDeLineaSolicitud, pedidoLineaPendiente, obraParaOrden, ultimoPrecioProveedor, monedaApp, numeroOrden, MONEDAS } from "@/lib/helpers";
 import { precioEnUnidad, precioEntreUnidades, cantidadEntreUnidades, equivalencia, equivalenciaDeUnidad, mismaMoneda, codigoDeItem, opcionesDeUnidad, type UnidadDeItem, type PrecioRef } from "@/lib/unidad";
 import { useVariantes } from "@/lib/use-variantes";
 import type { LineaDeMaquina } from "@/lib/maquinas";
@@ -752,7 +752,7 @@ export default function EditarOrdenPage() {
                 getKey={(p) => p.id} getLabel={(p) => `${p.code} — ${p.nombre}`} getSearch={(p) => `${p.code} ${p.nombre}`} placeholder="Buscar proveedor…" />
             </Field>
             <Field label="Moneda">
-              <Select value={currency} onChange={(e) => setCurrency(e.target.value)}><option value="">CRC (colones)</option><option value="USD">USD (dólares)</option></Select>
+              <Select value={currency} onChange={(e) => setCurrency(e.target.value)}>{MONEDAS.map((m) => <option key={m.value || "CRC"} value={m.value}>{m.label}</option>)}</Select>
             </Field>
             {/* NO es "el flete": es el cargo de producto que traiga la orden, que
                 puede ser impuestos de exterior, servicio de corte u otro. Antes esto

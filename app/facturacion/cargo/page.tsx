@@ -8,7 +8,7 @@ import { DateField } from "@/components/date-field";
 import { IconChevronLeft } from "@/components/icons";
 import { IconWarning } from "@/components/icons";
 import { useStore } from "@/lib/store";
-import { money } from "@/lib/helpers";
+import { money, MONEDAS } from "@/lib/helpers";
 
 // Línea de recepción registrada (albarán) tal como la devuelve
 // /api/bc/recepciones-registradas.
@@ -241,8 +241,7 @@ export default function CargoSobreFacturaPage() {
               </Field>
               <Field label="Moneda">
                 <Select value={currency} onChange={(e) => setCurrency(e.target.value)}>
-                  <option value="">CRC (colones)</option>
-                  <option value="USD">USD (dólares)</option>
+                  {MONEDAS.map((m) => <option key={m.value || "CRC"} value={m.value}>{m.label}</option>)}
                 </Select>
               </Field>
               <Field label="Fecha de emisión">

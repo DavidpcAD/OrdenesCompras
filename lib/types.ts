@@ -213,7 +213,7 @@ export interface Orden {
   almacenRecepcion?: string; // almacén/ubicación de recepción en BC (default ALM-GRAL)
   fecha: string;            // ISO emisión
   fechaRecepEsperada?: string;
-  currencyCode: string;     // "" = CRC, "USD"
+  currencyCode: string;     // el código DE BC: "" = CRC (colones), "USD", "EURO"
   estado: OrdenEstado;
   versionesArchivadas: number;
   lineas: OrdenLinea[];
