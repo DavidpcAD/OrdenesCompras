@@ -227,13 +227,16 @@ const VIGILANCIA: HelpEntry = {
   titulo: "Vigilancia de facturas",
   resumen: "Qué llegó al buzón de facturación contra qué se registró en Business Central.",
   detalle: [
-    "Tiene dos vistas. “Correo contra BC” cruza los comprobantes del buzón contra las facturas registradas y da tres listas: los que calzan, los que llegaron y no están en BC, y los que están en BC sin comprobante. “Señales de BC” son las alertas que salen de Business Central solo, sin correo.",
-    "El correo entra cargando los XML a mano porque la app todavía no tiene permiso para leer el buzón sola: hace falta un registro de app en Entra. Los archivos se leen en tu navegador y no salen de tu máquina.",
+    "“Buzón” es la vista principal: los correos de facturación entran solos, la app los coteja contra Business Central cada pocos minutos y cada comprobante dice si ya se registró, con qué número y cuánto tardó en digitarse.",
+    "Para que eso funcione hacen falta dos cosas que se hacen UNA vez: correr sql/factura_correo.sql en la base, y darle a la app permiso de leer el buzón en Entra (Mail.Read de aplicación, acotado a ese buzón). Si falta alguna, la pantalla lo dice y explica cómo.",
+    "“Cargar XML” es la salida de emergencia: sirve para cotejar una tanda suelta sin esperar el permiso. “Señales de BC” son las alertas que no necesitan el correo.",
     "Mientras tanto, esta pantalla hace las tres preguntas que BC sí contesta solo. En la primera corrida encontró 31 facturas en borrador por ₡7,5 millones —la más vieja de noviembre de 2025— y 15 pares con pinta de doble registro.",
     "Todo dice “posible” a propósito. Un par con el mismo monto puede ser dos entregas contra la misma factura, y un proveedor callado puede ser un proyecto que terminó. La pantalla señala; el criterio es suyo.",
   ],
   pasos: [
-    "Para el cruce: en Outlook seleccionás los correos, guardás los adjuntos en una carpeta y elegís esa carpeta acá. Hay que guardar los XML, no los PDF.",
+    "En “Buzón” no hay que hacer nada: se refresca sola mientras la tengas abierta. El botón “Revisar ahora” es por si no querés esperar.",
+    "Empezá por las que dicen “Sin registrar”: al lado sale cuántos días llevan esperando.",
+    "Si querés cotejar una tanda suelta sin esperar la conexión del buzón: en “Cargar XML”, en Outlook seleccionás los correos, guardás los adjuntos en una carpeta y elegís esa carpeta. Hay que guardar los XML, no los PDF.",
     "Cargá TODO el correo del período que querés revisar. Si cargás solo una parte, la lista de “está en BC y no llegó comprobante” se llena de facturas a las que lo que les falta es el correo, no el registro — la pantalla te avisa cuando eso pasa.",
     "Para las señales de BC: dale “Revisar”. Lee todas las facturas de compra desde noviembre de 2025 y tarda unos segundos.",
     "Empezá por “Facturas en borrador”: son las únicas donde no hay nada que interpretar — existen en BC y nunca se registraron.",
@@ -244,6 +247,7 @@ const VIGILANCIA: HelpEntry = {
     "La cédula del proveedor es la llave de todo lo que viene. Viaja dentro de la clave de 50 dígitos de cada comprobante electrónico, así que sin ella el correo y BC no se pueden cruzar sin adivinar.",
     "Un proveedor callado no siempre es un problema, pero uno que facturaba cada dos días y lleva cuarenta sin aparecer sí vale una llamada.",
     "Los que calzaron “por nombre” son los menos seguros: son los proveedores que no tienen cédula en BC, así que hubo que compararlos por el nombre del emisor.",
+    "“Se vio el …” es cuándo la app detectó la factura en BC, no la fecha del documento. De ahí sale cuánto tardó en digitarse.",
   ],
 };
 const NUEVA: HelpEntry = {

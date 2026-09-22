@@ -5,6 +5,7 @@ import { Button, Card, EmptyState, Tile } from "@/components/ui";
 import { IconWarning } from "@/components/icons";
 import { formatDate, money, num } from "@/lib/helpers";
 import { totalPorMoneda } from "@/lib/vigilancia-facturas";
+import { BuzonFacturas } from "@/components/buzon-facturas";
 import { CruceCorreo } from "@/components/cruce-correo";
 import type {
   FacturaBc, ParDoble, ProveedorCallado, ProveedorSinCedula, FichaDuplicada,
@@ -36,13 +37,14 @@ type Datos = {
   duplicadas: { n: number; filas: FichaDuplicada[] };
 };
 
-type Vista = "correo" | "bc";
+type Vista = "buzon" | "correo" | "bc";
 
 export default function VigilanciaPage() {
-  // Dos vistas y no dos pantallas: es la misma pregunta —qué factura falta— mirada
-  // desde los dos lados. El cruce con el correo abre primero porque es el que contesta
-  // la pregunta completa; las señales de BC son las que se pueden dar sin el correo.
-  const [vista, setVista] = useState<Vista>("correo");
+  // "Buzón" es la vista de verdad: el correo entra solo y cada factura dice si ya se
+  // registró. "Cargar XML" queda como salida de emergencia mientras el permiso de
+  // Entra no exista o si alguien necesita cotejar una tanda suelta. "Señales de BC"
+  // son las alertas que no necesitan el correo.
+  const [vista, setVista] = useState<Vista>("buzon");
   const [datos, setDatos] = useState<Datos | null>(null);
   const [cargando, setCargando] = useState(false);
   const [error, setError] = useState("");
@@ -76,14 +78,19 @@ export default function VigilanciaPage() {
 
       <div className="row gap-2 mb-4">
         <div className="segmented" role="tablist" aria-label="Ver">
+          <button type="button" role="tab" aria-selected={vista === "buzon"}
+            className={`segmented__btn ${vista === "buzon" ? "is-active" : ""}`}
+            onClick={() => setVista("buzon")}>Buzón</button>
           <button type="button" role="tab" aria-selected={vista === "correo"}
             className={`segmented__btn ${vista === "correo" ? "is-active" : ""}`}
-            onClick={() => setVista("correo")}>Correo contra BC</button>
+            onClick={() => setVista("correo")}>Cargar XML</button>
           <button type="button" role="tab" aria-selected={vista === "bc"}
             className={`segmented__btn ${vista === "bc" ? "is-active" : ""}`}
             onClick={() => setVista("bc")}>Señales de BC</button>
         </div>
       </div>
+
+      {vista === "buzon" && <BuzonFacturas />}
 
       {vista === "correo" && <CruceCorreo />}
 
