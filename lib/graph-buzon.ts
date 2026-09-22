@@ -126,53 +126,91 @@ export type CorreoConComprobantes = {
   comprobantes: Comprobante[];
 };
 
-const TOPE_CORREOS = 200;   // por corrida; con ~45 correos al día sobra
+const POR_PAGINA = 100;
+const TOPE_POR_CORRIDA = 120;   // correos CON adjunto que se abren por vuelta
+const DIAS_PRIMERA_CORRIDA = 30;
+
+/**
+ * Arma la consulta al buzón.
+ *
+ * REGLA QUE COSTÓ UN RATO: Exchange NO acepta filtrar por `hasAttachments` y ordenar
+ * por `receivedDateTime` en la misma consulta — contesta 400 `InefficientFilter`
+ * ("The restriction or sort order is too complex for this operation"). Solo tolera
+ * filtrar y ordenar por la MISMA propiedad. Así que la fecha va en el filtro, el
+ * orden va por fecha, y lo de los adjuntos se descarta acá con el `hasAttachments`
+ * que viene en el `$select`. Sale más barato de lo que parece: son unos pocos bytes
+ * por correo y evita traerse el buzón entero.
+ *
+ * Si no hay marcador (primera corrida) se arranca 30 días atrás y no desde el
+ * principio: la bandeja tiene 31.932 correos y ordenar de viejo a nuevo empezaría en
+ * 2019.
+ */
+export function consultaBuzon(buzon: string, desde: string | null, hoy = new Date()): string {
+  const arranque = desde ?? new Date(hoy.getTime() - DIAS_PRIMERA_CORRIDA * 86_400_000).toISOString();
+  const filtro = encodeURIComponent(`receivedDateTime gt ${arranque}`);
+  return `${GRAPH}/users/${encodeURIComponent(buzon)}/mailFolders/inbox/messages` +
+    `?$filter=${filtro}` +
+    `&$select=id,subject,from,receivedDateTime,webLink,hasAttachments` +
+    `&$orderby=receivedDateTime asc&$top=${POR_PAGINA}`;
+}
 
 /**
  * Trae los correos nuevos desde el marcador y les saca los comprobantes.
  *
- * Solo mira los que traen adjuntos: más de la mitad del buzón son boletines, tiquetes
- * de caja y estados de cuenta que no llevan nada. Y de los adjuntos solo abre los
- * `.xml`, que además son livianos (~10 KB).
+ * Solo abre los que traen adjuntos: más de la mitad del buzón son boletines, tiquetes
+ * de caja y estados de cuenta que no llevan nada. Y de los adjuntos solo lee los
+ * `.xml`, que son livianos (~10 KB).
+ *
+ * Va por tandas y devuelve `hayMas`: abrir los adjuntos es una llamada por correo, y
+ * una primera corrida de 30 días son cientos. Como el marcador avanza con lo que sí
+ * se procesó, la corrida siguiente sigue donde quedó — y la pantalla se sincroniza
+ * sola cada 3 minutos, así que se pone al día sin que nadie haga nada.
  */
 export async function leerBuzon(desde: string | null): Promise<{
   correos: CorreoConComprobantes[];
   leidos: number;
   masNuevo: string | null;
+  hayMas: boolean;
 }> {
   const c = cfg();
   const buzon = encodeURIComponent(c.buzon);
 
-  // El filtro de fecha se aplica del lado de Microsoft para no traer el buzón entero.
-  const filtro = ["hasAttachments eq true", desde ? `receivedDateTime gt ${desde}` : ""]
-    .filter(Boolean).join(" and ");
-  const url =
-    `${GRAPH}/users/${buzon}/mailFolders/inbox/messages` +
-    `?$filter=${encodeURIComponent(filtro)}` +
-    `&$select=id,subject,from,receivedDateTime,webLink` +
-    `&$orderby=receivedDateTime asc&$top=${TOPE_CORREOS}`;
-
-  const data = await graph(url);
-  const mensajes: any[] = data.value ?? [];
-
   const correos: CorreoConComprobantes[] = [];
   let masNuevo: string | null = null;
+  let leidos = 0, abiertos = 0, hayMas = false;
+  let url: string | null = consultaBuzon(c.buzon, desde);
 
-  for (const m of mensajes) {
-    if (!masNuevo || m.receivedDateTime > masNuevo) masNuevo = m.receivedDateTime;
-    const comprobantes = await comprobantesDe(buzon, m.id);
-    if (!comprobantes.length) continue;
-    correos.push({
-      messageId: m.id,
-      asunto: m.subject ?? "",
-      remitente: m.from?.emailAddress?.address ?? "",
-      recibido: m.receivedDateTime ?? "",
-      webLink: m.webLink ?? "",
-      comprobantes,
-    });
+  while (url) {
+    const data: any = await graph(url);
+    const mensajes: any[] = data.value ?? [];
+    if (!mensajes.length) break;
+
+    for (const m of mensajes) {
+      if (abiertos >= TOPE_POR_CORRIDA) { hayMas = true; break; }
+      leidos++;
+      // El marcador solo avanza sobre lo que de verdad se terminó de procesar: si se
+      // adelantara a toda la página, los que quedaron sin abrir no se volverían a ver.
+      if (!masNuevo || m.receivedDateTime > masNuevo) masNuevo = m.receivedDateTime;
+      if (!m.hasAttachments) continue;
+
+      abiertos++;
+      const comprobantes = await comprobantesDe(buzon, m.id);
+      if (!comprobantes.length) continue;
+      correos.push({
+        messageId: m.id,
+        asunto: m.subject ?? "",
+        remitente: m.from?.emailAddress?.address ?? "",
+        recibido: m.receivedDateTime ?? "",
+        webLink: m.webLink ?? "",
+        comprobantes,
+      });
+    }
+
+    if (hayMas) break;
+    url = data["@odata.nextLink"] ?? null;
   }
 
-  return { correos, leidos: mensajes.length, masNuevo };
+  return { correos, leidos, masNuevo, hayMas };
 }
 
 async function comprobantesDe(buzon: string, messageId: string): Promise<Comprobante[]> {
