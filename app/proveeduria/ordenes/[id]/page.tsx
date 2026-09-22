@@ -110,6 +110,11 @@ export default function ProvOrdenDetallePage() {
     "Se compró en otro lado",
     "Ya no se necesita",
     "El material se descontinuó",
+    // Caso concreto de "Error en la orden" y el más común: el precio se pactó mal y
+    // el pendiente hay que recomprarlo corregido (va de la mano con "Crear una orden
+    // nueva con lo pendiente"). Separado porque en la bitácora "Error en la orden"
+    // no dice cuál error fue.
+    "Precio incorrecto",
     "Error en la orden",
   ];
   const pendiente = ordenPendienteResumen(orden);
