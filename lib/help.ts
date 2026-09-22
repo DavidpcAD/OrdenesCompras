@@ -12,16 +12,37 @@ export type HelpEntry = {
 };
 
 // ─────────────────────────── Proveeduría (Angie) ───────────────────────────
+const RESUMEN: HelpEntry = {
+  titulo: "Órdenes de compra · Resumen",
+  resumen: "El panorama en paneles: cuánto se pidió, cuánto llegó y dónde está trabado.",
+  detalle: [
+    "Las cuatro tarjetas de arriba son del AÑO EN CURSO, salvo la última: “Pendiente por entregar” es el saldo vivo de todas las órdenes abiertas, sin importar el año.",
+    "El chip con flecha compara contra el MISMO PERÍODO del año pasado (enero hasta el mes de hoy), no contra el año entero. Si no hay año anterior con datos, el chip no sale: un “+100%” contra cero sería mentira.",
+    "Los montos son SIN IVA, con el descuento de línea aplicado, y no incluyen los cargos (un flete no es material que se reciba).",
+    "Si hay órdenes en otra moneda, los montos NO las suman y arriba sale un aviso diciendo cuántas quedaron fuera: la app no tiene tipo de cambio.",
+  ],
+  pasos: [
+    "Mirá las cuatro tarjetas para el panorama; pasá el mouse por un número para ver el monto exacto.",
+    "“Dónde está trabada la plata” reparte por estado lo que todavía no se completa: es la respuesta a “¿cuánto hay esperando aprobación?”.",
+    "“A quién hay que corretearle” lista los proveedores que deben material, del que más debe al que menos. Tocá uno (o “Ver todos”) para ir a la pestaña Proveedores.",
+    "“Cómo viene el año” compara el pedido mes a mes contra el año pasado. Pasá el mouse por un punto para ver el monto de ese mes.",
+    "Para trabajar, pasá a las pestañas Solicitudes u Órdenes: ahí están las listas con sus filtros.",
+  ],
+  tips: [
+    "La chispa al pie de cada tarjeta son los 12 meses del año: no está para leerle valores, está para ver la forma.",
+    "Las órdenes abiertas (borrador) cuentan en “trabada”: todavía no existen en Business Central, pero ya son plata comprometida que nadie está moviendo.",
+  ],
+};
 const DASHBOARD: HelpEntry = {
-  titulo: "Dashboard",
+  titulo: "Órdenes de compra · Proveedores",
   resumen: "Resumen de lo pedido vs. lo entregado, por proveedor.",
   detalle: [
     "Vista general de Proveeduría: cuánto se pidió en total, cuánto ha entregado cada proveedor y cuánto queda pendiente.",
-    "Las tarjetas de arriba (Pedido total, Entregado, % global, Pendiente) resumen todas tus órdenes.",
+    "La barra de plata del encabezado (pendiente por entregar, entregado, pedido total) resume todas tus órdenes y se ve desde las tres pestañas.",
     "La tabla agrupa por proveedor: una fila por proveedor con sus totales.",
   ],
   pasos: [
-    "Mirá las 4 tarjetas de arriba para el panorama general del período.",
+    "Mirá la barra del encabezado para el panorama general del período.",
     "Escribí en “Buscar proveedor…” para encontrar uno por nombre.",
     "Tocá el chevron (v) al inicio de una fila para desplegar las líneas de ese proveedor.",
     "Ordená tocando el encabezado de una columna (▲▼); filtrá con el embudo de “Proveedor”.",
@@ -31,13 +52,13 @@ const DASHBOARD: HelpEntry = {
   tips: ["El % de entregado se colorea: verde = al día, amarillo = parcial, rojo = sin entregar."],
 };
 const SOLICITUDES: HelpEntry = {
-  titulo: "Solicitudes de Ingeniería",
+  titulo: "Órdenes de compra · Solicitudes",
   resumen: "Pedidos de material que llegan de Ingeniería para convertir en órdenes.",
   detalle: [
     "Acá llegan las solicitudes de material que Ingeniería envía desde la app de Producción.",
     "Cada solicitud tiene un destino/obra, un solicitante y sus líneas de material.",
     "El estado indica si está pendiente, ya está en una orden o cerrada.",
-    "Las solicitudes ARCHIVADAS salen de los cuatro conteos de arriba y se consultan en el panel “Archivadas”: son las que se cerraron porque lo que faltaba ya no se va a comprar.",
+    "Las solicitudes ARCHIVADAS salen de los cuatro conteos de arriba y se consultan en el filtro “Archivadas”: son las que se cerraron porque lo que faltaba ya no se va a comprar.",
   ],
   pasos: [
     "Revisá la lista de solicitudes; usá el buscador o los filtros para acotar.",
@@ -45,7 +66,7 @@ const SOLICITUDES: HelpEntry = {
     "Elegí la(s) solicitud(es) o línea(s) que vas a comprar.",
     "Tocá el botón para armar la orden de compra con lo seleccionado.",
     "Alterná “por documento” / “por línea” con el toggle si querés juntar materiales de varias solicitudes.",
-    "Tocá “Archivadas” para ver las que se cerraron, con su motivo. El panel solo aparece si hay alguna.",
+    "Tocá “Archivadas” para ver las que se cerraron, con su motivo. El filtro solo aparece si hay alguna.",
   ],
   tips: [
     "Las líneas en borrador (sin enviar) se resaltan en amarillo para que no se te pasen.",
@@ -87,15 +108,15 @@ const SOLICITUD_DET: HelpEntry = {
   ],
 };
 const ORDENES: HelpEntry = {
-  titulo: "Órdenes de compra",
+  titulo: "Órdenes de compra · Órdenes",
   resumen: "Las órdenes enviadas a proveedores y su estado.",
   detalle: [
     "Lista de las órdenes que armaste. Quedan abiertas hasta recibir el 100% del material.",
-    "Los paneles de arriba cuentan las órdenes por estado.",
+    "Los filtros de arriba cuentan las órdenes por estado.",
     "El N.º que ves (CP-005…) es el del pedido en Business Central, y aparece en cuanto enviás la orden a aprobación: ahí se crea el pedido en BC, ABIERTO. Aprobación después lo lanza. Mientras la orden esté abierta acá todavía no existe en BC y se muestra un rótulo interno (“Interno 37”), que sirve para nombrarla acá pero no se puede buscar en BC.",
   ],
   pasos: [
-    "Tocá un panel de arriba para filtrar por estado (abiertas, pendientes de aprobación, rechazadas, completadas).",
+    "Tocá un filtro de arriba para acotar por estado (abiertas, pendientes de aprobación, rechazadas, completadas).",
     "Buscá por N.º de orden, proveedor o almacén. También encontrás una orden escribiendo su N.º interno viejo (CP-000037).",
     "La columna Almacén dice a dónde entra el material y, si la compra es consumo de una obra, muestra la obra debajo.",
     "Clic en una orden para ver su detalle, estados e historial y las facturas asociadas.",
@@ -427,7 +448,7 @@ const GENERIC: HelpEntry = {
 };
 
 // Devuelve la ayuda de la ruta actual (de la más específica a la más general).
-export function helpForPath(p: string): HelpEntry {
+export function helpForPath(p: string, vista?: string | null): HelpEntry {
   // ---- Bodega ----
   if (p === "/facturacion") return ORDENES_POR_RECIBIR;
   if (p.startsWith("/facturacion/recibidas")) return RECIBIDAS;
@@ -440,6 +461,15 @@ export function helpForPath(p: string): HelpEntry {
   if (p.startsWith("/facturacion/ver/")) return ORDEN_VER;
   if (/^\/facturacion\/[^/]+$/.test(p)) return RECIBIR; // /facturacion/{id}
   // ---- Proveeduría ----
+  // Compras es UNA pantalla con tres pestañas, así que la ayuda la elige la pestaña
+  // (?vista=) y no la ruta. El shell le pasa la vista; sin ella cae en Órdenes, que
+  // es donde abre la pantalla.
+  if (p.startsWith("/proveeduria/compras")) {
+    return vista === "resumen" ? RESUMEN
+      : vista === "solicitudes" ? SOLICITUDES
+        : vista === "proveedores" ? DASHBOARD
+          : ORDENES;
+  }
   if (p.startsWith("/proveeduria/dashboard")) return DASHBOARD;
   if (p.startsWith("/proveeduria/solicitudes/")) return SOLICITUD_DET;
   if (p.startsWith("/proveeduria/solicitudes")) return SOLICITUDES;

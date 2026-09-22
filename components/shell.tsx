@@ -12,7 +12,7 @@ import { marcarNavegacion } from "@/lib/navegacion";
 import { borrarCacheBootstrap } from "@/lib/cache-bootstrap";
 import {
   IconBell, IconList, IconReceipt, IconCheck, IconDelivery, IconFolder,
-  IconPlus, IconLogout, IconBox, IconWarning, IconDashboard, IconEdit, IconMatrix,
+  IconPlus, IconLogout, IconBox, IconWarning, IconEdit, IconMatrix,
   AdelanteMark,
 } from "@/components/icons";
 
@@ -55,14 +55,17 @@ type RoleAction = { href: string; label: string };
 
 const ROLE_META: Record<Role, { label: string; persona: string; home: string; nav: NavItem[]; action?: RoleAction; color: string }> = {
   proveeduria: {
-    label: "Proveeduría", persona: "Angie", home: "/proveeduria/dashboard", color: "var(--ds-color-yellow)",
+    label: "Proveeduría", persona: "Angie", home: "/proveeduria/compras?vista=resumen", color: "var(--ds-color-yellow)",
     action: { href: "/proveeduria/directa", label: "Compra directa" },
     nav: [
-      // Órdenes y Solicitudes son un mismo concepto cada uno, con dos vistas
-      // (por documento / por línea) que se alternan con un toggle dentro de la página.
-      { href: "/proveeduria/dashboard", label: "Dashboard", icon: IconDashboard },
-      { href: "/proveeduria/solicitudes", label: "Solicitudes", icon: IconList, alt: ["/proveeduria$"] },
-      { href: "/proveeduria/ordenes", label: "Órdenes", icon: IconReceipt, alt: ["/proveeduria/pedidas", "/proveeduria/nueva", "/proveeduria/directa"] },
+      // Dashboard, Solicitudes y Órdenes eran tres entradas y son vistas de la misma
+      // tubería: se fusionaron en Órdenes de compra, con pestañas adentro (?vista=). Las
+      // rutas viejas redirigen, y las que cuelgan de ellas —los detalles, armar la
+      // orden, la vista por línea— entran por `alt` para que el riel siga encendido.
+      {
+        href: "/proveeduria/compras", label: "Órdenes de compra", icon: IconReceipt,
+        alt: ["/proveeduria$", "/proveeduria/dashboard", "/proveeduria/solicitudes", "/proveeduria/ordenes", "/proveeduria/pedidas", "/proveeduria/nueva", "/proveeduria/directa"],
+      },
       { href: "/proveeduria/devoluciones", label: "Devoluciones", icon: IconWarning },
       { href: "/proveeduria/inventarios", label: "Inventarios", icon: IconBox },
       { href: "/proveeduria/reportes", label: "Reportes", icon: IconMatrix },
@@ -455,7 +458,12 @@ export function AppShell({ role, children }: { role: Role; children: React.React
 
       {/* Ayuda contextual: qué es la pantalla actual y para qué sirve. */}
       {helpOpen && (() => {
-        const h = helpForPath(pathname);
+        // La pestaña de Compras va en la query, y el shell no la mira con
+        // `useSearchParams` a propósito: eso obliga a un Suspense alrededor del riel
+        // entero para algo que solo importa acá. Se lee de `window` en el momento de
+        // abrir el panel, que es siempre en el navegador y siempre con la URL al día.
+        const vista = typeof window === "undefined" ? null : new URLSearchParams(window.location.search).get("vista");
+        const h = helpForPath(pathname, vista);
         return (
           <Modal title={h.titulo} onClose={() => setHelpOpen(false)} wide>
             <p className="ds-muted" style={{ lineHeight: 1.5, marginBottom: "var(--ds-space-5)" }}>{h.resumen}</p>

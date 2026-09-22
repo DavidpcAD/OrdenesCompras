@@ -151,7 +151,7 @@ hecha para ella (edita las tres fechas, tabla de escritorio). Si eso cambia, hay
 ```
 app/
   page.tsx                  Login
-  proveeduria/              Órdenes, solicitudes, compra directa, inventarios, dashboard
+  proveeduria/              Compras (solicitudes/órdenes/proveedores), compra directa, inventarios
   facturacion/              Bodega (recibir, recibidas) + Contabilidad (NC, cargo, archivo)
   api/                      API routes (ver tabla abajo)
 components/
@@ -238,8 +238,8 @@ como variables `--ds-*`, con tokens semánticos (`--ds-bg`, `--ds-surface`, `--d
 - **BC → Producción**: el tipo de cargo ya se guarda en SQL, pero para que llegue a BC en el
   flujo normal la app de Producción tiene que **leer** `chargeNo`/`chargeMethod` al crear el
   pedido.
-- **Inventarios / Dashboard**: dependen de endpoints de BC (existencias por ubicación y Job
-  Tasks) y del mapeo obra→almacén.
+- **Inventarios / pestaña Proveedores de Compras**: dependen de endpoints de BC (existencias
+  por ubicación y Job Tasks) y del mapeo obra→almacén.
 - **Rutas sin consumidor en esta app** (las pantallas que las usaban eran de Ingeniería, que
   se movió a Producción): `/api/plantillas`, `/api/matriz`, `/api/clasificaciones` y
   `/api/mi-etapa`, con sus funciones en `repo.ts`. No las borré por si Ingeniería vuelve acá;

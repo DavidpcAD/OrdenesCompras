@@ -26,7 +26,7 @@ export default function ProveeduriaPedidoDetallePage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
   // volver = pantalla anterior, con su filtro (el rótulo se ajusta solo)
-  const { volver, etiqueta: volverTexto } = useVolver("/proveeduria/solicitudes", "Volver a solicitudes");
+  const { volver, etiqueta: volverTexto } = useVolver("/proveeduria/compras?vista=solicitudes", "Volver a solicitudes");
   const toast = useToast();
   const { pedidos, ordenes, setBorrador, devolverPedido, cerrarSolicitud, reabrirSolicitud, retomarOrden, cargando } = useStore();
   const [devolverOpen, setDevolverOpen] = useState(false);
@@ -163,7 +163,7 @@ export default function ProveeduriaPedidoDetallePage() {
       setDevolverOpen(false);
       if (r.pedidoDevuelto) {
         toast(`${pedido!.numero} devuelto a Ingeniería.`, "info");
-        router.push("/proveeduria/solicitudes");
+        router.push("/proveeduria/compras?vista=solicitudes");
       } else {
         // El pedido sigue vivo con el resto de las líneas: no se sale de la pantalla,
         // así se ve cómo quedaron marcadas.

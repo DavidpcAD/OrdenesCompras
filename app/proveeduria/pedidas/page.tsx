@@ -104,7 +104,7 @@ export default function ProveeduriaLineasPedidasPage() {
           </div>
           <div className="row gap-3 wrap" style={{ alignItems: "center" }}>
             <VistaToggle opciones={[
-              { label: "Por orden", href: "/proveeduria/ordenes", active: false, icon: <IconReceipt size={16} /> },
+              { label: "Por orden", href: "/proveeduria/compras?vista=ordenes", active: false, icon: <IconReceipt size={16} /> },
               { label: "Por línea", href: "/proveeduria/pedidas", active: true, icon: <IconList size={16} /> },
             ]} />
           </div>

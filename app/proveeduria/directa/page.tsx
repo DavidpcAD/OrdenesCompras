@@ -567,7 +567,7 @@ export default function OrdenDirectaPage() {
   return (
     <>
       <main className="page page--wide" style={{ paddingBottom: 120 }}>
-        <button type="button" className="back-link" onClick={() => router.push("/proveeduria/ordenes")}>Volver a órdenes</button>
+        <button type="button" className="back-link" onClick={() => router.push("/proveeduria/compras?vista=ordenes")}>Volver a órdenes</button>
         <div className="page__head">
           <div className="page__title">
             <div className="row gap-3"><h1 className="ds-heading">Nueva orden directa</h1><Badge tone="yellow">Directa</Badge></div>

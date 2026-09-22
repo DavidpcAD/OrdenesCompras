@@ -121,7 +121,7 @@ export default function ProvOrdenDetallePage() {
       const r = await descartarOrden(orden!.id, motivoDescarte.trim());
       setDescartando(false);
       toast(`${numeroOrden(orden!)} ${orden!.bcNumber ? "anulada" : "descartada"}${r.saldoDevuelto > 0 ? ` · ${num.format(r.saldoDevuelto)} u. volvieron a la solicitud` : ""}${r.bcBaja ? ` · ${r.bcBaja}` : ""}`, "success");
-      router.push("/proveeduria/ordenes");
+      router.push("/proveeduria/compras?vista=ordenes");
     } catch (e: any) {
       toast(`No se pudo ${orden!.bcNumber ? "anular" : "descartar"}: ${String(e?.message ?? e)}`, "error");
     } finally {
@@ -155,7 +155,7 @@ export default function ProvOrdenDetallePage() {
       toast(`${r.devueltas} línea(s) volvieron al ingeniero${r.ordenDescartada ? ` · ${numeroOrden(orden!)} se descartó (quedó sin material)` : ""}`, "success");
       // Sin material la orden ya no existe: quedarse en su detalle mostraría una
       // pantalla de "no encontrada".
-      if (r.ordenDescartada) router.push("/proveeduria/ordenes");
+      if (r.ordenDescartada) router.push("/proveeduria/compras?vista=ordenes");
     } catch (e: any) {
       toast(`No se pudo devolver: ${String(e?.message ?? e)}`, "error");
     } finally {
@@ -350,7 +350,7 @@ export default function ProvOrdenDetallePage() {
 
   return (
     <>
-      <OrdenDetalle orden={orden} volverHref="/proveeduria/ordenes" volverLabel="Volver a órdenes" acciones={acciones} solicitudHref={solicitudHref}
+      <OrdenDetalle orden={orden} volverHref="/proveeduria/compras?vista=ordenes" volverLabel="Volver a órdenes" acciones={acciones} solicitudHref={solicitudHref}
         onAlinearIva={() => usarIvaDeBc()}
         onExonerarIva={() => setExonerando(true)}
         refrescoBc={refrescoBc}

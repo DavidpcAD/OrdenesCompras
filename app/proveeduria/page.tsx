@@ -307,7 +307,7 @@ export default function ProveeduriaMaterialesPage() {
         </div>
 
         <VistaToggle opciones={[
-          { label: "Por solicitud", href: "/proveeduria/solicitudes", active: false, icon: <IconReceipt size={16} /> },
+          { label: "Por solicitud", href: "/proveeduria/compras?vista=solicitudes", active: false, icon: <IconReceipt size={16} /> },
           { label: "Por línea", href: "/proveeduria", active: true, icon: <IconList size={16} /> },
         ]} />
 

@@ -297,6 +297,45 @@ export function Tile({
   );
 }
 
+// ---------------------------------------------------------------- FiltroChip
+// El `Tile` cuando su único trabajo es FILTRAR una tabla, no ser marcador.
+// Mismo contrato (número + rótulo + acento del estado + `active` con anillo), pero en
+// una línea de 40 px en vez de una tarjeta de 120. Se usa donde el conteo grande ya
+// vive en otro lado —las pestañas de Compras lo llevan— y los recuadros solo empujaban
+// la tabla fuera de la pantalla. Donde el número SÍ es el mensaje, sigue yendo `Tile`.
+export function FiltroChip({
+  value,
+  label,
+  accent = "var(--ds-color-green-100)",
+  onClick,
+  active,
+  title,
+}: {
+  value: React.ReactNode;
+  label: string;
+  accent?: string;
+  onClick: () => void;
+  active?: boolean;
+  title?: string;
+}) {
+  return (
+    <button
+      type="button"
+      className={["filtro-chip", active ? "is-active" : ""].filter(Boolean).join(" ")}
+      style={{ "--filtro-accent": accent } as React.CSSProperties}
+      onClick={onClick}
+      aria-pressed={active}
+      title={title}
+    >
+      <span className="filtro-chip__dot" aria-hidden />
+      <span className="filtro-chip__n">{value}</span>
+      {/* El rótulo va en su propio span y no suelto: suelto queda como texto anónimo
+          y el lector de pantalla lee "3Todas" de corrido. */}
+      <span>{label}</span>
+    </button>
+  );
+}
+
 // ---------------------------------------------------------------- Skeleton
 // Barra "fantasma" con shimmer del DS para estados de carga. Pasá width/height
 // (px o cualquier unidad CSS). aria-hidden: es puramente visual.

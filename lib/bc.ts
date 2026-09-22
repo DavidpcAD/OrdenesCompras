@@ -4036,3 +4036,174 @@ export async function bcHealth() {
   try { out.obras = (await bcObras()).length; } catch (e: any) { out.obrasError = String(e?.message ?? e); }
   return out;
 }
+
+// ── LLEGÓ PERO NADIE LO FACTURÓ ──────────────────────────────────────────────
+//
+// Material que Bodega ya recibió y que sigue sin factura registrada en BC. Es plata
+// que la contabilidad no ve y que el proveedor sí: al 22 sep 2026 son ₡8,8 millones
+// en 42 líneas de 17 pedidos, la más nueva con 407 días.
+//
+// Dos cosas que se verificaron contra Production antes de escribir esto:
+//
+//  · El importe sale de `Amt. Rcd. Not Invoiced (LCY)` de la LÍNEA del pedido, que la
+//    API estándar v2.0 NO expone. Sí lo expone el web service OData `purchaseDocumentLines`
+//    (página Purchase Line), que ya estaba publicado y nadie usaba. De paso trae
+//    `Shortcut Dimension 1 Code` en la línea —lleno en las 42—, así que el corte por
+//    obra es exacto y no hay que deducirlo del encabezado.
+//
+//  · La ANTIGÜEDAD no se puede sacar de ahí: `Receipt No.` viene vacío en las 42
+//    líneas (en un pedido ese campo solo se llena en documentos de factura). La fecha
+//    sale de `postedReceiptLines` —la misma API custom que ya usa el cargo sobre
+//    recepción— cruzando por `orderNo` + `orderLineNo`. Se cruza por LÍNEA y no por
+//    pedido a propósito: con recepciones parciales, la fecha de una recepción no es la
+//    de todas las líneas del pedido. El cruce casa 42 de 42.
+// Material pedido con la fecha de entrega EN BLANCO en BC. Salió buscando el "vencido" y
+// resultó que no se puede: de las 644 líneas con pendiente, NINGUNA tiene una fecha puesta
+// por una persona —576 la traen igual a la fecha de la orden (el relleno automático de BC)
+// y 68 la traen vacía—, así que no hay contra qué medir un atraso.
+//
+// Lo que sí se puede y es accionable son esas 68: ₡7,4 M de material en 40 órdenes de 23
+// proveedores a los que nadie les preguntó cuándo entregan. El día que alguien empiece a
+// llenar `Promised Receipt Date` al confirmar con el proveedor, esto se puede cambiar por
+// el atraso de verdad.
+//
+// OJO al tocar esto: en BC la fecha vacía es `0001-01-01`, que es MENOR que hoy y
+// DISTINTA de la fecha de la orden. Cualquier filtro por fecha tiene que descartarla
+// explícitamente antes de comparar, o estas 68 líneas se cuelan como "atrasadas".
+export type BcSinFecha = {
+  total: number;
+  lineas: number;
+  ordenes: number;
+  proveedores: number;
+};
+
+export type BcSinFacturar = {
+  total: number;
+  lineas: number;
+  ordenes: number;
+  proveedores: number;
+  masViejoDias: number | null;
+  // Franjas de antigüedad. Solo las que tienen algo: hoy TODO cae en "+30 días"
+  // (el atraso más nuevo es de 407), y dos franjas en cero permanente hacen que una
+  // tarjeta sana se lea como rota.
+  tramos: { etiqueta: string; monto: number; lineas: number }[];
+  obras: string[];
+};
+
+const DIA = 86_400_000;
+const FECHA_VACIA = "0001-01-01";
+const soloDia = (v: unknown) => String(v ?? "").slice(0, 10);
+
+// Una página del web service OData `purchaseDocumentLines`, con paginación.
+async function leerLineasDeCompra(filtro: string, select: string): Promise<any[]> {
+  const empresa = await getCompanyName();
+  let url: string | null = `${odataRoot()}/Company('${encodeURIComponent(empresa)}')/purchaseDocumentLines`
+    + `?$filter=${encodeURIComponent(filtro)}&$select=${select}`;
+  const out: any[] = [];
+  let guard = 0;
+  while (url && guard++ < 50) {
+    const res = await bcFetch(url, { next: { revalidate: 300 } } as RequestInit);
+    if (!res.ok) throw new Error(`BC ${res.status} en purchaseDocumentLines: ${(await res.text()).slice(0, 250)}`);
+    const data: any = await res.json();
+    out.push(...(data.value ?? []));
+    url = data["@odata.nextLink"] ?? null;
+  }
+  return out;
+}
+
+export async function bcSinFechaDeEntrega(): Promise<BcSinFecha> {
+  const lineas = await leerLineasDeCompra(
+    "documentType eq 'Order' and outstandingAmountLcy gt 0",
+    "documentNumber,buyFromVendorNumber,orderDate,expectedReceiptDate,promisedReceiptDate,outstandingAmountLcy",
+  );
+  // SIN FECHA = el campo está EN BLANCO (`0001-01-01`), en las dos fechas.
+  //
+  // La tentación era contar también las líneas cuya fecha esperada es igual a la de la
+  // orden —son el relleno automático de BC, no una promesa de nadie—, pero eso son 576
+  // de 644 y el total daba ₡176 M: otra vez el 100 % del pendiente, o sea una cifra roja
+  // que repite el número de arriba y no señala nada. Estas 68 sí señalan: son las que ni
+  // siquiera tienen el relleno, y son 40 órdenes de 23 proveedores a los que se les puede
+  // ir a preguntar hoy.
+  const enBlanco = (v: unknown) => { const d = soloDia(v); return !d || d === FECHA_VACIA; };
+  const sinFecha = lineas.filter((l) => enBlanco(l.promisedReceiptDate) && enBlanco(l.expectedReceiptDate));
+  return {
+    total: sinFecha.reduce((s, l) => s + (Number(l.outstandingAmountLcy) || 0), 0),
+    lineas: sinFecha.length,
+    ordenes: new Set(sinFecha.map((l) => String(l.documentNumber ?? ""))).size,
+    proveedores: new Set(sinFecha.map((l) => String(l.buyFromVendorNumber ?? ""))).size,
+  };
+}
+
+export async function bcRecibidoSinFacturar(hoyISO: string): Promise<BcSinFacturar> {
+  const lineas = await leerLineasDeCompra(
+    "documentType eq 'Order' and amtRcdNotInvoicedLcy gt 0",
+    "documentNumber,lineNumber,buyFromVendorNumber,amtRcdNotInvoicedLcy,shortcutDimension1Code",
+  );
+
+  const total = lineas.reduce((s, l) => s + (Number(l.amtRcdNotInvoicedLcy) || 0), 0);
+  const ordenes = [...new Set(lineas.map((l) => String(l.documentNumber ?? "")).filter(Boolean))];
+  const proveedores = new Set(lineas.map((l) => String(l.buyFromVendorNumber ?? "")).filter(Boolean));
+  const obras = [...new Set(lineas.map((l) => String(l.shortcutDimension1Code ?? "").trim()).filter(Boolean))].sort();
+
+  // La fecha de recepción, solo de esos pedidos. El filtro se arma con sus números en
+  // vez de leer las recepciones enteras: son decenas de miles de líneas y acá hacen
+  // falta 17 pedidos. El `or` se parte en tandas porque una URL con 200 cláusulas
+  // rebota con 400 en BC.
+  const fechaPorLinea = new Map<string, string>();
+  for (let i = 0; i < ordenes.length; i += 20) {
+    const tanda = ordenes.slice(i, i + 20);
+    const f = encodeURIComponent(tanda.map((n) => `orderNo eq '${n.replace(/'/g, "''")}'`).join(" or "));
+    let u: string | null = `${customRoot("purchasing")}/companies(${await getCompanyId()})/postedReceiptLines`
+      + `?$filter=${f}&$select=orderNo,orderLineNo,postingDate`;
+    let g2 = 0;
+    while (u && g2++ < 50) {
+      const res = await bcFetch(u, { next: { revalidate: 300 } } as RequestInit);
+      if (!res.ok) throw new Error(`BC ${res.status} en postedReceiptLines: ${(await res.text()).slice(0, 250)}`);
+      const data: any = await res.json();
+      for (const r of data.value ?? []) {
+        const fecha = soloDia(r.postingDate);
+        // 0001-01-01 aparece en recepciones viejas; tomarla daría "hace 740 000 días".
+        if (!fecha || fecha === FECHA_VACIA) continue;
+        const clave = `${r.orderNo}|${r.orderLineNo}`;
+        const previa = fechaPorLinea.get(clave);
+        // La MÁS VIEJA de esa línea: si se recibió en dos tandas y solo una se facturó,
+        // lo que sigue esperando es lo que llegó primero.
+        if (!previa || fecha < previa) fechaPorLinea.set(clave, fecha);
+      }
+      u = data["@odata.nextLink"] ?? null;
+    }
+  }
+
+  const hoy = Date.parse(soloDia(hoyISO));
+  const edad = (l: any): number | null => {
+    const f = fechaPorLinea.get(`${l.documentNumber}|${l.lineNumber}`);
+    if (!f) return null;
+    const d = Math.floor((hoy - Date.parse(f)) / DIA);
+    return Number.isFinite(d) ? Math.max(0, d) : null;
+  };
+
+  const cubos = [
+    { etiqueta: "0 a 15 días", tope: 15, monto: 0, lineas: 0 },
+    { etiqueta: "16 a 30 días", tope: 30, monto: 0, lineas: 0 },
+    { etiqueta: "más de 30 días", tope: Infinity, monto: 0, lineas: 0 },
+    { etiqueta: "sin recepción registrada", tope: -1, monto: 0, lineas: 0 },
+  ];
+  let masViejoDias: number | null = null;
+  for (const l of lineas) {
+    const d = edad(l);
+    const cubo = d === null ? cubos[3] : cubos.find((c) => c.tope >= d && c.tope >= 0)!;
+    cubo.monto += Number(l.amtRcdNotInvoicedLcy) || 0;
+    cubo.lineas += 1;
+    if (d !== null && (masViejoDias === null || d > masViejoDias)) masViejoDias = d;
+  }
+
+  return {
+    total,
+    lineas: lineas.length,
+    ordenes: ordenes.length,
+    proveedores: proveedores.size,
+    masViejoDias,
+    tramos: cubos.filter((c) => c.lineas > 0).map(({ etiqueta, monto, lineas }) => ({ etiqueta, monto, lineas })),
+    obras,
+  };
+}
