@@ -4286,3 +4286,82 @@ export async function bcProveedoresConCedula(): Promise<BcProveedorCedula[]> {
   }
   return out.filter((p) => p.codigo);
 }
+
+// ── TIPO DE CAMBIO: EL MISMO CON EL QUE BC CONTABILIZA ───────────────────────
+//
+// El Resumen sumaba solo la moneda que mandaba y declaraba el resto aparte
+// ("quedan fuera 23 órdenes en USD y 1 en EURO"): un total al que le falta plata se
+// lee igual que el total. Para juntarlas hace falta un tipo de cambio, y el único
+// que no inventa nada es el de BC — el mismo con el que se registran las facturas,
+// así que la app y los informes de allá dicen lo mismo.
+//
+// Va en COLONES POR UNIDAD (₡450 por US$), que es como se lee y como se convierte:
+// monto × factor. En BC el par viaja como DOS números porque una moneda puede
+// cotizarse por 100 unidades; `factorDeCambio` los junta en uno.
+export function factorDeCambio(exchangeRateAmount?: number, relationalExchangeRateAmount?: number): number | null {
+  const uni = Number(exchangeRateAmount);
+  const crc = Number(relationalExchangeRateAmount);
+  if (!Number.isFinite(uni) || !Number.isFinite(crc) || uni <= 0 || crc <= 0) return null;
+  return crc / uni;
+}
+
+// El factor de cada moneda y DE QUÉ DÍA es. La fecha no es decoración: BC guarda una
+// fila por día pero solo de las monedas que se mueven, y al 22/09/2026 el dólar está
+// al día mientras que el EURO es del 15/07. Un tipo de cambio viejo no es un error
+// —es el que BC usaría—, pero quien lee el número tiene que saberlo.
+export type TipoCambio = { factor: Record<string, number>; fecha: Record<string, string> };
+
+const TTL_TIPO_CAMBIO = 60 * 60 * 1000;
+let cacheTipoCambio: { at: number; tc: TipoCambio } | null = null;
+let tipoCambioEnVuelo: Promise<TipoCambio> | null = null;
+
+export async function bcTipoCambio(): Promise<TipoCambio> {
+  const frescura = cacheTipoCambio ? Date.now() - cacheTipoCambio.at : Infinity;
+  if (frescura < TTL_TIPO_CAMBIO) return cacheTipoCambio!.tc;
+  // Vencido: se sirve el viejo y se refresca por detrás, igual que el mapa de
+  // unidades. El tipo de cambio de hace una hora no vale una pantalla esperando.
+  if (cacheTipoCambio) { void cargarTipoCambio().catch(() => {}); return cacheTipoCambio.tc; }
+  return cargarTipoCambio();
+}
+
+function cargarTipoCambio(): Promise<TipoCambio> {
+  if (!tipoCambioEnVuelo) {
+    tipoCambioEnVuelo = construirTipoCambio().finally(() => { tipoCambioEnVuelo = null; });
+  }
+  return tipoCambioEnVuelo;
+}
+
+async function construirTipoCambio(): Promise<TipoCambio> {
+  const tc: TipoCambio = { factor: {}, fecha: {} };
+  try {
+    const cid = await getStdCompanyId();
+    const hoy = new Date().toISOString().slice(0, 10);
+    const resM = await bcFetch(`${stdRoot()}/companies(${cid})/currencies?$select=code&$top=50`, { cache: "no-store" });
+    if (!resM.ok) throw new Error(`BC ${resM.status} al leer las monedas`);
+    const monedas = (((await resM.json())?.value ?? []) as any[])
+      .map((m) => String(m?.code ?? "").trim().toUpperCase()).filter(Boolean);
+    // Una consulta por moneda —hoy son dos— pidiendo la ÚLTIMA fila con fecha de
+    // inicio hasta hoy. Traer el rango entero y elegir acá sería más datos para lo
+    // mismo, y con el EURO (que no cotiza todos los días) habría que adivinar el
+    // ancho de la ventana.
+    for (const code of monedas) {
+      const filtro = encodeURIComponent(`currencyCode eq '${odataStr(code)}' and startingDate le ${hoy}`);
+      const res = await bcFetch(
+        `${stdRoot()}/companies(${cid})/currencyExchangeRates?$filter=${filtro}&$orderby=startingDate desc&$top=1`
+        + `&$select=currencyCode,startingDate,exchangeRateAmount,relationalExchangeRateAmount`,
+        { cache: "no-store" });
+      if (!res.ok) continue;
+      const fila = (((await res.json())?.value ?? []) as any[])[0];
+      const f = factorDeCambio(fila?.exchangeRateAmount, fila?.relationalExchangeRateAmount);
+      if (f == null) continue;
+      tc.factor[code] = f;
+      tc.fecha[code] = String(fila?.startingDate ?? "").slice(0, 10);
+    }
+    cacheTipoCambio = { at: Date.now(), tc };
+    return tc;
+  } catch {
+    // Sin BC se devuelve lo último bueno, o vacío: el Resumen vuelve a dejar esas
+    // órdenes afuera y lo dice, que es exactamente lo que hacía antes.
+    return cacheTipoCambio?.tc ?? tc;
+  }
+}

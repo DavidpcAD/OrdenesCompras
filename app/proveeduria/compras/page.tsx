@@ -1,8 +1,7 @@
 "use client";
 
-import { Suspense, useMemo } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Button } from "@/components/ui";
 import { ComprasSolicitudes } from "@/components/compras-solicitudes";
 import { ComprasOrdenes } from "@/components/compras-ordenes";
 import { ComprasProveedores } from "@/components/compras-proveedores";
@@ -11,7 +10,7 @@ import { IconReceipt, IconList } from "@/components/icons";
 import { useStore } from "@/lib/store";
 import { resumenPorProveedor } from "@/lib/compras-proveedores";
 import { todayISO } from "@/lib/helpers";
-import { kpisDeCompras } from "@/lib/compras-kpis";
+import { kpisDeCompras, type TipoCambioApp } from "@/lib/compras-kpis";
 
 // ÓRDENES DE COMPRA — Resumen, Solicitudes, Órdenes y Proveedores en una sola pantalla.
 //
@@ -43,7 +42,7 @@ export default function ComprasPage() {
 }
 
 function Compras() {
-  const { ordenes, proveedores, pedidos } = useStore();
+  const { ordenes, proveedores, pedidos, modoApi } = useStore();
   const router = useRouter();
   const params = useSearchParams();
 
@@ -54,9 +53,23 @@ function Compras() {
   const irA = (v: Vista) => router.replace(`/proveeduria/compras?vista=${v}`, { scroll: false });
 
   const porProveedor = useMemo(() => resumenPorProveedor(ordenes, proveedores), [ordenes, proveedores]);
+  // EL TIPO DE CAMBIO DE BC, para que el Resumen no deje afuera las órdenes en
+  // dólares y en euros. Se pide una vez por visita y no frena nada: mientras no
+  // llegue (o si BC no contesta), los KPI se calculan sin él y el aviso dice cuáles
+  // quedaron fuera — que es exactamente lo que hacían antes.
+  const [tipoCambio, setTipoCambio] = useState<TipoCambioApp | undefined>(undefined);
+  useEffect(() => {
+    if (!modoApi) return;
+    let vivo = true;
+    fetch("/api/bc/tipo-cambio", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => { if (vivo && d?.factor && Object.keys(d.factor).length) setTipoCambio({ factor: d.factor, fecha: d.fecha }); })
+      .catch(() => { /* sin BC: los montos van solo en colones y el aviso lo dice */ });
+    return () => { vivo = false; };
+  }, [modoApi]);
   // Los números del Resumen. Se calculan acá y no adentro del componente porque el
   // recorrido de las órdenes es uno solo y así no se repite en cada render de la pestaña.
-  const k = useMemo(() => kpisDeCompras(ordenes, todayISO()), [ordenes]);
+  const k = useMemo(() => kpisDeCompras(ordenes, todayISO(), tipoCambio), [ordenes, tipoCambio]);
   // Mismo criterio que la pestaña: Proveeduría cuenta las ENVIADAS (ni borrador, ni
   // devueltas, ni archivadas), que es lo que ahí sale como "Todas".
   const nSolicitudes = pedidos.filter((p) => p.estado !== "borrador" && p.estado !== "devuelto" && p.estado !== "cerrado").length;
@@ -69,7 +82,9 @@ function Compras() {
           <p className="ds-muted">Lo que pidió Ingeniería, lo que se ordenó y lo que falta que llegue.</p>
         </div>
 
-        <Button onClick={() => router.push("/proveeduria/directa")}>+ Nueva orden directa</Button>
+        {/* El botón de compra directa NO va acá: ya está el flotante de la esquina
+            (components/shell.tsx), que es el mismo destino. Dos botones para lo
+            mismo en la misma pantalla es una pregunta, no una comodidad. */}
       </div>
 
       {/* Pegajosas: al bajar por 400 órdenes, cambiar de vista no debería costar volver
