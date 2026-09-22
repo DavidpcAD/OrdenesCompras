@@ -8,7 +8,7 @@ import { Combobox } from "@/components/combobox";
 import { IconCheck, IconWarning } from "@/components/icons";
 import { useStore } from "@/lib/store";
 import { leerBorrador, guardarBorrador, borrarBorrador, hace, type BorradorOrden } from "@/lib/borrador-orden";
-import { etiquetaTipoLinea, money, almacenesParaRecepcion, esAlmacenFisico, monedaApp, numeroOrden } from "@/lib/helpers";
+import { etiquetaTipoLinea, money, almacenesParaRecepcion, esAlmacenFisico, monedaApp, numeroOrden, MONEDAS } from "@/lib/helpers";
 import { CampoMaquina, RepartoMaquinasModal, buscarMaquina, etiquetaMaquina, nombreDeMaquina, useMaquinasBc, type MaquinaCat } from "@/components/maquina-linea";
 import { precioEnUnidad, precioEntreUnidades, cantidadEntreUnidades, equivalencia, equivalenciaDeUnidad, mismaMoneda, codigoDeItem, opcionesDeUnidad, type UnidadDeItem } from "@/lib/unidad";
 import type { LineType, OrdenLinea } from "@/lib/types";
@@ -609,7 +609,7 @@ export default function OrdenDirectaPage() {
                 getKey={(p) => p.id} getLabel={(p) => `${p.code} — ${p.nombre}`} getSearch={(p) => `${p.code} ${p.nombre}`} placeholder="Buscar proveedor…" />
             </Field>
             <Field label="Moneda">
-              <Select value={currency} onChange={(e) => setCurrency(e.target.value)}><option value="">CRC (colones)</option><option value="USD">USD (dólares)</option></Select>
+              <Select value={currency} onChange={(e) => setCurrency(e.target.value)}>{MONEDAS.map((m) => <option key={m.value || "CRC"} value={m.value}>{m.label}</option>)}</Select>
             </Field>
             <Field label="Almacén / centro de costo de recepción" help="Dónde entra el material en BC. Por defecto el Almacén General, pero podés elegir cualquier centro de costo.">
               <Combobox items={catAlm} value={almacen} onChange={(k) => setAlmacen(k)}

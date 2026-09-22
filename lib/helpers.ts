@@ -177,14 +177,49 @@ export const CRC = new Intl.NumberFormat("es-CR", {
 
 export const num = new Intl.NumberFormat("es-CR", { maximumFractionDigits: 2 });
 
-export function money(amount: number, currencyCode?: string): string {
-  const cur = currencyCode && currencyCode.trim() ? currencyCode : "CRC";
-  return new Intl.NumberFormat("es-CR", { style: "currency", currency: cur, minimumFractionDigits: 2 }).format(amount || 0);
+// LAS MONEDAS QUE SE PUEDEN ELEGIR, CON EL CÓDIGO TAL COMO LO ESCRIBE BC.
+//
+// Y el de BC NO es el ISO: el euro allá se llama **EURO**, no "EUR" (leído de
+// /currencies en Production, donde solo existen USD y EURO). Ese código es el que
+// viaja al encabezado del pedido, así que ponerle el ISO sería mandarle a Business
+// Central una moneda que no existe y comerse el error al sincronizar.
+//
+// "" = colones: es la moneda local de la compañía y BC deja el campo en blanco.
+//
+// Está acá y no repetido en cada pantalla porque el euro faltaba en las CUATRO
+// (armar orden, editar, compra directa y el cargo de facturación) y la orden de
+// FBG SRL (CP-005636, importación italiana) terminó cargada en colones con los
+// montos en euros: ₡2.109,70 donde eran 2.109,70 €.
+export const MONEDAS: { value: string; label: string }[] = [
+  { value: "", label: "CRC (colones)" },
+  { value: "USD", label: "USD (dólares)" },
+  { value: "EURO", label: "EURO (euros)" },
+];
+
+// El código ISO para FORMATEAR. `Intl` no conoce "EURO" y tira RangeError, o sea
+// que una orden en euros no se veía mal: reventaba la pantalla entera al pintar el
+// primer importe.
+const ISO_DE_MONEDA: Record<string, string> = { "": "CRC", CRC: "CRC", EURO: "EUR" };
+export function monedaIso(code?: string): string {
+  const c = (code ?? "").trim().toUpperCase();
+  return ISO_DE_MONEDA[c] ?? c;
 }
 
-// El selector de Moneda de la app usa "" = CRC (colones) y "USD". BC devuelve
-// "CRC" para proveedores en colones, que NO matchea la opción "" y dejaba el
-// Select en "Seleccioná…". Normaliza el código de BC al valor del selector.
+export function money(amount: number, currencyCode?: string): string {
+  const cur = monedaIso(currencyCode) || "CRC";
+  try {
+    return new Intl.NumberFormat("es-CR", { style: "currency", currency: cur, minimumFractionDigits: 2 }).format(amount || 0);
+  } catch {
+    // Un código que Intl no reconozca (BC puede tener los suyos) no puede dejar la
+    // pantalla en blanco: se muestra el número con el código al lado.
+    return `${cur} ${num.format(amount || 0)}`;
+  }
+}
+
+// El selector de Moneda de la app usa "" = CRC (colones) y el código de BC para el
+// resto (USD, EURO). BC devuelve "CRC" para proveedores en colones, que NO matchea
+// la opción "" y dejaba el Select en "Seleccioná…". Normaliza el código de BC al
+// valor del selector.
 export function monedaApp(code?: string): string {
   const c = (code ?? "").trim().toUpperCase();
   return c === "CRC" ? "" : c;

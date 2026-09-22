@@ -9,7 +9,7 @@ import { Combobox } from "@/components/combobox";
 import { IconCheck, IconWarning } from "@/components/icons";
 import { useStore } from "@/lib/store";
 import { leerBorrador, guardarBorrador, borrarBorrador, hace, type BorradorOrden } from "@/lib/borrador-orden";
-import { money, num, ultimoPrecioProveedor, almacenesParaRecepcion, esAlmacenFisico, pedidoLineaPendiente, repartoDeLineaSolicitud, obraParaOrden, monedaApp, numeroOrden } from "@/lib/helpers";
+import { money, num, ultimoPrecioProveedor, almacenesParaRecepcion, esAlmacenFisico, pedidoLineaPendiente, repartoDeLineaSolicitud, obraParaOrden, monedaApp, numeroOrden, MONEDAS } from "@/lib/helpers";
 import { precioEnUnidad, precioEntreUnidades, cantidadEntreUnidades, equivalencia, equivalenciaDeUnidad, mismaMoneda, codigoDeItem, opcionesDeUnidad, type PrecioRef, type UnidadDeItem } from "@/lib/unidad";
 import { useVariantes } from "@/lib/use-variantes";
 import type { OrdenLinea } from "@/lib/types";
@@ -599,8 +599,7 @@ export default function ArmarOrdenPage() {
             </Field>
             <Field label="Moneda">
               <Select value={currency} onChange={(e) => setCurrency(e.target.value)}>
-                <option value="">CRC (colones)</option>
-                <option value="USD">USD (dólares)</option>
+                {MONEDAS.map((m) => <option key={m.value || "CRC"} value={m.value}>{m.label}</option>)}
               </Select>
             </Field>
             <Field label="Almacén / centro de costo de recepción" help="Dónde entra el material en BC. Por defecto el Almacén General, pero podés elegir cualquier centro de costo.">
