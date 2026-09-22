@@ -4207,3 +4207,82 @@ export async function bcRecibidoSinFacturar(hoyISO: string): Promise<BcSinFactur
     obras,
   };
 }
+
+// ---------------------------------------------------------------------------
+// VIGILANCIA DE FACTURAS — lecturas en bruto para las señales de lib/vigilancia-facturas.ts
+// ---------------------------------------------------------------------------
+//
+// Son dos listas completas (facturas de compra y proveedores) que la pantalla de
+// Vigilancia cruza en memoria. Se traen enteras y no filtradas porque las señales son
+// de conjunto: "este proveedor se calló" no se puede contestar mirando una factura.
+//
+// OJO con la paginación: `purchaseInvoices` NO devuelve `@odata.nextLink` cuando se le
+// pasa `$top`, así que hay que ir con `$skip` a mano. Con nextLink se quedaba callado
+// en la fila 500 y el reporte salía recortado sin avisar.
+
+const VIG_PAGINA = 1000;
+const VIG_PAGINAS_MAX = 30;   // 30.000 facturas: más que el año y medio que existe en BC
+
+export type BcFacturaCompra = {
+  numero: string; numeroProveedor: string; proveedorCodigo: string; proveedorNombre: string;
+  fecha: string; total: number; moneda: string;
+};
+
+/** Facturas de compra de BC (registradas Y borradores) desde una fecha. */
+export async function bcFacturasCompra(desde: string): Promise<BcFacturaCompra[]> {
+  const cid = await getStdCompanyId();
+  const filtro = encodeURIComponent(`invoiceDate ge ${desde}`);
+  const campos = "number,vendorInvoiceNumber,vendorNumber,vendorName,invoiceDate,totalAmountIncludingTax,currencyCode";
+  const out: BcFacturaCompra[] = [];
+  for (let pagina = 0; pagina < VIG_PAGINAS_MAX; pagina++) {
+    const url = `${stdRoot()}/companies(${cid})/purchaseInvoices?$filter=${filtro}` +
+      `&$top=${VIG_PAGINA}&$skip=${pagina * VIG_PAGINA}&$orderby=invoiceDate&$select=${campos}`;
+    const res = await bcFetch(url, { cache: "no-store" });
+    if (!res.ok) throw new Error(`BC ${res.status} en purchaseInvoices: ${(await res.text()).slice(0, 250)}`);
+    const data: any = await res.json();
+    const filas: any[] = data.value ?? [];
+    for (const f of filas) {
+      out.push({
+        numero: f.number ?? "",
+        numeroProveedor: f.vendorInvoiceNumber ?? "",
+        proveedorCodigo: f.vendorNumber ?? "",
+        proveedorNombre: f.vendorName ?? "",
+        fecha: f.invoiceDate ?? "",
+        total: Number(f.totalAmountIncludingTax ?? 0) || 0,
+        moneda: f.currencyCode ?? "CRC",
+      });
+    }
+    if (filas.length < VIG_PAGINA) break;
+  }
+  return out;
+}
+
+export type BcProveedorCedula = { codigo: string; nombre: string; cedula: string };
+
+/**
+ * Proveedores con su cédula. Aparte de `bcVendors` a propósito: aquella sirve para
+ * ESCOGER proveedor al armar una orden (y por eso esconde los bloqueados y cachea el
+ * último listado bueno); ésta es para AUDITAR el padrón, así que trae todo tal cual,
+ * incluido lo bloqueado y lo que tiene la cédula vacía, que es justo lo que se busca.
+ */
+export async function bcProveedoresConCedula(): Promise<BcProveedorCedula[]> {
+  const cid = await getStdCompanyId();
+  const out: BcProveedorCedula[] = [];
+  for (let pagina = 0; pagina < VIG_PAGINAS_MAX; pagina++) {
+    const url = `${stdRoot()}/companies(${cid})/vendors?$top=${VIG_PAGINA}&$skip=${pagina * VIG_PAGINA}` +
+      `&$select=number,displayName,taxRegistrationNumber`;
+    const res = await bcFetch(url, { cache: "no-store" });
+    if (!res.ok) throw new Error(`BC ${res.status} en vendors: ${(await res.text()).slice(0, 250)}`);
+    const data: any = await res.json();
+    const filas: any[] = data.value ?? [];
+    for (const v of filas) {
+      out.push({
+        codigo: v.number ?? "",
+        nombre: v.displayName ?? v.number ?? "",
+        cedula: v.taxRegistrationNumber ?? "",
+      });
+    }
+    if (filas.length < VIG_PAGINA) break;
+  }
+  return out.filter((p) => p.codigo);
+}

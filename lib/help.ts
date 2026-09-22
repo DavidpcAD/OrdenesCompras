@@ -223,6 +223,29 @@ const CONCILIACION_BC: HelpEntry = {
     "Si una orden dice que le falta una línea en BC, NO la recibas: primero hay que arreglar el pedido allá, o BC va a registrar de menos otra vez.",
   ],
 };
+const VIGILANCIA: HelpEntry = {
+  titulo: "Vigilancia de facturas",
+  resumen: "Qué llegó al buzón de facturación contra qué se registró en Business Central.",
+  detalle: [
+    "Tiene dos vistas. “Correo contra BC” cruza los comprobantes del buzón contra las facturas registradas y da tres listas: los que calzan, los que llegaron y no están en BC, y los que están en BC sin comprobante. “Señales de BC” son las alertas que salen de Business Central solo, sin correo.",
+    "El correo entra cargando los XML a mano porque la app todavía no tiene permiso para leer el buzón sola: hace falta un registro de app en Entra. Los archivos se leen en tu navegador y no salen de tu máquina.",
+    "Mientras tanto, esta pantalla hace las tres preguntas que BC sí contesta solo. En la primera corrida encontró 31 facturas en borrador por ₡7,5 millones —la más vieja de noviembre de 2025— y 15 pares con pinta de doble registro.",
+    "Todo dice “posible” a propósito. Un par con el mismo monto puede ser dos entregas contra la misma factura, y un proveedor callado puede ser un proyecto que terminó. La pantalla señala; el criterio es suyo.",
+  ],
+  pasos: [
+    "Para el cruce: en Outlook seleccionás los correos, guardás los adjuntos en una carpeta y elegís esa carpeta acá. Hay que guardar los XML, no los PDF.",
+    "Cargá TODO el correo del período que querés revisar. Si cargás solo una parte, la lista de “está en BC y no llegó comprobante” se llena de facturas a las que lo que les falta es el correo, no el registro — la pantalla te avisa cuando eso pasa.",
+    "Para las señales de BC: dale “Revisar”. Lee todas las facturas de compra desde noviembre de 2025 y tarda unos segundos.",
+    "Empezá por “Facturas en borrador”: son las únicas donde no hay nada que interpretar — existen en BC y nunca se registraron.",
+    "En “Posibles dobles” abrí las dos facturas en BC y mirá si son el mismo documento o dos entregas.",
+    "“Proveedores sin cédula” es una cola de trabajo, no un reproche: cada ficha que se completa es un pedazo menos de adivinanza cuando entre lo del correo.",
+  ],
+  tips: [
+    "La cédula del proveedor es la llave de todo lo que viene. Viaja dentro de la clave de 50 dígitos de cada comprobante electrónico, así que sin ella el correo y BC no se pueden cruzar sin adivinar.",
+    "Un proveedor callado no siempre es un problema, pero uno que facturaba cada dos días y lleva cuarenta sin aparecer sí vale una llamada.",
+    "Los que calzaron “por nombre” son los menos seguros: son los proveedores que no tienen cédula en BC, así que hubo que compararlos por el nombre del emisor.",
+  ],
+};
 const NUEVA: HelpEntry = {
   titulo: "Armar orden de compra",
   resumen: "Revisá y ajustá lo que se va a enviar al proveedor.",
@@ -485,6 +508,7 @@ export function helpForPath(p: string, vista?: string | null): HelpEntry {
   if (p.startsWith("/proveeduria/inventarios")) return INVENTARIOS;
   if (p.startsWith("/proveeduria/reportes")) return REPORTES;
   if (p.startsWith("/proveeduria/conciliacion-bc")) return CONCILIACION_BC;
+  if (p.startsWith("/proveeduria/vigilancia")) return VIGILANCIA;
   if (p === "/proveeduria") return SOLICITUDES_LINEA;
   return GENERIC;
 }
