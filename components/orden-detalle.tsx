@@ -250,6 +250,18 @@ export function OrdenDetalle({
   const difBc = bcTot && monedaDe(bcTot.currencyCode) === monedaDe(orden.currencyCode)
     ? bcTot.total - estimadoLocal : 0;
   const hayDifBc = Math.abs(difBc) > 0.01;
+  // El IVA que hoy está vivo para esta orden: el que BC va a contabilizar si se pudo
+  // leer, si no el estimado de acá.
+  const ivaVigente = bcTot && !espera ? bcTot.iva : iva;
+  // Una importación va sin IVA —el impuesto se paga en aduana y viene en su propia
+  // línea de cargo—, pero BC le pone el 13% del artículo. Si la orden TAMBIÉN dice
+  // 13%, los totales coinciden, el aviso amarillo no sale y hasta hoy no quedaba por
+  // dónde quitarlo: una orden ya lanzada ni siquiera tiene Editar (CP-005636, FBG
+  // SRL, EUR 215,76 de IVA sobre una compra a Italia). Por eso la salida se ofrece
+  // acá también, junto al IVA que está de más. Cuando el aviso SÍ sale con BC
+  // cobrando de más, el botón ya va ahí y no se repite.
+  const ofrecerExonerar = !!onExonerarIva && !espera && !!orden.bcNumber
+    && ivaVigente > 0.01 && !(hayDifBc && difBc > 0);
   // El PDF para el proveedor solo se habilita cuando la orden fue APROBADA (Lanzada
   // en BC) — o ya completada. Antes de eso no debe enviarse nada al proveedor.
   const puedeImprimir = orden.estado === "lanzado" || orden.estado === "completado";
@@ -513,6 +525,17 @@ export function OrdenDetalle({
                 </div>
               )}
             </>
+          )}
+          {/* La salida para la importación que salió con IVA. Escribe en BC, así que
+              el botón solo abre la confirmación, que es la que explica qué se toca. */}
+          {ofrecerExonerar && (
+            <div style={{ gridColumn: "1 / -1" }} className="mt-2">
+              <Button variant="outline" size="sm"
+                title="Esta compra no lleva IVA: le pone el grupo exento a las líneas del pedido en Business Central y deja la orden con lo que BC quede calculando."
+                onClick={() => onExonerarIva!()}>
+                Quitarle el IVA (importación)
+              </Button>
+            </div>
           )}
         </div>
       </div>
