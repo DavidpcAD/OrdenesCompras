@@ -83,10 +83,20 @@ async function token(forzar = false): Promise<string> {
 }
 
 async function graph(url: string): Promise<any> {
-  const t = await token();
-  let res = await fetch(url, { headers: { Authorization: `Bearer ${t}`, Accept: "application/json" }, cache: "no-store" });
-  if (res.status === 401) {
-    res = await fetch(url, { headers: { Authorization: `Bearer ${await token(true)}`, Accept: "application/json" }, cache: "no-store" });
+  const pedir = (bearer: string) =>
+    fetch(url, { headers: { Authorization: `Bearer ${bearer}`, Accept: "application/json" }, cache: "no-store" });
+
+  let res = await pedir(await token());
+
+  // Se reintenta con token FRESCO ante 401 y también ante 403, y el 403 es el que
+  // importa acá: los roles de aplicación viajan DENTRO del token. Si la app pidió su
+  // token antes de que un administrador consintiera Mail.Read, ese token no trae el
+  // rol y Graph contesta 403 durante la hora que dura, aunque el permiso ya esté
+  // dado. Pasó exactamente así el 22 de setiembre de 2026: el consentimiento estaba
+  // puesto, la lectura funcionaba desde afuera, y la app seguía diciendo 403 porque
+  // arrastraba el token de antes.
+  if (res.status === 401 || res.status === 403) {
+    res = await pedir(await token(true));
   }
   if (!res.ok) {
     const cuerpo = (await res.text()).slice(0, 400);
