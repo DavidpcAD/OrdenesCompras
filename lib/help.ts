@@ -225,7 +225,7 @@ const CONCILIACION_BC: HelpEntry = {
   ],
 };
 const VIGILANCIA: HelpEntry = {
-  titulo: "Vigilancia de facturas",
+  titulo: "Auditoría de facturas",
   resumen: "Qué llegó al buzón de facturación contra qué se registró en Business Central.",
   detalle: [
     "“Buzón” es la vista principal: los correos de facturación entran solos, la app los coteja contra Business Central cada pocos minutos y cada comprobante dice si ya se registró, con qué número y cuánto tardó en digitarse.",

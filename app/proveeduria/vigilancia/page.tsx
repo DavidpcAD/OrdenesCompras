@@ -68,7 +68,7 @@ export default function VigilanciaPage() {
     <main className="page page--wide">
       <div className="page__head">
         <div className="page__title">
-          <h1 className="ds-heading">Vigilancia de facturas</h1>
+          <h1 className="ds-heading">Auditoría de facturas</h1>
           <p className="ds-muted">
             Lo que llegó al buzón de facturación contra lo que se registró en Business Central — y lo que BC
             delata solo: facturas en borrador, facturas cobradas dos veces y proveedores que se callaron.

@@ -73,12 +73,11 @@ const ROLE_META: Record<Role, { label: string; persona: string; home: string; na
       // y no llegó a BC (CP-005172 llegó a la factura del proveedor con una línea
       // de menos y nadie se enteró hasta ver el papel).
       { href: "/proveeduria/conciliacion-bc", label: "Conciliación BC", icon: IconCheck },
-      // Vigilancia de facturas: la otra mitad del cotejo. Conciliación BC mira una
-      // ORDEN contra su pedido en BC; ésta mira las FACTURAS de BC como conjunto y
-      // delata lo que solo se ve de lejos —la que quedó en borrador desde noviembre,
-      // la que se cobró dos veces, el proveedor que dejó de aparecer—. Cuando la app
-      // pueda leer el buzón de facturación, las listas del correo entran acá.
-      { href: "/proveeduria/vigilancia", label: "Vigilancia de facturas", icon: IconWarning },
+      // Auditoría de facturas: la otra mitad del cotejo. Conciliación BC mira una
+      // ORDEN contra su pedido en BC; ésta lee el buzón de facturación y dice, de cada
+      // comprobante que llegó, si ya se registró en BC y cuánto tardó. Más las señales
+      // que BC delata solo: borradores, dobles registros, proveedores que se callaron.
+      { href: "/proveeduria/vigilancia", label: "Auditoría de facturas", icon: IconWarning },
     ],
   },
   facturacion: {

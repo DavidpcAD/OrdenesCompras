@@ -216,8 +216,13 @@ function Estado({ f, hoy }: { f: FacturaCorreo; hoy: number }) {
         <span className="ds-strong">
           {f.estado === "registrada" ? "Registrada" : "Registrada, no cuadra"}
         </span>{" "}
+        {/* El N.º de BC abre ESA factura allá. Es el gesto que ya existe en Recibidas y
+            en la columna Factura BC de Órdenes, y es lo primero que uno quiere hacer
+            cuando ve una fila que no cuadra: ir a mirarla. */}
+        {f.bcUrl
+          ? <a href={f.bcUrl} target="_blank" rel="noopener noreferrer" className="ds-strong">{f.bcNumero}</a>
+          : <span className="ds-muted">{f.bcNumero}</span>}
         <span className="ds-muted">
-          {f.bcNumero}
           {f.fechaRegistro ? ` · se vio el ${formatDate(f.fechaRegistro.slice(0, 10))}` : ""}
           {tardo != null ? ` · tardó ${tardo} ${tardo === 1 ? "día" : "días"}` : ""}
         </span>

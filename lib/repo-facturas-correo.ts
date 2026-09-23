@@ -12,6 +12,7 @@
 // resto de la pantalla —las señales que salen de BC solo— sigue funcionando.
 
 import { getPool, sql } from "./db.ts";
+import { bcDeepLinkFacturaPorNo } from "./bc.ts";
 import type { Comprobante } from "./cruce-correo-bc.ts";
 
 export type EstadoFactura = "pendiente" | "registrada" | "descuadrada" | "no_aplica" | "otra_empresa";
@@ -34,6 +35,10 @@ export type FacturaCorreo = {
   bcProveedor: string | null;
   bcTotal: number | null;
   bcCalzePor: string | null;
+  /** Deep link a ESA factura en BC. Se arma en el servidor porque lleva tenant,
+   *  entorno y empresa, que el navegador no conoce. Sin N.º de BC no hay link: un
+   *  enlace que abre una lista vacía es peor que no ponerlo. */
+  bcUrl: string | null;
   fechaRegistro: string | null;
   ultimoCotejo: string | null;
   revisadoPor: string | null;
@@ -76,6 +81,7 @@ const fila = (r: any): FacturaCorreo => ({
   bcProveedor: r.bcProveedor ?? null,
   bcTotal: r.bcTotal == null ? null : Number(r.bcTotal),
   bcCalzePor: r.bcCalzePor ?? null,
+  bcUrl: r.bcNumero ? (bcDeepLinkFacturaPorNo(String(r.bcNumero)) || null) : null,
   fechaRegistro: iso(r.fechaRegistro),
   ultimoCotejo: iso(r.ultimoCotejo),
   revisadoPor: r.revisadoPor ?? null,
