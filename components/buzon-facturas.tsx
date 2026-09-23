@@ -187,6 +187,10 @@ export function BuzonFacturas() {
     porRevisar: filas.filter((f) => !f.revisada).length,
   }), [filas]);
 
+  // La base del porcentaje: solo lo que de verdad le tocaba a esta compañía.
+  const base = conteo.registrada + conteo.descuadrada + conteo.pendiente;
+  const pctEnBc = base ? Math.round(((conteo.registrada + conteo.descuadrada) / base) * 100) : 0;
+
   const visibles = useMemo(() => {
     if (filtro === "todas") return filas;
     if (filtro === "porRevisar") return filas.filter((f) => !f.revisada);
@@ -330,12 +334,25 @@ export function BuzonFacturas() {
         )}
       </Card>
 
-      {!!filas.length && <PanelMatch c={conteo} />}
-
       {!!filas.length && (
         // Los recuadros son además el filtro: tocar "Sin registrar" deja solo esas.
         // Es el mismo gesto que los chips del resto de la app.
-        <div className="tiles mb-4">
+        <div className="tiles tiles--5 mb-4">
+          {/* EL NÚMERO QUE CONTESTA LA PREGUNTA: de todo lo que llegó al correo,
+              ¿cuánto está en BC? Va de primero porque es el titular; los otros
+              recuadros son el desglose.
+
+              El denominador deja fuera lo de las empresas hermanas y lo marcado
+              "no aplica": eso nunca tuvo que estar en BC, y contarlo bajaría el
+              porcentaje acusando un atraso que no existe. Las descuadradas cuentan
+              como que SÍ están —la factura se digitó— y se desglosan en su propio
+              recuadro, porque "está con otro monto" es otro problema y otro dueño.
+
+              Sin `onClick`: los demás recuadros filtran, este es un titular. Si
+              filtrara, filtraría por "lo mismo que ya estás viendo". */}
+          <Tile label={`${num.format(conteo.registrada + conteo.descuadrada)} de ${num.format(base)} ya en BC`}
+            value={`${pctEnBc}%`}
+            accent={pctEnBc >= 90 ? "var(--ds-color-green-200)" : pctEnBc >= 70 ? "var(--ds-color-yellow)" : "var(--ds-color-red-200)"} />
           <Tile label="Sin registrar" value={String(conteo.pendiente)}
             accent={conteo.pendiente ? "var(--ds-color-red-200)" : undefined}
             active={filtro === "pendiente"}
@@ -393,58 +410,6 @@ export function BuzonFacturas() {
         </Card>
       )}
     </>
-  );
-}
-
-// EL NÚMERO QUE CONTESTA LA PREGUNTA: de todo lo que llegó al correo, ¿cuánto está
-// en Business Central?
-//
-// El denominador deja fuera lo de las empresas hermanas y lo marcado "no aplica": eso
-// nunca tuvo que estar en BC, y contarlo bajaría el porcentaje acusando un atraso que
-// no existe. La cuenta es sobre lo que SÍ le toca a esta compañía.
-//
-// Las descuadradas cuentan como que SÍ están —la factura se digitó— pero se muestran
-// aparte, porque "está pero con otro monto" es un problema distinto de "no está", con
-// otro dueño.
-//
-// Respeta el rango de fechas elegido arriba: el porcentaje es el del período que se
-// está mirando, no el de toda la historia.
-function PanelMatch({ c }: { c: { pendiente: number; registrada: number; descuadrada: number } }) {
-  const base = c.registrada + c.descuadrada + c.pendiente;
-  if (!base) return null;
-  const enBc = c.registrada + c.descuadrada;
-  const pct = Math.round((enBc / base) * 100);
-  const pctDescuadre = Math.round((c.descuadrada / base) * 100);
-
-  return (
-    <div className="kpis mb-4">
-      <article className="kpi" style={{ "--kpi-acento": pct >= 90 ? "var(--ds-color-green-300)" : pct >= 70 ? "var(--ds-text)" : "var(--ds-color-red-200)" } as React.CSSProperties}>
-        <div className="kpi__rotulo">Del correo, ya está en Business Central</div>
-        <div className="kpi__fila">
-          <div className="kpi__valor" title={`${enBc} de ${base} comprobantes`}>{pct}%</div>
-        </div>
-        <div className="kpi__nota ds-body-sm">
-          {num.format(enBc)} de {num.format(base)} comprobantes
-          {pctDescuadre > 0 && ` · ${num.format(c.descuadrada)} con el monto distinto`}
-        </div>
-        <div className="kpi__barra" title={`${enBc} en BC · ${c.pendiente} sin registrar`}>
-          <span className="kpi__barra-pista"><span className="kpi__barra-fill" style={{ width: `${pct}%` }} /></span>
-        </div>
-      </article>
-
-      <article className="kpi" style={{ "--kpi-acento": c.pendiente ? "var(--ds-color-red-200)" : "var(--ds-color-green-300)" } as React.CSSProperties}>
-        <div className="kpi__rotulo">Falta digitar</div>
-        <div className="kpi__fila">
-          <div className="kpi__valor">{num.format(c.pendiente)}</div>
-        </div>
-        <div className="kpi__nota ds-body-sm">
-          {c.pendiente === 0
-            ? "Todo lo que llegó por correo está en BC."
-            : `${100 - pct}% de lo que llegó en este período`}
-        </div>
-        <div className="kpi__barra" />
-      </article>
-    </div>
   );
 }
 

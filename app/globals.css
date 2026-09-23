@@ -1632,6 +1632,14 @@ td.ds-col-fija {
   .only-mobile-cols { display: block; }
 }
 
+/* Fila de 5: el porcentaje de match manda, y los otros cuatro son su desglose. Se
+   declara aparte porque `.tiles` está fijo en 4 columnas y un quinto recuadro se
+   caía solo a una segunda fila, descuadrado. Debajo de 1180 px pasa a 3 (el
+   porcentaje se lleva la primera fila con dos más) y el breakpoint de móvil de
+   `.tiles` lo baja a 2. */
+.tiles--5 { grid-template-columns: repeat(5, 1fr); }
+@media (max-width: 1180px) { .tiles--5 { grid-template-columns: repeat(3, 1fr); } }
+
 /* Fila de 3 tiles: 3 en desktop, apila en móvil (evita que se corte el 3º). */
 .tiles-3 { grid-template-columns: repeat(3, 1fr); }
 
