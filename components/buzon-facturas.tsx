@@ -253,8 +253,17 @@ export function BuzonFacturas() {
       cell: (c) => {
         const f = c.row.original;
         if (!f.bcNumero) return <span className="ds-muted">—</span>;
+        // Mismo trato que "ver correo": con `a { color: inherit; text-decoration: none }`
+        // un <a> pelado se lee como texto cualquiera y nadie adivina que abre BC. Verde
+        // del DS, la flecha ↗ de "esto te saca de la app", y el `title` diciendo a dónde
+        // va (en una tabla no sirve `.ds-tip`: el contenedor recorta por overflow).
         return f.bcUrl
-          ? <a href={f.bcUrl} target="_blank" rel="noopener noreferrer" className="ds-strong ds-body-sm">{f.bcNumero}</a>
+          ? (
+            <a className="link-btn link-btn--sm" href={f.bcUrl} target="_blank" rel="noopener noreferrer"
+              title={`Abre la factura ${f.bcNumero} en Business Central, en una pestaña nueva.`}>
+              {f.bcNumero}<span className="chip-link__ir" aria-hidden>↗</span>
+            </a>
+          )
           : <span className="ds-strong ds-body-sm">{f.bcNumero}</span>;
       },
     },
