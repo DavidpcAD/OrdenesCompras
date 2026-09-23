@@ -2,10 +2,12 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ColumnDef } from "@tanstack/react-table";
-import { Button, Card, EmptyState, Tile } from "@/components/ui";
+import { Button, Card, EmptyState, Field, Tile } from "@/components/ui";
 import { DataTable } from "@/components/data-table";
+import { CampoRangoFechas } from "@/components/calendario-rango";
+import type { Rango } from "@/lib/fechas";
 import { IconWarning } from "@/components/icons";
-import { formatDate, formatDateTime, money, num } from "@/lib/helpers";
+import { formatDate, formatDateTime, money, num, todayISO as hoyISO } from "@/lib/helpers";
 import { TIPOS } from "@/lib/cruce-correo-bc";
 import type { FacturaCorreo } from "@/lib/repo-facturas-correo";
 
@@ -44,11 +46,24 @@ export function BuzonFacturas() {
   const [sincronizando, setSincronizando] = useState(false);
   const [error, setError] = useState("");
   const [filtro, setFiltro] = useState<Filtro>("todas");
+  // El rango de fechas viaja al servidor, no se filtra acá: así se puede ir más atrás
+  // de los 60 días que trae por defecto sin cargar toda la tabla en cada visita.
+  const [rango, setRango] = useState<Rango>({});
+  // El rango se lee por ref para que `cargar` no cambie de identidad con cada fecha
+  // elegida: si cambiara, el efecto de montaje se volvería a correr y con él la
+  // sincronización completa y un reloj nuevo cada vez que alguien toca el calendario.
+  const rangoRef = useRef(rango);
+  rangoRef.current = rango;
   const vivo = useRef(true);
 
   const cargar = useCallback(async (): Promise<Datos | null> => {
     try {
-      const r = await fetch("/api/vigilancia/facturas", { cache: "no-store" });
+      const { from, to } = rangoRef.current;
+      const q = new URLSearchParams();
+      if (from) q.set("desde", from);
+      if (to) q.set("hasta", to);
+      const cola = q.toString();
+      const r = await fetch(`/api/vigilancia/facturas${cola ? `?${cola}` : ""}`, { cache: "no-store" });
       const j = await r.json();
       if (!r.ok) throw new Error(j?.error ?? `Error ${r.status}`);
       if (vivo.current) setDatos(j as Datos);
@@ -91,6 +106,14 @@ export function BuzonFacturas() {
     })();
     return () => { vivo.current = false; if (t) clearInterval(t); };
   }, [cargar, sincronizar]);
+
+  // Cambiar el rango solo recarga la lista: no hay que volver a leer el buzón ni a
+  // cotejar contra BC para mirar otro mes.
+  const primera = useRef(true);
+  useEffect(() => {
+    if (primera.current) { primera.current = false; return; }
+    void cargar();
+  }, [rango.from, rango.to, cargar]);
 
   const filas = useMemo(() => datos?.filas ?? [], [datos]);
   const hoy = Date.now();
@@ -230,9 +253,17 @@ export function BuzonFacturas() {
         <Card className="mb-4">
           <h2 className="ds-subtitle">Lo que llegó al buzón</h2>
           <p className="ds-muted ds-body-sm" style={{ marginTop: 4 }}>
-            Últimos 60 días. Buscá por lo que sea: proveedor, cédula, consecutivo, N.º de BC o estado. Los días
-            al lado de «Registrada» son lo que tardó en digitarse desde que llegó el correo.
+            Buscá por lo que sea: proveedor, cédula, consecutivo, N.º de BC o estado. Los días al lado de
+            «Registrada» son lo que tardó en digitarse desde que llegó el correo.
           </p>
+          <div className="row gap-3 wrap" style={{ marginTop: 12, alignItems: "flex-end" }}>
+            <Field label="Fecha del comprobante">
+              <CampoRangoFechas valor={rango} onCambio={setRango} vacio="Últimos 60 días" max={hoyISO()} />
+            </Field>
+            {(rango.from || rango.to) && (
+              <Button variant="outline" size="sm" onClick={() => setRango({})}>Volver a los últimos 60 días</Button>
+            )}
+          </div>
           <div style={{ marginTop: 12 }}>
             <DataTable
               data={visibles}

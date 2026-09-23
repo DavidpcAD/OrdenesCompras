@@ -147,12 +147,13 @@ export async function pendientesDeCotejo(): Promise<FacturaCorreo[]> {
   return r.recordset.map(fila);
 }
 
-export async function listarFacturasCorreo(opts: { desde?: string; estado?: string } = {}): Promise<FacturaCorreo[]> {
+export async function listarFacturasCorreo(opts: { desde?: string; hasta?: string; estado?: string } = {}): Promise<FacturaCorreo[]> {
   if (!(await tablaCorreoExiste())) return [];
   const pool = await getPool();
   const req = pool.request();
   const donde: string[] = [];
   if (opts.desde) { req.input("desde", sql.Date, opts.desde); donde.push("fechaEmision >= @desde"); }
+  if (opts.hasta) { req.input("hasta", sql.Date, opts.hasta); donde.push("fechaEmision <= @hasta"); }
   if (opts.estado) { req.input("estado", sql.VarChar(20), opts.estado); donde.push("estado = @estado"); }
   const r = await req.query(`
     SELECT * FROM dbo.FacturaCorreo

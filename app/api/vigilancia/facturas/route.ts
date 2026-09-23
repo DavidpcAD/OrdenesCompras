@@ -9,7 +9,7 @@ import { actor } from "@/lib/actor";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-// GET  /api/vigilancia/facturas?desde=2026-09-01   → lo que llegó al correo y en qué quedó
+// GET  /api/vigilancia/facturas?desde=2026-09-01&hasta=2026-09-30  → lo que llegó al correo y en qué quedó
 // POST /api/vigilancia/facturas  { clave, estado, nota }  → cerrarla a mano
 //
 // Esta es la lista que mira Contabilidad: cada comprobante que entró al buzón, si ya
@@ -26,16 +26,18 @@ export async function GET(req: NextRequest) {
       });
     }
     const sp = req.nextUrl.searchParams;
-    const desde = /^\d{4}-\d{2}-\d{2}$/.test(sp.get("desde") ?? "")
-      ? (sp.get("desde") as string)
-      : hace(DIAS_POR_DEFECTO);
+    const iso = (v: string | null) => (/^\d{4}-\d{2}-\d{2}$/.test(v ?? "") ? (v as string) : undefined);
+    // Sin rango elegido se muestran los últimos 60 días; con rango se respeta, para
+    // poder irse más atrás sin traerse toda la tabla en cada carga.
+    const desde = iso(sp.get("desde")) ?? hace(DIAS_POR_DEFECTO);
+    const hasta = iso(sp.get("hasta"));
 
     const [filas, sync] = await Promise.all([
-      listarFacturasCorreo({ desde }),
+      listarFacturasCorreo({ desde, hasta }),
       leerSincronizacion(),
     ]);
 
-    return NextResponse.json({ hayTabla: true, desde, buzon: estadoBuzon(), sync, filas });
+    return NextResponse.json({ hayTabla: true, desde, hasta, buzon: estadoBuzon(), sync, filas });
   } catch (e: any) {
     console.error("vigilancia/facturas GET:", e?.message ?? e);
     return NextResponse.json({ error: e?.message ?? "No se pudo leer la lista." }, { status: 500 });
