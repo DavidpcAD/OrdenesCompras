@@ -77,15 +77,31 @@ export function partirClave(clave: string): { cedulaEmisor: string; consecutivo:
 // Leer el XML
 // ---------------------------------------------------------------------------
 
-const etiqueta = (xml: string, nombre: string): string => {
-  // Los XML de Hacienda vienen con y sin prefijo de espacio de nombres según el
-  // proveedor de facturación que los emita, así que la etiqueta se busca tolerando
-  // cualquier prefijo.
+// En XML, `&` `<` `>` `"` y `'` viajan escapados. Sin deshacerlo, "PIMMSA PINTURAS
+// MACA & MONTENEGRO" se mostraba en pantalla como "MACA &amp; MONTENEGRO" — es el
+// precio de leer con expresiones regulares en vez de un parser, y se paga acá.
+const desescapar = (s: string): string =>
+  s.replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"')
+   .replace(/&apos;/g, "'").replace(/&#(\d+);/g, (_, n) => String.fromCharCode(Number(n)))
+   // `&amp;` va de ÚLTIMO a propósito: si se deshiciera primero, un `&amp;lt;` del
+   // origen se convertiría en `<` y cambiaría el texto.
+   .replace(/&amp;/g, "&");
+
+// Saca el contenido de una etiqueta TAL CUAL, sin tocar las entidades. Los XML de
+// Hacienda vienen con y sin prefijo de espacio de nombres según el proveedor de
+// facturación que los emita, así que se tolera cualquier prefijo.
+const crudo = (xml: string, nombre: string): string => {
   const m = xml.match(new RegExp(`<(?:\\w+:)?${nombre}>([\\s\\S]*?)</(?:\\w+:)?${nombre}>`, "i"));
   return m ? m[1].trim() : "";
 };
 
-const bloque = (xml: string, nombre: string): string => etiqueta(xml, nombre);
+// Un BLOQUE (Emisor, Receptor, ResumenFactura) se saca crudo porque adentro todavía
+// hay etiquetas que leer. Desescaparlo acá haría que el texto de adentro se
+// desescapara DOS veces, y un `&amp;lt;` del origen terminaría convertido en `<`.
+const bloque = crudo;
+
+// Un VALOR de texto sí se desescapa, una sola vez, al leerlo.
+const etiqueta = (xml: string, nombre: string): string => desescapar(crudo(xml, nombre));
 
 /**
  * Saca de un XML de comprobante electrónico lo que hace falta para cruzar.

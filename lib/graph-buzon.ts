@@ -127,7 +127,8 @@ export type CorreoConComprobantes = {
 };
 
 const POR_PAGINA = 100;
-const TOPE_POR_CORRIDA = 120;   // correos CON adjunto que se abren por vuelta
+const TOPE_POR_CORRIDA = 40;    // correos CON adjunto que se abren por vuelta
+const A_LA_VEZ = 5;             // adjuntos en paralelo; más arriba Graph empieza a tirar 429
 const DIAS_PRIMERA_CORRIDA = 30;
 
 /**
@@ -176,6 +177,7 @@ export async function leerBuzon(desde: string | null): Promise<{
   const buzon = encodeURIComponent(c.buzon);
 
   const correos: CorreoConComprobantes[] = [];
+  const pendientes: any[] = [];
   let masNuevo: string | null = null;
   let leidos = 0, abiertos = 0, hayMas = false;
   let url: string | null = consultaBuzon(c.buzon, desde);
@@ -194,17 +196,28 @@ export async function leerBuzon(desde: string | null): Promise<{
       if (!m.hasAttachments) continue;
 
       abiertos++;
-      const comprobantes = await comprobantesDe(buzon, m.id);
-      if (!comprobantes.length) continue;
-      correos.push({
-        messageId: m.id,
-        asunto: m.subject ?? "",
-        remitente: m.from?.emailAddress?.address ?? "",
-        recibido: m.receivedDateTime ?? "",
-        webLink: m.webLink ?? "",
-        comprobantes,
-      });
+      pendientes.push(m);
     }
+
+    // Los adjuntos se piden de a cinco. Eran uno por uno y una corrida de 120 correos
+    // se pasaba del tiempo que aguanta la petición: la pantalla mostraba "Timeout" y
+    // el cotejo ni siquiera llegaba a correr.
+    for (let i = 0; i < pendientes.length; i += A_LA_VEZ) {
+      const grupo = pendientes.slice(i, i + A_LA_VEZ);
+      const res = await Promise.all(grupo.map(async (m) => ({ m, comprobantes: await comprobantesDe(buzon, m.id) })));
+      for (const { m, comprobantes } of res) {
+        if (!comprobantes.length) continue;
+        correos.push({
+          messageId: m.id,
+          asunto: m.subject ?? "",
+          remitente: m.from?.emailAddress?.address ?? "",
+          recibido: m.receivedDateTime ?? "",
+          webLink: m.webLink ?? "",
+          comprobantes,
+        });
+      }
+    }
+    pendientes.length = 0;
 
     if (hayMas) break;
     url = data["@odata.nextLink"] ?? null;

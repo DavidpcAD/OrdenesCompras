@@ -229,3 +229,33 @@ test("sin comprobantes no hay ventana y nada se acusa", () => {
   assert.equal(r.soloEnBc.length, 1);
   assert.equal(r.calzadas.length, 0);
 });
+
+// --- entidades XML ---------------------------------------------------------
+
+test("deshace las entidades: PIMMSA MACA & MONTENEGRO, no &amp;", () => {
+  // Salió en pantalla el 23 de setiembre de 2026: la tabla mostraba
+  // "PIMMSA PINTURAS MACA &amp; MONTENEGRO SOCIEDAD ANONIMA".
+  const xml = XML_FACTURA.replace(
+    "<Nombre>MADERAS Y FERRETERIA BUEN PRECIO S.A</Nombre>",
+    "<Nombre>PIMMSA PINTURAS MACA &amp; MONTENEGRO SOCIEDAD ANONIMA</Nombre>",
+  );
+  assert.equal(leerComprobanteXml(xml)?.nombreEmisor, "PIMMSA PINTURAS MACA & MONTENEGRO SOCIEDAD ANONIMA");
+});
+
+test("deshace comillas, ángulos y códigos numéricos", () => {
+  const xml = XML_FACTURA.replace(
+    "<Nombre>MADERAS Y FERRETERIA BUEN PRECIO S.A</Nombre>",
+    "<Nombre>&quot;EL&quot; &lt;A&gt; &apos;B&apos; CA&#209;AS</Nombre>",
+  );
+  assert.equal(leerComprobanteXml(xml)?.nombreEmisor, `"EL" <A> 'B' CAÑAS`);
+});
+
+test("un &amp;lt; del origen no se convierte en <", () => {
+  // Por eso `&amp;` se deshace de último: al revés, &amp;lt; terminaría en "<" y
+  // cambiaría el texto que mandó el proveedor.
+  const xml = XML_FACTURA.replace(
+    "<Nombre>MADERAS Y FERRETERIA BUEN PRECIO S.A</Nombre>",
+    "<Nombre>A&amp;lt;B</Nombre>",
+  );
+  assert.equal(leerComprobanteXml(xml)?.nombreEmisor, "A&lt;B");
+});
