@@ -89,7 +89,12 @@ export function documentoDeOrden(orden: Orden, unidades: Record<string, string> 
     almacenUnico: destinos.length === 1 ? destinos[0] : null,
     subtotal,
     iva,
-    ivaPct: articulos.find((l) => (l.ivaPct ?? 0) > 0)?.ivaPct ?? 13,
+    // La tasa que rotula el total del papel. El `?? 13` de antes rotulaba "13% IVA"
+    // sobre un importe de 0,00 en cuanto la orden iba exenta —que es justo el papel
+    // de una importación, el que se le manda al proveedor de afuera (CP-005636, FBG
+    // SRL). Si hay líneas y ninguna cobra IVA, la tasa es 0: el 13 queda solo como
+    // default de una orden sin líneas que mirar.
+    ivaPct: articulos.find((l) => (l.ivaPct ?? 0) > 0)?.ivaPct ?? (articulos.length ? 0 : 13),
     total: subtotal + iva,
     porTasaIva,
     unidades,
