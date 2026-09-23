@@ -47,7 +47,10 @@ function Compras() {
   const params = useSearchParams();
 
   const pedida = params.get("vista");
-  const vista: Vista = VISTAS.includes(pedida as Vista) ? (pedida as Vista) : "ordenes";
+  // Sin `?vista=` la pantalla abre en RESUMEN, que es también a donde manda el login
+  // (ROLE_META.home en components/shell.tsx). Antes el riel caía en "ordenes" y el
+  // login en "resumen": la misma pantalla abría distinto según por dónde entraras.
+  const vista: Vista = VISTAS.includes(pedida as Vista) ? (pedida as Vista) : "resumen";
   // `replace` y no `push`: cambiar de pestaña no es navegar, y con push el botón de
   // atrás se llenaba de pestañas antes de salir de la pantalla.
   const irA = (v: Vista) => router.replace(`/proveeduria/compras?vista=${v}`, { scroll: false });

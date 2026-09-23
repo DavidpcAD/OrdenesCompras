@@ -488,14 +488,15 @@ export function helpForPath(p: string, vista?: string | null): HelpEntry {
   if (p.startsWith("/facturacion/ver/")) return ORDEN_VER;
   if (/^\/facturacion\/[^/]+$/.test(p)) return RECIBIR; // /facturacion/{id}
   // ---- Proveeduría ----
-  // Compras es UNA pantalla con tres pestañas, así que la ayuda la elige la pestaña
-  // (?vista=) y no la ruta. El shell le pasa la vista; sin ella cae en Órdenes, que
-  // es donde abre la pantalla.
+  // Compras es UNA pantalla con cuatro pestañas, así que la ayuda la elige la pestaña
+  // (?vista=) y no la ruta. El shell le pasa la vista; sin ella cae en Resumen, que
+  // es donde abre la pantalla (mismo criterio que app/proveeduria/compras/page.tsx:
+  // si los dos no coinciden, la ayuda explica una pestaña que no es la que se ve).
   if (p.startsWith("/proveeduria/compras")) {
-    return vista === "resumen" ? RESUMEN
+    return vista === "ordenes" ? ORDENES
       : vista === "solicitudes" ? SOLICITUDES
         : vista === "proveedores" ? DASHBOARD
-          : ORDENES;
+          : RESUMEN;
   }
   if (p.startsWith("/proveeduria/dashboard")) return DASHBOARD;
   if (p.startsWith("/proveeduria/solicitudes/")) return SOLICITUD_DET;
