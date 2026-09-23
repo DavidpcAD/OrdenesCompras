@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { estadoBuzon } from "@/lib/graph-buzon";
 import {
   tablaCorreoExiste, FALTA_TABLA, listarFacturasCorreo, leerSincronizacion, marcarFacturaCorreo,
-  marcarRevisada, type EstadoFactura,
+  marcarRevisada, CERRABLES, type EstadoFactura,
 } from "@/lib/repo-facturas-correo";
 import { actor } from "@/lib/actor";
 
@@ -44,8 +44,6 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: e?.message ?? "No se pudo leer la lista." }, { status: 500 });
   }
 }
-
-const CERRABLES: EstadoFactura[] = ["no_aplica", "otra_empresa", "pendiente"];
 
 export async function POST(req: NextRequest) {
   try {

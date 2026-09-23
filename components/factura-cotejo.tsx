@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Badge, Button, Input, Modal, Skeleton, Textarea, useToast } from "@/components/ui";
+import { Badge, Button, Input, Modal, Select, Skeleton, Textarea, useToast } from "@/components/ui";
 import { IconCheck, IconWarning } from "@/components/icons";
 import { formatDate, money, num } from "@/lib/helpers";
 import { TIPOS, type LineaComprobante, type ResumenComprobante } from "@/lib/cruce-correo-bc";
@@ -52,6 +52,7 @@ export function FacturaCotejo({ fila, onCambio, onClose }: {
   const [previa, setPrevia] = useState<string | null>(null);
   const [aMano, setAMano] = useState("");
   const [nota, setNota] = useState(fila.nota ?? "");
+  const [motivo, setMotivo] = useState("");
   const [ocupado, setOcupado] = useState(false);
 
   const cargar = useCallback(async (bc: string | null, señal?: AbortSignal) => {
@@ -192,6 +193,7 @@ export function FacturaCotejo({ fila, onCambio, onClose }: {
         ) : (
           <Candidatos
             cargando={cargando}
+            cerrada={actual.estado === "no_aplica" || actual.estado === "otra_empresa"}
             error={datos && !datos.bc.ok ? datos.bc.error : ""}
             candidatosError={datos?.candidatosError}
             lista={datos?.candidatos ?? []}
@@ -223,6 +225,16 @@ export function FacturaCotejo({ fila, onCambio, onClose }: {
         </div>
       </div>
 
+      <Cierre
+        factura={actual}
+        motivo={motivo}
+        setMotivo={setMotivo}
+        comentario={nota}
+        ocupado={ocupado}
+        onCerrar={(estado, texto) => void guardar({ estado, nota: texto }, "Caso cerrado: sale de las pendientes.")}
+        onReabrir={() => void guardar({ estado: "pendiente", nota }, "Vuelve a la cola de pendientes.")}
+      />
+
       {error && (
         <div className="ds-callout ds-callout--red mt-4">
           <span className="ds-callout__icon"><IconWarning size={18} /></span>
@@ -233,16 +245,99 @@ export function FacturaCotejo({ fila, onCambio, onClose }: {
   );
 }
 
+// ------------------------------------------------------------------- cierre
+//
+// LA SALIDA PARA LO QUE NUNCA VA A ESTAR EN BC: una compra personal, algo de otra
+// empresa del grupo, un comprobante que el proveedor mandó dos veces. No es una
+// factura perdida ni un error del digitador, y dejarla "sin registrar" para siempre
+// ensucia la lista y baja el porcentaje acusando un atraso que no existe.
+//
+// El motivo es OBLIGATORIO y se guarda en el comentario, que es la columna que se ve
+// en la tabla y viaja en la exportación. Un caso cerrado sin explicación no se puede
+// distinguir, un mes después, de uno que alguien quiso sacar de la lista.
+
+const MOTIVOS: { id: string; estado: "no_aplica" | "otra_empresa"; label: string }[] = [
+  { id: "otra_empresa", estado: "otra_empresa", label: "Es de otra empresa del grupo" },
+  { id: "personal", estado: "no_aplica", label: "Es una compra personal, no de la empresa" },
+  { id: "duplicada", estado: "no_aplica", label: "Llegó dos veces: está duplicada" },
+  { id: "sin_compra", estado: "no_aplica", label: "No lleva factura de compra en BC" },
+  { id: "otro", estado: "no_aplica", label: "Otro motivo (lo escribo en el comentario)" },
+];
+
+function Cierre({ factura, motivo, setMotivo, comentario, ocupado, onCerrar, onReabrir }: {
+  factura: FacturaCorreo;
+  motivo: string;
+  setMotivo: (v: string) => void;
+  comentario: string;
+  ocupado: boolean;
+  onCerrar: (estado: "no_aplica" | "otra_empresa", nota: string) => void;
+  onReabrir: () => void;
+}) {
+  const cerrada = factura.estado === "no_aplica" || factura.estado === "otra_empresa";
+
+  if (cerrada) {
+    return (
+      <div className="ds-callout ds-callout--green mt-4">
+        <span className="ds-callout__icon"><IconCheck size={18} /></span>
+        <div style={{ flex: 1 }}>
+          <div className="ds-callout__title">
+            Caso cerrado — {factura.estado === "otra_empresa" ? "es de otra empresa" : "no aplica"}
+          </div>
+          <div className="ds-callout__body">
+            {factura.nota || "Sin motivo anotado."}
+            {factura.revisadoPor && ` · ${factura.revisadoPor}`}
+            {factura.revisadoEn && ` · ${formatDate(factura.revisadoEn.slice(0, 10))}`}
+          </div>
+        </div>
+        <Button variant="outline" size="sm" disabled={ocupado} onClick={onReabrir}>Reabrir</Button>
+      </div>
+    );
+  }
+
+  // Solo se cierra lo que está esperando. Una factura que ya apareció en BC no se
+  // cierra: se arregla o se suelta el enlace.
+  if (factura.estado !== "pendiente") return null;
+
+  const elegido = MOTIVOS.find((m) => m.id === motivo);
+  const detalle = comentario.trim();
+  const falta = elegido?.id === "otro" && !detalle;
+
+  return (
+    <div className="cot-cierre">
+      <div>
+        <div className="ds-body-sm ds-strong">¿Esta factura no tiene que estar en Business Central?</div>
+        <div className="ds-muted ds-body-sm">
+          Cerrala con el motivo y sale de las pendientes. Deja de contar como atraso y el motivo queda anotado.
+        </div>
+      </div>
+      <div className="row gap-2 wrap" style={{ alignItems: "center" }}>
+        <Select value={motivo} onChange={(e) => setMotivo(e.target.value)} disabled={ocupado}
+          placeholder="¿Por qué no aplica?" ariaLabel="Motivo del cierre" style={{ width: 320, maxWidth: "100%" }}>
+          {MOTIVOS.map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}
+        </Select>
+        <Button variant="outline" disabled={ocupado || !elegido || falta}
+          onClick={() => elegido && onCerrar(elegido.estado, detalle ? `${elegido.label} — ${detalle}` : elegido.label)}>
+          Cerrar el caso
+        </Button>
+        {falta && <span className="ds-muted ds-body-sm">Escribí arriba de qué se trata.</span>}
+      </div>
+    </div>
+  );
+}
+
 const ETIQUETA_TIPO: Record<string, string> = {
   articulo: "artículo", recurso: "recurso", activo_fijo: "activo fijo", cargo: "cargo", otro: "cuenta",
 };
 
+// Verde = acá no queda nada pendiente, y eso vale igual para la que se registró en BC
+// que para la que se cerró porque nunca tenía que estar. La diferencia la dicen las
+// palabras; el color contesta "¿me tengo que ocupar de esto?".
 function EstadoBadge({ factura }: { factura: FacturaCorreo }) {
   const manual = factura.bcCalzePor === "manual";
   if (factura.estado === "registrada") return <Badge tone="green">{manual ? "Enlazada a mano" : "Registrada"}</Badge>;
   if (factura.estado === "descuadrada") return <Badge tone="yellow">No cuadra el monto</Badge>;
-  if (factura.estado === "otra_empresa") return <Badge tone="gray">De otra empresa</Badge>;
-  if (factura.estado === "no_aplica") return <Badge tone="gray">No aplica</Badge>;
+  if (factura.estado === "otra_empresa") return <Badge tone="green">Cerrada · otra empresa</Badge>;
+  if (factura.estado === "no_aplica") return <Badge tone="green">Cerrada · no aplica</Badge>;
   return <Badge tone="red">Sin registrar</Badge>;
 }
 
@@ -316,12 +411,28 @@ function Aviso({ tono, titulo, children }: { tono: "yellow" | "green"; titulo: s
 
 // ---------------------------------------------------------------- candidatos
 
-function Candidatos({ cargando, error, candidatosError, lista, moneda, ocupado, aMano, setAMano, onMirar }: {
-  cargando: boolean; error: string; candidatosError?: string;
+function Candidatos({ cargando, cerrada, error, candidatosError, lista, moneda, ocupado, aMano, setAMano, onMirar }: {
+  cargando: boolean; cerrada: boolean; error: string; candidatosError?: string;
   lista: Candidato[]; moneda: string; ocupado: boolean;
   aMano: string; setAMano: (v: string) => void;
   onMirar: (numero: string) => void;
 }) {
+  // Un caso cerrado no tiene nada que buscar en BC, y dejar el "todavía no se ha
+  // encontrado" ahí contradice la decisión que alguien acaba de tomar.
+  if (cerrada) {
+    return (
+      <section className="cot-col" aria-label="Business Central">
+        <header className="cot-col__head">
+          <div className="ds-strong ds-body-sm">Lo que se registró en Business Central</div>
+          <div className="cot-col__meta"><span className="ds-muted ds-body-sm">nada, y está bien</span></div>
+        </header>
+        <p className="cot-col__aviso ds-body-sm ds-muted">
+          Este comprobante se cerró: no tiene que estar en Business Central. Si fue un error, reabrilo abajo.
+        </p>
+      </section>
+    );
+  }
+
   return (
     <section className="cot-col" aria-label="Candidatos en Business Central">
       <header className="cot-col__head">

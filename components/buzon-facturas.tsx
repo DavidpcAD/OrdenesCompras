@@ -484,8 +484,8 @@ export function BuzonFacturas() {
 const etiquetaEstado = (f: FacturaCorreo, marca?: MarcaCandidato): string => {
   if (f.estado === "registrada") return `Registrada ${f.bcNumero ?? ""}${f.bcCalzePor === "manual" ? " enlazada a mano" : ""}`;
   if (f.estado === "descuadrada") return `Registrada no cuadra ${f.bcNumero ?? ""}`;
-  if (f.estado === "otra_empresa") return "De otra empresa del grupo";
-  if (f.estado === "no_aplica") return `No aplica ${f.nota ?? ""}`;
+  if (f.estado === "otra_empresa") return `Cerrada de otra empresa del grupo ${f.nota ?? ""}`;
+  if (f.estado === "no_aplica") return `Cerrada no aplica ${f.nota ?? ""}`;
   // "candidato" es buscable a propósito: escribirlo en la barra deja solo las que
   // tienen una factura de BC propuesta.
   return marca ? `Sin registrar candidato ${marca.numero} ${marca.numeroProveedor}` : "Sin registrar";
@@ -510,8 +510,20 @@ function Estado({ f, hoy, marca }: { f: FacturaCorreo; hoy: number; marca?: Marc
       </div>
     );
   }
-  if (f.estado === "otra_empresa") return <span className="ds-muted ds-body-sm">De otra empresa</span>;
-  if (f.estado === "no_aplica") return <span className="ds-muted ds-body-sm">No aplica{f.nota ? ` — ${f.nota}` : ""}</span>;
+  // Un caso cerrado se lee como RESUELTO, no como un hueco: alguien decidió que esa
+  // factura no tenía que estar en BC y dejó dicho por qué. El motivo va en la columna
+  // Comentario, así que acá solo se dice qué se decidió y quién.
+  if (f.estado === "otra_empresa" || f.estado === "no_aplica") {
+    return (
+      <div className="ds-body-sm">
+        <span className="ds-strong">Cerrada</span>
+        <div className="ds-muted">
+          {f.estado === "otra_empresa" ? "es de otra empresa" : "no aplica"}
+          {f.revisadoPor ? ` · ${f.revisadoPor}` : ""}
+        </div>
+      </div>
+    );
+  }
 
   const esperando = f.fechaEmision
     ? Math.max(0, Math.round((hoy - Date.parse(f.fechaEmision)) / 86_400_000))

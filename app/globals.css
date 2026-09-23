@@ -616,6 +616,15 @@ td.ds-col-fija {
 .cot-col__acciones { padding: var(--ds-space-3) var(--ds-space-4); border-top: 1.5px solid var(--ds-color-gray-100); }
 /* El comentario de revisión, debajo de las dos columnas. */
 .cot-nota { display: flex; flex-direction: column; gap: 6px; margin-top: var(--ds-space-4); }
+/* Cerrar el caso: lo que nunca va a estar en BC. Va en una caja aparte y discreta —
+   es la salida, no la acción principal, y quien la usa ya sabe que la busca. */
+.cot-cierre {
+  display: flex; justify-content: space-between; align-items: center; gap: var(--ds-space-3);
+  flex-wrap: wrap; margin-top: var(--ds-space-4);
+  padding: var(--ds-space-3) var(--ds-space-4);
+  border: 1.5px solid var(--ds-color-gray-100); border-radius: var(--ds-radius-lg);
+  background: var(--ds-color-surface);
+}
 
 /* inline cell input */
 .ds-cell-input {

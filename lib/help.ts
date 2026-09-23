@@ -437,6 +437,7 @@ const VIGILANCIA: HelpEntry = {
     "Empezá por el recuadro “Podrían estar en BC”: son las que dicen “sin registrar” pero tienen en Business Central una factura del mismo proveedor, por el mismo monto y del mismo día. Casi siempre es la misma factura con el número del proveedor mal tecleado.",
     "Al abrir una de esas, la columna derecha trae las candidatas con el motivo de cada una. Tocá la que parezca para verle los renglones al lado de los del correo; si calza, “Sí, es esta” la deja enlazada. Si ya sabés cuál es, escribí el N.º de BC en el campo de abajo.",
     "El comentario de revisión se guarda con la factura, sale en la columna “Comentario” de la tabla y viaja en la exportación. Es el reemplazo de la columna de comentarios del Excel.",
+    "¿La factura NUNCA va a estar en Business Central —una compra personal, algo de otra empresa del grupo, un comprobante que llegó dos veces—? Abajo del diálogo, “Cerrar el caso” con el motivo: sale de las pendientes, deja de contar como atraso y el motivo queda anotado. Si te equivocaste, “Reabrir” la devuelve a la cola.",
     "Cargá TODO el correo del período que querés revisar. Si cargás solo una parte, la lista de “está en BC y no llegó comprobante” se llena de facturas a las que lo que les falta es el correo, no el registro — la pantalla te avisa cuando eso pasa.",
     "Para las señales de BC: dale “Revisar”. Lee todas las facturas de compra desde noviembre de 2025 y tarda unos segundos.",
     "Empezá por “Facturas en borrador”: son las únicas donde no hay nada que interpretar — existen en BC y nunca se registraron.",
@@ -451,6 +452,8 @@ const VIGILANCIA: HelpEntry = {
     "Cuando el monto no cuadra, abrí la factura: arriba dice de cuánto es la diferencia y para qué lado, y abajo se comparan los renglones. Las líneas del correo salen del XML adjunto, así que se leen en el momento — si el correo se movió de carpeta, la columna lo dice y el enlace a Outlook igual sirve.",
     "Las candidatas se proponen, no se enlazan solas, y es a propósito: en un mes hay más de cien pares de facturas del mismo proveedor con el monto idéntico —material que se compra seguido—, y algunas hasta con los mismos renglones. Lo único que las separa es la fecha, y eso lo decide una persona.",
     "Una factura enlazada a mano queda marcada “a mano” y la sincronización ya no la toca. Si te equivocaste, abrila y dale “Soltar”: vuelve a la cola y el cotejo automático la retoma.",
+    "Cerrar y palomear son cosas distintas. La palomita es “ya la vi”; cerrar es “esto no va a estar en BC nunca, y este es el motivo”. Una factura sin registrar se puede palomear sin cerrarla, cuando la viste y sabés que todavía falta digitarla.",
+    "Cerrar exige motivo a propósito: un caso cerrado sin explicación no se distingue, un mes después, de uno que alguien quiso sacar de la lista. Y una factura enlazada a una de BC no se puede cerrar como que no aplica: primero se suelta el enlace.",
   ],
 };
 

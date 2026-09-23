@@ -45,6 +45,8 @@ export type FacturaCorreo = {
   fechaRegistro: string | null;
   ultimoCotejo: string | null;
   revisadoPor: string | null;
+  /** Cuándo la tocó una persona por última vez. Es lo que fecha un caso cerrado. */
+  revisadoEn: string | null;
   nota: string | null;
 };
 
@@ -89,6 +91,7 @@ const fila = (r: any): FacturaCorreo => ({
   fechaRegistro: iso(r.fechaRegistro),
   ultimoCotejo: iso(r.ultimoCotejo),
   revisadoPor: r.revisadoPor ?? null,
+  revisadoEn: iso(r.revisadoEn),
   nota: r.nota ?? null,
 });
 
@@ -431,6 +434,16 @@ export async function guardarNota(clave: string, nota: string, usuario: string):
       SET nota = @nota, revisadoPor = @usuario, revisadoEn = getdate()
       WHERE clave = @clave`);
 }
+
+/**
+ * Los estados que puede poner una PERSONA.
+ *
+ * "registrada" no está y no puede estar: esa la pone el cotejo cuando encuentra la
+ * factura en BC, o el enlace a mano contra una factura que de verdad existe allá. Si
+ * se pudiera marcar a dedo, la pantalla dejaría de ser una fuente de verdad —
+ * quedaría "registrada" sin nada detrás.
+ */
+export const CERRABLES: EstadoFactura[] = ["no_aplica", "otra_empresa", "pendiente"];
 
 /** Cierre a mano: "no aplica", "es de otra empresa". */
 export async function marcarFacturaCorreo(

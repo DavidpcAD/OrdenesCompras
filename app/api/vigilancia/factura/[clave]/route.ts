@@ -7,7 +7,7 @@ import { estadoBuzon, xmlDeComprobante } from "@/lib/graph-buzon";
 import {
   leerFacturaCorreo, tablaCorreoExiste, FALTA_TABLA, bcNumerosEnlazados,
   enlazarFacturaBc, desenlazarFacturaBc, guardarNota, facturaCorreoPorBcNumero,
-  type FacturaCorreo,
+  marcarFacturaCorreo, CERRABLES, type FacturaCorreo, type EstadoFactura,
 } from "@/lib/repo-facturas-correo";
 import { actor } from "@/lib/actor";
 
@@ -16,7 +16,8 @@ export const dynamic = "force-dynamic";
 
 // GET  /api/vigilancia/factura/<clave>            → los dos lados, más los candidatos
 // GET  /api/vigilancia/factura/<clave>?bc=CFR-…   → el lado de BC es ESA factura (mirar antes de enlazar)
-// POST /api/vigilancia/factura/<clave>            → { bcNumero } enlazar · { bcNumero: null } soltar · { nota } comentar
+// POST /api/vigilancia/factura/<clave>            → { bcNumero } enlazar · { bcNumero: null } soltar
+//                                                   { estado, nota } cerrar o reabrir · { nota } comentar
 //
 // LOS DOS LADOS DE UNA FACTURA, y la salida cuando no calzan solos.
 //
@@ -155,13 +156,45 @@ export async function POST(req: NextRequest, { params }: { params: { clave: stri
       return NextResponse.json({ ok: true, factura: await leerFacturaCorreo(clave) });
     }
 
+    // --- cerrar el caso, o reabrirlo ------------------------------------------
+    // La salida para lo que NUNCA va a estar en BC: una compra personal, algo de otra
+    // empresa del grupo, un comprobante que llegó dos veces. No es un error del
+    // digitador ni una factura perdida, así que dejarla "sin registrar" para siempre
+    // ensucia la lista y baja el porcentaje acusando un atraso que no existe.
+    if (typeof body.estado === "string") {
+      const estado = body.estado as EstadoFactura;
+      if (!CERRABLES.includes(estado)) {
+        return NextResponse.json(
+          { error: `No se puede marcar como "${estado}" a mano. Solo: ${CERRABLES.join(", ")}.` },
+          { status: 400 },
+        );
+      }
+      // Cerrar SIN decir por qué no sirve de nada: dentro de un mes nadie se acuerda,
+      // y el que revise después no puede distinguir un caso resuelto de uno que
+      // alguien quiso sacar de la lista.
+      const motivo = String(body.nota ?? "").trim();
+      if (estado !== "pendiente" && !motivo) {
+        return NextResponse.json({ error: "Escribí por qué esta factura no tiene que estar en Business Central." }, { status: 400 });
+      }
+      // Una factura amarrada a una de BC no se puede cerrar como "no aplica": son
+      // afirmaciones que se contradicen. Primero se suelta el enlace.
+      if (estado !== "pendiente" && factura.bcNumero) {
+        return NextResponse.json(
+          { error: `Esta factura está enlazada a ${factura.bcNumero} en Business Central. Soltá el enlace antes de cerrarla como que no aplica.` },
+          { status: 409 },
+        );
+      }
+      await marcarFacturaCorreo(clave, estado, usuario, motivo);
+      return NextResponse.json({ ok: true, factura: await leerFacturaCorreo(clave) });
+    }
+
     // --- solo el comentario ---------------------------------------------------
     if (typeof body.nota === "string") {
       await guardarNota(clave, body.nota, usuario);
       return NextResponse.json({ ok: true, factura: await leerFacturaCorreo(clave) });
     }
 
-    return NextResponse.json({ error: "No se dijo qué hacer: falta bcNumero o nota." }, { status: 400 });
+    return NextResponse.json({ error: "No se dijo qué hacer: falta bcNumero, estado o nota." }, { status: 400 });
   } catch (e: any) {
     console.error("vigilancia/factura POST:", e?.message ?? e);
     return NextResponse.json({ error: e?.message ?? "No se pudo guardar." }, { status: 500 });
