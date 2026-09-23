@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { lineasAExonerar, grupoIvaExento, codigosConIvaCero, lineasAPonerEnCero,
+import { lineasAExonerar, grupoIvaExento, codigosConIvaCero, lineasAPonerEnCero, bcPideAbierto,
   type LineaIvaBc, type LineaReplaceBc } from "./bc.ts";
 
 // Quitarle el IVA al pedido en BC (importación): a qué líneas hay que tocarles el
@@ -14,6 +14,18 @@ const L = (id: string, code: string, taxCode: string, taxPercent?: number): Line
   ({ id, code, taxCode, taxPercent });
 
 const EXENTO = "EXENTO-BIENES";
+
+// El "no" que dio BC en CP-005636 (22 sep 2026, FBG SRL, importación de Italia) al
+// intentar ponerle el grupo exento a una línea. El pedido estaba LANZADO allá, y el
+// estado que devuelve la API estándar decía "Open", así que preguntarlo no sirve: el
+// único que dice la verdad es este error. Tiene que reconocerse para que la app
+// des-lance el pedido, le cambie el IVA y lo vuelva a lanzar, en vez de rendirse.
+test("el rechazo del PATCH de IVA por pedido lanzado se reconoce (CP-005636)", () => {
+  const real = "Status must be equal to 'Open'  in Purchase Header: Document Type=Order, No.=CP-005636. Current value is 'Released'.";
+  assert.equal(bcPideAbierto(real), true);
+  // Un rechazo por otra cosa NO puede des-lanzar un pedido aprobado.
+  assert.equal(bcPideAbierto(`Internal_InvalidTableRelation: ... contains a value (EXENTO) that cannot be found`), false);
+});
 
 test("lineasAExonerar: solo las que todavía cobran IVA", () => {
   const lineas = [

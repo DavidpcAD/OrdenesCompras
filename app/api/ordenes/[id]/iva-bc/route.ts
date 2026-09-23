@@ -44,6 +44,9 @@ export async function POST(req: Request, { params }: { params: { id: string } })
         `Pedido ${orden.bcNumber} exento de IVA en Business Central (grupo ${r.grupo})`,
         r.cambiadas.length ? `líneas: ${r.cambiadas.join(" · ")}` : "ninguna línea hacía falta cambiar",
         `IVA de BC: ${r.ivaAntes.toFixed(2)} → ${r.ivaDespues.toFixed(2)} ${r.moneda}`.trim(),
+        // Que el pedido se haya des-lanzado y vuelto a lanzar en BC no es un detalle
+        // técnico: es un cambio de estado allá y tiene que quedar escrito con nombre.
+        r.reabierto ? (r.relanzado ? "hubo que des-lanzarlo en BC y se volvió a lanzar" : "hubo que des-lanzarlo en BC y NO se pudo volver a lanzar") : "",
         r.aviso ? `OJO: ${r.aviso}` : "",
       ].filter(Boolean).join(" · ");
       const ordenNo = await anotarIvaExoneradoEnBc(id, resumen, a.usuario, a.rol);
@@ -61,8 +64,9 @@ export async function POST(req: Request, { params }: { params: { id: string } })
         avisoAlineado = `El pedido quedó exento en BC, pero no se pudo copiar ese IVA a las líneas de la orden (${String(e?.message ?? e)}). Usá “Usar el IVA de BC”.`;
       }
       return NextResponse.json({
-        ordenNo, grupo: r.grupo, cambiadas: r.cambiadas, yaEstaban: r.yaEstaban,
+        ordenNo, grupo: r.grupo, cambiadas: r.cambiadas, yaEstaban: r.yaEstaban, fallas: r.fallas,
         ivaAntes: r.ivaAntes, ivaDespues: r.ivaDespues, totalDespues: r.totalDespues, moneda: r.moneda,
+        reabierto: r.reabierto, relanzado: r.relanzado,
         alineadas, aviso: [r.aviso, avisoAlineado].filter(Boolean).join(" ") || undefined,
       });
     }

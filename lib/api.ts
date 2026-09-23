@@ -90,8 +90,10 @@ export const api = {
   // Al revés que la anterior: quitarle el IVA al pedido EN BC (una importación paga el
   // impuesto en aduana) y después dejar la orden con lo que BC quedó calculando.
   exonerarIvaEnBc: (id: string, body: unknown): Promise<{
-    ordenNo: string; grupo: string; cambiadas: string[]; yaEstaban: string[];
+    ordenNo: string; grupo: string; cambiadas: string[]; yaEstaban: string[]; fallas: string[];
     ivaAntes: number; ivaDespues: number; totalDespues: number; moneda: string;
+    // El pedido estaba lanzado en BC: hubo que des-lanzarlo y volver a lanzarlo.
+    reabierto: boolean; relanzado: boolean;
     alineadas: number; aviso?: string;
   }> =>
     fetch(`/api/ordenes/${id}/iva-bc`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }).then(jsonOrThrow),

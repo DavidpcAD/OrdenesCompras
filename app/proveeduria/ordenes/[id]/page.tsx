@@ -206,10 +206,20 @@ export default function ProvOrdenDetallePage() {
       // El aviso de BC NO se va en un toast: si el IVA no bajó del todo, eso hay que
       // poder leerlo con calma (dice qué falta tocar allá).
       if (r.aviso) setAvisoBc(r.aviso);
-      toast(r.cambiadas.length > 0
-        ? `${orden!.bcNumber} quedó exento en BC · IVA ${money(r.ivaAntes, r.moneda || orden!.currencyCode)} → ${money(r.ivaDespues, r.moneda || orden!.currencyCode)}${r.alineadas > 0 ? ` · la orden se alineó en ${r.alineadas} línea(s)` : ""}`
-        : `Las líneas del pedido ${orden!.bcNumber} ya estaban con el grupo ${r.grupo} en BC: no había nada que cambiar.`,
-        r.cambiadas.length > 0 ? "success" : "info");
+      // TRES finales distintos, no dos. Con dos, "no cambió ninguna línea" caía
+      // siempre en "ya estaban exentas" — y el 22 sep eso salió en verde sobre
+      // CP-005636, donde BC había rechazado las cuatro por estar el pedido lanzado.
+      // El motivo estaba en el aviso amarillo de arriba, que es fácil no ver.
+      if (r.cambiadas.length > 0) {
+        toast(`${orden!.bcNumber} quedó exento en BC · IVA ${money(r.ivaAntes, r.moneda || orden!.currencyCode)} → ${money(r.ivaDespues, r.moneda || orden!.currencyCode)}`
+          + (r.reabierto ? (r.relanzado ? " · hubo que des-lanzarlo y se volvió a lanzar" : " · quedó ABIERTO en BC, hay que lanzarlo") : "")
+          + (r.alineadas > 0 ? ` · la orden se alineó en ${r.alineadas} línea(s)` : ""),
+          r.reabierto && !r.relanzado ? "error" : "success");
+      } else if (r.aviso) {
+        toast(`Business Central no le cambió el IVA al pedido ${orden!.bcNumber}. El motivo está en el aviso de arriba.`, "error");
+      } else {
+        toast(`Las líneas del pedido ${orden!.bcNumber} ya estaban con el grupo ${r.grupo} en BC: no había nada que cambiar.`, "info");
+      }
     } catch (e: any) {
       toast(String(e?.message ?? e), "error");
     } finally {

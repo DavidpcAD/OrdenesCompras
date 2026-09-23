@@ -2304,8 +2304,13 @@ export type ResultadoExonerar = {
   ivaDespues: number;
   totalDespues: number;
   moneda: string;
-  // Lo que quedó a medias: líneas que BC no dejó cambiar, o un IVA que sigue vivo
-  // porque falta el grupo del encabezado.
+  // El pedido estaba LANZADO en BC y hubo que des-lanzarlo para poder tocarle el IVA.
+  // `relanzado` dice si quedó como estaba. `reabierto` en true con `relanzado` en
+  // false es lo que hay que gritar: el pedido se quedó ABIERTO allá.
+  reabierto: boolean;
+  relanzado: boolean;
+  // Lo que quedó a medias: líneas que BC no dejó cambiar, un IVA que sigue vivo
+  // porque falta el grupo del encabezado, o un pedido que no se pudo volver a lanzar.
   aviso?: string;
 };
 
@@ -2318,11 +2323,20 @@ export async function bcExonerarLineasPedido(orderNo: string): Promise<Resultado
     throw new Error(`No se pudieron leer las líneas del pedido ${orderNo} en Business Central. Reintentá; si sigue, revisá que el pedido exista allá.`);
   }
   if (!antes.lineas.length) throw new Error(`El pedido ${orderNo} no tiene líneas en Business Central.`);
-  // Un pedido LANZADO no se edita en BC: rechaza el cambio. Lanzarlo y reabrirlo es de
-  // Aprobación, no de esta app (ver la frontera con BC en el README).
-  if (/released|lanzad/i.test(antes.status)) {
-    throw new Error(`El pedido ${orderNo} ya está lanzado en Business Central (${antes.status}): allá no se le puede cambiar el IVA. Que Aprobación lo reabra y volvés a intentar, o que Contabilidad le cambie el grupo de IVA en BC.`);
-  }
+  // ACÁ VIVÍA UN FRENO QUE SE RENDÍA SI `antes.status` DECÍA "Released". Se quitó el
+  // 23 sep 2026, porque ese campo NO SIRVE para saberlo: CP-005636 estaba Lanzado en
+  // la pantalla de BC y la API estándar lo devolvía como "Open". El freno no saltó,
+  // los cuatro PATCH salieron igual y BC los rechazó uno por uno con "Status must be
+  // equal to 'Open'… Current value is 'Released'" — y el aviso de la pantalla mandó a
+  // Proveeduría a pedirle el arreglo a alguien más, que es justo lo que este botón
+  // vino a evitar.
+  //
+  // Así que el estado no se pregunta: se descubre cuando BC dice que no, y entonces
+  // el pedido se des-lanza, se corrige y se VUELVE A LANZAR (loop de abajo). Es el
+  // mismo criterio de `conPedidoAbierto`, con una diferencia que importa: allá el
+  // pedido queda Abierto a propósito porque lo va a lanzar Aprobación; acá ya estaba
+  // lanzado y aprobado, así que dejarlo abierto sería quitarle a Bodega el pedido
+  // contra el que recibe.
   // Que el grupo EXISTA en BC se revisa ACÁ, no en el PATCH: mandarle uno inventado
   // devuelve un `Internal_InvalidTableRelation` que no le dice a nadie qué hacer.
   const catalogo = await bcGruposIvaProducto(cid);
@@ -2339,14 +2353,50 @@ export async function bcExonerarLineasPedido(orderNo: string): Promise<Resultado
   const yaEstaban = antes.lineas.filter((l) => !pendientes.includes(l)).map((l) => l.code);
   const cambiadas: string[] = [];
   const fallas: string[] = [];
-  for (const l of pendientes) {
+  let reabierto = false;
+  let relanzado = false;
+  let avisoLanzar: string | undefined;
+
+  // El PATCH de una línea. Devuelve null si BC lo aceptó, o el motivo del "no" ya
+  // legible. Es una función porque en el peor caso se llama dos veces por línea: una
+  // para saber si BC deja y otra después de des-lanzar el pedido.
+  const ponerleElGrupo = async (l: LineaIvaBc): Promise<string | null> => {
     const r = await bcFetch(`${stdRoot()}/companies(${cid})/purchaseOrders(${antes.poId})/purchaseOrderLines(${l.id})`, {
       method: "PATCH", cache: "no-store",
       headers: { "Content-Type": "application/json", "If-Match": "*" },
       body: JSON.stringify({ taxCode: grupo }),
     });
-    if (r.ok) cambiadas.push(`${l.code}: ${l.taxCode || "(sin grupo)"} → ${grupo}`);
-    else fallas.push(`${l.code} (${mensajeBc((await r.text()).slice(0, 400))})`);
+    return r.ok ? null : mensajeBc((await r.text()).slice(0, 400));
+  };
+
+  for (const l of pendientes) {
+    let falla = await ponerleElGrupo(l);
+    // "Tiene que estar Abierto": se des-lanza UNA vez y se reintenta. Las líneas que
+    // siguen ya encuentran el pedido abierto.
+    if (falla && bcPideAbierto(falla) && !reabierto) {
+      try {
+        await bcReopenPedido(orderNo);
+        reabierto = true;
+        falla = await ponerleElGrupo(l);
+      } catch (e: any) {
+        // BC puede negarse a reabrir (el pedido ya tiene recepciones registradas, por
+        // ejemplo). Ese "no" es el que explica por qué el IVA no se puede cambiar.
+        falla = `${falla} — y tampoco dejó reabrir el pedido para corregirlo: ${String(e?.message ?? e)}`;
+      }
+    }
+    if (falla) fallas.push(`${l.code} (${falla})`);
+    else cambiadas.push(`${l.code}: ${l.taxCode || "(sin grupo)"} → ${grupo}`);
+  }
+
+  // Se lo devuelve a BC como estaba. Si esto falla hay que decirlo fuerte: el pedido
+  // quedaría Abierto allá y Bodega no puede recibir contra un pedido sin lanzar.
+  if (reabierto) {
+    try {
+      await bcReleasePedido(orderNo);
+      relanzado = true;
+    } catch (e: any) {
+      avisoLanzar = `OJO: para cambiarle el IVA hubo que des-lanzar el pedido ${orderNo} en Business Central y NO se pudo volver a lanzar (${String(e?.message ?? e)}). Allá quedó ABIERTO: lanzalo en BC o pedíselo a Aprobación, porque si no Bodega no puede recibir contra él.`;
+    }
   }
 
   // BC recalcula al momento: los totales de después son el resultado real, no el
@@ -2360,11 +2410,15 @@ export async function bcExonerarLineasPedido(orderNo: string): Promise<Resultado
   } else if (despues && Math.abs(ivaDespues) > 0.01) {
     aviso = `Las líneas del pedido ${orderNo} quedaron en ${grupo}, pero Business Central sigue calculando IVA (${ivaDespues.toFixed(2)}). Eso ya es el grupo de IVA del ENCABEZADO: en BC, en el pedido, poné el Grupo registro IVA negocio en EXTRANJERO (y lo mismo en la ficha del proveedor, para los pedidos que vengan).`;
   }
+  // El pedido abierto y sin volver a lanzar va PRIMERO: es lo más urgente de todo lo
+  // que esta función puede dejar a medias.
+  aviso = [avisoLanzar, aviso].filter(Boolean).join(" ") || undefined;
   return {
     grupo, cambiadas, yaEstaban, fallas,
     ivaAntes, ivaDespues,
     totalDespues: Number(despues?.total ?? 0),
     moneda: String(despues?.currencyCode ?? totalesAntes?.currencyCode ?? ""),
+    reabierto, relanzado,
     aviso,
   };
 }

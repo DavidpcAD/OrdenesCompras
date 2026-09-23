@@ -169,6 +169,9 @@ interface StoreShape {
   exonerarIvaEnBc: (idOrden: string) => Promise<{
     grupo: string; cambiadas: string[]; ivaAntes: number; ivaDespues: number;
     moneda: string; alineadas: number; aviso?: string;
+    // Un pedido LANZADO no se deja tocar en BC: la app lo des-lanza, le cambia el IVA
+    // y lo vuelve a lanzar. Las dos banderas son para poder decirlo en pantalla.
+    reabierto?: boolean; relanzado?: boolean;
   }>;
   devolverOrden: (id: string, motivo: string) => Promise<void>;
 
@@ -1087,6 +1090,7 @@ export function StoreProvider({ children, useApi }: { children: React.ReactNode;
         grupo: String(r?.grupo ?? ""), cambiadas: Array.isArray(r?.cambiadas) ? r.cambiadas : [],
         ivaAntes: Number(r?.ivaAntes ?? 0), ivaDespues: Number(r?.ivaDespues ?? 0),
         moneda: String(r?.moneda ?? ""), alineadas: Number(r?.alineadas ?? 0), aviso: r?.aviso,
+        reabierto: !!r?.reabierto, relanzado: !!r?.relanzado,
       };
     };
 
