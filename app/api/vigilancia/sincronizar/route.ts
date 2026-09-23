@@ -110,8 +110,7 @@ async function correr(buzon: ReturnType<typeof estadoBuzon>, emitir: (o: unknown
           comprobante, fechaCorreo: c.recibido, webLink: c.webLink, remitente: c.remitente,
         })),
       );
-      emitir({ fase: "guardando", hechos: 0, total: entradas.length });
-      nuevos = await guardarComprobantes(entradas);
+      nuevos = await guardarComprobantes(entradas, (h, t) => emitir({ fase: "guardando", hechos: h, total: t }));
       await guardarSincronizacion({ marcador: r.masNuevo, error: null, leidos, nuevos });
     } catch (e: any) {
       errorCorreo = e?.message ?? "No se pudo leer el buzón.";
@@ -157,8 +156,7 @@ async function correr(buzon: ReturnType<typeof estadoBuzon>, emitir: (o: unknown
         // de cotejo al día para saber que sí se revisaron.
         ...cruce.soloEnCorreo.map((c) => ({ clave: c.clave, estado: "pendiente" as const })),
       ];
-      emitir({ fase: "guardando", hechos: 0, total: resultados.length });
-      await guardarCotejo(resultados);
+      await guardarCotejo(resultados, (h, t) => emitir({ fase: "anotando", hechos: h, total: t }));
       cotejados = pendientes.length;
       aparecieron = cruce.calzadas.length + cruce.descuadradas.length;
     }

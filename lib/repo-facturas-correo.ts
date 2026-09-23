@@ -92,50 +92,68 @@ const fila = (r: any): FacturaCorreo => ({
   nota: r.nota ?? null,
 });
 
+// Cuántas filas viajan por sentencia. SQL Server aguanta 2.100 parámetros; el INSERT
+// usa 12 por fila y el UPDATE 6, así que 100 y 200 caben con aire.
+const POR_TANDA = 100;
+const POR_TANDA_UPD = 200;
+
 /**
  * Mete los comprobantes que trajo el buzón. Devuelve cuántos eran nuevos.
  *
- * El `IF NOT EXISTS` hace el trabajo: la clave de Hacienda es la llave primaria, así
- * que un proveedor que reenvía el mismo correo tres veces —que pasa seguido— no
- * duplica nada, y una sincronización que relee con traslape tampoco. Lo ya guardado
- * NO se pisa: si alguien ya lo marcó como "no aplica", el reenvío no lo revive.
+ * VA POR TANDAS, no de a uno. Era un INSERT por comprobante y una corrida de 455
+ * eran 455 idas y vueltas a Azure SQL: la pantalla se quedaba minutos en "Guardando
+ * lo que llegó… 0 de 455". Ahora son cinco sentencias.
+ *
+ * El `WHERE NOT EXISTS` hace el trabajo que hacía el `IF NOT EXISTS`: la clave de
+ * Hacienda es la llave primaria, así que un proveedor que reenvía el mismo correo
+ * tres veces —que pasa seguido— no duplica nada, y una sincronización que relee con
+ * traslape tampoco. Lo ya guardado NO se pisa: si alguien lo marcó "no aplica" o lo
+ * palomeó como revisado, el reenvío no lo revive.
  */
 export async function guardarComprobantes(
   entradas: { comprobante: Comprobante; fechaCorreo?: string; webLink?: string; remitente?: string }[],
+  onProgreso?: (hechos: number, total: number) => void,
 ): Promise<number> {
   if (!entradas.length) return 0;
   if (!(await tablaCorreoExiste())) throw new Error(FALTA_TABLA);
   const pool = await getPool();
-  let nuevos = 0;
-  for (const e of entradas) {
-    const c = e.comprobante;
-    if (!c.clave || c.clave.length !== 50) continue;
-    const r = await pool.request()
-      .input("clave", sql.Char(50), c.clave)
-      .input("consecutivo", sql.Char(20), c.consecutivo.padStart(20, "0").slice(0, 20))
-      .input("tipoDoc", sql.Char(2), c.tipo || "01")
-      .input("cedulaEmisor", sql.VarChar(12), c.cedulaEmisor || "")
-      .input("nombreEmisor", sql.NVarChar(200), (c.nombreEmisor || "").slice(0, 200))
-      .input("cedulaReceptor", sql.VarChar(12), c.cedulaReceptor || null)
-      .input("fechaEmision", sql.Date, c.fecha || null)
-      .input("moneda", sql.VarChar(10), c.moneda || "CRC")
-      .input("total", sql.Decimal(19, 4), c.total || 0)
-      .input("fechaCorreo", sql.DateTime, e.fechaCorreo ? new Date(e.fechaCorreo) : null)
-      .input("webLink", sql.NVarChar(1000), (e.webLink || "").slice(0, 1000) || null)
-      .input("remitente", sql.NVarChar(200), (e.remitente || "").slice(0, 200) || null)
-      .query(`
-        IF NOT EXISTS (SELECT 1 FROM dbo.FacturaCorreo WHERE clave = @clave)
-        BEGIN
-          INSERT dbo.FacturaCorreo
-            (clave, consecutivo, tipoDoc, cedulaEmisor, nombreEmisor, cedulaReceptor,
-             fechaEmision, moneda, total, fechaCorreo, webLink, remitente)
-          VALUES
-            (@clave, @consecutivo, @tipoDoc, @cedulaEmisor, @nombreEmisor, @cedulaReceptor,
-             @fechaEmision, @moneda, @total, @fechaCorreo, @webLink, @remitente);
-          SELECT 1 AS nuevo;
-        END
-        ELSE SELECT 0 AS nuevo;`);
-    if (r.recordset[0]?.nuevo === 1) nuevos++;
+
+  const buenas = entradas.filter((e) => e.comprobante.clave?.length === 50);
+  let nuevos = 0, hechos = 0;
+
+  for (let i = 0; i < buenas.length; i += POR_TANDA) {
+    const tanda = buenas.slice(i, i + POR_TANDA);
+    const req = pool.request();
+    const filas = tanda.map((e, j) => {
+      const c = e.comprobante;
+      req.input(`c${j}`, sql.Char(50), c.clave)
+         .input(`n${j}`, sql.Char(20), c.consecutivo.padStart(20, "0").slice(0, 20))
+         .input(`t${j}`, sql.Char(2), c.tipo || "01")
+         .input(`e${j}`, sql.VarChar(12), c.cedulaEmisor || "")
+         .input(`m${j}`, sql.NVarChar(200), (c.nombreEmisor || "").slice(0, 200))
+         .input(`r${j}`, sql.VarChar(12), c.cedulaReceptor || null)
+         .input(`f${j}`, sql.Date, c.fecha || null)
+         .input(`d${j}`, sql.VarChar(10), c.moneda || "CRC")
+         .input(`o${j}`, sql.Decimal(19, 4), c.total || 0)
+         .input(`k${j}`, sql.DateTime, e.fechaCorreo ? new Date(e.fechaCorreo) : null)
+         .input(`w${j}`, sql.NVarChar(1000), (e.webLink || "").slice(0, 1000) || null)
+         .input(`s${j}`, sql.NVarChar(200), (e.remitente || "").slice(0, 200) || null);
+      return `(@c${j},@n${j},@t${j},@e${j},@m${j},@r${j},@f${j},@d${j},@o${j},@k${j},@w${j},@s${j})`;
+    }).join(",");
+
+    const res = await req.query(`
+      INSERT dbo.FacturaCorreo
+        (clave, consecutivo, tipoDoc, cedulaEmisor, nombreEmisor, cedulaReceptor,
+         fechaEmision, moneda, total, fechaCorreo, webLink, remitente)
+      SELECT v.clave, v.consecutivo, v.tipoDoc, v.cedulaEmisor, v.nombreEmisor, v.cedulaReceptor,
+             v.fechaEmision, v.moneda, v.total, v.fechaCorreo, v.webLink, v.remitente
+      FROM (VALUES ${filas}) AS v(clave, consecutivo, tipoDoc, cedulaEmisor, nombreEmisor, cedulaReceptor,
+                                  fechaEmision, moneda, total, fechaCorreo, webLink, remitente)
+      WHERE NOT EXISTS (SELECT 1 FROM dbo.FacturaCorreo f WHERE f.clave = v.clave);
+      SELECT @@ROWCOUNT AS nuevos;`);
+    nuevos += Number(res.recordset?.[0]?.nuevos ?? 0) || 0;
+    hechos += tanda.length;
+    onProgreso?.(hechos, buenas.length);
   }
   return nuevos;
 }
@@ -178,38 +196,56 @@ export type ResultadoCotejo = {
 /**
  * Escribe lo que encontró el cotejo contra BC.
  *
+ * TAMBIÉN POR TANDAS: era un UPDATE por comprobante, y con 395 pendientes eso son 395
+ * idas y vueltas a Azure SQL en cada corrida — el otro motivo de que la
+ * sincronización se sintiera eterna.
+ *
  * `fechaRegistro` se pone UNA sola vez, la primera vez que se ve registrada, y no se
  * vuelve a tocar: es el momento en que la factura apareció en BC, y de ahí sale
  * "cuánto tardó en digitarse". Si se reescribiera en cada corrida diría siempre "hoy".
  */
-export async function guardarCotejo(resultados: ResultadoCotejo[]): Promise<void> {
+export async function guardarCotejo(
+  resultados: ResultadoCotejo[],
+  onProgreso?: (hechos: number, total: number) => void,
+): Promise<void> {
   if (!resultados.length) return;
   if (!(await tablaCorreoExiste())) throw new Error(FALTA_TABLA);
   const pool = await getPool();
-  for (const x of resultados) {
-    await pool.request()
-      .input("clave", sql.Char(50), x.clave)
-      .input("estado", sql.VarChar(20), x.estado)
-      .input("bcNumero", sql.VarChar(40), x.bcNumero ?? null)
-      .input("bcProveedor", sql.VarChar(40), x.bcProveedor ?? null)
-      .input("bcTotal", sql.Decimal(19, 4), x.bcTotal ?? null)
-      .input("bcCalzePor", sql.VarChar(10), x.bcCalzePor ?? null)
-      .query(`
-        UPDATE dbo.FacturaCorreo SET
-          estado        = @estado,
-          bcNumero      = @bcNumero,
-          bcProveedor   = @bcProveedor,
-          bcTotal       = @bcTotal,
-          bcCalzePor    = @bcCalzePor,
-          ultimoCotejo  = getdate(),
-          fechaRegistro = CASE
-                            WHEN @estado IN ('registrada','descuadrada') AND fechaRegistro IS NULL
-                              THEN getdate()
-                            WHEN @estado NOT IN ('registrada','descuadrada')
-                              THEN NULL
-                            ELSE fechaRegistro
-                          END
-        WHERE clave = @clave`);
+  let hechos = 0;
+
+  for (let i = 0; i < resultados.length; i += POR_TANDA_UPD) {
+    const tanda = resultados.slice(i, i + POR_TANDA_UPD);
+    const req = pool.request();
+    const filas = tanda.map((x, j) => {
+      req.input(`c${j}`, sql.Char(50), x.clave)
+         .input(`e${j}`, sql.VarChar(20), x.estado)
+         .input(`n${j}`, sql.VarChar(40), x.bcNumero ?? null)
+         .input(`p${j}`, sql.VarChar(40), x.bcProveedor ?? null)
+         .input(`t${j}`, sql.Decimal(19, 4), x.bcTotal ?? null)
+         .input(`z${j}`, sql.VarChar(10), x.bcCalzePor ?? null);
+      return `(@c${j},@e${j},@n${j},@p${j},@t${j},@z${j})`;
+    }).join(",");
+
+    await req.query(`
+      UPDATE f SET
+        estado        = v.estado,
+        bcNumero      = v.bcNumero,
+        bcProveedor   = v.bcProveedor,
+        bcTotal       = v.bcTotal,
+        bcCalzePor    = v.bcCalzePor,
+        ultimoCotejo  = getdate(),
+        fechaRegistro = CASE
+                          WHEN v.estado IN ('registrada','descuadrada') AND f.fechaRegistro IS NULL
+                            THEN getdate()
+                          WHEN v.estado NOT IN ('registrada','descuadrada')
+                            THEN NULL
+                          ELSE f.fechaRegistro
+                        END
+      FROM dbo.FacturaCorreo f
+      JOIN (VALUES ${filas}) AS v(clave, estado, bcNumero, bcProveedor, bcTotal, bcCalzePor)
+        ON f.clave = v.clave;`);
+    hechos += tanda.length;
+    onProgreso?.(hechos, resultados.length);
   }
 }
 

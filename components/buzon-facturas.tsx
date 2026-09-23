@@ -44,6 +44,7 @@ type Filtro = "todas" | "pendiente" | "registrada" | "descuadrada" | "porRevisar
 const FASES: Record<string, string> = {
   correo: "Leyendo el buzón y abriendo los adjuntos…",
   guardando: "Guardando lo que llegó…",
+  anotando: "Anotando lo que se encontró…",
   bc: "Bajando las facturas de Business Central…",
   cotejo: "Cotejando contra Business Central…",
 };
