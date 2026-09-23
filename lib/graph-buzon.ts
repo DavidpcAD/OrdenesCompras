@@ -167,7 +167,12 @@ export function consultaBuzon(buzon: string, desde: string | null, hoy = new Dat
  * se procesó, la corrida siguiente sigue donde quedó — y la pantalla se sincroniza
  * sola cada 3 minutos, así que se pone al día sin que nadie haga nada.
  */
-export async function leerBuzon(desde: string | null): Promise<{
+export type Progreso = { hechos: number; total: number };
+
+export async function leerBuzon(
+  desde: string | null,
+  onProgreso?: (p: Progreso) => void,
+): Promise<{
   correos: CorreoConComprobantes[];
   leidos: number;
   masNuevo: string | null;
@@ -199,12 +204,21 @@ export async function leerBuzon(desde: string | null): Promise<{
       pendientes.push(m);
     }
 
+    // El total se informa por página y no de entrada: cuántos correos con adjunto hay
+    // solo se sabe al ir leyendo. Da una barra que puede crecer, pero es la verdad —
+    // preferible a inventar un total redondo que después no calza.
+    const totalConocido = abiertos;
+    let hechos = abiertos - pendientes.length;
+    onProgreso?.({ hechos, total: totalConocido });
+
     // Los adjuntos se piden de a cinco. Eran uno por uno y una corrida de 120 correos
     // se pasaba del tiempo que aguanta la petición: la pantalla mostraba "Timeout" y
     // el cotejo ni siquiera llegaba a correr.
     for (let i = 0; i < pendientes.length; i += A_LA_VEZ) {
       const grupo = pendientes.slice(i, i + A_LA_VEZ);
       const res = await Promise.all(grupo.map(async (m) => ({ m, comprobantes: await comprobantesDe(buzon, m.id) })));
+      hechos += grupo.length;
+      onProgreso?.({ hechos, total: totalConocido });
       for (const { m, comprobantes } of res) {
         if (!comprobantes.length) continue;
         correos.push({

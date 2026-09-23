@@ -28,6 +28,13 @@ export const dynamic = "force-dynamic";
 //
 // Se relee con traslape de 10 minutos a propósito: un correo que entra mientras corre
 // la sincronización se perdería si el marcador avanzara al filo del último leído.
+//
+// RESPONDE EN CHORRO (NDJSON, una línea por avance) y no de un solo golpe al final.
+// La corrida se toma su tiempo —abre adjuntos uno a uno y baja miles de facturas— y
+// un botón que dice "Revisando…" sin más deja a la persona sin saber si está pasando
+// algo o si se colgó. Cada línea es `{fase, hechos, total}` y la última trae el
+// resultado con `fin: true`. Si algo se traga el chorro, igual llega esa última línea
+// y la pantalla funciona: el avance se pierde, el resultado no.
 
 const TRASLAPE_MIN = 10;
 
@@ -60,20 +67,50 @@ export async function POST() {
     return NextResponse.json({ ok: false, paso: "tabla", error: FALTA_TABLA, buzon }, { status: 503 });
   }
 
+  const stream = new ReadableStream({
+    async start(controller) {
+      const enc = new TextEncoder();
+      const emitir = (o: unknown) => {
+        try { controller.enqueue(enc.encode(JSON.stringify(o) + "\n")); } catch { /* cliente se fue */ }
+      };
+      try {
+        await correr(buzon, emitir);
+      } catch (e: any) {
+        emitir({ fin: true, ok: false, buzon, correo: { leidos: 0, nuevos: 0, error: e?.message ?? "Falló la sincronización." }, cotejo: { cotejados: 0, aparecieron: 0, error: null } });
+      } finally {
+        controller.close();
+      }
+    },
+  });
+
+  return new Response(stream, {
+    headers: {
+      "Content-Type": "application/x-ndjson; charset=utf-8",
+      "Cache-Control": "no-store, no-transform",
+      // Sin esto, un proxy puede juntar todo y entregarlo al final: el avance se
+      // perdería y volveríamos al botón mudo.
+      "X-Accel-Buffering": "no",
+    },
+  });
+}
+
+async function correr(buzon: ReturnType<typeof estadoBuzon>, emitir: (o: unknown) => void) {
   let leidos = 0, nuevos = 0, errorCorreo: string | null = null;
 
   // --- 1 y 2: el buzón --------------------------------------------------------
   if (buzon.listo) {
     try {
+      emitir({ fase: "correo", hechos: 0, total: 0 });
       const sync = await leerSincronizacion();
       const desde = sync?.marcador ? conTraslape(sync.marcador) : null;
-      const r = await leerBuzon(desde);
+      const r = await leerBuzon(desde, (p) => emitir({ fase: "correo", ...p }));
       leidos = r.leidos;
       const entradas = r.correos.flatMap((c) =>
         c.comprobantes.map((comprobante) => ({
           comprobante, fechaCorreo: c.recibido, webLink: c.webLink, remitente: c.remitente,
         })),
       );
+      emitir({ fase: "guardando", hechos: 0, total: entradas.length });
       nuevos = await guardarComprobantes(entradas);
       await guardarSincronizacion({ marcador: r.masNuevo, error: null, leidos, nuevos });
     } catch (e: any) {
@@ -88,6 +125,7 @@ export async function POST() {
   try {
     const pendientes = await pendientesDeCotejo();
     if (pendientes.length) {
+      emitir({ fase: "bc", hechos: 0, total: pendientes.length });
       const comprobantes: Comprobante[] = pendientes.map((p) => ({
         clave: p.clave, consecutivo: p.consecutivo, tipo: p.tipoDoc,
         cedulaEmisor: p.cedulaEmisor, nombreEmisor: p.nombreEmisor,
@@ -98,6 +136,7 @@ export async function POST() {
       const desde = /^\d{4}-\d{2}-\d{2}$/.test(masVieja) ? corre(masVieja, -30) : "2025-11-01";
 
       const { facturas, proveedores } = await datosDeBc(desde);
+      emitir({ fase: "cotejo", hechos: 0, total: pendientes.length });
       const cruce = cruzar(comprobantes, facturas, proveedores);
 
       const resultados: ResultadoCotejo[] = [
@@ -118,6 +157,7 @@ export async function POST() {
         // de cotejo al día para saber que sí se revisaron.
         ...cruce.soloEnCorreo.map((c) => ({ clave: c.clave, estado: "pendiente" as const })),
       ];
+      emitir({ fase: "guardando", hechos: 0, total: resultados.length });
       await guardarCotejo(resultados);
       cotejados = pendientes.length;
       aparecieron = cruce.calzadas.length + cruce.descuadradas.length;
@@ -126,7 +166,8 @@ export async function POST() {
     errorBc = e?.message ?? "No se pudo cotejar contra Business Central.";
   }
 
-  return NextResponse.json({
+  emitir({
+    fin: true,
     ok: !errorCorreo && !errorBc,
     buzon,
     correo: { leidos, nuevos, error: errorCorreo },

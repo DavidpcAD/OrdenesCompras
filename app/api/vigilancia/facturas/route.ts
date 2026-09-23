@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { estadoBuzon } from "@/lib/graph-buzon";
 import {
   tablaCorreoExiste, FALTA_TABLA, listarFacturasCorreo, leerSincronizacion, marcarFacturaCorreo,
-  type EstadoFactura,
+  marcarRevisada, type EstadoFactura,
 } from "@/lib/repo-facturas-correo";
 import { actor } from "@/lib/actor";
 
@@ -10,7 +10,8 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 // GET  /api/vigilancia/facturas?desde=2026-09-01&hasta=2026-09-30  → lo que llegó al correo y en qué quedó
-// POST /api/vigilancia/facturas  { clave, estado, nota }  → cerrarla a mano
+// POST /api/vigilancia/facturas  { clave, revisada }        → palomearla como revisada
+// POST /api/vigilancia/facturas  { clave, estado, nota }    → cerrarla a mano
 //
 // Esta es la lista que mira Contabilidad: cada comprobante que entró al buzón, si ya
 // se registró en BC, con qué número y cuándo apareció. No consulta ni el correo ni BC:
@@ -50,10 +51,20 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json().catch(() => null);
     const clave = String(body?.clave ?? "").trim();
-    const estado = String(body?.estado ?? "") as EstadoFactura;
     if (clave.length !== 50) {
       return NextResponse.json({ error: "Falta la clave del comprobante." }, { status: 400 });
     }
+
+    const a = await actor({}).catch(() => ({ usuario: "sistema" }));
+    const usuario = (a as any).usuario ?? "sistema";
+
+    // La palomita de revisado va aparte del estado: revisar no es resolver.
+    if (typeof body?.revisada === "boolean") {
+      await marcarRevisada(clave, body.revisada, usuario);
+      return NextResponse.json({ ok: true });
+    }
+
+    const estado = String(body?.estado ?? "") as EstadoFactura;
     // Solo se puede cerrar a mano lo que es criterio de una persona. "Registrada" no
     // se marca a dedo: esa la pone el cotejo cuando encuentra la factura en BC, y si
     // se pudiera forzar, la pantalla dejaría de ser una fuente de verdad.
@@ -63,8 +74,7 @@ export async function POST(req: NextRequest) {
         { status: 400 },
       );
     }
-    const a = await actor({}).catch(() => ({ usuario: "sistema" }));
-    await marcarFacturaCorreo(clave, estado, (a as any).usuario ?? "sistema", body?.nota);
+    await marcarFacturaCorreo(clave, estado, usuario, body?.nota);
     return NextResponse.json({ ok: true });
   } catch (e: any) {
     console.error("vigilancia/facturas POST:", e?.message ?? e);

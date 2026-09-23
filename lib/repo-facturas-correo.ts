@@ -35,6 +35,9 @@ export type FacturaCorreo = {
   bcProveedor: string | null;
   bcTotal: number | null;
   bcCalzePor: string | null;
+  /** Lo palomeó una persona. Es un eje APARTE del estado: una factura puede estar sin
+   *  registrar y ya revisada (alguien la vio y sabe por qué falta). */
+  revisada: boolean;
   /** Deep link a ESA factura en BC. Se arma en el servidor porque lleva tenant,
    *  entorno y empresa, que el navegador no conoce. Sin N.º de BC no hay link: un
    *  enlace que abre una lista vacía es peor que no ponerlo. */
@@ -81,6 +84,7 @@ const fila = (r: any): FacturaCorreo => ({
   bcProveedor: r.bcProveedor ?? null,
   bcTotal: r.bcTotal == null ? null : Number(r.bcTotal),
   bcCalzePor: r.bcCalzePor ?? null,
+  revisada: !!r.revisadoEn,
   bcUrl: r.bcNumero ? (bcDeepLinkFacturaPorNo(String(r.bcNumero)) || null) : null,
   fechaRegistro: iso(r.fechaRegistro),
   ultimoCotejo: iso(r.ultimoCotejo),
@@ -207,6 +211,27 @@ export async function guardarCotejo(resultados: ResultadoCotejo[]): Promise<void
                           END
         WHERE clave = @clave`);
   }
+}
+
+/**
+ * La palomita de "ya la revisé", que es lo que permite ir bajando la lista una por una.
+ *
+ * Se guarda en `revisadoPor` / `revisadoEn`, que ya existían en la tabla, así que no
+ * hace falta otra migración. Y NO toca el estado: revisar no es resolver. Una factura
+ * puede quedar "sin registrar" y revisada a la vez —alguien la miró y ya sabe por qué
+ * falta— y el cotejo automático la puede seguir moviendo sin borrar esa marca.
+ */
+export async function marcarRevisada(clave: string, revisada: boolean, usuario: string): Promise<void> {
+  if (!(await tablaCorreoExiste())) throw new Error(FALTA_TABLA);
+  const pool = await getPool();
+  await pool.request()
+    .input("clave", sql.Char(50), clave)
+    .input("usuario", sql.NVarChar(100), revisada ? usuario : null)
+    .query(`
+      UPDATE dbo.FacturaCorreo
+      SET revisadoPor = @usuario,
+          revisadoEn  = CASE WHEN @usuario IS NULL THEN NULL ELSE getdate() END
+      WHERE clave = @clave`);
 }
 
 /** Cierre a mano: "no aplica", "es de otra empresa". */

@@ -6,7 +6,6 @@ import { IconWarning } from "@/components/icons";
 import { formatDate, money, num } from "@/lib/helpers";
 import { totalPorMoneda } from "@/lib/vigilancia-facturas";
 import { BuzonFacturas } from "@/components/buzon-facturas";
-import { CruceCorreo } from "@/components/cruce-correo";
 import type {
   FacturaBc, ParDoble, ProveedorCallado, ProveedorSinCedula, FichaDuplicada,
 } from "@/lib/vigilancia-facturas";
@@ -37,13 +36,16 @@ type Datos = {
   duplicadas: { n: number; filas: FichaDuplicada[] };
 };
 
-type Vista = "buzon" | "correo" | "bc";
+type Vista = "buzon" | "bc";
 
 export default function VigilanciaPage() {
   // "Buzón" es la vista de verdad: el correo entra solo y cada factura dice si ya se
-  // registró. "Cargar XML" queda como salida de emergencia mientras el permiso de
-  // Entra no exista o si alguien necesita cotejar una tanda suelta. "Señales de BC"
-  // son las alertas que no necesitan el correo.
+  // registró. "Señales de BC" son las alertas que no necesitan el correo.
+  //
+  // Hubo una tercera, "Cargar XML", para cotejar una tanda de archivos a mano. Existió
+  // mientras la app no tenía permiso para leer el buzón; con el buzón conectado ya no
+  // tiene sentido pedirle a nadie que guarde adjuntos en una carpeta. El MOTOR de ese
+  // cruce (lib/cruce-correo-bc.ts) se quedó: es el mismo que usa la sincronización.
   const [vista, setVista] = useState<Vista>("buzon");
   const [datos, setDatos] = useState<Datos | null>(null);
   const [cargando, setCargando] = useState(false);
@@ -81,9 +83,6 @@ export default function VigilanciaPage() {
           <button type="button" role="tab" aria-selected={vista === "buzon"}
             className={`segmented__btn ${vista === "buzon" ? "is-active" : ""}`}
             onClick={() => setVista("buzon")}>Buzón</button>
-          <button type="button" role="tab" aria-selected={vista === "correo"}
-            className={`segmented__btn ${vista === "correo" ? "is-active" : ""}`}
-            onClick={() => setVista("correo")}>Cargar XML</button>
           <button type="button" role="tab" aria-selected={vista === "bc"}
             className={`segmented__btn ${vista === "bc" ? "is-active" : ""}`}
             onClick={() => setVista("bc")}>Señales de BC</button>
@@ -91,8 +90,6 @@ export default function VigilanciaPage() {
       </div>
 
       {vista === "buzon" && <BuzonFacturas />}
-
-      {vista === "correo" && <CruceCorreo />}
 
       {vista === "bc" && (<>
       <Card className="mb-4">

@@ -230,14 +230,13 @@ const VIGILANCIA: HelpEntry = {
   detalle: [
     "“Buzón” es la vista principal: los correos de facturación entran solos, la app los coteja contra Business Central cada pocos minutos y cada comprobante dice si ya se registró, con qué número y cuánto tardó en digitarse.",
     "Para que eso funcione hacen falta dos cosas que se hacen UNA vez: correr sql/factura_correo.sql en la base, y darle a la app permiso de leer el buzón en Entra (Mail.Read de aplicación, acotado a ese buzón). Si falta alguna, la pantalla lo dice y explica cómo.",
-    "“Cargar XML” es la salida de emergencia: sirve para cotejar una tanda suelta sin esperar el permiso. “Señales de BC” son las alertas que no necesitan el correo.",
+    "“Señales de BC” son las alertas que no necesitan el correo: facturas en borrador, posibles dobles registros y proveedores que dejaron de aparecer.",
     "Mientras tanto, esta pantalla hace las tres preguntas que BC sí contesta solo. En la primera corrida encontró 31 facturas en borrador por ₡7,5 millones —la más vieja de noviembre de 2025— y 15 pares con pinta de doble registro.",
     "Todo dice “posible” a propósito. Un par con el mismo monto puede ser dos entregas contra la misma factura, y un proveedor callado puede ser un proyecto que terminó. La pantalla señala; el criterio es suyo.",
   ],
   pasos: [
     "En “Buzón” no hay que hacer nada: se refresca sola mientras la tengas abierta. El botón “Revisar ahora” es por si no querés esperar.",
     "Empezá por las que dicen “Sin registrar”: al lado sale cuántos días llevan esperando.",
-    "Si querés cotejar una tanda suelta sin esperar la conexión del buzón: en “Cargar XML”, en Outlook seleccionás los correos, guardás los adjuntos en una carpeta y elegís esa carpeta. Hay que guardar los XML, no los PDF.",
     "Cargá TODO el correo del período que querés revisar. Si cargás solo una parte, la lista de “está en BC y no llegó comprobante” se llena de facturas a las que lo que les falta es el correo, no el registro — la pantalla te avisa cuando eso pasa.",
     "Para las señales de BC: dale “Revisar”. Lee todas las facturas de compra desde noviembre de 2025 y tarda unos segundos.",
     "Empezá por “Facturas en borrador”: son las únicas donde no hay nada que interpretar — existen en BC y nunca se registraron.",

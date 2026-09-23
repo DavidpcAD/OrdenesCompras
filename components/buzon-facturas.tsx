@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ColumnDef } from "@tanstack/react-table";
-import { Button, Card, EmptyState, Field, Tile } from "@/components/ui";
+import { Button, Card, Checkbox, EmptyState, Field, ProgressBar, Tile } from "@/components/ui";
 import { DataTable } from "@/components/data-table";
 import { CampoRangoFechas } from "@/components/calendario-rango";
 import type { Rango } from "@/lib/fechas";
@@ -38,12 +38,21 @@ type Datos = {
 
 const CADA_MS = 3 * 60 * 1000;   // el buzón recibe ~45 correos al día; cada 3 min sobra
 
-type Filtro = "todas" | "pendiente" | "registrada" | "descuadrada";
+type Filtro = "todas" | "pendiente" | "registrada" | "descuadrada" | "porRevisar";
+
+// Qué está pasando, en palabras. Un porcentaje sin decir de qué no informa nada.
+const FASES: Record<string, string> = {
+  correo: "Leyendo el buzón y abriendo los adjuntos…",
+  guardando: "Guardando lo que llegó…",
+  bc: "Bajando las facturas de Business Central…",
+  cotejo: "Cotejando contra Business Central…",
+};
 
 export function BuzonFacturas() {
   const [datos, setDatos] = useState<Datos | null>(null);
   const [cargando, setCargando] = useState(true);
   const [sincronizando, setSincronizando] = useState(false);
+  const [avance, setAvance] = useState<{ fase: string; hechos: number; total: number } | null>(null);
   const [error, setError] = useState("");
   const [filtro, setFiltro] = useState<Filtro>("todas");
   // El rango de fechas viaja al servidor, no se filtra acá: así se puede ir más atrás
@@ -54,6 +63,10 @@ export function BuzonFacturas() {
   // sincronización completa y un reloj nuevo cada vez que alguien toca el calendario.
   const rangoRef = useRef(rango);
   rangoRef.current = rango;
+  // Las palomitas se pintan de inmediato y se guardan de fondo: ir bajando una lista
+  // de 400 esperando al servidor en cada clic sería insoportable. Si el guardado
+  // falla, la fila vuelve sola a como estaba y se avisa.
+  const [revisadas, setRevisadas] = useState<Record<string, boolean>>({});
   const vivo = useRef(true);
 
   const cargar = useCallback(async (): Promise<Datos | null> => {
@@ -79,17 +92,44 @@ export function BuzonFacturas() {
   const sincronizar = useCallback(async () => {
     setSincronizando(true);
     setError("");
+    setAvance(null);
     try {
       const r = await fetch("/api/vigilancia/sincronizar", { method: "POST" });
-      const j = await r.json().catch(() => ({}));
-      if (!r.ok && j?.error) setError(j.error);
-      else if (j?.correo?.error) setError(j.correo.error);
-      else if (j?.cotejo?.error) setError(j.cotejo.error);
+
+      // La respuesta viene en chorro: una línea JSON por avance y la última con el
+      // resultado. Si el navegador o un proxy no dan el cuerpo por partes, igual se
+      // lee entero al final y el resultado llega: se pierde el avance, no el dato.
+      let fin: any = null;
+      if (r.body) {
+        const lector = r.body.getReader();
+        const dec = new TextDecoder();
+        let resto = "";
+        for (;;) {
+          const { value, done } = await lector.read();
+          if (done) break;
+          resto += dec.decode(value, { stream: true });
+          const lineas = resto.split("\n");
+          resto = lineas.pop() ?? "";
+          for (const l of lineas) {
+            if (!l.trim()) continue;
+            let o: any; try { o = JSON.parse(l); } catch { continue; }
+            if (o.fin) fin = o;
+            else if (vivo.current) setAvance({ fase: o.fase, hechos: o.hechos ?? 0, total: o.total ?? 0 });
+          }
+        }
+        if (resto.trim()) { try { fin = JSON.parse(resto); } catch { /* cola incompleta */ } }
+      } else {
+        fin = await r.json().catch(() => null);
+      }
+
+      if (!r.ok && fin?.error) setError(fin.error);
+      else if (fin?.correo?.error) setError(fin.correo.error);
+      else if (fin?.cotejo?.error) setError(fin.cotejo.error);
       await cargar();
     } catch (e: any) {
       setError(e?.message ?? "No se pudo sincronizar.");
     } finally {
-      if (vivo.current) setSincronizando(false);
+      if (vivo.current) { setSincronizando(false); setAvance(null); }
     }
   }, [cargar]);
 
@@ -115,24 +155,65 @@ export function BuzonFacturas() {
     void cargar();
   }, [rango.from, rango.to, cargar]);
 
-  const filas = useMemo(() => datos?.filas ?? [], [datos]);
+  const crudas = useMemo(() => datos?.filas ?? [], [datos]);
+  // Lo que el usuario acaba de palomear manda sobre lo que trajo el servidor, hasta
+  // que la siguiente carga lo confirme.
+  const filas = useMemo(
+    () => crudas.map((f) => (f.clave in revisadas ? { ...f, revisada: revisadas[f.clave] } : f)),
+    [crudas, revisadas],
+  );
   const hoy = Date.now();
+
+  const palomear = useCallback(async (clave: string, revisada: boolean) => {
+    setRevisadas((r) => ({ ...r, [clave]: revisada }));
+    try {
+      const res = await fetch("/api/vigilancia/facturas", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ clave, revisada }),
+      });
+      if (!res.ok) throw new Error((await res.json().catch(() => ({})))?.error ?? `Error ${res.status}`);
+    } catch (e: any) {
+      setRevisadas((r) => { const n = { ...r }; delete n[clave]; return n; });
+      setError(e?.message ?? "No se pudo guardar la marca de revisada.");
+    }
+  }, []);
 
   const conteo = useMemo(() => ({
     pendiente: filas.filter((f) => f.estado === "pendiente").length,
     registrada: filas.filter((f) => f.estado === "registrada").length,
     descuadrada: filas.filter((f) => f.estado === "descuadrada").length,
+    porRevisar: filas.filter((f) => !f.revisada).length,
   }), [filas]);
 
-  const visibles = useMemo(
-    () => (filtro === "todas" ? filas : filas.filter((f) => f.estado === filtro)),
-    [filas, filtro],
-  );
+  const visibles = useMemo(() => {
+    if (filtro === "todas") return filas;
+    if (filtro === "porRevisar") return filas.filter((f) => !f.revisada);
+    return filas.filter((f) => f.estado === filtro);
+  }, [filas, filtro]);
 
   // Cada columna aporta al buscador por su `accessorFn`: lo que se escriba se busca
   // contra TODAS, así que sirve igual un CFR-, una cédula, un consecutivo, el nombre
   // del proveedor o "sin registrar".
   const columns = useMemo<ColumnDef<FacturaCorreo, any>[]>(() => [
+    {
+      // La palomita de "ya la vi". Va primera porque el gesto es ir bajando la lista
+      // marcando. El buscador la encuentra por "revisada" / "sin revisar".
+      id: "revisada", header: "✓", meta: { label: "Revisada" },
+      accessorFn: (f) => (f.revisada ? "revisada" : "sin revisar"),
+      enableSorting: true,
+      cell: (c) => {
+        const f = c.row.original;
+        return (
+          <Checkbox
+            checked={f.revisada}
+            aria-label={`Marcar ${f.consecutivo} como revisada`}
+            title={f.revisada && f.revisadoPor ? `Revisada por ${f.revisadoPor}` : "Marcar como revisada"}
+            onChange={(e) => void palomear(f.clave, e.target.checked)}
+          />
+        );
+      },
+    },
     {
       id: "emisor", header: "Emisor", meta: { label: "Emisor" },
       accessorFn: (f) => `${f.nombreEmisor} ${f.cedulaEmisor}`.trim(),
@@ -175,7 +256,7 @@ export function BuzonFacturas() {
     // Arrancan ocultas: existen para BUSCAR, no para llenar la pantalla.
     { id: "proveedorBc", header: "Proveedor en BC", meta: { label: "Proveedor en BC" }, accessorFn: (f) => f.bcProveedor ?? "", cell: (c) => <span className="ds-body-sm ds-muted">{c.getValue() || "—"}</span> },
     { id: "clave", header: "Clave de Hacienda", meta: { label: "Clave de Hacienda" }, accessorFn: (f) => f.clave, cell: (c) => <span className="ds-body-sm ds-muted">{c.getValue()}</span> },
-  ], [hoy]);
+  ], [hoy, palomear]);
 
   if (cargando && !datos) return <Card className="mb-4"><p className="ds-muted">Leyendo…</p></Card>;
 
@@ -211,6 +292,17 @@ export function BuzonFacturas() {
             {sincronizando ? "Revisando…" : "Revisar ahora"}
           </Button>
         </div>
+        {sincronizando && (
+          <div className="col gap-2" style={{ marginTop: 12 }}>
+            <div className="row gap-2" style={{ justifyContent: "space-between" }}>
+              <span className="ds-body-sm">{FASES[avance?.fase ?? ""] ?? "Preparando…"}</span>
+              <span className="ds-body-sm ds-muted">
+                {avance && avance.total > 0 ? `${avance.hechos} de ${avance.total}` : ""}
+              </span>
+            </div>
+            <ProgressBar value={avance?.hechos ?? 0} total={avance?.total ?? 0} />
+          </div>
+        )}
         {error && (
           <div className="ds-callout ds-callout--red mt-4">
             <span className="ds-callout__icon"><IconWarning size={18} /></span>
@@ -234,9 +326,10 @@ export function BuzonFacturas() {
             accent={conteo.descuadrada ? "var(--ds-color-yellow)" : undefined}
             active={filtro === "descuadrada"}
             onClick={() => setFiltro(filtro === "descuadrada" ? "todas" : "descuadrada")} />
-          <Tile label="Comprobantes" value={num.format(filas.length)}
-            active={filtro === "todas"}
-            onClick={() => setFiltro("todas")} />
+          <Tile label="Sin revisar" value={num.format(conteo.porRevisar)}
+            accent={conteo.porRevisar ? "var(--ds-color-gray-300)" : "var(--ds-color-green-200)"}
+            active={filtro === "porRevisar"}
+            onClick={() => setFiltro(filtro === "porRevisar" ? "todas" : "porRevisar")} />
         </div>
       )}
 
