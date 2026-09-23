@@ -589,6 +589,19 @@ td.ds-col-fija {
 .dt-filter-pop {
   position: fixed; z-index: 61; width: 300px; display: flex; flex-direction: column; gap: 8px;
 }
+/* Cambiar el orden de la lista de opciones del filtro (A→Z / Z→A, o de mayor a
+   menor en columnas de montos). Va bajo el buscador porque se usa menos que él. */
+/* Igual que el buscador y la lista: su propia tarjetita flotante, no un borde. */
+.dt-filter-orden {
+  width: 100%; text-align: left; padding: 8px 14px; border: 0;
+  background: var(--ds-surface); border-radius: 999px;
+  box-shadow: var(--ds-shadow-02, 0 6px 20px rgba(0,0,0,.14));
+  color: var(--ds-color-gray-500); cursor: pointer; font-family: inherit;
+  font-size: var(--ds-font-size-body-sm); line-height: var(--ds-line-height-body-sm);
+  font-weight: var(--ds-font-weight-semibold);
+}
+.dt-filter-orden:hover { color: var(--ds-text); }
+.dt-filter-orden:focus-visible { outline: 2px solid var(--ds-tint-base); outline-offset: 2px; }
 .dt-filter-pop__search {
   background: var(--ds-surface); border-radius: 999px; box-shadow: var(--ds-shadow-02, 0 6px 20px rgba(0,0,0,.14));
   padding: 4px 6px;

@@ -777,6 +777,20 @@ export function DataTable<T>({
   );
 }
 
+// El número que hay dentro de un texto formateado ("₡54 540,00" → 54540), para poder
+// ordenar de mayor a menor una columna de montos. Si no hay número, va al final.
+function numeroDe(s: string): number {
+  const m = s.replace(/[^\d,.-]/g, "").replace(/\.(?=\d{3}\b)/g, "").replace(",", ".");
+  const n = Number(m);
+  return Number.isFinite(n) ? n : Number.POSITIVE_INFINITY;
+}
+
+// El orden se llama distinto según lo que haya en la columna: nadie dice "de la A a
+// la Z" de una lista de montos.
+const etiquetaOrden = (esNum: boolean) =>
+  esNum ? { asc: "De menor a mayor", desc: "De mayor a menor" }
+        : { asc: "De la A a la Z", desc: "De la Z a la A" };
+
 // Popover de filtro estilo Adelante: cajita blanca flotante con buscador y lista
 // de opciones (valores distintos de la columna) como checkboxes multi-selección.
 // "Todos" limpia el filtro. Posición fija (evita recortes por el scroll horizontal).
@@ -787,13 +801,26 @@ function ColumnFilterPopover<T>({ col, label, anchor, onClose }: {
   // (para fecha el filtro es un objeto {from,to}, no un arreglo).
   const [q, setQ] = useState("");
   const [mounted, setMounted] = useState(false);
+  // Cómo se ordena la LISTA DE OPCIONES del filtro. Antes era siempre ascendente y no
+  // había forma de darle vuelta: con 300 proveedores, encontrar los del final de la
+  // lista obligaba a bajar todo. En una columna de números o de fechas el orden que
+  // uno quiere suele ser el otro —lo más caro o lo más reciente primero—, así que el
+  // botón dice lo que corresponde según el tipo de columna.
+  const [desc, setDesc] = useState(false);
   useEffect(() => setMounted(true), []);
+
+  const esNum = !!(col.columnDef.meta as { num?: boolean } | undefined)?.num;
   const opciones = useMemo(() => {
     if (isDateCol(col.columnDef)) return [] as string[];
     const set = new Set<string>();
     for (const k of col.getFacetedUniqueValues().keys()) { const s = asText(k); if (s !== "") set.add(s); }
-    return Array.from(set).sort((a, b) => a.localeCompare(b, "es", { numeric: true }));
-  }, [col]);
+    // `numeric` hace que "10" vaya después de "9" y no antes, que es lo que uno espera
+    // en consecutivos y números de factura.
+    const asc = Array.from(set).sort((a, b) =>
+      esNum ? (numeroDe(a) - numeroDe(b)) || a.localeCompare(b, "es", { numeric: true })
+            : a.localeCompare(b, "es", { numeric: true }));
+    return desc ? asc.reverse() : asc;
+  }, [col, desc, esNum]);
 
   // Clamp vertical: tras montar medimos la altura real y, si el popover se
   // saldría por debajo del viewport (encabezado bajo en la página), lo subimos
@@ -857,6 +884,12 @@ function ColumnFilterPopover<T>({ col, label, anchor, onClose }: {
           <input autoFocus value={q} onChange={(e) => setQ(e.target.value)}
             aria-label={`Buscar en ${label}`} placeholder={`Buscar en ${label}…`} />
         </div>
+        <button type="button" className="dt-filter-orden" aria-pressed={desc}
+          onClick={() => setDesc((d) => !d)}
+          title={`Tocá para ordenar ${desc ? etiquetaOrden(esNum).asc.toLowerCase() : etiquetaOrden(esNum).desc.toLowerCase()}`}>
+          {desc ? etiquetaOrden(esNum).desc : etiquetaOrden(esNum).asc}
+          <span aria-hidden>{desc ? " ↓" : " ↑"}</span>
+        </button>
         <div className="dt-filter-pop__list" role="group" aria-label={`Filtrar por ${label}`}>
           <button type="button" role="checkbox" aria-checked={todos} className="dt-filter-row" onClick={() => col.setFilterValue(undefined)}>
             <span className={`dt-check${todos ? " is-checked" : ""}`} aria-hidden>{todos ? "✓" : ""}</span>
