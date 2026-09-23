@@ -98,6 +98,36 @@ const POR_TANDA = 100;
 const POR_TANDA_UPD = 200;
 
 /**
+ * Deja una sola entrada por clave de Hacienda.
+ *
+ * El mismo comprobante llega DOS VECES en una corrida más seguido de lo que parece:
+ * el proveedor reenvía el correo, o lo manda él y además la plataforma que le
+ * factura. Las dos copias caían en el mismo INSERT —el `WHERE NOT EXISTS` mira lo que
+ * YA está en la tabla, no lo que viene en la tanda— y SQL Server tumbaba la sentencia
+ * entera: "Violation of PRIMARY KEY constraint". Con ella se caían las otras 99 filas
+ * de la tanda y la lectura del buzón completa, así que el marcador no avanzaba y cada
+ * sincronización volvía a estrellarse contra ese mismo correo. Pasó el 23 sep 2026 con
+ * la clave 50623092600310167373600100001010000049792102201501 y dejó el buzón sin
+ * entrar nada: los recuadros se quedaron clavados en 584 de 977.
+ *
+ * Gana la copia que llegó PRIMERO: la pantalla cuenta los días de espera desde que el
+ * correo entró, y quedarse con el reenvío borraría justo la demora que hay que ver.
+ * Las fechas son las de Graph (ISO en UTC, todas del mismo formato), por eso se
+ * comparan como texto. Sin fecha pierde contra cualquiera que sí la tenga.
+ */
+export function sinClavesRepetidas<T extends { comprobante: Comprobante; fechaCorreo?: string }>(
+  entradas: T[],
+): T[] {
+  const cuando = (x?: string) => x || "9999";  // sin fecha = lo más tarde posible
+  const porClave = new Map<string, T>();
+  for (const e of entradas) {
+    const previa = porClave.get(e.comprobante.clave);
+    if (!previa || cuando(e.fechaCorreo) < cuando(previa.fechaCorreo)) porClave.set(e.comprobante.clave, e);
+  }
+  return [...porClave.values()];
+}
+
+/**
  * Mete los comprobantes que trajo el buzón. Devuelve cuántos eran nuevos.
  *
  * VA POR TANDAS, no de a uno. Era un INSERT por comprobante y una corrida de 455
@@ -109,6 +139,9 @@ const POR_TANDA_UPD = 200;
  * tres veces —que pasa seguido— no duplica nada, y una sincronización que relee con
  * traslape tampoco. Lo ya guardado NO se pisa: si alguien lo marcó "no aplica" o lo
  * palomeó como revisado, el reenvío no lo revive.
+ *
+ * Pero ese NOT EXISTS mira la TABLA, no la tanda: las repetidas de la MISMA corrida
+ * las quita `sinClavesRepetidas` antes de armar el INSERT (ver ahí por qué).
  */
 export async function guardarComprobantes(
   entradas: { comprobante: Comprobante; fechaCorreo?: string; webLink?: string; remitente?: string }[],
@@ -118,7 +151,7 @@ export async function guardarComprobantes(
   if (!(await tablaCorreoExiste())) throw new Error(FALTA_TABLA);
   const pool = await getPool();
 
-  const buenas = entradas.filter((e) => e.comprobante.clave?.length === 50);
+  const buenas = sinClavesRepetidas(entradas.filter((e) => e.comprobante.clave?.length === 50));
   let nuevos = 0, hechos = 0;
 
   for (let i = 0; i < buenas.length; i += POR_TANDA) {
