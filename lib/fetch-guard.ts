@@ -30,6 +30,38 @@ export const EVENTO_SESION_VENCIDA = "adelante:sesion-vencida";
 // arranque lento en un error.
 const TIMEOUT_MS = 45_000;
 const TIMEOUT_BC_MS = 60_000; // Business Central es más lento que SQL
+// ESCRIBIR en Business Central es otra escala, y no por la red: leer un pedido allá
+// tarda 0,2–0,6 s, pero cada PATCH a una línea hace que BC revalide y recalcule el
+// documento entero, y reabrir o lanzar un pedido pasa por toda su cadena de release.
+// Quitarle el IVA a CP-005636 —reabrir + 4 líneas + volver a lanzar— rozó los 45 s:
+// el server terminó bien y el navegador ya había cortado, así que la pantalla dijo
+// que falló algo que en BC había quedado perfecto (23 sep 2026).
+const TIMEOUT_ESCRITURA_BC_MS = 150_000;
+
+// Las rutas cuyas escrituras terminan en Business Central: ahí es donde una espera
+// larga es normal y no una falla. El resto de /api/* sigue con los 45 s.
+const ESCRIBE_EN_BC = /^\/api\/(ordenes|recepciones|pedidos|notas-credito)\b/;
+
+/** Cuánto esperar antes de cortar, según a dónde va el request. (cubierto por tests) */
+export function msDeEspera(ruta: string, metodo: string): number {
+  if (ruta.startsWith("/api/bc/")) return TIMEOUT_BC_MS;
+  const escribe = metodo !== "GET" && metodo !== "HEAD";
+  if (escribe && ESCRIBE_EN_BC.test(ruta)) return TIMEOUT_ESCRITURA_BC_MS;
+  return TIMEOUT_MS;
+}
+
+/** ¿El request lo cortamos NOSOTROS por tiempo? (no lo abortó quien llamaba) */
+export function esTimeout(e: unknown): boolean {
+  return !!e && typeof e === "object" && (e as any).name === "TimeoutError";
+}
+
+// Un GET que no llegó es "no se pudo leer" y se reintenta. Un POST/PATCH que no
+// llegó es otra cosa: el servidor pudo haberlo hecho igual, y decir "falló" invita a
+// repetirlo. Se dice lo único cierto — que no sabemos — y qué hacer antes de insistir.
+export function mensajeTimeoutEscritura(ruta: string, ms: number): string {
+  const quien = ESCRIBE_EN_BC.test(ruta) || ruta.startsWith("/api/bc/") ? "Business Central" : "El servidor";
+  return `${quien} no contestó en ${Math.round(ms / 1000)} s. El cambio PUDO haber quedado hecho: recargá la pantalla y revisá cómo quedó antes de volver a intentarlo.`;
+}
 
 let instalado = false;
 let redirigiendo = false;
@@ -102,7 +134,7 @@ export function instalarGuardFetch() {
     if (!ruta) return original(input, init);
 
     const metodo = (init?.method ?? (input instanceof Request ? input.method : "GET")).toUpperCase();
-    const ms = ruta.startsWith("/api/bc/") ? TIMEOUT_BC_MS : TIMEOUT_MS;
+    const ms = msDeEspera(ruta, metodo);
 
     const pedir = async (): Promise<Response> => {
       const { signal, cancelar } = señalConTimeout(ms, init?.signal ?? null);
@@ -136,7 +168,15 @@ export function instalarGuardFetch() {
       }
     }
 
-    if (!res) throw error instanceof Error ? error : new Error(String(error));
+    if (!res) {
+      // "Timeout" a secas era lo que veía quien apretaba el botón, y no dice ni qué
+      // pasó ni qué hacer. Peor todavía en una escritura, donde repetirla a ciegas es
+      // volver a mandarle el cambio a BC.
+      if (esTimeout(error) && metodo !== "GET" && metodo !== "HEAD") {
+        throw new Error(mensajeTimeoutEscritura(ruta, ms));
+      }
+      throw error instanceof Error ? error : new Error(String(error));
+    }
 
     // 401 = la cookie de sesión ya no vale. Único lugar donde se decide qué hacer.
     // /api/login se excluye: ahí un 401 significa "usuario o clave mala".

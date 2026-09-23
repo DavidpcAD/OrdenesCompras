@@ -222,6 +222,10 @@ export default function ProvOrdenDetallePage() {
       }
     } catch (e: any) {
       toast(String(e?.message ?? e), "error");
+      // Que se haya caído la respuesta no quiere decir que BC no lo haya hecho: si el
+      // request se cortó por tiempo, allá pudo quedar aplicado. Se releen los totales
+      // de BC para que la pantalla muestre cómo quedó de verdad, sin recargar.
+      setRefrescoBc((n) => n + 1);
     } finally {
       setProcesando(false);
     }

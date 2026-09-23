@@ -109,3 +109,35 @@ test("lo que no es /api pasa intacto (RSC de Next, fuentes, BC directo)", async 
   await fetch("https://fonts.googleapis.com/css2?family=Roboto");
   assert.equal(estado.llamadas[0].cache, undefined);
 });
+
+// ---- CUÁNTO SE ESPERA, Y QUÉ SE DICE CUANDO NO LLEGÓ --------------------------
+// Leer un pedido en BC tarda medio segundo; escribirle no. Quitarle el IVA a
+// CP-005636 (reabrir el pedido + 4 líneas + volver a lanzarlo) rozó los 45 s: el
+// server terminó bien y el navegador ya había cortado, así que la pantalla dijo que
+// falló algo que en Business Central había quedado perfecto.
+test("una escritura que va a Business Central espera mucho más que una lectura", async () => {
+  const { msDeEspera } = await import(`./fetch-guard.ts?t=${Math.random()}`);
+  assert.equal(msDeEspera("/api/bootstrap", "GET"), 45_000);
+  assert.equal(msDeEspera("/api/ordenes/505", "GET"), 45_000);        // leer no cambia
+  assert.equal(msDeEspera("/api/bc/items", "GET"), 60_000);           // el catálogo de BC
+  assert.equal(msDeEspera("/api/ordenes/505/iva-bc", "POST"), 150_000);
+  assert.equal(msDeEspera("/api/recepciones", "POST"), 150_000);
+  assert.equal(msDeEspera("/api/ordenes/505", "PATCH"), 150_000);
+  // Una escritura que NO pasa por BC no tiene por qué esperar dos minutos y medio.
+  assert.equal(msDeEspera("/api/vistas", "POST"), 45_000);
+});
+
+test("si una escritura no contesta, se dice que PUDO haber quedado hecha", async () => {
+  montarVentana("/proveeduria/ordenes", []);
+  // El fetch de adentro revienta igual que cuando corta el reloj del propio guard.
+  (globalThis as any).window.fetch = async () => {
+    throw Object.assign(new Error("Timeout"), { name: "TimeoutError" });
+  };
+  const fetch = await instalar();
+  await assert.rejects(
+    () => fetch("/api/ordenes/505/iva-bc", { method: "POST", body: "{}" }),
+    /Business Central no contestó en 150 s\. El cambio PUDO haber quedado hecho/);
+  // Un GET que se cae por tiempo sigue siendo un error de lectura, no una advertencia:
+  // volver a leer no le hace nada a nadie.
+  await assert.rejects(() => fetch("/api/bootstrap"), /Timeout/);
+});
