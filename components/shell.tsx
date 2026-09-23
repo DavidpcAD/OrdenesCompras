@@ -73,11 +73,8 @@ const ROLE_META: Record<Role, { label: string; persona: string; home: string; na
       // y no llegó a BC (CP-005172 llegó a la factura del proveedor con una línea
       // de menos y nadie se enteró hasta ver el papel).
       { href: "/proveeduria/conciliacion-bc", label: "Conciliación BC", icon: IconCheck },
-      // Auditoría de facturas: la otra mitad del cotejo. Conciliación BC mira una
-      // ORDEN contra su pedido en BC; ésta lee el buzón de facturación y dice, de cada
-      // comprobante que llegó, si ya se registró en BC y cuánto tardó. Más las señales
-      // que BC delata solo: borradores, dobles registros, proveedores que se callaron.
-      { href: "/proveeduria/vigilancia", label: "Auditoría de facturas", icon: IconWarning },
+      // Auditoría de facturas es de Contabilidad, no de acá: Conciliación BC mira una
+      // ORDEN contra su pedido en BC, la auditoría mira el buzón contra lo registrado.
     ],
   },
   facturacion: {
@@ -89,13 +86,19 @@ const ROLE_META: Record<Role, { label: string; persona: string; home: string; na
     ],
   },
   contabilidad: {
-    // Contabilidad (ej. Kathya): notas de crédito, cargos de tercero, consulta y archivo.
+    // Contabilidad (ej. Kathya): notas de crédito, cargos de tercero, consulta, archivo
+    // y la auditoría del buzón de facturación contra Business Central.
     label: "Contabilidad", persona: "Kattya", home: "/facturacion/notas-credito", color: "var(--ds-color-gray-300)",
     nav: [
       { href: "/facturacion/notas-credito", label: "Notas de crédito", icon: IconEdit },
       { href: "/facturacion/cargo", label: "Cargo sobre factura", icon: IconPlus },
       { href: "/facturacion/todas", label: "Todas las órdenes", icon: IconReceipt },
       { href: "/facturacion/archivo", label: "Archivo", icon: IconFolder },
+      // Auditoría de facturas: lee el buzón de facturación y dice, de cada comprobante
+      // que llegó, si ya se registró en BC y cuánto tardó. Más las señales que BC
+      // delata solo: borradores, dobles registros, proveedores que se callaron. Va con
+      // Kattya, que es quien registra las facturas y responde por lo que falta.
+      { href: "/facturacion/vigilancia", label: "Auditoría de facturas", icon: IconWarning },
     ],
   },
 };

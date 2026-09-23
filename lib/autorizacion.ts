@@ -33,6 +33,10 @@ const REGLAS: Regla[] = [
   { prefijo: "/api/bc/facturar-recibido", roles: ["contabilidad"], nota: "facturar en BC lo ya recibido" },
   { prefijo: "/api/notas-credito/", metodos: ["PATCH"], roles: ["contabilidad"], nota: "acreditar / reabrir una NC" },
   { prefijo: "/api/bc/cargo-recibido", roles: ["contabilidad"], nota: "cargo de un tercero sobre recepción registrada" },
+  // Auditoría de facturas (buzón vs. BC). Es pantalla de Contabilidad: leerla la puede
+  // ver cualquiera (las lecturas quedan abiertas), pero cerrar un caso o disparar la
+  // sincronización deja rastro con nombre y apellido, y ese rastro es de Kattya.
+  { prefijo: "/api/vigilancia", metodos: ESCRITURA, roles: ["contabilidad"], nota: "auditoría de facturas" },
 
   // ---- Bodega (Pedro) — y Contabilidad, porque la pantalla de recibir tiene una
   // variante hecha a propósito para ella (edita las tres fechas, tabla de

@@ -224,34 +224,6 @@ const CONCILIACION_BC: HelpEntry = {
     "Si una orden dice que le falta una línea en BC, NO la recibas: primero hay que arreglar el pedido allá, o BC va a registrar de menos otra vez.",
   ],
 };
-const VIGILANCIA: HelpEntry = {
-  titulo: "Auditoría de facturas",
-  resumen: "Qué llegó al buzón de facturación contra qué se registró en Business Central.",
-  detalle: [
-    "“Buzón” es la vista principal: los correos de facturación entran solos, la app los coteja contra Business Central cada pocos minutos y cada comprobante dice si ya se registró, con qué número y cuánto tardó en digitarse.",
-    "Para que eso funcione hacen falta dos cosas que se hacen UNA vez: correr sql/factura_correo.sql en la base, y darle a la app permiso de leer el buzón en Entra (Mail.Read de aplicación, acotado a ese buzón). Si falta alguna, la pantalla lo dice y explica cómo.",
-    "“Señales de BC” son las alertas que no necesitan el correo: facturas en borrador, posibles dobles registros y proveedores que dejaron de aparecer.",
-    "Mientras tanto, esta pantalla hace las tres preguntas que BC sí contesta solo. En la primera corrida encontró 31 facturas en borrador por ₡7,5 millones —la más vieja de noviembre de 2025— y 15 pares con pinta de doble registro.",
-    "Todo dice “posible” a propósito. Un par con el mismo monto puede ser dos entregas contra la misma factura, y un proveedor callado puede ser un proyecto que terminó. La pantalla señala; el criterio es suyo.",
-  ],
-  pasos: [
-    "En “Buzón” no hay que hacer nada: se refresca sola mientras la tengas abierta. El botón “Revisar ahora” es por si no querés esperar.",
-    "Empezá por las que dicen “Sin registrar”: al lado sale cuántos días llevan esperando.",
-    "Tocá cualquier factura para abrirla: se ve lo que cobró el proveedor renglón por renglón, al lado de lo que quedó en Business Central, cada columna con su total y su enlace.",
-    "Cargá TODO el correo del período que querés revisar. Si cargás solo una parte, la lista de “está en BC y no llegó comprobante” se llena de facturas a las que lo que les falta es el correo, no el registro — la pantalla te avisa cuando eso pasa.",
-    "Para las señales de BC: dale “Revisar”. Lee todas las facturas de compra desde noviembre de 2025 y tarda unos segundos.",
-    "Empezá por “Facturas en borrador”: son las únicas donde no hay nada que interpretar — existen en BC y nunca se registraron.",
-    "En “Posibles dobles” abrí las dos facturas en BC y mirá si son el mismo documento o dos entregas.",
-    "“Proveedores sin cédula” es una cola de trabajo, no un reproche: cada ficha que se completa es un pedazo menos de adivinanza cuando entre lo del correo.",
-  ],
-  tips: [
-    "La cédula del proveedor es la llave de todo lo que viene. Viaja dentro de la clave de 50 dígitos de cada comprobante electrónico, así que sin ella el correo y BC no se pueden cruzar sin adivinar.",
-    "Un proveedor callado no siempre es un problema, pero uno que facturaba cada dos días y lleva cuarenta sin aparecer sí vale una llamada.",
-    "Los que calzaron “por nombre” son los menos seguros: son los proveedores que no tienen cédula en BC, así que hubo que compararlos por el nombre del emisor.",
-    "“Se vio el …” es cuándo la app detectó la factura en BC, no la fecha del documento. De ahí sale cuánto tardó en digitarse.",
-    "Cuando el monto no cuadra, abrí la factura: arriba dice de cuánto es la diferencia y para qué lado, y abajo se comparan los renglones. Las líneas del correo salen del XML adjunto, así que se leen en el momento — si el correo se movió de carpeta, la columna lo dice y el enlace a Outlook igual sirve.",
-  ],
-};
 const NUEVA: HelpEntry = {
   titulo: "Armar orden de compra",
   resumen: "Revisá y ajustá lo que se va a enviar al proveedor.",
@@ -448,6 +420,34 @@ const ARCHIVO: HelpEntry = {
     "Abrila para ver el detalle y las facturas asociadas.",
   ],
 };
+const VIGILANCIA: HelpEntry = {
+  titulo: "Auditoría de facturas",
+  resumen: "Qué llegó al buzón de facturación contra qué se registró en Business Central.",
+  detalle: [
+    "“Buzón” es la vista principal: los correos de facturación entran solos, la app los coteja contra Business Central cada pocos minutos y cada comprobante dice si ya se registró, con qué número y cuánto tardó en digitarse.",
+    "Para que eso funcione hacen falta dos cosas que se hacen UNA vez: correr sql/factura_correo.sql en la base, y darle a la app permiso de leer el buzón en Entra (Mail.Read de aplicación, acotado a ese buzón). Si falta alguna, la pantalla lo dice y explica cómo.",
+    "“Señales de BC” son las alertas que no necesitan el correo: facturas en borrador, posibles dobles registros y proveedores que dejaron de aparecer.",
+    "Mientras tanto, esta pantalla hace las tres preguntas que BC sí contesta solo. En la primera corrida encontró 31 facturas en borrador por ₡7,5 millones —la más vieja de noviembre de 2025— y 15 pares con pinta de doble registro.",
+    "Todo dice “posible” a propósito. Un par con el mismo monto puede ser dos entregas contra la misma factura, y un proveedor callado puede ser un proyecto que terminó. La pantalla señala; el criterio es suyo.",
+  ],
+  pasos: [
+    "En “Buzón” no hay que hacer nada: se refresca sola mientras la tengas abierta. El botón “Revisar ahora” es por si no querés esperar.",
+    "Empezá por las que dicen “Sin registrar”: al lado sale cuántos días llevan esperando.",
+    "Tocá cualquier factura para abrirla: se ve lo que cobró el proveedor renglón por renglón, al lado de lo que quedó en Business Central, cada columna con su total y su enlace.",
+    "Cargá TODO el correo del período que querés revisar. Si cargás solo una parte, la lista de “está en BC y no llegó comprobante” se llena de facturas a las que lo que les falta es el correo, no el registro — la pantalla te avisa cuando eso pasa.",
+    "Para las señales de BC: dale “Revisar”. Lee todas las facturas de compra desde noviembre de 2025 y tarda unos segundos.",
+    "Empezá por “Facturas en borrador”: son las únicas donde no hay nada que interpretar — existen en BC y nunca se registraron.",
+    "En “Posibles dobles” abrí las dos facturas en BC y mirá si son el mismo documento o dos entregas.",
+    "“Proveedores sin cédula” es una cola de trabajo, no un reproche: cada ficha que se completa es un pedazo menos de adivinanza cuando entre lo del correo.",
+  ],
+  tips: [
+    "La cédula del proveedor es la llave de todo lo que viene. Viaja dentro de la clave de 50 dígitos de cada comprobante electrónico, así que sin ella el correo y BC no se pueden cruzar sin adivinar.",
+    "Un proveedor callado no siempre es un problema, pero uno que facturaba cada dos días y lleva cuarenta sin aparecer sí vale una llamada.",
+    "Los que calzaron “por nombre” son los menos seguros: son los proveedores que no tienen cédula en BC, así que hubo que compararlos por el nombre del emisor.",
+    "“Se vio el …” es cuándo la app detectó la factura en BC, no la fecha del documento. De ahí sale cuánto tardó en digitarse.",
+    "Cuando el monto no cuadra, abrí la factura: arriba dice de cuánto es la diferencia y para qué lado, y abajo se comparan los renglones. Las líneas del correo salen del XML adjunto, así que se leen en el momento — si el correo se movió de carpeta, la columna lo dice y el enlace a Outlook igual sirve.",
+  ],
+};
 
 // Compartidas / genéricas
 const DEVOLUCIONES: HelpEntry = {
@@ -486,6 +486,9 @@ export function helpForPath(p: string, vista?: string | null): HelpEntry {
   if (p.startsWith("/facturacion/cargo")) return CARGO;
   if (p.startsWith("/facturacion/todas")) return TODAS;
   if (p.startsWith("/facturacion/devoluciones")) return DEVOLUCIONES;
+  // Antes de la regla de abajo (/facturacion/{id}): "vigilancia" también es un
+  // segmento suelto y si no, la ayuda diría que estás recibiendo una orden.
+  if (p.startsWith("/facturacion/vigilancia")) return VIGILANCIA;
   if (p.startsWith("/facturacion/recepcion/")) return RECEPCION_DET;
   if (p.startsWith("/facturacion/ver/")) return ORDEN_VER;
   if (/^\/facturacion\/[^/]+$/.test(p)) return RECIBIR; // /facturacion/{id}
@@ -515,7 +518,6 @@ export function helpForPath(p: string, vista?: string | null): HelpEntry {
   if (p.startsWith("/proveeduria/inventarios")) return INVENTARIOS;
   if (p.startsWith("/proveeduria/reportes")) return REPORTES;
   if (p.startsWith("/proveeduria/conciliacion-bc")) return CONCILIACION_BC;
-  if (p.startsWith("/proveeduria/vigilancia")) return VIGILANCIA;
   if (p === "/proveeduria") return SOLICITUDES_LINEA;
   return GENERIC;
 }
