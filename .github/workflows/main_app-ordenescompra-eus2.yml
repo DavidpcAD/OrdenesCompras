@@ -63,6 +63,20 @@ jobs:
     # SOLO se despliega desde main. Esta guarda es la que hace seguro el trigger de
     # pull_request de arriba: sin ella, abrir un PR mandaría su código a producción.
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    # Los despliegues hacen fila. App Service acepta UNO a la vez: si llega otro
+    # mientras hay uno en curso, OneDeploy responde `Conflict (CODE: 409)` y el job
+    # muere aunque el build haya pasado limpio. Pasó dos veces el 23 de setiembre de
+    # 2026, con dos personas empujando a main casi al mismo tiempo, y diagnosticarlo
+    # cuesta porque el error no dice "esperá tu turno".
+    #
+    # `cancel-in-progress: false` es deliberado: cancelar el despliegue que ya está
+    # a medio subir es justo lo que NO se quiere — dejaría la app a medias. El que
+    # llega espera; el que está, termina.
+    #
+    # La fila es solo para DESPLEGAR: los `build` siguen corriendo en paralelo.
+    concurrency:
+      group: deploy-app-ordenescompra-eus2
+      cancel-in-progress: false
     permissions:
       id-token: write #This is required for requesting the JWT
       contents: read #This is required for actions/checkout
