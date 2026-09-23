@@ -237,6 +237,7 @@ const VIGILANCIA: HelpEntry = {
   pasos: [
     "En “Buzón” no hay que hacer nada: se refresca sola mientras la tengas abierta. El botón “Revisar ahora” es por si no querés esperar.",
     "Empezá por las que dicen “Sin registrar”: al lado sale cuántos días llevan esperando.",
+    "Tocá cualquier factura para abrirla: se ve lo que cobró el proveedor renglón por renglón, al lado de lo que quedó en Business Central, cada columna con su total y su enlace.",
     "Cargá TODO el correo del período que querés revisar. Si cargás solo una parte, la lista de “está en BC y no llegó comprobante” se llena de facturas a las que lo que les falta es el correo, no el registro — la pantalla te avisa cuando eso pasa.",
     "Para las señales de BC: dale “Revisar”. Lee todas las facturas de compra desde noviembre de 2025 y tarda unos segundos.",
     "Empezá por “Facturas en borrador”: son las únicas donde no hay nada que interpretar — existen en BC y nunca se registraron.",
@@ -248,6 +249,7 @@ const VIGILANCIA: HelpEntry = {
     "Un proveedor callado no siempre es un problema, pero uno que facturaba cada dos días y lleva cuarenta sin aparecer sí vale una llamada.",
     "Los que calzaron “por nombre” son los menos seguros: son los proveedores que no tienen cédula en BC, así que hubo que compararlos por el nombre del emisor.",
     "“Se vio el …” es cuándo la app detectó la factura en BC, no la fecha del documento. De ahí sale cuánto tardó en digitarse.",
+    "Cuando el monto no cuadra, abrí la factura: arriba dice de cuánto es la diferencia y para qué lado, y abajo se comparan los renglones. Las líneas del correo salen del XML adjunto, así que se leen en el momento — si el correo se movió de carpeta, la columna lo dice y el enlace a Outlook igual sirve.",
   ],
 };
 const NUEVA: HelpEntry = {

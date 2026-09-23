@@ -4311,6 +4311,88 @@ export async function bcFacturasCompra(desde: string): Promise<BcFacturaCompra[]
   return out;
 }
 
+export type BcLineaFacturaCompra = {
+  numeroLinea: number;
+  tipo: "articulo" | "recurso" | "activo_fijo" | "cargo" | "otro";
+  /** El N.º de artículo, de cuenta o de recurso, según el tipo. */
+  codigo: string;
+  descripcion: string;
+  unidad: string;
+  cantidad: number;
+  precioUnitario: number;
+  descuento: number;
+  impuesto: number;
+  /** Lo que suma esa línea con impuesto — lo comparable contra el MontoTotalLinea del XML. */
+  total: number;
+};
+
+export type BcFacturaCompraDetalle = BcFacturaCompra & {
+  subtotal: number;
+  impuesto: number;
+  pedido: string;
+  lineas: BcLineaFacturaCompra[];
+};
+
+/**
+ * UNA factura de compra de BC con sus líneas, para ponerla al lado del comprobante
+ * que mandó el proveedor.
+ *
+ * OJO con los importes de línea: en una factura REGISTRADA, `amountExcludingTax` y
+ * `amountIncludingTax` vienen en CERO —solo tienen valor mientras el documento es
+ * borrador— y lo que carga el monto de verdad son los campos `net*`. Medido contra
+ * Production: en CFR-010253 la suma de `netAmountIncludingTax` da exactamente el
+ * total del encabezado, y la de `amountIncludingTax` da cero. Tomar los primeros
+ * dejaría la columna de BC en ceros justo en las facturas que interesa auditar.
+ *
+ * Es pariente de `bcLineasFacturaRegistrada`, que sirve a otra pregunta (cotejar una
+ * ORDEN contra lo que se le registró, y por eso devuelve `LineaBc`, el formato de la
+ * conciliación). Ésta devuelve lo que necesita la auditoría: importes e impuesto.
+ */
+export async function bcFacturaCompraConLineas(numeroFactura: string): Promise<BcFacturaCompraDetalle | null> {
+  const no = (numeroFactura ?? "").trim();
+  if (!no) return null;
+  const cid = await getStdCompanyId();
+  const url = `${stdRoot()}/companies(${cid})/purchaseInvoices`
+    + `?$filter=${encodeURIComponent(`number eq '${odataStr(no)}'`)}&$top=1`
+    + `&$expand=purchaseInvoiceLines`;
+  const res = await bcFetch(url, { cache: "no-store" });
+  if (!res.ok) throw new Error(`BC ${res.status} en purchaseInvoices: ${(await res.text()).slice(0, 250)}`);
+  const inv = ((await res.json())?.value ?? [])[0];
+  if (!inv) return null;
+
+  const lineas: BcLineaFacturaCompra[] = (inv.purchaseInvoiceLines ?? []).map((l: any, i: number) => {
+    const cantidad = Number(l.quantity ?? 0) || 0;
+    const neto = Number(l.netAmount ?? 0) || 0;
+    const impuesto = Number(l.netTaxAmount ?? 0) || 0;
+    return {
+      numeroLinea: Number(l.sequence ?? 0) || (i + 1) * 10000,
+      tipo: tipoLineaBc(l.lineType),
+      codigo: String(l.lineObjectNumber ?? "").trim(),
+      descripcion: String(l.description ?? "").trim(),
+      unidad: String(l.unitOfMeasureCode ?? "").trim(),
+      cantidad,
+      precioUnitario: Number(l.unitCost ?? 0) || 0,
+      descuento: Number(l.discountAmount ?? 0) || 0,
+      impuesto,
+      total: Number(l.netAmountIncludingTax ?? 0) || neto + impuesto,
+    };
+  });
+
+  return {
+    numero: inv.number ?? no,
+    numeroProveedor: inv.vendorInvoiceNumber ?? "",
+    proveedorCodigo: inv.vendorNumber ?? "",
+    proveedorNombre: inv.vendorName ?? "",
+    fecha: inv.invoiceDate ?? "",
+    moneda: inv.currencyCode || "CRC",
+    subtotal: Number(inv.totalAmountExcludingTax ?? 0) || 0,
+    impuesto: Number(inv.totalTaxAmount ?? 0) || 0,
+    total: Number(inv.totalAmountIncludingTax ?? 0) || 0,
+    pedido: String(inv.orderNumber ?? "").trim(),
+    lineas,
+  };
+}
+
 export type BcProveedorCedula = { codigo: string; nombre: string; cedula: string };
 
 /**

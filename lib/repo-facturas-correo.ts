@@ -184,6 +184,17 @@ export async function listarFacturasCorreo(opts: { desde?: string; hasta?: strin
   return r.recordset.map(fila);
 }
 
+/** UN comprobante, el que se abrió para ver sus líneas. */
+export async function leerFacturaCorreo(clave: string): Promise<FacturaCorreo | null> {
+  if (!(await tablaCorreoExiste())) return null;
+  const pool = await getPool();
+  const r = await pool.request()
+    .input("clave", sql.Char(50), clave)
+    .query("SELECT TOP 1 * FROM dbo.FacturaCorreo WHERE clave = @clave");
+  const x = r.recordset[0];
+  return x ? fila(x) : null;
+}
+
 export type ResultadoCotejo = {
   clave: string;
   estado: EstadoFactura;

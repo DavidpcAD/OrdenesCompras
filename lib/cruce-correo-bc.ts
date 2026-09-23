@@ -108,8 +108,8 @@ const etiqueta = (xml: string, nombre: string): string => desescapar(crudo(xml, 
  *
  * Se lee con expresiones regulares y no con un parser de verdad a propósito: son seis
  * campos de un formato que define Hacienda y que no cambia, y meter una dependencia de
- * XML para eso sería cargar el proyecto con algo que hay que mantener. Si algún día se
- * necesitan las LÍNEAS del comprobante, ahí sí toca un parser.
+ * XML para eso sería cargar el proyecto con algo que hay que mantener. Las LÍNEAS —que
+ * llegaron después, ver `leerLineasXml`— se leen igual y por lo mismo.
  *
  * Devuelve null si no es un comprobante (los correos también traen el XML de respuesta
  * de Hacienda, que es otro documento y no lleva clave de emisor propia).
@@ -145,6 +145,115 @@ export function leerComprobanteXml(xml: string, archivo?: string): Comprobante |
     // al euro le dice EURO. Se normaliza acá para que los montos se comparen.
     moneda: moneda === "EUR" ? "EURO" : moneda,
     archivo,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Las LÍNEAS del comprobante
+// ---------------------------------------------------------------------------
+//
+// El encabezado contesta "¿está en BC?". Las líneas contestan la siguiente: "¿está
+// por lo mismo?". Cuando el total no cuadra —o cuando cuadra y aun así algo huele
+// mal— lo que hay que ver es qué cobró el proveedor renglón por renglón contra qué
+// se digitó en BC, y eso es lo que alimenta el cotejo lado a lado de la pantalla.
+//
+// Se sigue leyendo con expresiones regulares y no con un parser: `LineaDetalle` no
+// anida dentro de sí misma, las etiquetas son las que fija Hacienda, y meter una
+// dependencia de XML para esto sería cargar el proyecto con algo que mantener. Lo
+// único que hubo que agregar es sacar TODOS los bloques y no solo el primero.
+
+export type LineaComprobante = {
+  numero: number;
+  /** El CABYS (el código de Hacienda). Es el que casi nunca dice nada a simple vista. */
+  cabys: string;
+  /** El código del proveedor, el que aparece en su factura de papel. Puede venir vacío. */
+  codigo: string;
+  detalle: string;
+  cantidad: number;
+  unidad: string;
+  precioUnitario: number;
+  descuento: number;
+  impuesto: number;
+  /** MontoTotalLinea: lo que se cobra por esa línea, con impuesto y sin descuento. */
+  total: number;
+};
+
+export type ResumenComprobante = {
+  subtotal: number;
+  descuentos: number;
+  impuesto: number;
+  otrosCargos: number;
+  total: number;
+  moneda: string;
+};
+
+// Todos los bloques con ese nombre, en orden. El `crudo` de arriba devuelve solo el
+// primero, que es lo correcto para Emisor o ResumenFactura y lo inservible para las
+// líneas.
+const bloques = (xml: string, nombre: string): string[] => {
+  const re = new RegExp(`<(?:\\w+:)?${nombre}>([\\s\\S]*?)</(?:\\w+:)?${nombre}>`, "gi");
+  const out: string[] = [];
+  for (const m of xml.matchAll(re)) out.push(m[1]);
+  return out;
+};
+
+const numero = (s: string): number => {
+  const n = Number(String(s ?? "").trim());
+  return Number.isFinite(n) ? n : 0;
+};
+
+/** Las líneas de un comprobante electrónico. Vacío si el XML no las trae. */
+export function leerLineasXml(xml: string): LineaComprobante[] {
+  if (!xml) return [];
+  return bloques(xml, "LineaDetalle").map((l, i) => {
+    // `Codigo` a secas es el CABYS; el del proveedor viene adentro de CodigoComercial.
+    // La expresión de `crudo` pide el `>` justo después del nombre, así que
+    // `<CodigoComercial>` no la engaña.
+    const comercial = bloque(l, "CodigoComercial");
+    // El impuesto puede venir sumado (`ImpuestoNeto`) o repartido en varios bloques
+    // `Impuesto` —IVA más un específico, por ejemplo—. Si está el neto manda ese, y
+    // si no se suman los montos: quedarse con el primero le quitaría plata a la línea.
+    const neto = crudo(l, "ImpuestoNeto");
+    const impuesto = neto
+      ? numero(neto)
+      : bloques(l, "Impuesto").reduce((s, im) => s + numero(crudo(im, "Monto")), 0);
+    const descuento = bloques(l, "Descuento").reduce((s, d) => s + numero(crudo(d, "MontoDescuento")), 0);
+    const subtotal = numero(crudo(l, "SubTotal")) || numero(crudo(l, "MontoTotal"));
+
+    // El CABYS solo se muestra si de verdad lo es. `Codigo` a secas es la primera
+    // etiqueta con ese nombre de la línea, y en un comprobante que no traiga CABYS la
+    // primera termina siendo la del bloque `Impuesto` —un "01" que en pantalla se
+    // leería como un código de artículo—. Los CABYS de Hacienda son 13 dígitos.
+    const cabys = crudo(l, "Codigo").trim();
+
+    return {
+      numero: numero(crudo(l, "NumeroLinea")) || i + 1,
+      cabys: /^\d{13}$/.test(cabys) ? cabys : "",
+      codigo: etiqueta(comercial, "Codigo"),
+      detalle: etiqueta(l, "Detalle"),
+      cantidad: numero(crudo(l, "Cantidad")),
+      unidad: etiqueta(l, "UnidadMedida"),
+      precioUnitario: numero(crudo(l, "PrecioUnitario")),
+      descuento,
+      impuesto,
+      // Hay emisores que omiten MontoTotalLinea; se reconstruye antes que dejar la
+      // línea en cero, porque una línea en cero se lee como un error del proveedor.
+      total: numero(crudo(l, "MontoTotalLinea")) || subtotal + impuesto,
+    };
+  });
+}
+
+/** El resumen del comprobante: subtotal, descuentos, impuesto y total. */
+export function leerResumenXml(xml: string): ResumenComprobante {
+  const r = bloque(xml, "ResumenFactura") || xml;
+  const moneda = etiqueta(r, "CodigoMoneda") || "CRC";
+  return {
+    subtotal: numero(crudo(r, "TotalVentaNeta")) || numero(crudo(r, "TotalVenta")),
+    descuentos: numero(crudo(r, "TotalDescuentos")),
+    impuesto: numero(crudo(r, "TotalImpuesto")),
+    otrosCargos: numero(crudo(r, "TotalOtrosCargos")),
+    total: numero(crudo(r, "TotalComprobante")),
+    moneda: moneda === "EUR" ? "EURO" : moneda,
   };
 }
 

@@ -5,8 +5,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  partirClave, leerComprobanteXml, cruzar, colasDelConsecutivo, CEDULA_ADELANTE,
-  type Comprobante,
+  partirClave, leerComprobanteXml, leerLineasXml, leerResumenXml, cruzar, colasDelConsecutivo,
+  CEDULA_ADELANTE, type Comprobante,
 } from "./cruce-correo-bc.ts";
 import type { FacturaBc, ProveedorBc } from "./vigilancia-facturas.ts";
 
@@ -258,4 +258,119 @@ test("un &amp;lt; del origen no se convierte en <", () => {
     "<Nombre>A&amp;lt;B</Nombre>",
   );
   assert.equal(leerComprobanteXml(xml)?.nombreEmisor, "A&lt;B");
+});
+
+// --- las líneas del comprobante --------------------------------------------
+//
+// Las formas son las que mandan de verdad los proveedores de Adelante: unos escriben
+// el XML con saltos de línea y otros todo de corrido, unos ponen `ImpuestoNeto` y
+// otros solo el bloque `Impuesto`. Lo que se defiende es que ninguna de esas
+// diferencias cambie un monto: lo que se ve en pantalla se compara contra BC.
+
+const XML_LINEAS = `<FacturaElectronica>
+  <Clave>50622092600310129978800100001010000590464134288884</Clave>
+  <DetalleServicio>
+    <LineaDetalle>
+      <NumeroLinea>1</NumeroLinea>
+      <Codigo>3110100000100</Codigo>
+      <CodigoComercial><Tipo>01</Tipo><Codigo>8843419</Codigo></CodigoComercial>
+      <Cantidad>55.00000</Cantidad>
+      <UnidadMedida>Unid</UnidadMedida>
+      <Detalle>Mad. Probosque 1 x 3 x 3,20 C4C PINO SH G-1</Detalle>
+      <PrecioUnitario>3743.06000</PrecioUnitario>
+      <MontoTotal>205868.30000</MontoTotal>
+      <SubTotal>205868.30000</SubTotal>
+      <Impuesto><Codigo>01</Codigo><Tarifa>13.00000</Tarifa><Monto>26762.87900</Monto></Impuesto>
+      <ImpuestoNeto>26762.87900</ImpuestoNeto>
+      <MontoTotalLinea>232631.17900</MontoTotalLinea>
+    </LineaDetalle>
+    <LineaDetalle><NumeroLinea>2</NumeroLinea><Codigo>4621205009900</Codigo><Cantidad>1.00</Cantidad><UnidadMedida>Sp</UnidadMedida><Detalle>Acarreo</Detalle><PrecioUnitario>54.35</PrecioUnitario><MontoTotal>54.30</MontoTotal><SubTotal>54.30</SubTotal><Impuesto><Codigo>01</Codigo><Monto>7.10</Monto></Impuesto><MontoTotalLinea>61.40</MontoTotalLinea></LineaDetalle>
+  </DetalleServicio>
+  <ResumenFactura>
+    <CodigoTipoMoneda><CodigoMoneda>CRC</CodigoMoneda><TipoCambio>1.00</TipoCambio></CodigoTipoMoneda>
+    <TotalVenta>205922.60000</TotalVenta>
+    <TotalDescuentos>0.00000</TotalDescuentos>
+    <TotalVentaNeta>205922.60000</TotalVentaNeta>
+    <TotalImpuesto>26769.97900</TotalImpuesto>
+    <TotalOtrosCargos>0.00000</TotalOtrosCargos>
+    <TotalComprobante>232692.57900</TotalComprobante>
+  </ResumenFactura>
+</FacturaElectronica>`;
+
+test("saca TODAS las líneas, con o sin saltos de línea en el XML", () => {
+  const l = leerLineasXml(XML_LINEAS);
+  assert.equal(l.length, 2);
+  assert.equal(l[0].detalle, "Mad. Probosque 1 x 3 x 3,20 C4C PINO SH G-1");
+  assert.equal(l[1].detalle, "Acarreo");
+});
+
+test("cantidad, precio unitario y total salen tal cual los mandó el proveedor", () => {
+  const [a] = leerLineasXml(XML_LINEAS);
+  assert.equal(a.cantidad, 55);
+  assert.equal(a.precioUnitario, 3743.06);
+  assert.equal(a.total, 232631.179);
+  assert.equal(a.unidad, "Unid");
+});
+
+test("el código que se muestra es el del proveedor, y el CABYS va aparte", () => {
+  // El 8843419 es el que aparece en la factura de papel; el 3110100000100 es el de
+  // Hacienda. Confundirlos hace imposible cotejar contra el artículo de BC.
+  const [a] = leerLineasXml(XML_LINEAS);
+  assert.equal(a.codigo, "8843419");
+  assert.equal(a.cabys, "3110100000100");
+});
+
+test("una línea sin CABYS no se inventa uno con el código del impuesto", () => {
+  // `Codigo` a secas también existe dentro de <Impuesto> (el "01" del IVA). Sin el
+  // filtro de 13 dígitos, esa línea mostraría "CABYS 01".
+  const sinCabys = XML_LINEAS.replace("<Codigo>3110100000100</Codigo>", "");
+  assert.equal(leerLineasXml(sinCabys)[0].cabys, "");
+});
+
+test("sin ImpuestoNeto, el impuesto se suma de los bloques Impuesto", () => {
+  const [, b] = leerLineasXml(XML_LINEAS);
+  assert.equal(b.impuesto, 7.1);
+});
+
+test("dos impuestos en una línea se suman, no se toma el primero", () => {
+  // Pasa con el IVA más un específico (bebidas, cemento). Quedarse con el primero le
+  // quitaría plata a la línea y la haría ver como que BC cobró de más.
+  const dos = XML_LINEAS.replace(
+    "<Impuesto><Codigo>01</Codigo><Monto>7.10</Monto></Impuesto>",
+    "<Impuesto><Codigo>01</Codigo><Monto>7.10</Monto></Impuesto><Impuesto><Codigo>08</Codigo><Monto>2.90</Monto></Impuesto>",
+  );
+  assert.equal(leerLineasXml(dos)[1].impuesto, 10);
+});
+
+test("si el emisor omite MontoTotalLinea, la línea no queda en cero", () => {
+  const sinTotal = XML_LINEAS.replace("<MontoTotalLinea>61.40</MontoTotalLinea>", "");
+  assert.equal(leerLineasXml(sinTotal)[1].total, 61.4);   // 54.30 + 7.10
+});
+
+test("un comprobante sin líneas devuelve una lista vacía, no revienta", () => {
+  assert.deepEqual(leerLineasXml("<FacturaElectronica></FacturaElectronica>"), []);
+  assert.deepEqual(leerLineasXml(""), []);
+});
+
+test("el resumen trae subtotal, impuesto y total del comprobante", () => {
+  const r = leerResumenXml(XML_LINEAS);
+  assert.equal(r.subtotal, 205922.6);
+  assert.equal(r.impuesto, 26769.979);
+  assert.equal(r.total, 232692.579);
+  assert.equal(r.moneda, "CRC");
+});
+
+test("el euro del XML se guarda como lo llama BC", () => {
+  // El XML dice EUR (ISO) y BC dice EURO. Si no se normaliza, los totales se
+  // comparan entre monedas distintas y todo sale descuadrado.
+  const eur = XML_LINEAS.replace("<CodigoMoneda>CRC</CodigoMoneda>", "<CodigoMoneda>EUR</CodigoMoneda>");
+  assert.equal(leerResumenXml(eur).moneda, "EURO");
+});
+
+test("un descuento de línea se lee y no se pierde", () => {
+  const conDesc = XML_LINEAS.replace(
+    "<SubTotal>54.30</SubTotal>",
+    "<Descuento><MontoDescuento>5.00</MontoDescuento><NaturalezaDescuento>Promoción</NaturalezaDescuento></Descuento><SubTotal>54.30</SubTotal>",
+  );
+  assert.equal(leerLineasXml(conDesc)[1].descuento, 5);
 });

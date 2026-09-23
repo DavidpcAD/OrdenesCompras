@@ -7,6 +7,7 @@ import { DataTable } from "@/components/data-table";
 import { CampoRangoFechas } from "@/components/calendario-rango";
 import type { Rango } from "@/lib/fechas";
 import { IconWarning } from "@/components/icons";
+import { FacturaCotejo } from "@/components/factura-cotejo";
 import { formatDate, formatDateTime, money, num, todayISO as hoyISO } from "@/lib/helpers";
 import { TIPOS } from "@/lib/cruce-correo-bc";
 import type { FacturaCorreo } from "@/lib/repo-facturas-correo";
@@ -68,6 +69,10 @@ export function BuzonFacturas() {
   // de 400 esperando al servidor en cada clic sería insoportable. Si el guardado
   // falla, la fila vuelve sola a como estaba y se avisa.
   const [revisadas, setRevisadas] = useState<Record<string, boolean>>({});
+  // La factura que se abrió para verle las líneas. Se guarda la CLAVE y no la fila:
+  // el bootstrap recarga la lista cada pocos minutos y una fila vieja dejaría el
+  // diálogo mostrando el estado de antes justo mientras alguien la está mirando.
+  const [abierta, setAbierta] = useState<string | null>(null);
   const vivo = useRef(true);
 
   const cargar = useCallback(async (): Promise<Datos | null> => {
@@ -210,12 +215,15 @@ export function BuzonFacturas() {
       cell: (c) => {
         const f = c.row.original;
         return (
-          <Checkbox
-            checked={f.revisada}
-            aria-label={`Marcar ${f.consecutivo} como revisada`}
-            title={f.revisada && f.revisadoPor ? `Revisada por ${f.revisadoPor}` : "Marcar como revisada"}
-            onChange={(e) => void palomear(f.clave, e.target.checked)}
-          />
+          // El clic se para acá: la fila entera abre el cotejo, y palomear no es abrir.
+          <span onClick={(e) => e.stopPropagation()}>
+            <Checkbox
+              checked={f.revisada}
+              aria-label={`Marcar ${f.consecutivo} como revisada`}
+              title={f.revisada && f.revisadoPor ? `Revisada por ${f.revisadoPor}` : "Marcar como revisada"}
+              onChange={(e) => void palomear(f.clave, e.target.checked)}
+            />
+          </span>
         );
       },
     },
@@ -237,6 +245,7 @@ export function BuzonFacturas() {
                   `.ds-tip`: el contenedor tiene overflow y lo recorta). */}
               {f.webLink && (
                 <> · <a className="link-btn link-btn--sm" href={f.webLink} target="_blank" rel="noopener noreferrer"
+                  onClick={(e) => e.stopPropagation()}
                   title="Abre este correo en Outlook, en una pestaña nueva. Es para leerlo: no cambia nada acá.">
                   ver correo en Outlook<span className="chip-link__ir" aria-hidden>↗</span>
                 </a></>
@@ -264,6 +273,7 @@ export function BuzonFacturas() {
         return f.bcUrl
           ? (
             <a className="link-btn link-btn--sm" href={f.bcUrl} target="_blank" rel="noopener noreferrer"
+              onClick={(e) => e.stopPropagation()}
               title={`Abre la factura ${f.bcNumero} en Business Central, en una pestaña nueva.`}>
               {f.bcNumero}<span className="chip-link__ir" aria-hidden>↗</span>
             </a>
@@ -405,9 +415,14 @@ export function BuzonFacturas() {
               getRowId={(f) => f.clave}
               columnVisibilityInicial={{ proveedorBc: false, clave: false }}
               vacio="Ningún comprobante coincide con la búsqueda."
+              onRowClick={(f) => setAbierta(f.clave)}
             />
           </div>
         </Card>
+      )}
+
+      {abierta && filas.some((f) => f.clave === abierta) && (
+        <FacturaCotejo fila={filas.find((f) => f.clave === abierta)!} onClose={() => setAbierta(null)} />
       )}
     </>
   );

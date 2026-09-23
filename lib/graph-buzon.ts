@@ -260,3 +260,64 @@ async function comprobantesDe(buzon: string, messageId: string): Promise<Comprob
   }
   return out;
 }
+
+// ---------------------------------------------------------------------------
+// EL XML DE UN COMPROBANTE, A PEDIDO
+// ---------------------------------------------------------------------------
+//
+// La sincronización guarda de cada comprobante el encabezado y nada más: quién lo
+// emitió, con qué número y por cuánto. Para el cotejo lado a lado hacen falta las
+// LÍNEAS, y esas siguen dentro del XML adjunto al correo.
+//
+// Se van a buscar cuando alguien abre esa factura, no en cada corrida. Es una
+// llamada a Graph por factura abierta contra guardar 1.300 XML al mes en la base —y,
+// sobre todo, contra no poder mostrárselas NUNCA a las miles que ya están guardadas,
+// porque el marcador del buzón solo avanza y esos correos no se releen.
+//
+// De dónde sale el id del correo: del `webLink` que ya se guardó. El `ItemID` de esa
+// URL es el mismo id del mensaje, con dos caracteres cambiados —`/` viaja como `-` y
+// `+` como `_`—. Medido contra el buzón real: 8 de 8 correos reconstruidos exactos y
+// los adjuntos se bajan con ese id. Vale más que agregar una columna `messageId`,
+// que solo serviría de hoy en adelante.
+
+/** El id del mensaje de Graph escondido en el `webLink` de Outlook. */
+export function idDeMensaje(webLink: string): string | null {
+  const m = /[?&]ItemID=([^&]+)/i.exec(webLink ?? "");
+  if (!m) return null;
+  try {
+    return decodeURIComponent(m[1]).replace(/\//g, "-").replace(/\+/g, "_");
+  } catch {
+    return null;
+  }
+}
+
+export type AdjuntoComprobante = { archivo: string; xml: string; comprobante: Comprobante };
+
+/**
+ * El XML del comprobante `clave` dentro del correo que apunta ese `webLink`.
+ *
+ * Un mismo correo puede traer varias facturas —los proveedores grandes mandan la
+ * tanda del día junta—, así que se escoge por clave y no "el primer XML": abrir la
+ * factura A y que se muestren las líneas de la B sería peor que no mostrar nada.
+ *
+ * Devuelve null si el correo ya no está (se movió de carpeta o se borró) o si no
+ * trae ese comprobante. La pantalla lo dice en cristiano y deja el enlace a Outlook.
+ */
+export async function xmlDeComprobante(webLink: string, clave: string): Promise<AdjuntoComprobante | null> {
+  const id = idDeMensaje(webLink);
+  if (!id) return null;
+  const buzon = encodeURIComponent(cfg().buzon);
+  const data = await graph(`${GRAPH}/users/${buzon}/messages/${encodeURIComponent(id)}/attachments`);
+  for (const a of (data.value ?? [])) {
+    const archivo: string = a.name ?? "";
+    if (!/\.xml$/i.test(archivo) || !a.contentBytes) continue;
+    let xml = "";
+    try { xml = Buffer.from(a.contentBytes, "base64").toString("utf8"); } catch { continue; }
+    const comprobante = leerComprobanteXml(xml, archivo);
+    if (!comprobante) continue;                       // acuse de Hacienda
+    if (comprobante.clave === clave) return { archivo, xml, comprobante };
+  }
+  // Ninguno calzó. No se cae al "primer XML que aparezca" a propósito: mostrar las
+  // líneas de otra factura sería peor que decir que no se pudieron leer.
+  return null;
+}
