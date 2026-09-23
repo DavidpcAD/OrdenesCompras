@@ -225,8 +225,17 @@ export function BuzonFacturas() {
             <div className="ds-strong ds-body-sm">{f.nombreEmisor || f.cedulaEmisor}</div>
             <div className="ds-muted ds-body-sm">
               {f.cedulaEmisor}
+              {/* Saca de la app: abre ESE correo en Outlook, en otra pestaña. Antes era
+                  un <a> pelado y con `a { color: inherit }` se leía como texto gris
+                  cualquiera — nadie podía adivinar que era un link ni a dónde iba. Va
+                  con el verde del DS, la flecha ↗ que ya usan los chips que navegan, y
+                  el `title` que dice a dónde lleva (en una tabla no se puede usar
+                  `.ds-tip`: el contenedor tiene overflow y lo recorta). */}
               {f.webLink && (
-                <> · <a href={f.webLink} target="_blank" rel="noopener noreferrer">ver correo</a></>
+                <> · <a className="link-btn link-btn--sm" href={f.webLink} target="_blank" rel="noopener noreferrer"
+                  title="Abre este correo en Outlook, en una pestaña nueva. Es para leerlo: no cambia nada acá.">
+                  ver correo en Outlook<span className="chip-link__ir" aria-hidden>↗</span>
+                </a></>
               )}
             </div>
           </div>

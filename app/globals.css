@@ -1364,6 +1364,11 @@ td.ds-col-fija {
 /* Un link sin estado de hover no se lee como link: subraya y aclara al pasar. */
 .link-btn:hover { text-decoration: underline; text-underline-offset: 2px; color: var(--ds-color-green-200); }
 .link-btn:focus-visible { outline: 3px solid color-mix(in srgb, var(--ds-color-green-100) 60%, transparent); outline-offset: 2px; }
+/* Un link metido DENTRO de una línea chica (la cédula del emisor, en el buzón de
+   facturas) no puede ser más grande que el texto que lo rodea. */
+.link-btn--sm { font-size: var(--ds-font-size-body-sm); }
+/* La flecha de "esto te saca de la app" se mueve igual salga de un chip o de un link. */
+.link-btn:hover .chip-link__ir { opacity: 1; transform: translate(1px, -1px); }
 
 /* CHIP que navega (N.º de orden en Solicitudes, N.º de solicitud en Órdenes).
    Tiene la forma de la etiqueta de al lado para no romper el ritmo de la tabla,
