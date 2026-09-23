@@ -4330,6 +4330,9 @@ export type BcFacturaCompraDetalle = BcFacturaCompra & {
   subtotal: number;
   impuesto: number;
   pedido: string;
+  /** Deep link a ESA factura en BC. Se arma acá porque lleva tenant, entorno y
+   *  empresa, que el navegador no conoce. */
+  url: string;
   lineas: BcLineaFacturaCompra[];
 };
 
@@ -4389,6 +4392,7 @@ export async function bcFacturaCompraConLineas(numeroFactura: string): Promise<B
     impuesto: Number(inv.totalTaxAmount ?? 0) || 0,
     total: Number(inv.totalAmountIncludingTax ?? 0) || 0,
     pedido: String(inv.orderNumber ?? "").trim(),
+    url: bcDeepLinkFacturaPorNo(inv.number ?? no),
     lineas,
   };
 }

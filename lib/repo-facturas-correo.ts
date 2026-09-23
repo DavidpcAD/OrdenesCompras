@@ -191,15 +191,49 @@ export async function guardarComprobantes(
   return nuevos;
 }
 
-/** Los comprobantes que todavía no se han encontrado en BC. */
+/**
+ * Los comprobantes que todavía no se han encontrado en BC.
+ *
+ * Los ENLAZADOS A MANO quedan fuera aunque estén "descuadrada". Cuando una persona
+ * dice "esta del correo es esta de BC" está resolviendo justo lo que el cotejo
+ * automático no pudo —el número quedó mal tecleado—, así que volver a cotejarlos
+ * borraría ese trabajo cada tres minutos. Un enlace a mano solo lo deshace otra
+ * persona, desde la pantalla.
+ */
 export async function pendientesDeCotejo(): Promise<FacturaCorreo[]> {
   if (!(await tablaCorreoExiste())) return [];
   const pool = await getPool();
   const r = await pool.request().query(`
     SELECT * FROM dbo.FacturaCorreo
     WHERE estado IN ('pendiente','descuadrada')
+      AND (bcCalzePor IS NULL OR bcCalzePor <> 'manual')
     ORDER BY fechaEmision ASC`);
   return r.recordset.map(fila);
+}
+
+/** El comprobante que ya tiene amarrado ese N.º de BC, si hay alguno. */
+export async function facturaCorreoPorBcNumero(bcNumero: string): Promise<FacturaCorreo | null> {
+  if (!(await tablaCorreoExiste())) return null;
+  const pool = await getPool();
+  const r = await pool.request()
+    .input("bc", sql.VarChar(40), bcNumero)
+    .query("SELECT TOP 1 * FROM dbo.FacturaCorreo WHERE bcNumero = @bc");
+  const x = r.recordset[0];
+  return x ? fila(x) : null;
+}
+
+/**
+ * Los N.º de BC que ya están amarrados a algún comprobante.
+ *
+ * Sirve para no ofrecer como candidata una factura que ya tiene dueño: mandar a
+ * alguien a enlazar dos veces la misma factura de BC es peor que no sugerir nada.
+ */
+export async function bcNumerosEnlazados(): Promise<Set<string>> {
+  if (!(await tablaCorreoExiste())) return new Set();
+  const pool = await getPool();
+  const r = await pool.request().query(
+    "SELECT DISTINCT bcNumero FROM dbo.FacturaCorreo WHERE bcNumero IS NOT NULL");
+  return new Set(r.recordset.map((x: any) => String(x.bcNumero).trim()).filter(Boolean));
 }
 
 export async function listarFacturasCorreo(opts: { desde?: string; hasta?: string; estado?: string } = {}): Promise<FacturaCorreo[]> {
@@ -287,7 +321,10 @@ export async function guardarCotejo(
                         END
       FROM dbo.FacturaCorreo f
       JOIN (VALUES ${filas}) AS v(clave, estado, bcNumero, bcProveedor, bcTotal, bcCalzePor)
-        ON f.clave = v.clave;`);
+        ON f.clave = v.clave
+      -- Cinturón además de tirantes: pendientesDeCotejo ya no los trae, pero si
+      -- alguna vez se llama esto con otra lista, un enlace hecho a mano no se pisa.
+      WHERE f.bcCalzePor IS NULL OR f.bcCalzePor <> 'manual';`);
     hechos += tanda.length;
     onProgreso?.(hechos, resultados.length);
   }
@@ -311,6 +348,87 @@ export async function marcarRevisada(clave: string, revisada: boolean, usuario: 
       UPDATE dbo.FacturaCorreo
       SET revisadoPor = @usuario,
           revisadoEn  = CASE WHEN @usuario IS NULL THEN NULL ELSE getdate() END
+      WHERE clave = @clave`);
+}
+
+/**
+ * "Esta del correo es esta de BC" — el enlace a mano.
+ *
+ * Es la salida para el caso que el cotejo automático no puede resolver: la factura SÍ
+ * se registró, pero con el número del proveedor mal tecleado, así que no hay forma de
+ * amarrarlas sin que alguien lo diga. Queda marcado `bcCalzePor = 'manual'` con el
+ * nombre de quien lo hizo, y desde ahí la sincronización lo deja en paz.
+ *
+ * El estado lo decide el MONTO, igual que en el cotejo automático: si cuadra queda
+ * "registrada" y si no "descuadrada". Enlazar no es declarar que está bien — es decir
+ * cuál es, que es otra cosa.
+ */
+export async function enlazarFacturaBc(
+  clave: string,
+  bc: { numero: string; proveedor?: string | null; total?: number | null; cuadra: boolean },
+  usuario: string,
+  nota?: string,
+): Promise<void> {
+  if (!(await tablaCorreoExiste())) throw new Error(FALTA_TABLA);
+  const pool = await getPool();
+  await pool.request()
+    .input("clave", sql.Char(50), clave)
+    .input("numero", sql.VarChar(40), bc.numero)
+    .input("proveedor", sql.VarChar(40), bc.proveedor ?? null)
+    .input("total", sql.Decimal(19, 4), bc.total ?? null)
+    .input("estado", sql.VarChar(20), bc.cuadra ? "registrada" : "descuadrada")
+    .input("usuario", sql.NVarChar(100), usuario)
+    .input("nota", sql.NVarChar(500), (nota ?? "").slice(0, 500) || null)
+    .query(`
+      UPDATE dbo.FacturaCorreo SET
+        bcNumero      = @numero,
+        bcProveedor   = @proveedor,
+        bcTotal       = @total,
+        bcCalzePor    = 'manual',
+        estado        = @estado,
+        -- Igual que en el cotejo: es CUÁNDO se supo que estaba en BC, y no se
+        -- reescribe si ya se sabía.
+        fechaRegistro = ISNULL(fechaRegistro, getdate()),
+        ultimoCotejo  = getdate(),
+        revisadoPor   = @usuario,
+        revisadoEn    = getdate(),
+        -- Un comentario en blanco no borra el que ya estaba escrito.
+        nota          = ISNULL(@nota, nota)
+      WHERE clave = @clave`);
+}
+
+/** Deshacer el enlace: vuelve a la cola de pendientes y el cotejo la retoma. */
+export async function desenlazarFacturaBc(clave: string, usuario: string): Promise<void> {
+  if (!(await tablaCorreoExiste())) throw new Error(FALTA_TABLA);
+  const pool = await getPool();
+  await pool.request()
+    .input("clave", sql.Char(50), clave)
+    .input("usuario", sql.NVarChar(100), usuario)
+    .query(`
+      UPDATE dbo.FacturaCorreo SET
+        bcNumero = NULL, bcProveedor = NULL, bcTotal = NULL, bcCalzePor = NULL,
+        estado = 'pendiente', fechaRegistro = NULL, ultimoCotejo = getdate(),
+        revisadoPor = @usuario, revisadoEn = getdate()
+      WHERE clave = @clave AND bcCalzePor = 'manual'`);
+}
+
+/**
+ * El comentario de revisión, sin tocar nada más.
+ *
+ * Reemplaza la columna "Comentarios" del Excel que Contabilidad venía llevando
+ * aparte: lo que se anota acá viaja con la factura, lo ve el que la abra después y
+ * sale en la exportación.
+ */
+export async function guardarNota(clave: string, nota: string, usuario: string): Promise<void> {
+  if (!(await tablaCorreoExiste())) throw new Error(FALTA_TABLA);
+  const pool = await getPool();
+  await pool.request()
+    .input("clave", sql.Char(50), clave)
+    .input("nota", sql.NVarChar(500), (nota ?? "").slice(0, 500) || null)
+    .input("usuario", sql.NVarChar(100), usuario)
+    .query(`
+      UPDATE dbo.FacturaCorreo
+      SET nota = @nota, revisadoPor = @usuario, revisadoEn = getdate()
       WHERE clave = @clave`);
 }
 

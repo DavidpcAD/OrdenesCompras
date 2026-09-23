@@ -11,6 +11,7 @@ import { FacturaCotejo } from "@/components/factura-cotejo";
 import { formatDate, formatDateTime, money, num, todayISO as hoyISO } from "@/lib/helpers";
 import { TIPOS } from "@/lib/cruce-correo-bc";
 import type { FacturaCorreo } from "@/lib/repo-facturas-correo";
+import type { MarcaCandidato } from "@/lib/candidatos-bc";
 
 // EL BUZÓN, EN VIVO — cada comprobante que llegó y si ya se registró en BC.
 //
@@ -39,7 +40,7 @@ type Datos = {
 
 const CADA_MS = 3 * 60 * 1000;   // el buzón recibe ~45 correos al día; cada 3 min sobra
 
-type Filtro = "todas" | "pendiente" | "registrada" | "descuadrada" | "porRevisar";
+type Filtro = "todas" | "pendiente" | "registrada" | "descuadrada" | "porRevisar" | "conCandidato";
 
 // Qué está pasando, en palabras. Un porcentaje sin decir de qué no informa nada.
 const FASES: Record<string, string> = {
@@ -73,7 +74,26 @@ export function BuzonFacturas() {
   // el bootstrap recarga la lista cada pocos minutos y una fila vieja dejaría el
   // diálogo mostrando el estado de antes justo mientras alguien la está mirando.
   const [abierta, setAbierta] = useState<string | null>(null);
+  // Cuáles de las "sin registrar" tienen pinta de estar en BC con OTRO número. Llega
+  // aparte de la lista y siempre después: necesita bajarse las facturas de BC, y la
+  // tabla tiene que pintar de una. Si falla, no se dice nada — es una ayuda, no un
+  // dato: la fila sigue diciendo la verdad sin ella.
+  const [marcas, setMarcas] = useState<Record<string, MarcaCandidato>>({});
   const vivo = useRef(true);
+
+  const buscarCandidatos = useCallback(async () => {
+    try {
+      const { from, to } = rangoRef.current;
+      const q = new URLSearchParams();
+      if (from) q.set("desde", from);
+      if (to) q.set("hasta", to);
+      const cola = q.toString();
+      const r = await fetch(`/api/vigilancia/candidatos${cola ? `?${cola}` : ""}`, { cache: "no-store" });
+      if (!r.ok) return;
+      const j = await r.json();
+      if (vivo.current) setMarcas(j?.marcas ?? {});
+    } catch { /* la pista es opcional; la lista ya dice lo que sabe */ }
+  }, []);
 
   const cargar = useCallback(async (): Promise<Datos | null> => {
     try {
@@ -86,6 +106,7 @@ export function BuzonFacturas() {
       const j = await r.json();
       if (!r.ok) throw new Error(j?.error ?? `Error ${r.status}`);
       if (vivo.current) setDatos(j as Datos);
+      void buscarCandidatos();
       return j as Datos;
     } catch (e: any) {
       if (vivo.current) setError(e?.message ?? "No se pudo leer la lista.");
@@ -93,7 +114,7 @@ export function BuzonFacturas() {
     } finally {
       if (vivo.current) setCargando(false);
     }
-  }, []);
+  }, [buscarCandidatos]);
 
   const sincronizar = useCallback(async () => {
     setSincronizando(true);
@@ -190,7 +211,8 @@ export function BuzonFacturas() {
     registrada: filas.filter((f) => f.estado === "registrada").length,
     descuadrada: filas.filter((f) => f.estado === "descuadrada").length,
     porRevisar: filas.filter((f) => !f.revisada).length,
-  }), [filas]);
+    conCandidato: filas.filter((f) => f.estado === "pendiente" && marcas[f.clave]).length,
+  }), [filas, marcas]);
 
   // La base del porcentaje: solo lo que de verdad le tocaba a esta compañía.
   const base = conteo.registrada + conteo.descuadrada + conteo.pendiente;
@@ -199,8 +221,9 @@ export function BuzonFacturas() {
   const visibles = useMemo(() => {
     if (filtro === "todas") return filas;
     if (filtro === "porRevisar") return filas.filter((f) => !f.revisada);
+    if (filtro === "conCandidato") return filas.filter((f) => f.estado === "pendiente" && marcas[f.clave]);
     return filas.filter((f) => f.estado === filtro);
-  }, [filas, filtro]);
+  }, [filas, filtro, marcas]);
 
   // Cada columna aporta al buscador por su `accessorFn`: lo que se escriba se busca
   // contra TODAS, así que sirve igual un CFR-, una cédula, un consecutivo, el nombre
@@ -283,13 +306,29 @@ export function BuzonFacturas() {
     },
     {
       id: "estado", header: "Estado", meta: { label: "Estado" },
-      accessorFn: (f) => etiquetaEstado(f),
-      cell: (c) => <Estado f={c.row.original} hoy={hoy} />,
+      accessorFn: (f) => etiquetaEstado(f, marcas[f.clave]),
+      cell: (c) => <Estado f={c.row.original} hoy={hoy} marca={marcas[c.row.original.clave]} />,
+    },
+    {
+      // El comentario de revisión. Va VISIBLE aunque cueste ancho: es la columna
+      // "Comentarios" que Contabilidad llevaba en un Excel aparte, y un comentario
+      // que nadie ve es un comentario que nadie escribe.
+      id: "nota", header: "Comentario", meta: { label: "Comentario" },
+      accessorFn: (f) => f.nota ?? "",
+      cell: (c) => {
+        const f = c.row.original;
+        if (!f.nota) return <span className="ds-muted">—</span>;
+        return (
+          <span className="ds-body-sm" title={f.revisadoPor ? `${f.nota} — ${f.revisadoPor}` : f.nota}>
+            {f.nota}
+          </span>
+        );
+      },
     },
     // Arrancan ocultas: existen para BUSCAR, no para llenar la pantalla.
     { id: "proveedorBc", header: "Proveedor en BC", meta: { label: "Proveedor en BC" }, accessorFn: (f) => f.bcProveedor ?? "", cell: (c) => <span className="ds-body-sm ds-muted">{c.getValue() || "—"}</span> },
     { id: "clave", header: "Clave de Hacienda", meta: { label: "Clave de Hacienda" }, accessorFn: (f) => f.clave, cell: (c) => <span className="ds-body-sm ds-muted">{c.getValue()}</span> },
-  ], [hoy, palomear]);
+  ], [hoy, palomear, marcas]);
 
   if (cargando && !datos) return <Card className="mb-4"><p className="ds-muted">Leyendo…</p></Card>;
 
@@ -347,7 +386,7 @@ export function BuzonFacturas() {
       {!!filas.length && (
         // Los recuadros son además el filtro: tocar "Sin registrar" deja solo esas.
         // Es el mismo gesto que los chips del resto de la app.
-        <div className="tiles tiles--5 mb-4">
+        <div className="tiles tiles--6 mb-4">
           {/* EL NÚMERO QUE CONTESTA LA PREGUNTA: de todo lo que llegó al correo,
               ¿cuánto está en BC? Va de primero porque es el titular; los otros
               recuadros son el desglose.
@@ -374,6 +413,14 @@ export function BuzonFacturas() {
             accent={conteo.descuadrada ? "var(--ds-color-yellow)" : undefined}
             active={filtro === "descuadrada"}
             onClick={() => setFiltro(filtro === "descuadrada" ? "todas" : "descuadrada")} />
+          {/* De las "sin registrar", cuántas tienen una factura de BC que podría ser
+              ellas —el caso del número mal tecleado—. Es el recuadro por el que hay
+              que empezar: son las que se resuelven en un clic, y sin él nadie iba a
+              abrir 393 filas de una en una a ver si alguna trae sugerencia. */}
+          <Tile label="Podrían estar en BC" value={num.format(conteo.conCandidato)}
+            accent={conteo.conCandidato ? "var(--ds-color-yellow)" : undefined}
+            active={filtro === "conCandidato"}
+            onClick={() => setFiltro(filtro === "conCandidato" ? "todas" : "conCandidato")} />
           <Tile label="Sin revisar" value={num.format(conteo.porRevisar)}
             accent={conteo.porRevisar ? "var(--ds-color-gray-300)" : "var(--ds-color-green-200)"}
             active={filtro === "porRevisar"}
@@ -422,7 +469,10 @@ export function BuzonFacturas() {
       )}
 
       {abierta && filas.some((f) => f.clave === abierta) && (
-        <FacturaCotejo fila={filas.find((f) => f.clave === abierta)!} onClose={() => setAbierta(null)} />
+        <FacturaCotejo
+          fila={filas.find((f) => f.clave === abierta)!}
+          onCambio={() => void cargar()}
+          onClose={() => setAbierta(null)} />
       )}
     </>
   );
@@ -431,20 +481,25 @@ export function BuzonFacturas() {
 // Lo que ve el buscador de cada fila en la columna Estado. Va aparte del render
 // porque el texto que se busca y el que se dibuja no son el mismo: en pantalla el
 // estado se lee en dos renglones, y buscar "registrada CFR-010077" tiene que calzar.
-const etiquetaEstado = (f: FacturaCorreo): string => {
-  if (f.estado === "registrada") return `Registrada ${f.bcNumero ?? ""}`;
+const etiquetaEstado = (f: FacturaCorreo, marca?: MarcaCandidato): string => {
+  if (f.estado === "registrada") return `Registrada ${f.bcNumero ?? ""}${f.bcCalzePor === "manual" ? " enlazada a mano" : ""}`;
   if (f.estado === "descuadrada") return `Registrada no cuadra ${f.bcNumero ?? ""}`;
   if (f.estado === "otra_empresa") return "De otra empresa del grupo";
   if (f.estado === "no_aplica") return `No aplica ${f.nota ?? ""}`;
-  return "Sin registrar";
+  // "candidato" es buscable a propósito: escribirlo en la barra deja solo las que
+  // tienen una factura de BC propuesta.
+  return marca ? `Sin registrar candidato ${marca.numero} ${marca.numeroProveedor}` : "Sin registrar";
 };
 
-function Estado({ f, hoy }: { f: FacturaCorreo; hoy: number }) {
+function Estado({ f, hoy, marca }: { f: FacturaCorreo; hoy: number; marca?: MarcaCandidato }) {
   if (f.estado === "registrada" || f.estado === "descuadrada") {
     const tardo = dias(f.fechaEmision, f.fechaRegistro);
     return (
       <div className="ds-body-sm">
-        <span className="ds-strong">{f.estado === "registrada" ? "Registrada" : "No cuadra"}</span>
+        <span className="ds-strong">
+          {f.estado === "registrada" ? "Registrada" : "No cuadra"}
+          {f.bcCalzePor === "manual" && <span className="ds-muted"> · a mano</span>}
+        </span>
         <div className="ds-muted">
           {f.fechaRegistro ? `se vio el ${formatDate(f.fechaRegistro.slice(0, 10))}` : ""}
           {tardo != null ? ` · tardó ${tardo} ${tardo === 1 ? "día" : "días"}` : ""}
@@ -466,6 +521,15 @@ function Estado({ f, hoy }: { f: FacturaCorreo; hoy: number }) {
       <span className="ds-strong">Sin registrar</span>
       {esperando != null && (
         <div className="ds-muted">{esperando} {esperando === 1 ? "día" : "días"} esperando</div>
+      )}
+      {/* La pista: en BC hay una factura del mismo proveedor que podría ser esta.
+          Se dice "podría" porque lo es — el número no calzó y lo que queda es el
+          monto y la fecha. Abriendo la fila se ve y se enlaza. */}
+      {marca && (
+        <div className="bz-pista">
+          podría ser {marca.numero}
+          {marca.numeroProveedor && <span className="ds-muted"> (N.º {marca.numeroProveedor})</span>}
+        </div>
       )}
     </div>
   );

@@ -1,93 +1,141 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { Badge, Modal, Skeleton } from "@/components/ui";
-import { IconWarning } from "@/components/icons";
+import { useCallback, useEffect, useState } from "react";
+import { Badge, Button, Input, Modal, Skeleton, Textarea, useToast } from "@/components/ui";
+import { IconCheck, IconWarning } from "@/components/icons";
 import { formatDate, money, num } from "@/lib/helpers";
 import { TIPOS, type LineaComprobante, type ResumenComprobante } from "@/lib/cruce-correo-bc";
+import type { Candidato, CotejoRenglones } from "@/lib/candidatos-bc";
 import type { BcFacturaCompraDetalle } from "@/lib/bc";
 import type { FacturaCorreo } from "@/lib/repo-facturas-correo";
 
 // LOS DOS LADOS DE UNA FACTURA, UNO AL LADO DEL OTRO.
 //
-// La tabla de la auditoría contesta "¿está en BC?". Esto contesta la que viene
-// después y es la que cuesta plata: "¿está por lo mismo?" — y cuando no, en cuál
-// renglón. A la izquierda lo que cobró el proveedor (el XML que llegó al correo), a
-// la derecha lo que se digitó en Business Central, cada columna con su total y con
-// el enlace a su fuente: Outlook de un lado, BC del otro.
+// La tabla de la auditoría contesta "¿está en BC?". Esto contesta las dos que vienen
+// después, que son las que cuestan plata: "¿está por lo mismo?" y, cuando parece que
+// no está, "¿no estará con otro número?".
 //
-// Las líneas NO se aparean renglón contra renglón a propósito. La descripción que
-// manda el proveedor y la que quedó en BC casi nunca son la misma frase —"MORTERO
-// REPEMAX MURO SECO" contra el nombre del artículo del catálogo—, así que cualquier
-// pareo automático acertaría a veces y mentiría el resto. Lo que sí se dice sin
-// adivinar es lo que se puede probar: cuántas líneas trae cada lado y en cuánto
-// difieren los totales. Eso es lo que hay que ir a mirar.
+// A la izquierda lo que cobró el proveedor (el XML que llegó al correo), a la derecha
+// lo que se digitó en Business Central, cada columna con su total y con el enlace a su
+// fuente. Si no hay nada en BC, la columna derecha se vuelve la lista de CANDIDATOS:
+// las facturas del mismo proveedor, con el mismo monto y de la misma fecha, que son
+// exactamente las que Contabilidad venía encontrando a pulso y anotando en un Excel
+// ("REGISTRADA CON EL # 319869"). Se toca una para verle los renglones y, si es, se
+// enlaza. Enlazar es de la persona: ver lib/candidatos-bc.ts para por qué.
+//
+// Las líneas NO se aparean renglón contra renglón en pantalla. La descripción del
+// proveedor y la del catálogo de BC casi nunca son la misma frase, así que el pareo
+// visual acertaría a veces y mentiría el resto. Lo que sí se afirma es lo que se puede
+// probar: cuántos renglones calzan por importe y en cuánto difieren los totales.
 
 type Lado<T> = { ok: true } & T | { ok: false; error: string };
 type Datos = {
   factura: FacturaCorreo;
   correo: Lado<{ archivo: string; lineas: LineaComprobante[]; resumen: ResumenComprobante }>;
-  bc: Lado<{ factura: BcFacturaCompraDetalle }>;
+  bc: Lado<{ factura: BcFacturaCompraDetalle; esPrevia: boolean }>;
+  candidatos: Candidato[];
+  candidatosError?: string;
+  renglones: CotejoRenglones | null;
 };
 
-export function FacturaCotejo({ fila, onClose }: { fila: FacturaCorreo; onClose: () => void }) {
+export function FacturaCotejo({ fila, onCambio, onClose }: {
+  fila: FacturaCorreo;
+  /** Se llama cuando la factura cambió en la base, para que la lista se refresque. */
+  onCambio?: () => void;
+  onClose: () => void;
+}) {
+  const toast = useToast();
   const [datos, setDatos] = useState<Datos | null>(null);
   const [error, setError] = useState("");
+  // El N.º de BC que se está MIRANDO sin haberlo enlazado todavía. Es el paso que
+  // faltaba: antes de decir "es esta" hay que poder verle los renglones.
+  const [previa, setPrevia] = useState<string | null>(null);
+  const [aMano, setAMano] = useState("");
+  const [nota, setNota] = useState(fila.nota ?? "");
+  const [ocupado, setOcupado] = useState(false);
+
+  const cargar = useCallback(async (bc: string | null, señal?: AbortSignal) => {
+    try {
+      const q = bc ? `?bc=${encodeURIComponent(bc)}` : "";
+      const r = await fetch(`/api/vigilancia/factura/${fila.clave}${q}`, { cache: "no-store", signal: señal });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j?.error ?? `Error ${r.status}`);
+      setDatos(j as Datos);
+      setError("");
+    } catch (e: any) {
+      if (e?.name !== "AbortError") setError(e?.message ?? "No se pudo abrir la factura.");
+    }
+  }, [fila.clave]);
 
   useEffect(() => {
     const ctl = new AbortController();
-    (async () => {
-      try {
-        const r = await fetch(`/api/vigilancia/factura/${fila.clave}`, { cache: "no-store", signal: ctl.signal });
-        const j = await r.json();
-        if (!r.ok) throw new Error(j?.error ?? `Error ${r.status}`);
-        setDatos(j as Datos);
-      } catch (e: any) {
-        if (e?.name !== "AbortError") setError(e?.message ?? "No se pudo abrir la factura.");
-      }
-    })();
+    void cargar(previa, ctl.signal);
     return () => ctl.abort();
-  }, [fila.clave]);
+  }, [cargar, previa]);
 
-  const tipo = TIPOS[fila.tipoDoc] ?? "Comprobante";
+  // Guardar: enlazar (bcNumero), soltar (bcNumero: null) o solo comentar (nota).
+  const guardar = useCallback(async (cuerpo: Record<string, unknown>, exito: string) => {
+    setOcupado(true);
+    try {
+      const r = await fetch(`/api/vigilancia/factura/${fila.clave}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(cuerpo),
+      });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j?.error ?? `Error ${r.status}`);
+      toast(exito, "success");
+      setPrevia(null);
+      await cargar(null);
+      onCambio?.();
+      return true;
+    } catch (e: any) {
+      toast(e?.message ?? "No se pudo guardar.", "error");
+      return false;
+    } finally {
+      setOcupado(false);
+    }
+  }, [fila.clave, cargar, onCambio, toast]);
+
+  const actual = datos?.factura ?? fila;
   const bc = datos?.bc.ok ? datos.bc.factura : null;
+  const esPrevia = (datos?.bc.ok && datos.bc.esPrevia) || false;
   const correo = datos?.correo.ok ? datos.correo : null;
+  const cargando = !datos && !error;
+  const tipo = TIPOS[actual.tipoDoc] ?? "Comprobante";
 
   return (
-    <Modal wide title={`${tipo} ${fila.consecutivo}`} onClose={onClose}>
+    <Modal wide title={`${tipo} ${actual.consecutivo}`} onClose={onClose}>
       <div className="cot-cab">
         <div>
-          <div className="ds-strong">{fila.nombreEmisor || fila.cedulaEmisor}</div>
+          <div className="ds-strong">{actual.nombreEmisor || actual.cedulaEmisor}</div>
           <div className="ds-muted ds-body-sm">
-            Cédula {fila.cedulaEmisor} · emitida el {formatDate(fila.fechaEmision)}
-            {fila.bcCalzePor === "nombre" && " · calzó por nombre, no por cédula"}
+            Cédula {actual.cedulaEmisor} · emitida el {formatDate(actual.fechaEmision)}
+            {actual.bcCalzePor === "nombre" && " · calzó por nombre, no por cédula"}
           </div>
         </div>
-        <EstadoBadge estado={fila.estado} />
+        <EstadoBadge factura={actual} />
       </div>
 
-      <Diferencia correo={correo?.resumen ?? null} bc={bc} />
+      <Diferencia correo={correo?.resumen ?? null} bc={bc} renglones={datos?.renglones ?? null} esPrevia={esPrevia} />
 
       <div className="cot-cols">
         <Columna
           titulo="Lo que facturó el proveedor"
           fuente="del XML que llegó al correo"
-          enlace={fila.webLink
-            ? { href: fila.webLink, texto: "ver el correo en Outlook", title: "Abre este correo en Outlook, en una pestaña nueva." }
+          enlace={actual.webLink
+            ? { href: actual.webLink, texto: "ver el correo en Outlook", title: "Abre este correo en Outlook, en una pestaña nueva." }
             : null}
-          cargando={!datos && !error}
+          cargando={cargando}
           error={datos && !datos.correo.ok ? datos.correo.error : ""}
           lineas={correo?.lineas.map((l) => ({
             clave: `x${l.numero}`,
             titulo: l.detalle || l.codigo || l.cabys,
             abajo: [l.codigo, l.cabys && `CABYS ${l.cabys}`].filter(Boolean).join(" · "),
-            cantidad: l.cantidad,
-            unidad: l.unidad,
-            precioUnitario: l.precioUnitario,
-            descuento: l.descuento,
-            total: l.total,
+            cantidad: l.cantidad, unidad: l.unidad, precioUnitario: l.precioUnitario,
+            descuento: l.descuento, total: l.total,
           })) ?? []}
-          moneda={correo?.resumen.moneda ?? fila.moneda}
+          moneda={correo?.resumen.moneda ?? actual.moneda}
           totales={correo ? [
             { rotulo: "Subtotal", monto: correo.resumen.subtotal },
             ...(correo.resumen.descuentos ? [{ rotulo: "Descuentos", monto: -correo.resumen.descuentos }] : []),
@@ -97,31 +145,82 @@ export function FacturaCotejo({ fila, onClose }: { fila: FacturaCorreo; onClose:
           ] : []}
         />
 
-        <Columna
-          titulo="Lo que se registró en Business Central"
-          fuente={bc?.pedido ? `del pedido ${bc.pedido}` : "de la factura de compra"}
-          enlace={fila.bcNumero && fila.bcUrl
-            ? { href: fila.bcUrl, texto: fila.bcNumero, title: `Abre la factura ${fila.bcNumero} en Business Central, en una pestaña nueva.` }
-            : null}
-          cargando={!datos && !error}
-          error={datos && !datos.bc.ok ? datos.bc.error : ""}
-          lineas={bc?.lineas.map((l) => ({
-            clave: `b${l.numeroLinea}`,
-            titulo: l.descripcion || l.codigo,
-            abajo: [l.codigo, ETIQUETA_TIPO[l.tipo]].filter(Boolean).join(" · "),
-            cantidad: l.cantidad,
-            unidad: l.unidad,
-            precioUnitario: l.precioUnitario,
-            descuento: l.descuento,
-            total: l.total,
-          })) ?? []}
-          moneda={bc?.moneda ?? fila.moneda}
-          totales={bc ? [
-            { rotulo: "Subtotal", monto: bc.subtotal },
-            { rotulo: "Impuesto", monto: bc.impuesto },
-            { rotulo: "Total", monto: bc.total, fuerte: true },
-          ] : []}
-        />
+        {/* La columna derecha tiene tres caras: la factura enlazada, un candidato que
+            se está mirando, o —cuando no hay nada— la lista de candidatos. */}
+        {bc ? (
+          <Columna
+            titulo={esPrevia ? "¿Será esta? (todavía sin enlazar)" : "Lo que se registró en Business Central"}
+            fuente={bc.pedido ? `del pedido ${bc.pedido}` : `N.º del proveedor ${bc.numeroProveedor || "—"}`}
+            enlace={bc.url ? { href: bc.url, texto: bc.numero, title: `Abre la factura ${bc.numero} en Business Central, en una pestaña nueva.` } : null}
+            cargando={cargando}
+            error=""
+            lineas={bc.lineas.map((l) => ({
+              clave: `b${l.numeroLinea}`,
+              titulo: l.descripcion || l.codigo,
+              abajo: [l.codigo, ETIQUETA_TIPO[l.tipo]].filter(Boolean).join(" · "),
+              cantidad: l.cantidad, unidad: l.unidad, precioUnitario: l.precioUnitario,
+              descuento: l.descuento, total: l.total,
+            }))}
+            moneda={bc.moneda}
+            totales={[
+              { rotulo: "Subtotal", monto: bc.subtotal },
+              { rotulo: "Impuesto", monto: bc.impuesto },
+              { rotulo: "Total", monto: bc.total, fuerte: true },
+            ]}
+            pie={esPrevia ? (
+              <div className="row gap-2 wrap" style={{ justifyContent: "space-between" }}>
+                <Button variant="outline" size="sm" onClick={() => setPrevia(null)} disabled={ocupado}>
+                  ← Ver los otros
+                </Button>
+                <Button size="sm" disabled={ocupado}
+                  onClick={() => void guardar({ bcNumero: bc.numero, nota: nota.trim() || undefined }, `Quedó enlazada a ${bc.numero}.`)}>
+                  Sí, es esta
+                </Button>
+              </div>
+            ) : actual.bcCalzePor === "manual" ? (
+              <div className="row gap-2 wrap" style={{ justifyContent: "space-between", alignItems: "center" }}>
+                <span className="ds-muted ds-body-sm">
+                  Enlazada a mano{actual.revisadoPor ? ` por ${actual.revisadoPor}` : ""}
+                </span>
+                <Button variant="outline" size="sm" disabled={ocupado}
+                  onClick={() => void guardar({ bcNumero: null }, "Se soltó el enlace: vuelve a la cola.")}>
+                  Soltar
+                </Button>
+              </div>
+            ) : undefined}
+          />
+        ) : (
+          <Candidatos
+            cargando={cargando}
+            error={datos && !datos.bc.ok ? datos.bc.error : ""}
+            candidatosError={datos?.candidatosError}
+            lista={datos?.candidatos ?? []}
+            moneda={actual.moneda}
+            ocupado={ocupado}
+            aMano={aMano}
+            setAMano={setAMano}
+            onMirar={(numero) => setPrevia(numero)}
+          />
+        )}
+      </div>
+
+      {/* El comentario de revisión. Reemplaza la columna "Comentarios" del Excel que
+          Contabilidad llevaba aparte: acá viaja con la factura y lo ve el que la
+          abra después. */}
+      <div className="cot-nota">
+        <label className="ds-body-sm ds-strong" htmlFor="cot-nota">Comentario de revisión</label>
+        <Textarea id="cot-nota" rows={2} value={nota} maxLength={500}
+          placeholder="Lo que haya que dejar dicho: por qué no cuadra, con quién se habló, qué falta…"
+          onChange={(e) => setNota(e.target.value)} />
+        <div className="row gap-2" style={{ justifyContent: "space-between", alignItems: "center" }}>
+          <span className="ds-muted ds-body-sm">
+            {actual.revisadoPor && actual.nota ? `Último: ${actual.revisadoPor}` : "Se guarda con tu nombre y la fecha."}
+          </span>
+          <Button size="sm" variant="outline" disabled={ocupado || nota === (actual.nota ?? "")}
+            onClick={() => void guardar({ nota }, "Comentario guardado.")}>
+            Guardar comentario
+          </Button>
+        </div>
       </div>
 
       {error && (
@@ -138,56 +237,168 @@ const ETIQUETA_TIPO: Record<string, string> = {
   articulo: "artículo", recurso: "recurso", activo_fijo: "activo fijo", cargo: "cargo", otro: "cuenta",
 };
 
-function EstadoBadge({ estado }: { estado: FacturaCorreo["estado"] }) {
-  if (estado === "registrada") return <Badge tone="green">Registrada</Badge>;
-  if (estado === "descuadrada") return <Badge tone="yellow">No cuadra el monto</Badge>;
-  if (estado === "otra_empresa") return <Badge tone="gray">De otra empresa</Badge>;
-  if (estado === "no_aplica") return <Badge tone="gray">No aplica</Badge>;
+function EstadoBadge({ factura }: { factura: FacturaCorreo }) {
+  const manual = factura.bcCalzePor === "manual";
+  if (factura.estado === "registrada") return <Badge tone="green">{manual ? "Enlazada a mano" : "Registrada"}</Badge>;
+  if (factura.estado === "descuadrada") return <Badge tone="yellow">No cuadra el monto</Badge>;
+  if (factura.estado === "otra_empresa") return <Badge tone="gray">De otra empresa</Badge>;
+  if (factura.estado === "no_aplica") return <Badge tone="gray">No aplica</Badge>;
   return <Badge tone="red">Sin registrar</Badge>;
 }
 
-// El número que hay que ver primero. Un céntimo es redondeo; de ahí para arriba
-// alguien tecleó otra cosa, y decir cuánto y para qué lado ahorra la resta a mano.
-function Diferencia({ correo, bc }: { correo: ResumenComprobante | null; bc: BcFacturaCompraDetalle | null }) {
+// Lo primero que hay que ver: en cuánto difieren los totales y cuántos renglones
+// calzan. Un céntimo es redondeo; de ahí para arriba alguien tecleó otra cosa.
+//
+// Cuando se está MIRANDO un candidato el aviso cambia de trabajo: ya no reporta un
+// problema de una factura enlazada, sino que ayuda a decidir si esa es. Por eso ahí
+// sí se dice en verde que todo calza — es el dato que uno busca justo antes de tocar
+// "Sí, es esta", y callárselo obliga a comparar los números a ojo.
+function Diferencia({ correo, bc, renglones, esPrevia }: {
+  correo: ResumenComprobante | null;
+  bc: BcFacturaCompraDetalle | null;
+  renglones: CotejoRenglones | null;
+  esPrevia: boolean;
+}) {
   if (!correo || !bc) return null;
   if (correo.moneda !== bc.moneda) {
     return (
-      <div className="ds-callout ds-callout--yellow mb-4">
-        <span className="ds-callout__icon"><IconWarning size={18} /></span>
-        <div>
-          <div className="ds-callout__title">Están en monedas distintas</div>
-          <div className="ds-callout__body">
-            El proveedor facturó en {correo.moneda} y en Business Central quedó en {bc.moneda}. Los totales no se
-            pueden comparar así.
-          </div>
-        </div>
-      </div>
+      <Aviso tono="yellow" titulo="Están en monedas distintas">
+        El proveedor facturó en {correo.moneda} y en Business Central quedó en {bc.moneda}. Los totales no se
+        pueden comparar así.
+      </Aviso>
     );
   }
   const dif = Math.round((bc.total - correo.total) * 100) / 100;
-  if (Math.abs(dif) <= 0.5) return null;
+  const cuadranRenglones = !!renglones && renglones.calzan === renglones.enCorreo && renglones.calzan === renglones.enBc;
+  const cuadraTodo = Math.abs(dif) <= 0.5 && cuadranRenglones;
+
+  if (cuadraTodo) {
+    if (!esPrevia) return null;   // enlazada y sin novedad: no hay nada que avisar
+    return (
+      <Aviso tono="green" titulo="Calza en todo">
+        Mismo total y {renglones!.calzan === 1 ? "el renglón coincide" : `los ${renglones!.calzan} renglones coinciden`} por
+        importe. Ojo igual con la fecha: dos compras iguales del mismo material se ven idénticas.
+      </Aviso>
+    );
+  }
+
+  if (Math.abs(dif) <= 0.5) {
+    return (
+      <Aviso tono="yellow" titulo="El total cuadra, pero los renglones no">
+        {renglones ? `${frase(renglones)} ` : ""}Puede ser que en BC se juntaran o partieran líneas; vale la pena mirarlo.
+      </Aviso>
+    );
+  }
   return (
-    <div className="ds-callout ds-callout--yellow mb-4">
-      <span className="ds-callout__icon"><IconWarning size={18} /></span>
+    <Aviso tono="yellow" titulo={`Business Central tiene ${money(Math.abs(dif), bc.moneda)} ${dif > 0 ? "de más" : "de menos"}`}>
+      El proveedor cobró {money(correo.total, correo.moneda)} y en BC quedó {money(bc.total, bc.moneda)}.
+      {renglones ? ` ${frase(renglones)}` : ""} Comparando los renglones de abajo se ve en cuál está la diferencia.
+    </Aviso>
+  );
+}
+
+const frase = (r: CotejoRenglones): string =>
+  r.calzan === r.enCorreo && r.calzan === r.enBc
+    ? `Los ${r.calzan} renglones calzan por importe.`
+    : `Calzan ${r.calzan} de ${r.enCorreo} renglones del correo contra ${r.enBc} de BC.`;
+
+function Aviso({ tono, titulo, children }: { tono: "yellow" | "green"; titulo: string; children: React.ReactNode }) {
+  return (
+    <div className={`ds-callout ds-callout--${tono} mb-4`}>
+      <span className="ds-callout__icon">{tono === "green" ? <IconCheck size={18} /> : <IconWarning size={18} />}</span>
       <div>
-        <div className="ds-callout__title">
-          Business Central tiene {money(Math.abs(dif), bc.moneda)} {dif > 0 ? "de más" : "de menos"}
-        </div>
-        <div className="ds-callout__body">
-          El proveedor cobró {money(correo.total, correo.moneda)} y en BC quedó {money(bc.total, bc.moneda)}.
-          Comparando los renglones de abajo se ve en cuál está la diferencia.
-        </div>
+        <div className="ds-callout__title">{titulo}</div>
+        <div className="ds-callout__body">{children}</div>
       </div>
     </div>
   );
 }
+
+// ---------------------------------------------------------------- candidatos
+
+function Candidatos({ cargando, error, candidatosError, lista, moneda, ocupado, aMano, setAMano, onMirar }: {
+  cargando: boolean; error: string; candidatosError?: string;
+  lista: Candidato[]; moneda: string; ocupado: boolean;
+  aMano: string; setAMano: (v: string) => void;
+  onMirar: (numero: string) => void;
+}) {
+  return (
+    <section className="cot-col" aria-label="Candidatos en Business Central">
+      <header className="cot-col__head">
+        <div className="ds-strong ds-body-sm">Lo que se registró en Business Central</div>
+        <div className="cot-col__meta">
+          <span className="ds-muted ds-body-sm">
+            {cargando ? "buscando…"
+              : lista.length ? `no calzó sola · ${lista.length} ${lista.length === 1 ? "candidata" : "candidatas"}`
+              : "no calzó con ninguna"}
+          </span>
+        </div>
+      </header>
+
+      {cargando && (
+        <div className="cot-linea"><Skeleton className="ds-skeleton--text" style={{ display: "block", width: "70%" }} /></div>
+      )}
+
+      {!cargando && (
+        <>
+          {!!error && !lista.length && <p className="cot-col__aviso ds-body-sm ds-muted">{error}</p>}
+          {!!candidatosError && (
+            <p className="cot-col__aviso ds-body-sm ds-muted">No se pudieron buscar candidatos: {candidatosError}</p>
+          )}
+
+          {!!lista.length && (
+            <p className="cot-col__aviso ds-body-sm ds-muted" style={{ paddingBottom: 0 }}>
+              Facturas del mismo proveedor que podrían ser esta. Tocá una para verle los renglones antes de decidir.
+            </p>
+          )}
+
+          {lista.map((c) => (
+            <button type="button" key={c.factura.numero} className="cot-cand" disabled={ocupado}
+              onClick={() => onMirar(c.factura.numero)}>
+              <div>
+                <div className="ds-body-sm ds-strong">
+                  {c.factura.numero}
+                  {c.factura.numeroProveedor && <span className="ds-muted"> · N.º {c.factura.numeroProveedor}</span>}
+                </div>
+                <div className="ds-muted ds-body-sm">{c.razones.join(" · ")}</div>
+              </div>
+              <div className="cot-num">
+                <div className="ds-body-sm">{money(c.factura.total, c.factura.moneda || moneda)}</div>
+                <div className="ds-muted ds-body-sm">{formatDate(c.factura.fecha)}</div>
+              </div>
+            </button>
+          ))}
+
+          {/* La salida cuando la lista no la trae: teclear el N.º a mano. Hay casos en
+              que la factura de BC está fuera de la ventana de fechas o a nombre de
+              otra ficha del proveedor, y ahí la persona ya sabe cuál es. */}
+          <div className="cot-col__aviso">
+            <label className="ds-body-sm ds-strong" htmlFor="cot-amano">
+              {lista.length ? "¿Es otra?" : "Si ya sabés cuál es"}
+            </label>
+            <div className="row gap-2" style={{ marginTop: 6 }}>
+              <Input id="cot-amano" value={aMano} placeholder="CFR-010253" disabled={ocupado}
+                onChange={(e) => setAMano(e.target.value.toUpperCase())}
+                onKeyDown={(e) => { if (e.key === "Enter" && aMano.trim()) onMirar(aMano.trim()); }} />
+              <Button variant="outline" disabled={ocupado || !aMano.trim()} onClick={() => onMirar(aMano.trim())}>
+                Ver
+              </Button>
+            </div>
+          </div>
+        </>
+      )}
+    </section>
+  );
+}
+
+// ------------------------------------------------------------------ columna
 
 type LineaVista = {
   clave: string; titulo: string; abajo: string;
   cantidad: number; unidad: string; precioUnitario: number; descuento: number; total: number;
 };
 
-function Columna({ titulo, fuente, enlace, cargando, error, lineas, moneda, totales }: {
+function Columna({ titulo, fuente, enlace, cargando, error, lineas, moneda, totales, pie }: {
   titulo: string;
   fuente: string;
   enlace: { href: string; texto: string; title: string } | null;
@@ -196,6 +407,7 @@ function Columna({ titulo, fuente, enlace, cargando, error, lineas, moneda, tota
   lineas: LineaVista[];
   moneda: string;
   totales: { rotulo: string; monto: number; fuerte?: boolean }[];
+  pie?: React.ReactNode;
 }) {
   return (
     <section className="cot-col" aria-label={titulo}>
@@ -264,6 +476,8 @@ function Columna({ titulo, fuente, enlace, cargando, error, lineas, moneda, tota
           ))}
         </footer>
       )}
+
+      {!cargando && pie && <div className="cot-col__acciones">{pie}</div>}
     </section>
   );
 }

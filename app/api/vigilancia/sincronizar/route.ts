@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { bcFacturasCompra, bcProveedoresConCedula } from "@/lib/bc";
+import { facturasYProveedoresDeBc } from "@/lib/bc-facturas-cache";
 import { cruzar, type Comprobante } from "@/lib/cruce-correo-bc";
 import { estadoBuzon, leerBuzon } from "@/lib/graph-buzon";
 import {
@@ -37,28 +37,6 @@ export const dynamic = "force-dynamic";
 // y la pantalla funciona: el avance se pierde, el resultado no.
 
 const TRASLAPE_MIN = 10;
-
-// Las facturas y los proveedores de BC se guardan unos minutos entre corridas. Son
-// ~10.000 facturas y ~800 proveedores, y la pantalla sincroniza cada 3 minutos: sin
-// esto se volvía a bajar todo una y otra vez, y entre eso y los adjuntos la petición
-// se pasaba del tiempo que aguanta y salía "Timeout" sin llegar a cotejar nada.
-// Dura poco a propósito: una factura digitada hace un minuto tiene que aparecer.
-const CACHE_MS = 4 * 60 * 1000;
-let cacheBc: { t: number; desde: string; facturas: Awaited<ReturnType<typeof bcFacturasCompra>>; proveedores: Awaited<ReturnType<typeof bcProveedoresConCedula>> } | null = null;
-
-async function datosDeBc(desde: string) {
-  // El cache solo sirve si cubre un rango igual o MÁS viejo que el que se pide; si no,
-  // faltarían facturas y algo aparecería como no registrado sin serlo.
-  if (cacheBc && Date.now() - cacheBc.t < CACHE_MS && cacheBc.desde <= desde) {
-    return { facturas: cacheBc.facturas, proveedores: cacheBc.proveedores };
-  }
-  const [facturas, proveedores] = await Promise.all([
-    bcFacturasCompra(desde),
-    bcProveedoresConCedula(),
-  ]);
-  cacheBc = { t: Date.now(), desde, facturas, proveedores };
-  return { facturas, proveedores };
-}
 
 export async function POST() {
   const buzon = estadoBuzon();
@@ -134,7 +112,7 @@ async function correr(buzon: ReturnType<typeof estadoBuzon>, emitir: (o: unknown
       const masVieja = comprobantes.map((c) => c.fecha).filter(Boolean).sort()[0] ?? "";
       const desde = /^\d{4}-\d{2}-\d{2}$/.test(masVieja) ? corre(masVieja, -30) : "2025-11-01";
 
-      const { facturas, proveedores } = await datosDeBc(desde);
+      const { facturas, proveedores } = await facturasYProveedoresDeBc(desde);
       emitir({ fase: "cotejo", hechos: 0, total: pendientes.length });
       const cruce = cruzar(comprobantes, facturas, proveedores);
 
