@@ -74,7 +74,8 @@ export async function GET(req: NextRequest) {
       if (!mirar.length) continue;
       const c = candidatosDeFactura(
         {
-          consecutivo: f.consecutivo, cedulaEmisor: f.cedulaEmisor, nombreEmisor: f.nombreEmisor,
+          consecutivo: f.consecutivo, tipoDoc: f.tipoDoc,
+          cedulaEmisor: f.cedulaEmisor, nombreEmisor: f.nombreEmisor,
           fecha: f.fechaEmision, total: f.total, moneda: f.moneda,
         },
         mirar, proveedores, { yaEnlazadas: enlazadas },

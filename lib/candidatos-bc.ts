@@ -27,6 +27,8 @@ import { estaRegistrada, normalizarNumero, soloDigitos } from "./vigilancia-fact
 
 export type ComprobanteBuscado = {
   consecutivo: string;
+  /** "01" factura · "02" ND · "03" NC · "04" tiquete · "08" FEC · "10" recibo de pago. */
+  tipoDoc?: string;
   cedulaEmisor: string;
   nombreEmisor: string;
   fecha: string;      // YYYY-MM-DD
@@ -129,6 +131,23 @@ export function parecidoDeNumero(consecutivo: string, numeroBc: string): { punto
   return null;
 }
 
+// QUÉ COMPROBANTES PUEDEN SER UNA FACTURA DE COMPRA DE BC.
+//
+// Una NOTA DE CRÉDITO (03) no se registra como factura: en BC es un abono, otro
+// documento con su propia numeración. Un RECIBO ELECTRÓNICO DE PAGO (10) tampoco.
+// Ofrecerles una factura como candidata es un falso positivo garantizado, y salía:
+// en tres semanas de buzón real, 3 de las 47 propuestas eran notas de crédito a las
+// que se les ofrecía la factura de otra cosa del mismo proveedor.
+//
+// El resto sí puede: la factura electrónica (01), el tiquete (04), la factura de
+// compra (08) y la de exportación (09) son compras, y la nota de DÉBITO (02) se
+// digita como una factura más.
+const PUEDEN_SER_FACTURA = new Set(["01", "02", "04", "08", "09"]);
+
+/** El tipo sale del consecutivo si no viene aparte (posiciones 9 y 10). */
+const tipoDe = (c: ComprobanteBuscado): string =>
+  (c.tipoDoc ?? "").trim() || soloDigitos(c.consecutivo).slice(8, 10);
+
 /**
  * Las facturas de BC que PODRÍAN ser este comprobante, de la más probable a la menos.
  *
@@ -141,6 +160,8 @@ export function candidatosDeFactura(
   proveedores: ProveedorBc[],
   opts: { yaEnlazadas?: Set<string>; ventanaDias?: number; max?: number } = {},
 ): Candidato[] {
+  if (!PUEDEN_SER_FACTURA.has(tipoDe(comprobante))) return [];
+
   const ventana = opts.ventanaDias ?? VENTANA;
   const tope = opts.max ?? MAX;
   const usadas = opts.yaEnlazadas ?? new Set<string>();
@@ -176,12 +197,18 @@ export function candidatosDeFactura(
     const razones: string[] = [];
     let puntaje = 0;
 
+    // EL MONTO ES REQUISITO, el parecido del número es solo un bono. Al revés —dejar
+    // que un número parecido metiera en la lista a una factura con el monto
+    // disparatado— daba los peores falsos positivos del buzón real: a un comprobante
+    // de ₡5.400 se le ofrecía una factura de ₡17.040 porque el "1084" se parecía al
+    // "1034", y a uno de ₡465.560 una de ₡67.800 por el "7488" contra el "7428".
+    // Además es redundante: si el número calzara de verdad, el cotejo automático ya
+    // la habría encontrado sin pasar por acá.
     if (abs <= IGUAL) { puntaje += 50; razones.push("el monto es idéntico"); }
     else if (abs <= BANDA(comprobante.total)) {
       puntaje += 30;
       razones.push(`el monto difiere en ${difMonto > 0 ? "" : "−"}${abs.toFixed(2)}`);
-    } else if (!numero) {
-      // Monto lejos y número que no se parece: no hay nada que lo ponga en la lista.
+    } else {
       continue;
     }
 

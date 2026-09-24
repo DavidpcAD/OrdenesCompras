@@ -244,7 +244,8 @@ async function buscarCandidatos(f: FacturaCorreo): Promise<{ lista: Candidato[];
     return {
       lista: candidatosDeFactura(
         {
-          consecutivo: f.consecutivo, cedulaEmisor: f.cedulaEmisor, nombreEmisor: f.nombreEmisor,
+          consecutivo: f.consecutivo, tipoDoc: f.tipoDoc,
+          cedulaEmisor: f.cedulaEmisor, nombreEmisor: f.nombreEmisor,
           fecha: f.fechaEmision, total: f.total, moneda: f.moneda,
         },
         facturas, proveedores, { yaEnlazadas: enlazadas },

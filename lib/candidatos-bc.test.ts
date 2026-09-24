@@ -138,6 +138,48 @@ test("fuera de la ventana de días no aparece", () => {
   assert.equal(c.length, 0);
 });
 
+test("el monto es REQUISITO: un número parecido no mete a una factura de otro monto", () => {
+  // Los dos peores falsos positivos del buzón real, en tres semanas: a un comprobante
+  // de ₡5.400 se le ofrecía una de ₡17.040 porque el 1084 se parece al 1034, y a uno
+  // de ₡465.560 una de ₡67.800 por el 7488 contra el 7428. El parecido del número es
+  // un bono, no un pase: si el número calzara de verdad, el cotejo automático ya la
+  // habría encontrado antes de llegar acá.
+  const parecida = f("CFR-077777", "319867", "PROV-000694", "HOLCIM S.A.", "2026-09-01", 17040);
+  const c = candidatosDeFactura(comp({
+    consecutivo: "00100001010000319868", cedulaEmisor: "3101021049",
+    nombreEmisor: "HOLCIM (COSTA RICA) S.A.", fecha: "2026-09-01", total: 5400,
+  }), [parecida], PROVEEDORES);
+  assert.equal(c.length, 0);
+});
+
+test("una NOTA DE CRÉDITO no recibe facturas como candidatas", () => {
+  // En BC una NC es un abono, no una factura de compra: ofrecerle una factura del
+  // mismo proveedor es un falso positivo garantizado. En tres semanas de buzón real,
+  // 3 de las 47 propuestas eran esto.
+  const c = candidatosDeFactura(comp({
+    consecutivo: "00100001030000000095", tipoDoc: "03", cedulaEmisor: "3101037215",
+    nombreEmisor: "Industrias Brenes S.A", fecha: "2026-09-04", total: 8441.10,
+  }), TODAS, PROVEEDORES);
+  assert.equal(c.length, 0);
+});
+
+test("el tipo se saca del consecutivo si no viene aparte", () => {
+  // Las posiciones 9 y 10 del consecutivo son el tipo de documento.
+  const c = candidatosDeFactura(comp({
+    consecutivo: "00100001030000000095", cedulaEmisor: "3101037215",
+    nombreEmisor: "Industrias Brenes S.A", fecha: "2026-09-04", total: 8441.10,
+  }), TODAS, PROVEEDORES);
+  assert.equal(c.length, 0);
+});
+
+test("una nota de DÉBITO sí, que se digita como una factura más", () => {
+  const c = candidatosDeFactura(comp({
+    consecutivo: "00100001020000000589", tipoDoc: "02", cedulaEmisor: "3101037215",
+    nombreEmisor: "Industrias Brenes S.A", fecha: "2026-09-04", total: 8441.10,
+  }), TODAS, PROVEEDORES);
+  assert.ok(c.length > 0);
+});
+
 // --- el parecido de números ------------------------------------------------
 
 test("reconoce las cuatro formas de teclear mal un número", () => {
