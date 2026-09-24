@@ -14,6 +14,7 @@ import {
   destinoLabel, destinoCodigo, ordenLineaPendiente, ordenLineaCompleta, ultimoPrecioProveedor,
   ordenPendienteResumen, devolverPendienteAPedidos, proveedorLabel,
   numeroOrden, etiquetaInterna, tieneBc, esConsumoDirecto, obraParaOrden, destinoDeRecepcion,
+  claseDestinoSolicitud, destinoSolicitudBadge, almacenesDeSolicitud,
   puedeDevolverLinea, motivoNoDevolver, ordenesDeLineaPedido, ordenEsBorradorDescartable,
   ordenAdmiteDevolucion, puedeDevolverLineaOrden, motivoNoDevolverLineaOrden, ordenQuedaSinMaterial,
   lineasACotizar, observacionesParaProveedor, motivoDevolucion, devolucionesDeRol,
@@ -490,6 +491,51 @@ test("obraParaOrden: sin tarea la obra NO viaja a la orden", () => {
   assert.equal(obraParaOrden({ proyecto: "VN-L.20", taskNo: "2.2" }), "VN-L.20");
   assert.equal(obraParaOrden({ proyecto: "F-MAD-NUE" }), "");
   assert.equal(obraParaOrden({}), "");
+});
+
+// ---- ALM o CD: el tag del pedido ----------------------------------------------
+// Es lo que Ingeniería elige con el botón "Destino del material" y lo que Proveeduría
+// necesita ver de un vistazo: lo de almacén lo recibe Bodega y sube el stock; lo de
+// consumo directo se carga contra la obra. No hay columna en la base, se deriva de la
+// tarea — igual que lo hace la app de Producción.
+const ln = (taskNo?: string, almacen = "") => ({ taskNo, almacen } as any);
+
+test("claseDestinoSolicitud: sin tarea en ninguna línea es de almacén", () => {
+  assert.equal(claseDestinoSolicitud({ lineas: [ln(), ln(undefined, "ALM-GRAL")] }), "almacen");
+});
+
+test("claseDestinoSolicitud: con tarea en todas es consumo directo", () => {
+  assert.equal(claseDestinoSolicitud({ lineas: [ln("2.2"), ln("3.1")] }), "directo");
+});
+
+test("claseDestinoSolicitud: una de cada una es mixta, y se dice", () => {
+  // El botón de Ingeniería es por pedido, pero el dato vive por línea. Si alguna vez
+  // llegan las dos clases juntas, escoger una sería mentir a medias.
+  assert.equal(claseDestinoSolicitud({ lineas: [ln("2.2"), ln()] }), "mixta");
+});
+
+test("claseDestinoSolicitud: un pedido sin líneas no revienta", () => {
+  assert.equal(claseDestinoSolicitud({ lineas: [] }), "almacen");
+});
+
+test("una obra sin tarea NO convierte el pedido en consumo directo", () => {
+  // Es el error que costó los pedidos trabados: un pedido para stock igual dice para
+  // qué obra es.
+  assert.equal(claseDestinoSolicitud({ lineas: [{ proyecto: "VN-L.20", almacen: "ALM-GRAL" } as any] }), "almacen");
+});
+
+test("almacenesDeSolicitud: junta los almacenes sin repetir y sin los de consumo", () => {
+  const p = { lineas: [ln(undefined, "ALM-GRAL"), ln(undefined, "ALM-GRAL"), ln(undefined, "F-AGREGADO"), ln("2.2", "VN-L.20")] };
+  assert.deepEqual(almacenesDeSolicitud(p), ["ALM-GRAL", "F-AGREGADO"]);
+});
+
+test("destinoSolicitudBadge: cada clase trae su rótulo y su explicación", () => {
+  assert.equal(destinoSolicitudBadge("almacen").label, "Almacén");
+  assert.equal(destinoSolicitudBadge("directo").label, "Consumo directo");
+  assert.equal(destinoSolicitudBadge("mixta").label, "Mixta");
+  for (const c of ["almacen", "directo", "mixta"] as const) {
+    assert.ok(destinoSolicitudBadge(c).ayuda.length > 20, `${c} sin explicación`);
+  }
 });
 
 // ---- a dónde fue el material de una factura ------------------------------------

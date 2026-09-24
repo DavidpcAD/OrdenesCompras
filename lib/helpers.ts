@@ -300,6 +300,71 @@ export function esConsumoDirecto(l: Pick<PedidoLinea, "taskNo">): boolean {
   return !!(l.taskNo ?? "").trim();
 }
 
+// ¿ESTE PEDIDO ES PARA ALMACÉN O PARA CONSUMO DIRECTO?
+//
+// Ingeniería lo elige con el botón "Destino del material · ALM | CD" al armar el
+// pedido, y son dos flujos distintos para Proveeduría:
+//   · ALMACÉN: el material entra al inventario del almacén elegido y se consume
+//     después. Bodega lo recibe y el stock sube.
+//   · CONSUMO DIRECTO: se carga contra la obra y su tarea. BC lo mete al presupuesto
+//     del proyecto y el inventario NO sube.
+//
+// No hay columna que lo diga: la app de Producción tampoco la tiene y lo DERIVA de
+// la tarea, igual que acá (`lineas.some(l => !!l.taskNo)`, verificado en su repo).
+// Un pedido para stock igual dice para qué obra es, así que la obra sola no alcanza
+// — lo que manda es la tarea. Ver `esConsumoDirecto`.
+//
+// "Mixta" existe porque el dato es POR LÍNEA aunque el botón sea por pedido: si
+// alguna vez llegan las dos cosas juntas, la pantalla lo dice en vez de escoger una
+// y mentir a medias.
+export type ClaseDestino = "almacen" | "directo" | "mixta";
+
+export function claseDestinoSolicitud(p: Pick<Pedido, "lineas">): ClaseDestino {
+  const lineas = p.lineas ?? [];
+  if (!lineas.length) return "almacen";
+  const cd = lineas.filter(esConsumoDirecto).length;
+  return cd === 0 ? "almacen" : cd === lineas.length ? "directo" : "mixta";
+}
+
+export function destinoSolicitudBadge(c: ClaseDestino): { label: string; tone: string; ayuda: string } {
+  if (c === "directo") {
+    return {
+      // Verde no por "está bien" sino como COLOR DE CATEGORÍA, igual que el verde de
+      // "Material" en la columna de al lado. No se usa `blueish` —que sería el tono
+      // del consumo de obra en el resto de la app— porque en este DS `blueish` está
+      // definido idéntico a `gray`, y entonces "Almacén" y "Consumo directo" se veían
+      // iguales, que es justo lo que había que resolver. Inventar un azul no es opción:
+      // la paleta del DS no lo tiene.
+      label: "Consumo directo",
+      tone: "green",
+      ayuda: "Se carga contra la obra y su tarea: BC lo suma al presupuesto del proyecto y el inventario no sube.",
+    };
+  }
+  if (c === "mixta") {
+    return {
+      label: "Mixta",
+      tone: "yellow",
+      ayuda: "Tiene líneas de las dos clases: unas entran al almacén y otras se consumen contra la obra.",
+    };
+  }
+  return {
+    label: "Almacén",
+    tone: "gray",
+    ayuda: "Entra al inventario del almacén elegido y se consume después.",
+  };
+}
+
+/** Los almacenes a los que entra el material de un pedido, sin repetir. */
+export function almacenesDeSolicitud(p: Pick<Pedido, "lineas">): string[] {
+  const out = new Set<string>();
+  for (const l of p.lineas ?? []) {
+    if (esConsumoDirecto(l)) continue;      // en consumo directo el almacén es el de la obra
+    const a = (l.almacen ?? "").trim();
+    if (a) out.add(a);
+  }
+  return [...out];
+}
+
 // La obra que la línea le pasa a la ORDEN (Job No. de BC): solo la del consumo
 // directo. Sin tarea, la obra de la solicitud es informativa y el material entra al
 // almacén. Proveeduría siempre puede asignar obra+tarea a mano en la orden.

@@ -9,7 +9,7 @@ import { useStore } from "@/lib/store";
 import { useVolver } from "@/lib/use-volver";
 import { useVariantes } from "@/lib/use-variantes";
 import { codigoDeItem } from "@/lib/unidad";
-import { formatDate, num, pedidoBadge, pedidoLineaPendiente, recibidoDeLineaPedido, destinoCodigo, destinoLabel, tipoSolicitudBadge, esConsumoDirecto, puedeDevolverLinea, motivoNoDevolver, ordenesDeLineaPedido, estadoDeDevolucion, correccionDeSolicitud, ordenDeDevolucion, numeroOrden, motivoDeCierreSolicitud, comentarioDeSolicitud } from "@/lib/helpers";
+import { formatDate, num, pedidoBadge, pedidoLineaPendiente, recibidoDeLineaPedido, destinoCodigo, destinoLabel, tipoSolicitudBadge, esConsumoDirecto, claseDestinoSolicitud, destinoSolicitudBadge, almacenesDeSolicitud, puedeDevolverLinea, motivoNoDevolver, ordenesDeLineaPedido, estadoDeDevolucion, correccionDeSolicitud, ordenDeDevolucion, numeroOrden, motivoDeCierreSolicitud, comentarioDeSolicitud } from "@/lib/helpers";
 
 // Por qué se archiva una solicitud, en las palabras del oficio. Es un Select y no
 // un campo libre a propósito: el motivo es LA razón de ser del cierre, y con una
@@ -80,6 +80,12 @@ export default function ProveeduriaPedidoDetallePage() {
   }
   const b = pedidoBadge(pedido.estado);
   const t = tipoSolicitudBadge(pedido.tipoSolicitud);
+  // ALM o CD: a dónde entra el material. Va en el encabezado porque cambia el flujo
+  // entero —lo de almacén lo recibe Bodega y sube el stock; lo de consumo directo se
+  // carga contra la obra— y hasta ahora solo se podía deducir mirando línea por línea
+  // si traían tarea.
+  const dest = destinoSolicitudBadge(claseDestinoSolicitud(pedido));
+  const almacenes = almacenesDeSolicitud(pedido);
   const total = pedido.lineas.reduce((s, l) => s + l.cantidad, 0);
   const rec = pedido.lineas.reduce((s, l) => s + recibidoDeLineaPedido(ordenes, l.id), 0);
   const pct = total > 0 ? Math.round(Math.min(100, (rec / total) * 100)) : 0;
@@ -185,9 +191,13 @@ export default function ProveeduriaPedidoDetallePage() {
             <div className="row gap-3">
               <h1 className="ds-heading">{pedido.numero}</h1>
               <Badge tone={t.tone}>{t.label}</Badge>
+              <span title={dest.ayuda}><Badge tone={dest.tone}>{dest.label}</Badge></span>
               <Badge tone={b.tone}>{b.label}</Badge>
             </div>
-            <p className="ds-muted">{destinoCodigo(pedido)} · {destinoLabel(pedido)} · {pedido.solicitante} · {formatDate(pedido.fecha)}</p>
+            <p className="ds-muted">
+              {destinoCodigo(pedido)} · {destinoLabel(pedido)} · {pedido.solicitante} · {formatDate(pedido.fecha)}
+              {!!almacenes.length && ` · entra a ${almacenes.join(", ")}`}
+            </p>
           </div>
           <div className="row gap-3" style={{ alignItems: "center" }}>
             <div className="row gap-2" style={{ alignItems: "center" }}><QtyRing recibida={rec} total={total} /><span className="ds-body-sm ds-muted">entregado</span></div>

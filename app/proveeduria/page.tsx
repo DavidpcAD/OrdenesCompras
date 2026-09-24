@@ -9,7 +9,7 @@ import { DestinoLinea } from "@/components/destino-linea";
 import { VistaToggle } from "@/components/vista-toggle";
 import { IconChevronLeft, IconEye, IconReceipt, IconList } from "@/components/icons";
 import { useStore } from "@/lib/store";
-import { destinoLabel, destinoCodigo, esConsumoDirecto, formatDate, money, num, obraParaOrden, pedidoLineaPendiente, solicitudResumen, tipoSolicitudBadge, estadoDeDevolucion } from "@/lib/helpers";
+import { destinoLabel, destinoCodigo, esConsumoDirecto, formatDate, money, num, obraParaOrden, pedidoLineaPendiente, solicitudResumen, tipoSolicitudBadge, estadoDeDevolucion, claseDestinoSolicitud, destinoSolicitudBadge } from "@/lib/helpers";
 import { useVariantes } from "@/lib/use-variantes";
 
 interface Row {
@@ -448,6 +448,9 @@ export default function ProveeduriaMaterialesPage() {
         <Modal title={`${preview.numero} · ${solicitudResumen(preview).principal}`} onClose={() => setPreviewId(null)}>
           <div className="row gap-3" style={{ marginBottom: 12 }}>
             {(() => { const t = tipoSolicitudBadge(preview.tipoSolicitud); return <Badge tone={t.tone}>{t.label}</Badge>; })()}
+            {/* ALM o CD: acá se está decidiendo qué se ordena, y el flujo cambia según
+                si el material entra a bodega o se consume contra la obra. */}
+            {(() => { const d = destinoSolicitudBadge(claseDestinoSolicitud(preview)); return <span title={d.ayuda}><Badge tone={d.tone}>{d.label}</Badge></span>; })()}
             <span className="ds-muted ds-label">{preview.solicitante}</span>
           </div>
           <div className="ds-table-wrap" style={{ boxShadow: "none", border: "1.5px solid var(--ds-color-gray-100)" }}>

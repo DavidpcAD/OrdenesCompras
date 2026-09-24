@@ -7,7 +7,7 @@ import { Badge, FiltroChip, QtyRing } from "@/components/ui";
 import { DataTable } from "@/components/data-table";
 import { useStore } from "@/lib/store";
 import { useFiltroPantalla } from "@/lib/use-filtro-pantalla";
-import { formatDate, pedidoCompraBadge, pedidoOrdenadoPct, ordenesPorPedido, recibidoPorLineaPedido, destinoCodigo, destinoLabel, tipoSolicitudBadge, comentarioDeSolicitud } from "@/lib/helpers";
+import { formatDate, pedidoCompraBadge, pedidoOrdenadoPct, ordenesPorPedido, recibidoPorLineaPedido, destinoCodigo, destinoLabel, tipoSolicitudBadge, comentarioDeSolicitud, claseDestinoSolicitud, destinoSolicitudBadge, almacenesDeSolicitud } from "@/lib/helpers";
 import { useVariantes } from "@/lib/use-variantes";
 import type { Pedido } from "@/lib/types";
 
@@ -66,6 +66,33 @@ export function ComprasSolicitudes() {
   const columns = useMemo<ColumnDef<Pedido, any>[]>(() => [
     { id: "num", header: "N.º", accessorFn: (p) => p.numero, meta: { label: "N.º" }, cell: (c) => <span className="ds-strong">{c.getValue()}</span> },
     { id: "tipo", header: "Tipo", accessorFn: (p) => tipoSolicitudBadge(p.tipoSolicitud).label, meta: { label: "Tipo" }, cell: (c) => { const t = tipoSolicitudBadge(c.row.original.tipoSolicitud); return <Badge tone={t.tone}>{t.label}</Badge>; } },
+    {
+      // A DÓNDE ENTRA EL MATERIAL, que es otra cosa que PARA QUÉ OBRA es (la columna
+      // de al lado). Ingeniería lo elige con el botón ALM/CD al armar el pedido y
+      // para Proveeduría son dos flujos: lo de almacén lo recibe Bodega y sube el
+      // stock; lo de consumo directo se carga contra la obra y el stock no se mueve.
+      // No hay columna en la base que lo diga: se deriva de la tarea de las líneas.
+      id: "entraA", header: "Entra a", meta: { label: "Entra a" },
+      accessorFn: (p) => {
+        const d = destinoSolicitudBadge(claseDestinoSolicitud(p));
+        return [d.label, ...almacenesDeSolicitud(p)].join(" ");
+      },
+      cell: (c) => {
+        const p = c.row.original;
+        const d = destinoSolicitudBadge(claseDestinoSolicitud(p));
+        const almacenes = almacenesDeSolicitud(p);
+        return (
+          <div title={d.ayuda}>
+            <Badge tone={d.tone}>{d.label}</Badge>
+            {!!almacenes.length && (
+              <div className="ds-muted ds-body-sm ds-truncate" style={{ maxWidth: 140, marginTop: 2 }}>
+                {almacenes.join(" · ")}
+              </div>
+            )}
+          </div>
+        );
+      },
+    },
     {
       id: "obra", header: "Destino", accessorFn: (p) => `${destinoCodigo(p)} ${destinoLabel(p)}`.trim(), meta: { label: "Destino" },
       cell: (c) => { const p = c.row.original; return <div><div className="ds-strong ds-body-sm">{destinoCodigo(p)}</div><div className="ds-muted ds-body-sm ds-truncate" style={{ maxWidth: 160 }} title={destinoLabel(p)}>{destinoLabel(p)}</div></div>; },
