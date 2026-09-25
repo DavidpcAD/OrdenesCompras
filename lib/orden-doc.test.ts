@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { documentoDeOrden } from "./orden-doc.ts";
+import { documentoDeOrden, destinoLineaDoc, obraLineaDoc } from "./orden-doc.ts";
 import type { Orden, OrdenLinea } from "./types.ts";
 
 // El papel que sale hacia AFUERA, el que firma el proveedor. Lo que se prueba acá es
@@ -36,4 +36,18 @@ test("documentoDeOrden: con IVA manda la tasa de la línea que lo cobra", () => 
 // Sin líneas no hay tasa que leer: ahí el 13 sigue siendo el default de la casa.
 test("documentoDeOrden: sin líneas queda el default de 13%", () => {
   assert.equal(documentoDeOrden(orden([])).ivaPct, 13);
+});
+
+// LA CASA en el papel. El proveedor que además instala ("CALENTADOR … CON INSTALACION
+// INCLUIDA") necesita saber a qué casa va: con el almacén solo, la orden le llegaba
+// diciendo "ALM-GRAL" y nada más.
+test("obraLineaDoc: la casa va debajo del almacén, y no se repite", () => {
+  // Compra a almacén pedida para una casa: se imprimen las dos cosas.
+  assert.equal(destinoLineaDoc({ almacen: "ALM-GRAL", obraSolicitud: "VN-K.21" } as OrdenLinea), "ALM-GRAL");
+  assert.equal(obraLineaDoc({ almacen: "ALM-GRAL", obraSolicitud: "VN-K.21" } as OrdenLinea), "VN-K.21");
+  // Consumo directo: en BC el almacén de la obra tiene el MISMO código que el
+  // proyecto, así que repetirlo abajo sería imprimir dos veces lo mismo.
+  assert.equal(obraLineaDoc({ almacen: "VN-L.20", proyecto: "VN-L.20", taskNo: "2.2" } as OrdenLinea), "");
+  // Sin casa no hay segundo renglón.
+  assert.equal(obraLineaDoc({ almacen: "ALM-GRAL" } as OrdenLinea), "");
 });

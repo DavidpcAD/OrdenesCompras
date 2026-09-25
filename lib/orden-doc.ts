@@ -28,6 +28,20 @@ export function destinoLineaDoc(l: OrdenLinea): string {
   return l.almacen || l.proyecto || "";
 }
 
+// LA CASA de la línea, para el renglón de abajo de la columna "Almacén / Obra".
+//
+// El almacén dice a dónde lo lleva; la obra dice PARA CUÁL es, y no siempre son lo
+// mismo: la compra que entra a ALM-GRAL igual se pidió para una casa. Al proveedor
+// que además instala esa es LA dirección del trabajo, y sin ella la orden salía
+// diciendo solo "ALM-GRAL".
+//
+// Vacío cuando ya es el destino impreso: no se repite el mismo código dos veces.
+export function obraLineaDoc(l: OrdenLinea): string {
+  const destino = destinoLineaDoc(l);
+  const casa = (l.obraSolicitud || l.proyecto || "").trim();
+  return casa && casa !== destino ? casa : "";
+}
+
 // BC imprime la DESCRIPCIÓN de la unidad ("ESTAÑON"), no el código ("EST"): es lo
 // que el proveedor lee y reconoce. Si no tenemos la descripción (BC caído o unidad
 // nueva), va el código — nunca queda en blanco.

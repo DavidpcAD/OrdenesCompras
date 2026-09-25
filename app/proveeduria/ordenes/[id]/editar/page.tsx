@@ -9,7 +9,7 @@ import { IconWarning } from "@/components/icons";
 import { Combobox } from "@/components/combobox";
 import { CampoMaquina, RepartoMaquinasModal, nombreDeMaquina, useMaquinasBc } from "@/components/maquina-linea";
 import { useStore } from "@/lib/store";
-import { etiquetaTipoLinea, money, num, ordenEsDirecta, ordenEsperaCorreccion, lineasCorregidasDeOrden, ordenLineaImporte, ordenPedidos, almacenesParaRecepcion, esAlmacenFisico, repartoDeLineaSolicitud, pedidoLineaPendiente, obraParaOrden, ultimoPrecioProveedor, monedaApp, numeroOrden, MONEDAS } from "@/lib/helpers";
+import { etiquetaTipoLinea, money, num, ordenEsDirecta, ordenEsperaCorreccion, lineasCorregidasDeOrden, ordenLineaImporte, ordenPedidos, almacenesParaRecepcion, esAlmacenFisico, repartoDeLineaSolicitud, pedidoLineaPendiente, obraDeLinea, obraParaOrden, ultimoPrecioProveedor, monedaApp, numeroOrden, MONEDAS } from "@/lib/helpers";
 import { precioEnUnidad, precioEntreUnidades, cantidadEntreUnidades, equivalencia, equivalenciaDeUnidad, mismaMoneda, codigoDeItem, opcionesDeUnidad, type UnidadDeItem, type PrecioRef } from "@/lib/unidad";
 import { useVariantes } from "@/lib/use-variantes";
 import type { LineaDeMaquina } from "@/lib/maquinas";
@@ -24,7 +24,7 @@ import type { OrdenLinea } from "@/lib/types";
 // porque esta pantalla REESCRIBE el pedido en BC con lo que haya acá: un Row sin
 // máquina significa que reabrir y guardar una orden le borra la máquina a la línea
 // —en el SQL y en BC—, que es peor que no tener el campo.
-interface Row { key: string; tipo: OrdenLinea["tipo"]; articuloId: string; variantCode?: string; descripcion: string; unidad: string; unidadBase?: string; factorCompra?: number; almacen: string; cantidad: string; precio: string; iva: string; descuento: string; proyecto?: string; taskNo?: string; maquinaNo?: string; maquinaNombre?: string; pedidoLineaId?: string; pedidoNumero?: string; }
+interface Row { key: string; tipo: OrdenLinea["tipo"]; articuloId: string; variantCode?: string; descripcion: string; unidad: string; unidadBase?: string; factorCompra?: number; almacen: string; cantidad: string; precio: string; iva: string; descuento: string; proyecto?: string; taskNo?: string; obraCasa?: string; maquinaNo?: string; maquinaNombre?: string; pedidoLineaId?: string; pedidoNumero?: string; }
 type Obra = { codigo: string; nombre: string };
 type Tarea = { jobTaskNo: string; descripcion: string; tipo: string };
 const uid = () => Math.random().toString(36).slice(2, 9);
@@ -41,6 +41,10 @@ const filasDeOrden = (lineas: OrdenLinea[]): Row[] =>
     unidadBase: l.unidadBase, factorCompra: l.factorCompra, almacen: l.almacen ?? "",
     cantidad: String(l.cantidad), precio: String(l.precioUnitario), iva: String(l.ivaPct ?? 13), descuento: String(l.descuentoPct ?? 0),
     proyecto: l.proyecto, taskNo: l.taskNo,
+    // LA CASA de la solicitud de origen: se MUESTRA y no se guarda (no es Job No.,
+    // no viaja a BC). Sin esto, la obra que eligió el ingeniero para una compra de
+    // almacén desaparecía de la pantalla apenas la orden existía.
+    obraCasa: l.obraSolicitud,
     // La MÁQUINA de la línea entra igual que la obra: lo que no se copie acá se
     // pierde al guardar (ver el comentario del Row). El nombre es solo rótulo; si la
     // orden viene del SQL no lo trae y se resuelve contra el parque de BC.
@@ -555,6 +559,8 @@ export default function EditarOrdenPage() {
       almacen: l.almacen,
       cantidad: String(pend), precio: String(hist ?? 0), iva: "13", descuento: "0",
       proyecto: obra || undefined, taskNo: obra ? (l.taskNo || undefined) : undefined,
+      // La casa se MUESTRA aunque la obra no viaje a BC: son dos cosas distintas.
+      obraCasa: obraDeLinea(p, l) || undefined,
       pedidoLineaId: l.id, pedidoNumero: p.numero,
     }]);
     if (obra) cargarTareas(obra);
@@ -968,7 +974,7 @@ export default function EditarOrdenPage() {
                         const alm = almacen || r.almacen || "";
                         return <DestinoLinea
                           almacen={alm} almacenNombre={nombreAlmacen(alm)}
-                          obra={r.proyecto} obraNombre={nombreObra(r.proyecto ?? "")}
+                          obra={r.proyecto} obraNombre={nombreObra(r.proyecto ?? "")} obraInformativa={r.obraCasa}
                           tarea={r.taskNo} tareaNombre={nombreTarea(r.proyecto ?? "", r.taskNo ?? "")}
                           maquina={r.maquinaNo} maquinaNombre={nombreMaquina(r.maquinaNo ?? "", r.maquinaNombre)} />;
                       })()}

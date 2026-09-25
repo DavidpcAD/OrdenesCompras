@@ -9,7 +9,7 @@ import { DestinoLinea } from "@/components/destino-linea";
 import { VistaToggle } from "@/components/vista-toggle";
 import { IconChevronLeft, IconEye, IconReceipt, IconList } from "@/components/icons";
 import { useStore } from "@/lib/store";
-import { destinoLabel, destinoCodigo, esConsumoDirecto, formatDate, money, num, obraParaOrden, pedidoLineaPendiente, solicitudResumen, tipoSolicitudBadge, estadoDeDevolucion, claseDestinoSolicitud, destinoSolicitudBadge } from "@/lib/helpers";
+import { destinoLabel, destinoCodigo, esConsumoDirecto, formatDate, money, num, obraDeLinea, obraParaOrden, pedidoLineaPendiente, solicitudResumen, tipoSolicitudBadge, estadoDeDevolucion, claseDestinoSolicitud, destinoSolicitudBadge } from "@/lib/helpers";
 import { useVariantes } from "@/lib/use-variantes";
 
 interface Row {
@@ -33,6 +33,10 @@ interface Row {
   proyecto: string;
   taskNo: string;
   taskDescr: string;
+  // LA CASA para la que se pidió, aunque el material entre al almacén y la obra no
+  // viaje a BC. Va aparte de `proyecto` justamente porque esa se vacía cuando no hay
+  // tarea, y con ella se vaciaba también lo que se veía en pantalla (`obraDeLinea`).
+  obraCasa: string;
   pendiente: number;
   incluir: boolean;
   cantidad: string;
@@ -72,6 +76,7 @@ export default function ProveeduriaMaterialesPage() {
           pedidoLineaId: l.id, articuloId: l.articuloId, variantCode: l.variantCode ?? "", descripcion: l.descripcion,
           unidad: l.unidad, almacen: l.almacen, pendiente: pend,
           proyecto: obraParaOrden(l), taskNo: l.taskNo ?? "", taskDescr: l.taskDescr ?? "",
+          obraCasa: obraDeLinea(p, l),
           incluir: false, cantidad: String(pend), precio: "0", iva: "13",
         });
       });
@@ -268,14 +273,19 @@ export default function ProveeduriaMaterialesPage() {
     // almacén, el almacén que eligió el ingeniero. El accessor devuelve el MISMO
     // texto que se ve para que el filtro y el orden de la columna coincidan.
     { id: "obra", header: "Destino",
-      accessorFn: (r) => (r.proyecto ? `Obra ${r.proyecto}${r.taskNo ? ` · tarea ${r.taskNo}` : ""}` : r.almacen || "—"),
+      // La obra entra en el texto del filtro AUNQUE la línea sea para almacén: buscar
+      // "VN-K.21" en esta columna tiene que traer todo lo de esa casa, que es
+      // justamente lo que se hace para armarle la orden.
+      accessorFn: (r) => (r.proyecto
+        ? `Obra ${r.proyecto}${r.taskNo ? ` · tarea ${r.taskNo}` : ""}`
+        : [r.almacen, r.obraCasa && `obra ${r.obraCasa}`].filter(Boolean).join(" · ") || "—"),
       meta: { label: "Destino" },
       // En BLOQUE, no en un renglón: "Obra F-METALES · tarea F-FOX" en una columna
       // angosta se partía en tres pedazos. Apilado, la obra y la tarea quedan cada
       // una en su renglón y la columna pide la mitad de ancho.
       cell: (c) => { const r = c.row.original; return (
         <div className="ds-body-sm" style={{ maxWidth: 160 }}>
-          <DestinoLinea almacen={r.almacen} obra={r.proyecto} tarea={r.taskNo} tareaNombre={r.taskDescr} />
+          <DestinoLinea almacen={r.almacen} obra={r.proyecto} obraInformativa={r.obraCasa} tarea={r.taskNo} tareaNombre={r.taskDescr} />
         </div>
       ); } },
     // Apagada de fábrica: su dato vive dentro de "A ordenar" (ver abajo). Sigue
@@ -462,7 +472,8 @@ export default function ProveeduriaMaterialesPage() {
                     <td><div className="ds-clamp-2" title={l.descripcion} style={{ maxWidth: 320, minWidth: 200 }}>{l.descripcion}</div></td>
                     <td className="ds-muted ds-body-sm">
                       <DestinoLinea inline almacen={l.almacen}
-                        obra={esConsumoDirecto(l) ? l.proyecto : ""} tarea={l.taskNo} tareaNombre={l.taskDescr} />
+                        obra={esConsumoDirecto(l) ? l.proyecto : ""} obraInformativa={obraDeLinea(preview, l)}
+                        tarea={l.taskNo} tareaNombre={l.taskDescr} />
                     </td>
                     <td className="ds-num">{num.format(l.cantidad)} {l.unidad}</td>
                     <td className="ds-num">{pedidoLineaPendiente(l) > 0 ? <span className="ds-pending-text">{num.format(pedidoLineaPendiente(l))}</span> : "0"}</td>

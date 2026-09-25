@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Button, EmptyState, Modal } from "@/components/ui";
 import { DestinoLinea } from "@/components/destino-linea";
 import { IconCheck } from "@/components/icons";
-import { esConsumoDirecto, num } from "@/lib/helpers";
+import { esConsumoDirecto, num, obraDeLinea } from "@/lib/helpers";
 import type { Pedido, PedidoLinea } from "@/lib/types";
 
 // Diálogo para SUMARLE a una orden líneas de solicitud que quedaron pendientes por
@@ -173,7 +173,8 @@ export function AgregarLineasSolicitud({
                   const ya = yaAgregada(l);
                   const destino = esConsumoDirecto(l)
                     ? `obra ${l.proyecto}, tarea ${l.taskNo}`
-                    : (l.almacen ? `almacén ${l.almacen}` : "sin almacén");
+                    : [l.almacen ? `almacén ${l.almacen}` : "sin almacén",
+                       obraDeLinea(p, l) && `para la obra ${obraDeLinea(p, l)}`].filter(Boolean).join(", ");
                   const etiqueta = `${l.articuloId} ${l.descripcion}${l.variantCode ? `, variante ${l.variantCode}` : ""}. Pendiente ${num.format(pend)} ${l.unidad}. Destino ${destino}. Solicitud ${p.numero}`;
                   return (
                     <div key={l.id} className={`rec-line addl-line${ya ? " is-ya" : ""}`}>
@@ -186,7 +187,8 @@ export function AgregarLineasSolicitud({
                           que entra el material (components/destino-linea.tsx). */}
                       <span className="addl-line__dest">
                         <DestinoLinea inline almacen={l.almacen}
-                          obra={esConsumoDirecto(l) ? l.proyecto : ""} tarea={l.taskNo} tareaNombre={l.taskDescr} />
+                          obra={esConsumoDirecto(l) ? l.proyecto : ""} obraInformativa={obraDeLinea(p, l)}
+                          tarea={l.taskNo} tareaNombre={l.taskDescr} />
                       </span>
                       <span className="rec-line__qty">
                         {/* En móvil no hay encabezado de columnas: el número tiene

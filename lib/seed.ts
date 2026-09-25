@@ -122,13 +122,13 @@ export const ordenes: Orden[] = [
     lineas: [
       { id: "ol1", tipo: "articulo", articuloId: "a1", pedidoLineaId: "seed", pedidoNumero: "PED-000101",
         descripcion: "CASCO DE SEGURIDAD DELTA PLUS BLANCO", cantidad: 20, unidad: "UND", almacen: "ALM-SSO",
-        precioUnitario: 8500, ivaPct: 13, cantidadRecibida: 20, cantidadFacturada: 20 },
+        obraSolicitud: "OBRA-003", precioUnitario: 8500, ivaPct: 13, cantidadRecibida: 20, cantidadFacturada: 20 },
       { id: "ol2", tipo: "articulo", articuloId: "a2", pedidoLineaId: "seed", pedidoNumero: "PED-000101",
         descripcion: "ZAPATO SEGURIDAD BESTBOY TALLA 42", cantidad: 24, unidad: "PAR", almacen: "ALM-SSO",
-        precioUnitario: 24500, ivaPct: 13, cantidadRecibida: 12, cantidadFacturada: 12 },
+        obraSolicitud: "OBRA-003", precioUnitario: 24500, ivaPct: 13, cantidadRecibida: 12, cantidadFacturada: 12 },
       { id: "ol3", tipo: "articulo", articuloId: "a3", pedidoLineaId: "seed", pedidoNumero: "PED-000101",
         descripcion: "ZAPATO SEGURIDAD AGATE TALLA 40", cantidad: 10, unidad: "PAR", almacen: "ALM-SSO",
-        precioUnitario: 23900, ivaPct: 13, cantidadRecibida: 0, cantidadFacturada: 0 },
+        obraSolicitud: "OBRA-003", precioUnitario: 23900, ivaPct: 13, cantidadRecibida: 0, cantidadFacturada: 0 },
       { id: "ol4", tipo: "cargo", descripcion: "FLETE / TRANSPORTE", cantidad: 1, unidad: "UND", almacen: "ALM-SSO",
         precioUnitario: 45000, ivaPct: 13, cantidadRecibida: 0, cantidadFacturada: 0 },
     ],
@@ -137,11 +137,16 @@ export const ordenes: Orden[] = [
     id: "ord2", numero: "CP-000863", proveedorId: "p3", fecha: "2026-06-12",
     currencyCode: "", estado: "pendiente_aprobacion", versionesArchivadas: 0,
     lineas: [
+      // `obraSolicitud` = la CASA para la que se pidió. Entra al almacén central (no
+      // es consumo directo, así que no lleva Job No.) y aun así la orden tiene que
+      // decir para qué obra es — ver components/destino-linea.tsx.
       { id: "o2l1", tipo: "articulo", articuloId: "a6", pedidoLineaId: "seed", pedidoNumero: "PED-000110",
         descripcion: "VARILLA #4 GRADO 40 (6m)", cantidad: 120, unidad: "UND", almacen: "ALM-CENTRAL",
+        obraSolicitud: "OBRA-001",
         precioUnitario: 4200, ivaPct: 13, cantidadRecibida: 0, cantidadFacturada: 0 },
       { id: "o2l2", tipo: "articulo", articuloId: "a7", pedidoLineaId: "seed", pedidoNumero: "PED-000110",
         descripcion: "CEMENTO GRIS 50KG", cantidad: 80, unidad: "SACO", almacen: "ALM-CENTRAL",
+        obraSolicitud: "OBRA-001",
         precioUnitario: 7800, ivaPct: 13, cantidadRecibida: 0, cantidadFacturada: 0 },
     ],
   },

@@ -13,7 +13,7 @@ import {
   ordenPedidos, ordenEsDirecta, money, pedidoOrdenadoPct, pedidoCompraBadge, pedidoTieneSaldo, ordenesPorPedido,
   destinoLabel, destinoCodigo, ordenLineaPendiente, ordenLineaCompleta, ultimoPrecioProveedor,
   ordenPendienteResumen, devolverPendienteAPedidos, proveedorLabel,
-  numeroOrden, etiquetaInterna, tieneBc, esConsumoDirecto, obraParaOrden, destinoDeRecepcion,
+  numeroOrden, etiquetaInterna, tieneBc, esConsumoDirecto, obraParaOrden, obraDeLinea, destinoDeRecepcion,
   claseDestinoSolicitud, destinoSolicitudBadge, almacenesDeSolicitud,
   puedeDevolverLinea, motivoNoDevolver, ordenesDeLineaPedido, ordenEsBorradorDescartable,
   ordenAdmiteDevolucion, puedeDevolverLineaOrden, motivoNoDevolverLineaOrden, ordenQuedaSinMaterial,
@@ -491,6 +491,25 @@ test("obraParaOrden: sin tarea la obra NO viaja a la orden", () => {
   assert.equal(obraParaOrden({ proyecto: "VN-L.20", taskNo: "2.2" }), "VN-L.20");
   assert.equal(obraParaOrden({ proyecto: "F-MAD-NUE" }), "");
   assert.equal(obraParaOrden({}), "");
+});
+
+// LA CASA: lo que se MUESTRA, que no es lo mismo que lo que viaja a BC. La línea de
+// arriba (F-MAD-NUE sin tarea) no lleva Job No. y aun así hay que decir para qué obra
+// se pidió — si no, Proveeduría arma la orden sin saber a qué casa va el material.
+test("obraDeLinea: la casa se ve aunque la obra no viaje a BC", () => {
+  const mat = { tipoSolicitud: "material" as const, obraCodigo: "VN-K.21" };
+  // Sin tarea: obraParaOrden la tapa, obraDeLinea la muestra.
+  assert.equal(obraDeLinea(mat, { proyecto: "VN-K.21" }), "VN-K.21");
+  assert.equal(obraDeLinea(mat, { proyecto: "VN-L.20" }), "VN-L.20"); // manda la de la línea
+  // Línea vieja sin obra propia: cae al encabezado de la solicitud.
+  assert.equal(obraDeLinea(mat, {}), "VN-K.21");
+  // "(varias)" es el rótulo que pone Producción cuando el pedido toca varias obras.
+  assert.equal(obraDeLinea({ tipoSolicitud: "material", obraCodigo: "(varias)" }, {}), "");
+  // En stock y repuesto el encabezado NO guarda una obra: en stock guarda el ALMACÉN.
+  assert.equal(obraDeLinea({ tipoSolicitud: "stock", obraCodigo: "ALM-GRAL" }, {}), "");
+  assert.equal(obraDeLinea({ tipoSolicitud: "repuesto", obraCodigo: "MAQ-0012" }, {}), "");
+  // Pero si la línea SÍ trae obra, se respeta sea cual sea el tipo.
+  assert.equal(obraDeLinea({ tipoSolicitud: "stock", obraCodigo: "ALM-GRAL" }, { proyecto: "VN-K.21" }), "VN-K.21");
 });
 
 // ---- ALM o CD: el tag del pedido ----------------------------------------------

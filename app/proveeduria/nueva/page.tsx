@@ -9,7 +9,7 @@ import { Combobox } from "@/components/combobox";
 import { IconCheck, IconWarning } from "@/components/icons";
 import { useStore } from "@/lib/store";
 import { leerBorrador, guardarBorrador, borrarBorrador, hace, type BorradorOrden } from "@/lib/borrador-orden";
-import { money, num, ultimoPrecioProveedor, almacenesParaRecepcion, esAlmacenFisico, pedidoLineaPendiente, repartoDeLineaSolicitud, obraParaOrden, monedaApp, numeroOrden, MONEDAS } from "@/lib/helpers";
+import { money, num, ultimoPrecioProveedor, almacenesParaRecepcion, esAlmacenFisico, pedidoLineaPendiente, repartoDeLineaSolicitud, obraDeLinea, obraParaOrden, monedaApp, numeroOrden, MONEDAS } from "@/lib/helpers";
 import { precioEnUnidad, precioEntreUnidades, cantidadEntreUnidades, equivalencia, equivalenciaDeUnidad, mismaMoneda, codigoDeItem, opcionesDeUnidad, type PrecioRef, type UnidadDeItem } from "@/lib/unidad";
 import { useVariantes } from "@/lib/use-variantes";
 import type { OrdenLinea } from "@/lib/types";
@@ -34,6 +34,11 @@ interface Row {
   proyecto: string;
   tarea: string;
   tareaDescr?: string;      // "Enchapes": la trae la solicitud, para no esperar a BC
+  // LA CASA para la que se pidió el material. Es de MOSTRAR: `proyecto` es lo que
+  // viaja a BC y se vacía si la línea no es consumo directo, así que sin este campo
+  // la obra que eligió el ingeniero desaparecía justo acá, armando la orden.
+  // Opcional porque los borradores guardados antes no la traen (ver borrador-orden).
+  obraCasa?: string;
 }
 
 // Obra (Job) y tarea (Job Task) de BC. OJO con los dos campos de destino, que NO
@@ -168,7 +173,7 @@ export default function ArmarOrdenPage() {
       let info: Partial<Row> = { pedidoNumero: "", articuloId: "", variantCode: "", descripcion: "", unidad: "", almacen: "", proyecto: "", tarea: "" };
       for (const p of pedidos) {
         const l = p.lineas.find((x) => x.id === b.pedidoLineaId);
-        if (l) { info = { pedidoNumero: p.numero, articuloId: l.articuloId, variantCode: l.variantCode ?? "", descripcion: l.descripcion, unidad: l.unidad, unidadBase: l.unidadBase, factorCompra: l.factorCompra, almacen: l.almacen, proyecto: obraParaOrden(l), tarea: l.taskNo ?? "", tareaDescr: l.taskDescr ?? "" }; break; }
+        if (l) { info = { pedidoNumero: p.numero, articuloId: l.articuloId, variantCode: l.variantCode ?? "", descripcion: l.descripcion, unidad: l.unidad, unidadBase: l.unidadBase, factorCompra: l.factorCompra, almacen: l.almacen, proyecto: obraParaOrden(l), tarea: l.taskNo ?? "", tareaDescr: l.taskDescr ?? "", obraCasa: obraDeLinea(p, l) }; break; }
       }
       return {
         key: filaUid(), pedidoLineaId: b.pedidoLineaId, ...info,
@@ -394,7 +399,7 @@ export default function ArmarOrdenPage() {
       key: filaUid(), pedidoNumero: p.numero, pedidoLineaId: l.id, articuloId: l.articuloId, variantCode: l.variantCode ?? "",
       descripcion: l.descripcion, unidad: l.unidad, unidadBase: l.unidadBase, factorCompra: l.factorCompra, almacen: l.almacen,
       cantidad: String(pend), precio: String(hist || 0), iva: "13", descuento: "0",
-      proyecto: obraParaOrden(l), tarea: l.taskNo ?? "", tareaDescr: l.taskDescr ?? "",
+      proyecto: obraParaOrden(l), tarea: l.taskNo ?? "", tareaDescr: l.taskDescr ?? "", obraCasa: obraDeLinea(p, l),
     }]);
   }
 
@@ -766,7 +771,7 @@ export default function ArmarOrdenPage() {
                     <td className="ds-body-sm">
                       <DestinoLinea
                         almacen={r.almacen} almacenNombre={nombreAlmacen(r.almacen)}
-                        obra={r.proyecto} obraNombre={nombreObra(r.proyecto)}
+                        obra={r.proyecto} obraNombre={nombreObra(r.proyecto)} obraInformativa={r.obraCasa}
                         tarea={r.tarea} tareaNombre={nombreTarea(r.proyecto, r.tarea) || r.tareaDescr} />
                       <button type="button" className="link-btn" onClick={() => { setEditObra(r); if (r.proyecto) cargarTareas(r.proyecto); }}>
                         {r.proyecto ? "Cambiar obra/tarea" : "Asignar obra"}

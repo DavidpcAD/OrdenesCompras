@@ -372,6 +372,31 @@ export function obraParaOrden(l: Pick<PedidoLinea, "proyecto" | "taskNo">): stri
   return esConsumoDirecto(l) ? (l.proyecto ?? "").trim() : "";
 }
 
+// LA CASA: la obra PARA la que se pidió la línea, entre o no al almacén.
+//
+// Es la hermana de `obraParaOrden` del otro lado: esa devuelve lo que VIAJA A BC (y
+// tapa la obra cuando no hay tarea, porque BC rechaza un Job No. sin Job Task No.);
+// esta devuelve lo que hay que MOSTRAR. Usar la de BC para pintar la pantalla es lo
+// que hacía desaparecer la casa: el ingeniero elegía la obra en cada tarjeta del
+// pedido, la columna Destino decía solo "ALM-GRAL" y Proveeduría armaba la orden sin
+// saber a qué casa era.
+//
+// El fallback al encabezado es para las líneas viejas (la app de Producción no
+// siempre escribió la obra por línea). Se excluye `stock` y `repuesto` porque en esos
+// el encabezado NO guarda una obra —en stock guarda el ALMACÉN, misma columna, otro
+// significado— y "(varias)" porque es el rótulo que pone Producción cuando el pedido
+// toca varias obras, no un código de obra.
+export function obraDeLinea(
+  p: Pick<Pedido, "tipoSolicitud" | "obraCodigo">,
+  l: Pick<PedidoLinea, "proyecto">,
+): string {
+  const propia = (l.proyecto ?? "").trim();
+  if (propia) return propia;
+  if (p.tipoSolicitud === "stock" || p.tipoSolicitud === "repuesto") return "";
+  const cab = (p.obraCodigo ?? "").trim();
+  return cab === "(varias)" ? "" : cab;
+}
+
 // A dónde fue lo que entró con una factura: CONSUMO DIRECTO de una obra —la línea
 // de la orden lleva Job No., BC la carga contra el presupuesto y el stock NO sube—
 // o entrada al ALMACÉN. Una misma factura puede traer las dos cosas, así que se

@@ -5,7 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import { useStore } from "@/lib/store";
 import { useOrden } from "@/lib/use-orden";
 import { num, formatDate, ordenLineaImporte, numeroOrden } from "@/lib/helpers";
-import { documentoDeOrden, destinoLineaDoc, etiquetaUnidad } from "@/lib/orden-doc";
+import { documentoDeOrden, destinoLineaDoc, obraLineaDoc, etiquetaUnidad } from "@/lib/orden-doc";
 import { useVariantes } from "@/lib/use-variantes";
 import { Button, Skeleton } from "@/components/ui";
 import { AdelanteMark } from "@/components/icons";
@@ -247,7 +247,15 @@ export default function ImprimirOrdenPage() {
           <tbody>
             {lineas.map((l) => (
               <tr key={l.id}>
-                <td style={{ whiteSpace: "nowrap", fontWeight: 600 }}>{l.tipo === "cargo" ? "—" : (destinoLinea(l) || "—")}</td>
+                {/* Almacén arriba y la CASA abajo: son dos datos distintos (a dónde
+                    lo lleva / para cuál es) y en una sola línea el renglón se salía
+                    de la columna. Ver obraLineaDoc. */}
+                <td style={{ whiteSpace: "nowrap" }}>
+                  <div style={{ fontWeight: 600 }}>{l.tipo === "cargo" ? "—" : (destinoLinea(l) || "—")}</div>
+                  {l.tipo !== "cargo" && obraLineaDoc(l) && (
+                    <div style={{ color: "var(--ds-color-gray-500)" }}>Obra {obraLineaDoc(l)}</div>
+                  )}
+                </td>
                 <td>
                   {l.descripcion}
                   {l.variantCode && <div style={{ color: "var(--ds-color-gray-500)" }}>Variante: {variantes.etiqueta(l.articuloId, l.variantCode)}</div>}

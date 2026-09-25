@@ -1107,13 +1107,32 @@ async function sellosDeOrdenes(idOrden?: number): Promise<Map<string, SellosOrde
   return out;
 }
 
+// LA CASA de una línea de orden: la obra que Ingeniería le puso a la línea de la
+// SOLICITUD de origen (dbo.PedidoCompraDet.obra).
+//
+// No sale de OrdenCompraDet.jobNo a propósito: ahí solo hay obra cuando la compra es
+// consumo directo. Una compra que entra al almacén igual se pidió PARA una casa, y esa
+// obra NO puede viajar como Job No. (BC rechaza una obra sin tarea, ver obrasSinTarea).
+// Así que se trae aparte, solo para mostrarla.
+//
+// El fallback al encabezado es para las líneas viejas, de cuando la app de Producción
+// todavía no escribía la obra por línea. Se excluye `stock` y `repuesto` porque ahí el
+// encabezado NO guarda una obra —en stock guarda el ALMACÉN, misma columna, otro
+// significado— y "(varias)" porque es el rótulo que pone Producción cuando el pedido
+// toca varias obras, no un código de obra.
+const SQL_OBRA_SOLICITUD = `CASE
+      WHEN LTRIM(RTRIM(ISNULL(pcd.obra,''))) <> '' THEN LTRIM(RTRIM(pcd.obra))
+      WHEN ISNULL(pc.tipoSolicitud,'material') NOT IN ('stock','repuesto')
+       AND LTRIM(RTRIM(ISNULL(pc.obra,''))) NOT IN ('','(varias)') THEN LTRIM(RTRIM(pc.obra))
+    END AS obraSolicitud`;
+
 export async function listOrdenes(): Promise<Orden[]> {
   await ensureEstados();
   const pool = await getPool();
   const h = await pool.request().query("SELECT * FROM dbo.OrdenCompra WHERE esEliminada = 0 ORDER BY idOrdenCompra DESC");
   // pedidoNumero se resuelve desde el vínculo idPedidoCompraDet → PedidoCompra.pedidoNo
   // (si no, la orden se veía siempre como "Directa" aunque naciera de un pedido).
-  const d = await pool.request().query(`SELECT det.*, pc.pedidoNo AS pedidoNumero
+  const d = await pool.request().query(`SELECT det.*, pc.pedidoNo AS pedidoNumero, ${SQL_OBRA_SOLICITUD}
       FROM dbo.OrdenCompraDet det
       LEFT JOIN dbo.PedidoCompraDet pcd ON pcd.idPedidoCompraDet = det.idPedidoCompraDet
       LEFT JOIN dbo.PedidoCompra pc ON pc.idPedidoCompra = pcd.idPedidoCompra
@@ -1137,7 +1156,7 @@ export async function getOrden(id: number): Promise<Orden | null> {
   const pool = await getPool();
   const h = await pool.request().input("id", sql.Int, id).query("SELECT * FROM dbo.OrdenCompra WHERE idOrdenCompra=@id");
   if (!h.recordset.length) return null;
-  const d = await pool.request().input("id", sql.Int, id).query(`SELECT det.*, pc.pedidoNo AS pedidoNumero
+  const d = await pool.request().input("id", sql.Int, id).query(`SELECT det.*, pc.pedidoNo AS pedidoNumero, ${SQL_OBRA_SOLICITUD}
       FROM dbo.OrdenCompraDet det
       LEFT JOIN dbo.PedidoCompraDet pcd ON pcd.idPedidoCompraDet = det.idPedidoCompraDet
       LEFT JOIN dbo.PedidoCompra pc ON pc.idPedidoCompra = pcd.idPedidoCompra
@@ -1199,6 +1218,9 @@ function mapOrden(o: any, lineas: any[], motivoRechazo?: string, unidades: Recor
       almacen: l.locationCode ?? "", precioUnitario: Number(l.directUnitCost ?? 0),
       ivaPct: Number(l.vatPct ?? 0), descuentoPct: Number(l.lineDiscountPct ?? 0) || undefined,
       proyecto: l.jobNo ?? undefined, taskNo: l.taskNo ?? undefined,
+      // La casa para la que se pidió, aunque el material entre al almacén y la obra
+      // no viaje a BC. Ver SQL_OBRA_SOLICITUD.
+      obraSolicitud: l.obraSolicitud ?? undefined,
       chargeNo: l.chargeNo ?? undefined, chargeMethod: l.chargeMethod ?? undefined,
       // Máquina a la que va el repuesto (columna opcional: sql/orden_maquina.sql).
       // Sin este renglón la máquina se guardaba pero la pantalla no la volvía a ver.

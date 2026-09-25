@@ -6,7 +6,7 @@
 //   · CONSUMO DIRECTO (CD): se carga contra una OBRA y su TAREA. BC lo mete al
 //     presupuesto de la obra y el inventario NO sube  -> se muestra obra + tarea.
 //   · A ALMACÉN (ALM): entra al inventario del almacén / centro de costo elegido
-//     -> se muestra el almacén y nada más.
+//     -> se muestra el almacén (y debajo, para qué obra se pidió; ver más abajo).
 //
 // Lo que decide cuál de las dos es, es la TAREA (`esConsumoDirecto` en
 // lib/helpers.ts): una compra para stock igual dice para qué obra es, así que la
@@ -21,11 +21,21 @@
 // EQUIPO se lo va a comer (el "N.º máquina" de la línea en BC). Se agrega debajo
 // del destino cuando la línea la trae, y una línea la trae solo si alguien se lo
 // puso — así que el renglón no aparece en las compras que no son de repuestos.
+//
+// Y LA CASA (`obraInformativa`) es una tercera cosa, que tampoco es el destino:
+// un material que entra al almacén igual se pidió PARA una obra, y el ingeniero la
+// eligió al armar el pedido. Esa obra no viaja a BC —sin tarea, BC rechaza el Job
+// No.— pero Proveeduría la necesita para saber a qué casa es lo que está comprando
+// y para decírselo al proveedor que además instala. Va DEBAJO del almacén y con el
+// rótulo "Para obra", que es distinto de "Obra" a propósito: arriba sigue estando
+// el destino de verdad, y esto es para quién es. Antes se borraba en el camino y la
+// casa desaparecía apenas la línea salía de la solicitud.
 export function DestinoLinea({
   almacen = "",
   almacenNombre = "",
   obra = "",
   obraNombre = "",
+  obraInformativa = "",
   tarea = "",
   tareaNombre = "",
   maquina = "",
@@ -37,6 +47,7 @@ export function DestinoLinea({
   almacenNombre?: string;
   obra?: string;          // Job No. — solo lo lleva el consumo directo
   obraNombre?: string;
+  obraInformativa?: string; // la casa de la solicitud: se muestra, no viaja a BC
   tarea?: string;         // Job Task No.
   tareaNombre?: string;
   maquina?: string;       // N.º máquina (GomEqp) — el equipo que consume el repuesto
@@ -46,6 +57,8 @@ export function DestinoLinea({
 }) {
   const alm = (almacen ?? "").trim();
   const job = (obra ?? "").trim();
+  // Con Job No. la obra YA se ve arriba (es el destino): repetirla abajo sobraría.
+  const casa = job ? "" : (obraInformativa ?? "").trim();
   const task = (tarea ?? "").trim();
   const maq = (maquina ?? "").trim();
   const maqNom = (maquinaNombre ?? "").trim();
@@ -90,12 +103,20 @@ export function DestinoLinea({
     );
   }
 
-  const titleAlm = [almacenNombre ? `${alm} — ${almacenNombre}` : alm, maqTitulo].filter(Boolean).join(" · ");
-  if (inline) return <span title={titleAlm}>{alm || "—"}{maqInline}</span>;
+  const titleAlm = [
+    almacenNombre ? `${alm} — ${almacenNombre}` : alm,
+    casa ? `Pedido para la obra ${casa} — entra al almacén, no se carga al proyecto en BC` : "",
+    maqTitulo,
+  ].filter(Boolean).join(" · ");
+  if (inline) return <span title={titleAlm}>{alm || "—"}{casa ? <> · obra {casa}</> : null}{maqInline}</span>;
   return (
     <div title={titleAlm}>
       <div className="ds-strong">{alm || "—"}</div>
       {almacenNombre && <div className="ds-muted ds-clamp-2">{almacenNombre}</div>}
+      {/* El CÓDIGO no se parte: en una celda angosta "OBRA-001" quedaba cortado en
+          "OBRA-" y "001", que es justo el dato que hay que leer. El rótulo sí puede
+          bajar de renglón. */}
+      {casa && <div className="ds-muted">Para obra <span className="ds-strong" style={{ whiteSpace: "nowrap" }}>{casa}</span></div>}
       {maqBloque}
     </div>
   );

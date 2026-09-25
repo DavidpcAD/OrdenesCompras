@@ -194,6 +194,18 @@ export interface OrdenLinea {
   descuentoPct?: number;     // descuento de línea
   proyecto?: string;         // obra / Job No.
   taskNo?: string;           // N.º tarea proyecto
+  // LA CASA: la obra que puso Ingeniería en la solicitud de origen.
+  //
+  // No es lo mismo que `proyecto`. `proyecto` es el Job No. que viaja a BC, y solo lo
+  // lleva el consumo directo (con tarea); una compra que entra al ALMACÉN igual se
+  // pidió PARA una casa, y esa obra no puede viajar como Job No. porque BC rechaza
+  // una obra sin tarea. Hasta que existió este campo, esa casa desaparecía de la
+  // pantalla apenas la línea salía de la solicitud, y Proveeduría mandaba la orden
+  // sin poder decir a qué casa era (el proveedor que además INSTALA sí la necesita).
+  //
+  // Sale de dbo.PedidoCompraDet.obra por el vínculo idPedidoCompraDet. Es de MOSTRAR:
+  // no se escribe, no se edita y nunca entra al payload de BC.
+  obraSolicitud?: string;
   // MÁQUINA a la que va el repuesto: el "N.º máquina" que BC lleva en la LÍNEA del
   // pedido (parque de maquinaria GomEqp), no en el encabezado. Por eso tres filtros
   // para tres máquinas son TRES LÍNEAS de 1, una por máquina (ver lib/maquinas.ts):

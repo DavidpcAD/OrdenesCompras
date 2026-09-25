@@ -1,10 +1,10 @@
 import type { Orden } from "./types.ts";
 import { ordenLineaImporte } from "./helpers.ts";
-import { documentoDeOrden, destinoLineaDoc, fmtDoc, etiquetaUnidad } from "./orden-doc.ts";
+import { documentoDeOrden, destinoLineaDoc, obraLineaDoc, fmtDoc, etiquetaUnidad } from "./orden-doc.ts";
 import { etiquetaVariante, nombreDeVariante, descripcionParaDocumento } from "./variantes.ts";
 import {
   nuevoDocumento, dibujante, encabezadoMarca, bloqueEmpresa, numerarPaginas, formatearFecha,
-  A4, MARGEN, DERECHA, ANCHO_UTIL, Y_CONTINUACION, NEGRO,
+  A4, MARGEN, DERECHA, ANCHO_UTIL, Y_CONTINUACION, NEGRO, GRIS,
 } from "./pdf-base.ts";
 
 // PDF de la orden de compra que se le manda al proveedor, dibujado en el SERVIDOR con
@@ -85,8 +85,10 @@ export function ordenAPdf(orden: Orden, unidades: Record<string, string> = {}, v
   for (const l of d.lineas) {
     const desc = descripcionParaDocumento(l.descripcion,
       etiquetaVariante(l.variantCode, nombreDeVariante(variantes, l.articuloId, l.variantCode)));
-    // Alto de la fila = lo que ocupe la descripción con salto de línea.
-    const alto = Math.max(12, doc.font("Helvetica").fontSize(8).heightOfString(desc, { width: COLS.desc.w }));
+    // Alto de la fila = lo que ocupe la descripción con salto de línea, y nunca menos
+    // que la columna de destino, que con la casa abajo lleva dos renglones.
+    const casa = l.tipo === "cargo" ? "" : obraLineaDoc(l);
+    const alto = Math.max(casa ? 21 : 12, doc.font("Helvetica").fontSize(8).heightOfString(desc, { width: COLS.desc.w }));
     // Si no cabe, hoja nueva y se repite la cabecera (una orden puede tener 40 líneas).
     if (y + alto + 30 > A4.alto - MARGEN) {
       doc.addPage();
@@ -95,6 +97,10 @@ export function ordenAPdf(orden: Orden, unidades: Record<string, string> = {}, v
     }
     const cargo = l.tipo === "cargo";
     txt(cargo ? "—" : (destinoLineaDoc(l) || "—"), COLS.destino.x, y, { size: 8, bold: !cargo });
+    // LA CASA debajo del almacén: el proveedor que instala necesita saber a cuál va,
+    // y el almacén solo dice a dónde lo entrega. En su propio renglón porque la
+    // columna mide 62pt y los dos códigos juntos se metían en la descripción.
+    if (casa) txt(`Obra ${casa}`, COLS.destino.x, y + 10, { size: 7, color: GRIS, width: COLS.destino.w });
     doc.font("Helvetica").fontSize(8).fillColor(NEGRO).text(desc, COLS.desc.x, y, { width: COLS.desc.w });
     // Cantidad sin decimales cuando es entera (1 ESTAÑON), con dos cuando no
     // (2,5 M3). Antes iba siempre a 0 decimales y 0,5 se imprimía como 1.

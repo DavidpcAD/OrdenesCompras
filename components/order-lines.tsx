@@ -54,7 +54,7 @@ export function OrderLinesTable({ orden, showRecepcion = true, solicitudHref }: 
                       en una línea para no perderlo. */}
                   {esLineaRecibible(l) && (
                     <div className="ds-body-sm ds-muted only-mobile-cols">
-                      <DestinoLinea inline almacen={l.almacen} obra={l.proyecto} tarea={l.taskNo}
+                      <DestinoLinea inline almacen={l.almacen} obra={l.proyecto} obraInformativa={l.obraSolicitud} tarea={l.taskNo}
                         maquina={l.maquinaNo} maquinaNombre={l.maquinaNombre} avisarSinTarea={false} />
                     </div>
                   )}
@@ -92,7 +92,7 @@ export function OrderLinesTable({ orden, showRecepcion = true, solicitudHref }: 
                     máquina" que BC lleva en la línea), y es el dato con el que
                     Mantenimiento revisa que el costo cayó en la vagoneta correcta. */}
                 <td className="ds-body-sm hide-mobile">
-                  <DestinoLinea almacen={l.almacen} obra={l.proyecto} tarea={l.taskNo}
+                  <DestinoLinea almacen={l.almacen} obra={l.proyecto} obraInformativa={l.obraSolicitud} tarea={l.taskNo}
                     maquina={l.maquinaNo} maquinaNombre={l.maquinaNombre} avisarSinTarea={false} />
                 </td>
                 <td className="ds-num">{num.format(l.cantidad)} {l.unidad}</td>
