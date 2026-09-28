@@ -100,7 +100,7 @@ export default function ImprimirOrdenPage() {
   const prov = proveedores.find((p) => p.id === orden.proveedorId);
   // Los números del documento salen de UN solo lugar, compartido con el PDF que
   // genera el servidor: si cada uno los calculara, un día dirían cosas distintas.
-  const { numeroDoc, moneda: cur, lineas, almacenUnico, subtotal, iva, ivaPct, total, porTasaIva, unidades } = documentoDeOrden(orden, unidadesBc);
+  const { numeroDoc, moneda: cur, lineas, almacenUnico, casaDoc, subtotal, iva, ivaPct, total, porTasaIva, unidades } = documentoDeOrden(orden, unidadesBc);
   const destinoLinea = destinoLineaDoc;
 
   const Campo = ({ k, v, b }: { k: string; v: React.ReactNode; b?: boolean }) => (
@@ -218,6 +218,10 @@ export default function ImprimirOrdenPage() {
             <Campo k="Moneda" v={cur} />
             <div style={{ height: 14 }} />
             <Campo k="Almacén entrega" v={almacenUnico ?? "Varios (ver detalle)"} />
+            {/* LA CASA, arriba y en negrita: el proveedor lee este bloque. Renglón
+                por renglón ya iba en la tabla, pero ahí abajo no la encontraba y la
+                orden le llegaba sin decir a cuál casa instala. Ver casaDelDocumento. */}
+            {casaDoc && <Campo k="Obra / casa" v={casaDoc} b />}
           </div>
           <div className="po-col-r">
             <div className="po-empresa">

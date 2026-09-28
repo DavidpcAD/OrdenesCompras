@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { documentoDeOrden, destinoLineaDoc, obraLineaDoc } from "./orden-doc.ts";
+import { documentoDeOrden, destinoLineaDoc, obraLineaDoc, casaDelDocumento } from "./orden-doc.ts";
 import type { Orden, OrdenLinea } from "./types.ts";
 
 // El papel que sale hacia AFUERA, el que firma el proveedor. Lo que se prueba acá es
@@ -50,4 +50,33 @@ test("obraLineaDoc: la casa va debajo del almacén, y no se repite", () => {
   assert.equal(obraLineaDoc({ almacen: "VN-L.20", proyecto: "VN-L.20", taskNo: "2.2" } as OrdenLinea), "");
   // Sin casa no hay segundo renglón.
   assert.equal(obraLineaDoc({ almacen: "ALM-GRAL" } as OrdenLinea), "");
+});
+
+// LA CASA ARRIBA, al lado de "Almacén entrega". Renglón por renglón ya iba, pero el
+// proveedor lee el bloque del encabezado: con la obra solo en la tabla, la orden le
+// llegaba sin decirle a cuál casa instala, que es lo que necesita para la garantía.
+test("casaDelDocumento: la casa del encabezado", () => {
+  const l = (obraSolicitud?: string, almacen = "ALM-GRAL"): OrdenLinea =>
+    ({ almacen, obraSolicitud } as OrdenLinea);
+  // Toda la orden para una casa: esa va arriba.
+  assert.equal(casaDelDocumento([l("VN-K.21"), l("VN-K.21")], "ALM-GRAL"), "VN-K.21");
+  // Una sola línea con casa y las otras sin: igual manda la que hay. Una línea sin
+  // obra no puede mandar el encabezado a "Varias".
+  assert.equal(casaDelDocumento([l("VN-K.21"), l()], "ALM-GRAL"), "VN-K.21");
+  // Dos casas en la misma orden: el detalle las tiene renglón por renglón.
+  assert.equal(casaDelDocumento([l("VN-K.21"), l("VN-M.28")], "ALM-GRAL"), "Varias (ver detalle)");
+  // Sin casa no se imprime la fila (antes de esto era el único caso que existía).
+  assert.equal(casaDelDocumento([l(), l()], "ALM-GRAL"), "");
+  // Consumo directo: el almacén de la obra tiene el mismo código que el proyecto y
+  // ya está impreso arriba; repetirlo sería la misma línea dos veces.
+  assert.equal(casaDelDocumento([{ almacen: "VN-L.20", proyecto: "VN-L.20" } as OrdenLinea], "VN-L.20"), "");
+});
+
+// El documento la trae ya calculada para que el PDF del servidor y la pantalla no
+// puedan decir cosas distintas, y el flete no arrastra el encabezado a "Varias".
+test("documentoDeOrden: casaDoc ignora los cargos", () => {
+  const casa = (id: string): OrdenLinea =>
+    ({ id, tipo: "articulo", almacen: "ALM-GRAL", obraSolicitud: "VN-K.21", cantidad: 1, precioUnitario: 100, ivaPct: 13 } as OrdenLinea);
+  const flete = { id: "f", tipo: "cargo", almacen: "ALM-GRAL", cantidad: 1, precioUnitario: 5000, ivaPct: 13 } as OrdenLinea;
+  assert.equal(documentoDeOrden(orden([casa("a"), casa("b"), flete])).casaDoc, "VN-K.21");
 });

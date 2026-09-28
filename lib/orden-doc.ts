@@ -28,18 +28,43 @@ export function destinoLineaDoc(l: OrdenLinea): string {
   return l.almacen || l.proyecto || "";
 }
 
-// LA CASA de la línea, para el renglón de abajo de la columna "Almacén / Obra".
+// LA CASA de la línea: la obra para la que se pidió el material.
 //
 // El almacén dice a dónde lo lleva; la obra dice PARA CUÁL es, y no siempre son lo
 // mismo: la compra que entra a ALM-GRAL igual se pidió para una casa. Al proveedor
 // que además instala esa es LA dirección del trabajo, y sin ella la orden salía
 // diciendo solo "ALM-GRAL".
 //
+// `obraSolicitud` primero porque es la que puso Ingeniería; `proyecto` es el Job No.
+// de BC, que solo existe cuando la compra es consumo directo.
+export function casaDeLinea(l: OrdenLinea): string {
+  return (l.obraSolicitud || l.proyecto || "").trim();
+}
+
+// La casa para el renglón de abajo de la columna "Almacén / Obra".
 // Vacío cuando ya es el destino impreso: no se repite el mismo código dos veces.
 export function obraLineaDoc(l: OrdenLinea): string {
-  const destino = destinoLineaDoc(l);
-  const casa = (l.obraSolicitud || l.proyecto || "").trim();
-  return casa && casa !== destino ? casa : "";
+  const casa = casaDeLinea(l);
+  return casa && casa !== destinoLineaDoc(l) ? casa : "";
+}
+
+// Rótulo del encabezado cuando el documento mezcla varias cosas en una columna.
+const VARIAS = "Varias (ver detalle)";
+
+// LA CASA DEL ENCABEZADO, al lado de "Almacén entrega".
+//
+// La casa ya iba renglón por renglón, pero ahí abajo nadie la busca: el proveedor lee
+// el bloque de arriba, y de ese bloque sale a qué casa va a instalar. Con la obra solo
+// en la tabla, la orden llegaba —para él— sin dirección, que es justo el reclamo.
+//
+// Vacío (no se imprime la fila) cuando ninguna línea tiene casa, y también cuando la
+// casa ES el almacén de entrega: en consumo directo el almacén de BC lleva el mismo
+// código que el proyecto y sería imprimir dos veces lo mismo.
+export function casaDelDocumento(lineas: OrdenLinea[], almacenUnico: string | null): string {
+  const casas = [...new Set(lineas.map(casaDeLinea).filter(Boolean))];
+  if (!casas.length) return "";
+  if (casas.length > 1) return VARIAS;
+  return casas[0] === almacenUnico ? "" : casas[0];
 }
 
 // BC imprime la DESCRIPCIÓN de la unidad ("ESTAÑON"), no el código ("EST"): es lo
@@ -61,6 +86,8 @@ export type DocumentoOrden = {
   moneda: string;
   lineas: OrdenLinea[];
   almacenUnico: string | null;
+  // La casa que se imprime en el encabezado ("" = no va la fila). Ver casaDelDocumento.
+  casaDoc: string;
   subtotal: number;
   iva: number;
   ivaPct: number;
@@ -79,6 +106,7 @@ export function documentoDeOrden(orden: Orden, unidades: Record<string, string> 
   const cargos = orden.lineas.filter(esLineaCargo);
   const lineas = [...articulos, ...cargos];
   const destinos = [...new Set(articulos.map(destinoLineaDoc).filter(Boolean))];
+  const almacenUnico = destinos.length === 1 ? destinos[0] : null;
   const subtotal = ordenSubtotal(orden);
   const iva = ordenIva(orden);
   // Base e IVA agrupados por tasa: una orden puede mezclar 13% con exento, y meter
@@ -100,7 +128,10 @@ export function documentoDeOrden(orden: Orden, unidades: Record<string, string> 
     numeroDoc: orden.bcNumber || orden.numero,
     moneda: orden.currencyCode || "CRC",
     lineas,
-    almacenUnico: destinos.length === 1 ? destinos[0] : null,
+    almacenUnico,
+    // Los cargos (flete) quedan fuera: un flete no es de una casa, y con él adentro
+    // el encabezado se iba a "Varias" por una línea que no lleva obra.
+    casaDoc: casaDelDocumento(articulos, almacenUnico),
     subtotal,
     iva,
     // La tasa que rotula el total del papel. El `?? 13` de antes rotulaba "13% IVA"

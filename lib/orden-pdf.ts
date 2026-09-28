@@ -58,6 +58,10 @@ export function ordenAPdf(orden: Orden, unidades: Record<string, string> = {}, v
   campo("Moneda", d.moneda);
   y += 8;
   campo("Almacén entrega", d.almacenUnico ?? "Varios (ver detalle)");
+  // LA CASA, arriba y en negrita. Va renglón por renglón en la tabla, pero el
+  // proveedor lee este bloque: con la obra solo abajo, la orden le llegaba —para él—
+  // sin decir a cuál casa instalar, y eso es lo que necesita para la garantía.
+  if (d.casaDoc) campo("Obra / casa", d.casaDoc, true);
 
   const yd = bloqueEmpresa(txt, yCols);
 
