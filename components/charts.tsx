@@ -62,12 +62,14 @@ export function Donut({
   etiqueta,
   activo,
   onSegmento,
+  onResaltar,
 }: {
   segmentos: { clave: string; etiqueta: string; monto: number; color: string }[];
   centro: React.ReactNode;
   etiqueta: string;
   activo?: string | null;
   onSegmento?: (clave: string) => void;
+  onResaltar?: (clave: string | null) => void;
 }) {
   const total = segmentos.reduce((s, x) => s + x.monto, 0);
   const R = 54;          // radio de la circunferencia sobre la que se dibuja
@@ -100,7 +102,16 @@ export function Donut({
                 opacity={atenuado ? 0.3 : 1}
                 className={onSegmento ? "donut__tajada donut__tajada--click" : "donut__tajada"}
                 onClick={onSegmento ? () => onSegmento(s.clave) : undefined}
-              />
+                // La tajada se resalta con la leyenda y al revés: el anillo solo tiene
+                // color, y sin el puente hay que adivinar cuál de los cuatro verdes es
+                // el que uno está a punto de abrir.
+                onMouseEnter={onResaltar ? () => onResaltar(s.clave) : undefined}
+                onMouseLeave={onResaltar ? () => onResaltar(null) : undefined}
+              >
+                {/* El teclado llega por la leyenda —un <circle> no es enfocable—, pero
+                    el mouse necesita saber qué va a abrir antes de soltar el clic. */}
+                {onSegmento && <title>{`${s.etiqueta} — ver la lista`}</title>}
+              </circle>
             );
           })}
         </g>

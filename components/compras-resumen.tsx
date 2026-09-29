@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { Sparkline, Donut, BarRanking, SerieMensual } from "@/components/charts";
 import { money, num, todayISO, formatDate } from "@/lib/helpers";
 import { variacion, diasDesde, MESES_CORTOS } from "@/lib/compras-kpis";
@@ -40,6 +40,10 @@ export function ComprasResumen({ k, filas, onVerProveedores, onConciliacion, onI
   const { ordenes, pedidos } = useStore();
   const bc = usePanoramaBc();
   const hoy = todayISO();
+  // Qué tajada del anillo está resaltada. Es solo el puente visual entre la leyenda y
+  // el anillo mientras el mouse (o el foco) pasa por encima: no filtra nada acá, el
+  // filtro ocurre al tocar, en la pestaña de destino.
+  const [resaltado, setResaltado] = useState<string | null>(null);
   const cancha = useMemo(() => loQueEstaEnTuCancha(ordenes, pedidos, k.moneda), [ordenes, pedidos, k.moneda]);
 
   // Al tocar una fila, la lista de destino tiene que aterrizar YA filtrada. El chip se
@@ -185,13 +189,20 @@ export function ComprasResumen({ k, filas, onVerProveedores, onConciliacion, onI
           <header className="panel__head">
             <div>
               <h2 className="ds-subtitle">Dónde está trabada la plata</h2>
-              <p className="ds-body-sm ds-muted">Órdenes que todavía no se completan, por estado.</p>
+              <p className="ds-body-sm ds-muted">Órdenes que todavía no se completan, por estado. Tocá un estado para ver esas órdenes.</p>
             </div>
           </header>
           {k.enCurso > 0 ? (
             <div className="panel__anillo">
+              {/* La tajada y la fila de la leyenda son el MISMO botón partido en dos:
+                  las dos resaltan a la otra y las dos abren la lista filtrada por ese
+                  estado. Las claves de `porEstado` son las mismas que los chips de la
+                  pestaña Órdenes, así que el chip queda encendido al aterrizar. */}
               <Donut
                 segmentos={k.porEstado}
+                activo={resaltado}
+                onSegmento={(clave) => irFiltrado("ordenes", clave)}
+                onResaltar={setResaltado}
                 etiqueta={`${fmt(k.enCurso)} en órdenes sin completar, repartido por estado`}
                 centro={
                   <>
@@ -202,13 +213,24 @@ export function ComprasResumen({ k, filas, onVerProveedores, onConciliacion, onI
               />
               <ul className="leyenda">
                 {k.porEstado.map((s) => (
-                  <li key={s.clave} className="leyenda__fila">
-                    <i className="leyenda__marca" style={{ background: s.color }} aria-hidden />
-                    <span className="leyenda__texto">
-                      <span className="ds-body-sm ds-muted">{s.etiqueta}</span>
-                      <span className="leyenda__monto" title={fmt(s.monto)}>{corto(s.monto)}</span>
-                    </span>
-                    <span className="leyenda__pct ds-body-sm ds-muted">{Math.round((s.monto / k.enCurso) * 100)}%</span>
+                  <li key={s.clave}>
+                    <button type="button" className="leyenda__fila"
+                      data-activo={resaltado === s.clave ? "" : undefined}
+                      onClick={() => irFiltrado("ordenes", s.clave)}
+                      onMouseEnter={() => setResaltado(s.clave)}
+                      onMouseLeave={() => setResaltado(null)}
+                      // El foco resalta igual que el mouse: recorriendo con Tab, el
+                      // anillo tiene que decir de cuál de los cuatro se está hablando.
+                      onFocus={() => setResaltado(s.clave)}
+                      onBlur={() => setResaltado(null)}
+                      title={`Ver las órdenes: ${s.etiqueta.toLowerCase()} · ${fmt(s.monto)}`}>
+                      <i className="leyenda__marca" style={{ background: s.color }} aria-hidden />
+                      <span className="leyenda__texto">
+                        <span className="ds-body-sm ds-muted">{s.etiqueta}</span>
+                        <span className="leyenda__monto">{corto(s.monto)}</span>
+                      </span>
+                      <span className="leyenda__pct ds-body-sm ds-muted">{Math.round((s.monto / k.enCurso) * 100)}%</span>
+                    </button>
                   </li>
                 ))}
               </ul>

@@ -1892,8 +1892,15 @@ td.ds-col-fija {
 .donut__monto { font-size: var(--ds-font-size-subtitle); line-height: var(--ds-line-height-subtitle); font-weight: var(--ds-font-weight-semibold); font-variant-numeric: tabular-nums; }
 .donut__tajada { transition: stroke-width .12s ease, opacity .12s ease; }
 .donut__tajada--click { cursor: pointer; }
-.leyenda { list-style: none; margin: 0; padding: 0; flex: 1; min-width: 200px; display: flex; flex-direction: column; gap: var(--ds-space-3); }
-.leyenda__fila { display: flex; align-items: center; gap: var(--ds-space-3); }
+.leyenda { list-style: none; margin: 0; padding: 0; flex: 1; min-width: 200px; display: flex; flex-direction: column; gap: var(--ds-space-1); }
+/* La fila es un botón que abre la lista filtrada por ese estado: mismo reseteo y mismo
+   hover que `.cancha__fila`, porque en el Resumen las dos cosas se tocan igual. El
+   padding lateral se come con un margen negativo para que la marca de color siga
+   alineada con el borde del panel y no se corra 8 px al volverse clickeable. */
+.leyenda__fila { display: flex; align-items: center; gap: var(--ds-space-3); width: calc(100% + var(--ds-space-2) * 2); margin: 0 calc(var(--ds-space-2) * -1); padding: var(--ds-space-2); border: 0; border-radius: var(--ds-radius-md); background: transparent; font-family: inherit; font-size: var(--ds-font-size-label); color: inherit; text-align: left; cursor: pointer; transition: background-color .12s ease; }
+.leyenda__fila:hover,
+.leyenda__fila[data-activo] { background: var(--ds-color-gray-100); }
+.leyenda__fila:focus-visible { outline: 2px solid var(--ds-color-green-100); outline-offset: -2px; }
 /* Barra vertical y no punto: es la marca del tablero de referencia y, sobre todo, a
    3 px de ancho el color se distingue mejor que en un círculo de 8. */
 .leyenda__marca { width: 3px; align-self: stretch; min-height: 32px; border-radius: 2px; flex-shrink: 0; }
