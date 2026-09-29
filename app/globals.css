@@ -138,6 +138,7 @@
    siendo OSCURO (esos fondos no cambian). --ds-text es claro en oscuro, así que
    forzamos negro en esos casos puntuales. */
 :root[data-theme="dark"] .ds-btn--green,
+:root[data-theme="dark"] .app-nav__item.is-active,
 :root[data-theme="dark"] .topnav__item.is-active,
 :root[data-theme="dark"] .seg-mini button.is-active,
 :root[data-theme="dark"] .dt-hpill__filter.is-active,
@@ -1227,7 +1228,7 @@ td.ds-col-fija {
 .app-nav__section {
   padding: 0 12px; margin: var(--ds-space-2) 0 2px;
   font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase;
-  color: rgba(255, 255, 255, 0.38);
+  color: rgba(255, 255, 255, 0.62);
 }
 
 /* Pie: se pega abajo. Toggle de tema + tarjeta de usuario + salir. */
