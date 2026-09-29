@@ -3762,6 +3762,56 @@ export async function diagnosticarFalloBc(error: string, orderNo: string, vendor
   return { motivo, yaEnBc: !!facturaBc, pedido, facturaBc };
 }
 
+// Qué hacer con el pedido que ESTA APP des-lanzó para poder reintentar un posteo,
+// cuando el reintento tampoco entró. La regla va aparte y pura porque es lo único
+// delicado de todo esto: relanzar de más sería aprobar por la espalda.
+//
+//  · lanzado  → se relanza: lo dejamos como estaba y nadie se entera de nada.
+//  · abierto  → nada: ya estaba así, no lo rompimos nosotros.
+//  · pendiente de aprobación → NO se relanza. Reabrirlo ya le canceló la solicitud a
+//    Aprobación; lanzarlo desde acá sería firmar por Luis. Se avisa y lo resuelve
+//    una persona.
+//  · desconocido → tampoco se adivina: se avisa.
+export function devolucionTrasFallo(estadoAntes: EstadoBcPedido): "relanzar" | "avisar" | "nada" {
+  if (estadoAntes === "lanzado") return "relanzar";
+  if (estadoAntes === "abierto") return "nada";
+  return "avisar";
+}
+
+// Le devuelve a BC el pedido como estaba antes del intento.
+//
+// El posteo de un pedido en MONEDA EXTRANJERA obliga a des-lanzarlo (mover la fecha
+// de registro re-cotiza el tipo de cambio y eso BC solo lo deja con el pedido
+// Abierto). Hasta hoy, si el reintento fallaba, el pedido quedaba ABIERTO y el aviso
+// se iba con el toast: la orden seguía diciendo "Lanzado" acá, y Bodega chocaba días
+// después contra "el pedido no está lanzado" sin que nadie supiera por qué. Eso fue
+// CP-005541 (des-lanzada el 28 sep 2026, descubierta el 29).
+// Es el mismo "se lo devuelve a BC como estaba" que ya hace el flujo de quitar el IVA.
+async function devolverPedidoComoEstaba(orderNo: string, antes: EstadoBcPedido): Promise<{ texto: string; quedoAbierto: boolean }> {
+  const que = devolucionTrasFallo(antes);
+  if (que === "nada") return { texto: "", quedoAbierto: false };
+  if (que === "relanzar") {
+    try {
+      await bcReleasePedido(orderNo);
+      return { texto: `El pedido ${orderNo} quedó LANZADO en Business Central otra vez, como estaba antes del intento.`, quedoAbierto: false };
+    } catch (e: any) {
+      return {
+        texto: `OJO: para reintentar hubo que des-lanzar el pedido ${orderNo} en Business Central y NO se pudo volver a lanzar (${String(e?.message ?? e)}). `
+          + `Allá quedó ABIERTO: lanzalo en BC o pedíselo a Aprobación, porque si no Bodega no puede recibir contra él.`,
+        quedoAbierto: true,
+      };
+    }
+  }
+  const comoEstaba = antes === "pendiente-aprobacion"
+    ? "esperando aprobación en BC, y al reabrirlo esa solicitud se canceló"
+    : "en un estado que no se pudo leer";
+  return {
+    texto: `OJO: para reintentar hubo que reabrir el pedido ${orderNo} en Business Central y allá quedó ABIERTO (estaba ${comoEstaba}). `
+      + `No se relanza desde acá: mandalo otra vez a aprobación.`,
+    quedoAbierto: true,
+  };
+}
+
 async function bcPostear(procedimiento: string, etiqueta: string, orderNo: string, body: Record<string, unknown>): Promise<string> {
   const cid = await getStdCompanyId();
   const url = `${odataRoot()}/${procedimiento}?company=${encodeURIComponent(cid)}`;
@@ -3774,11 +3824,20 @@ async function bcPostear(procedimiento: string, etiqueta: string, orderNo: strin
   if (!res.ok) {
     const txt = (await res.text()).slice(0, 400);
     if (!BC_PIDE_ABIERTO.test(txt)) throw new Error(`BC ${etiqueta} ${res.status}: ${txt.slice(0, 250)}`);
+    // Cómo estaba el pedido ANTES de que lo toquemos. Se pregunta acá y no después,
+    // porque lo que sigue lo cambia: sin este dato no hay forma de devolvérselo a BC
+    // igual si el reintento no entra.
+    const antes = estadoLanzamientoBc((await bcEncabezadoPedido(orderNo))?.status);
     await bcReopenPedido(orderNo);   // si esto falla, sube su propio error (dice qué pasó)
     res = await llamar();
     if (!res.ok) {
       const txt2 = (await res.text()).slice(0, 250);
-      throw new Error(`BC ${etiqueta} ${res.status}: ${txt2} · OJO: el pedido ${orderNo} quedó ABIERTO en Business Central (se reabrió para reintentar).`);
+      const vuelta = await devolverPedidoComoEstaba(orderNo, antes);
+      const err = new Error(`BC ${etiqueta} ${res.status}: ${txt2}${vuelta.texto ? ` · ${vuelta.texto}` : ""}`);
+      // La bandera viaja con el error hasta la ruta, que es la única que sabe de qué
+      // ORDEN se trata y puede dejarlo escrito donde se vea (ver lib/fallo-posteo.ts).
+      if (vuelta.quedoAbierto) (err as Error & { pedidoAbiertoEnBc?: string }).pedidoAbiertoEnBc = orderNo;
+      throw err;
     }
   }
   const d: any = await res.json().catch(() => ({}));

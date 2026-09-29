@@ -6,7 +6,7 @@
 //   npm test
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { payloadReplaceLines, sinObrasInexistentes, avisoDeSaneo, lineasOrdenParaBc, obrasSinTarea, lineasSinUnidad, lineasSinAlmacen, centroCostoDeOrden, centroCostoDeLinea, decidirVariantes, crearEnBcAlEnviar, bcPideAbierto, ccForzadoDelAlmacen, type LineaReplaceBc } from "./bc.ts";
+import { payloadReplaceLines, sinObrasInexistentes, avisoDeSaneo, lineasOrdenParaBc, obrasSinTarea, lineasSinUnidad, lineasSinAlmacen, centroCostoDeOrden, centroCostoDeLinea, decidirVariantes, crearEnBcAlEnviar, bcPideAbierto, devolucionTrasFallo, ccForzadoDelAlmacen, type LineaReplaceBc } from "./bc.ts";
 import type { OrdenLinea } from "./types.ts";
 
 const item = (p: Partial<LineaReplaceBc> = {}): LineaReplaceBc => ({
@@ -376,6 +376,26 @@ test("se reconoce el error de BC que pide el pedido abierto", () => {
   // Un error cualquiera NO puede disparar la reapertura del pedido.
   assert.equal(bcPideAbierto(`{"error":{"message":"The field Vendor Invoice No. of table Purchase Header contains a value that cannot be found"}}`), false);
   assert.equal(bcPideAbierto(""), false);
+});
+
+// ---- y qué se hace con el pedido que se reabrió, si el reintento tampoco entra ----
+// Lo delicado es qué NO se relanza: reabrir un pedido que esperaba la firma de
+// Aprobación le CANCELA la solicitud, así que lanzarlo desde acá sería aprobarlo por
+// la espalda. Sin esto, CP-005541 quedó Abierta en BC y "Lanzada" acá once días.
+test("solo se vuelve a lanzar lo que estaba lanzado", () => {
+  assert.equal(devolucionTrasFallo("lanzado"), "relanzar");
+});
+
+test("un pedido que ya estaba Abierto no lo rompimos nosotros: no se toca", () => {
+  assert.equal(devolucionTrasFallo("abierto"), "nada");
+});
+
+test("el que esperaba aprobación NO se relanza: se avisa", () => {
+  assert.equal(devolucionTrasFallo("pendiente-aprobacion"), "avisar");
+});
+
+test("si no se pudo leer cómo estaba, tampoco se adivina", () => {
+  assert.equal(devolucionTrasFallo("desconocido"), "avisar");
 });
 
 // ---- centro de costo: los DOS tipos de pedido ----------------------------------
