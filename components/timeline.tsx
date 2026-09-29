@@ -74,6 +74,10 @@ function etiqueta(m: Movimiento): string {
     if (m.tipoMovimiento === "pdf_proveedor") return "Se bajó el PDF para mandárselo al proveedor";
     if (m.tipoMovimiento === "enviada_proveedor") return "Marcada como enviada al proveedor";
     if (m.tipoMovimiento === "envio_deshecho") return "Se quitó la marca de enviada al proveedor";
+    // El intento de registrar/recibir/facturar que BC rechazó. Antes moría en la
+    // pantalla de quien lo intentó: sin esto, una orden podía quedar semanas trabada
+    // sin que en su historia apareciera que alguien la intentó mover.
+    if (m.tipoMovimiento === "bc_fallo") return "⚠ Business Central rechazó el registro";
     if (m.tipoMovimiento === "bc_desalineado") return "⚠ La orden y Business Central NO coinciden";
     if (m.tipoMovimiento === "bc_alineado") return "La orden y Business Central coinciden";
   }
@@ -109,6 +113,7 @@ function colorPunto(m: Movimiento): string {
       case "pdf_proveedor":
       case "enviada_proveedor": return "var(--ds-color-green-100)";  // salió al proveedor
       case "envio_deshecho": return "var(--ds-color-gray-400)";      // se deshizo la marca
+      case "bc_fallo": return "var(--ds-color-red-100)";       // BC rechazó el intento
       case "bc_desalineado": return "var(--ds-color-red-200)"; // BC no tiene lo mismo · rojo
       case "bc_alineado": return "var(--ds-color-green-200)";  // verificado y coincide
       case "eliminado": return "var(--ds-color-red-100)";

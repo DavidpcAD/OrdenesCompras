@@ -2,7 +2,9 @@ import { NextResponse } from "next/server";
 import { bcRecibir, diagnosticarFalloBc, verificarLineasPosteables, frenoRegistroActivo, conflictoDeDimensiones, explicarConflictoDimensiones } from "@/lib/bc";
 import { frenarPorEncabezado } from "@/lib/freno-encabezado";
 import { actor } from "@/lib/actor";
+import type { Role } from "@/lib/types";
 import { guardarRecepcionTrasBc } from "@/lib/guardado-tras-bc";
+import { anotarFalloDeBc } from "@/lib/fallo-posteo";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -21,6 +23,9 @@ export const dynamic = "force-dynamic";
 export async function POST(req: Request) {
   const cuerpo = await req.json().catch(() => ({} as any));
   const { orderNo, lineas, postingDate, ordenId, vendorNo } = cuerpo ?? {};
+  // Se declara ACÁ y no dentro del try porque el catch también lo necesita: el
+  // intento fallido se anota a nombre de quien lo hizo (ver lib/fallo-posteo.ts).
+  let quien: { usuario: string; rol: Role } | null = null;
   try {
     // FRENO 1 — el ENCABEZADO del pedido en BC: mismo proveedor y LANZADO allá
     // (ver lib/freno-encabezado.ts). Recibir contra el pedido de otro le mete el
@@ -47,13 +52,17 @@ export async function POST(req: Request) {
     }
     // Quién recibe, de la cookie firmada (ver lib/actor.ts): queda sellado en el
     // pedido de BC y firma el movimiento de la obra si la factura se registra después.
-    const quien = await actor(cuerpo);
+    quien = await actor(cuerpo);
     const receiptNo = await bcRecibir(orderNo, lineas ?? [], postingDate ?? "", quien.usuario);
     // El material ya entró en BC: la recepción se guarda acá en esta misma llamada.
     const guardado = await guardarRecepcionTrasBc(cuerpo?.recepcion, "", quien, ordenId);
     return NextResponse.json({ ok: true, receiptNo, ...guardado });
   } catch (e: any) {
     const error = String(e?.message ?? e);
+    // El intento que no entró queda escrito en la orden, y si el pedido quedó ABIERTO
+    // en Business Central la orden lo dice sola (aviso rojo del detalle). Nunca tumba
+    // la respuesta del error real: ver lib/fallo-posteo.ts.
+    await anotarFalloDeBc({ error, ordenId, orderNo, accion: "recibir", quien, causa: e });
     // Choque de DIMENSIONES (el CC que el almacén amarra en BC): no se reintenta y
     // no hay nada que conciliar —BC no registró nada—, así que no se le vuelve a
     // preguntar a BC: se explica y se corta. Ver conflictoDeDimensiones en lib/bc.ts.

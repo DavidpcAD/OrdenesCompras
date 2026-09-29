@@ -963,6 +963,29 @@ export async function anotarEncabezadoBc(id: number, detalle: string, usuario: s
   } catch { try { await tx.rollback(); } catch { /* el cambio en BC ya está hecho; la bitácora no lo deshace */ } }
 }
 
+// Un intento de registrar/recibir/facturar en BC que NO entró. Hasta hoy el error se
+// devolvía a la pantalla (502) y no quedaba en ningún lado: cuando días después había
+// que averiguar qué le pasó a una orden, no había ni rastro de que alguien lo hubiera
+// intentado. Ver lib/fallo-posteo.ts y el caso CP-005541.
+export async function anotarFalloBc(id: number, detalle: string, usuario: string, rol: Role): Promise<void> {
+  const pool = await getPool();
+  const prev = await pool.request().input("id", sql.Int, id)
+    .query("SELECT ordenNo, bcNo FROM dbo.OrdenCompra WHERE idOrdenCompra=@id");
+  const row = prev.recordset[0];
+  if (!row) return;
+  const tx = new sql.Transaction(pool);
+  await tx.begin();
+  try {
+    await logMov(tx, {
+      entidad: "orden", idEntidad: id, documentoNo: row.ordenNo ?? "",
+      tipoMovimiento: "bc_fallo",
+      detalle: `${row.bcNo ? `${row.bcNo}: ` : ""}${detalle}`.slice(0, 3900),
+      usuario, rol,
+    });
+    await tx.commit();
+  } catch { try { await tx.rollback(); } catch { /* el fallo ya se le respondió a la pantalla */ } }
+}
+
 // Guarda el resultado del cotejo en la orden Y en la bitácora.
 //
 // En la bitácora va SIEMPRE que haya algo que contar (desalineado / sin pedido /

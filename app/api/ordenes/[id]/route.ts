@@ -410,7 +410,11 @@ export async function PUT(req: Request, { params }: { params: { id: string } }) 
         // Se relee BC y se coteja. Acá NO se puede frenar nada (el SQL ya se
         // guardó), pero el resultado deja de ser un toast: queda escrito en la
         // orden y en la bitácora, y la pantalla lo muestra hasta que se arregle.
-        const chequeo = await chequearOrdenContraBc(o.bcNumber, lineasReplaceParaCotejo(lineasBc), o.proveedorNo || o.proveedorId);
+        // El ESTADO de la orden va en el cotejo a propósito: si acá dice "lanzado" y
+        // el pedido quedó Abierto allá (el edit lo reabre para poder empujarlo), eso
+        // es lo único que separa a Bodega de un error crudo de BC — y sin este
+        // argumento el cotejo ni lo miraba.
+        const chequeo = await chequearOrdenContraBc(o.bcNumber, lineasReplaceParaCotejo(lineasBc), o.proveedorNo || o.proveedorId, o.estado);
         if (chequeo.estado !== "sin-lectura") {
           await guardarChequeoBc(id, chequeo.estado, chequeo.mensaje, a.usuario, a.rol).catch(() => { /* no tumba el guardado */ });
         }

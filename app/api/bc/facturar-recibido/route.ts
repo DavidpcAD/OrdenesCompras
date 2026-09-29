@@ -2,7 +2,9 @@ import { NextResponse } from "next/server";
 import { bcFacturarRecibido, verificarLineasPosteables, frenoRegistroActivo, conflictoDeDimensiones, explicarConflictoDimensiones } from "@/lib/bc";
 import { frenarPorEncabezado } from "@/lib/freno-encabezado";
 import { actor } from "@/lib/actor";
+import type { Role } from "@/lib/types";
 import { marcarFacturadaTrasBc } from "@/lib/guardado-tras-bc";
+import { anotarFalloDeBc } from "@/lib/fallo-posteo";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -18,6 +20,9 @@ export async function POST(req: Request) {
   // decir de qué pedido habla el error (adentro quedaba fuera de alcance).
   const cuerpo = await req.json().catch(() => ({} as any));
   const { orderNo, vendorInvoiceNo, lineas, ordenId, vendorNo } = cuerpo ?? {};
+  // Se declara ACÁ y no dentro del try porque el catch también lo necesita: el
+  // intento fallido se anota a nombre de quien lo hizo (ver lib/fallo-posteo.ts).
+  let quien: { usuario: string; rol: Role } | null = null;
   try {
     // FRENO 1 — el ENCABEZADO del pedido en BC: mismo proveedor y LANZADO allá
     // (ver lib/freno-encabezado.ts). Acá es lo último que queda antes de que la
@@ -43,13 +48,17 @@ export async function POST(req: Request) {
     }
     // Quién factura, de la cookie firmada (ver lib/actor.ts): sobrescribe en el pedido
     // el nombre que dejó la recepción, porque es este registro el que crea el consumo.
-    const quien = await actor(cuerpo);
+    quien = await actor(cuerpo);
     const postedNo = await bcFacturarRecibido(orderNo, vendorInvoiceNo, lineas ?? [], "", quien.usuario);
     // La factura ya está registrada en BC: la recepción se marca facturada acá mismo.
     const guardado = await marcarFacturadaTrasBc(cuerpo?.facturar, quien);
     return NextResponse.json({ ok: true, postedNo, ...guardado });
   } catch (e: any) {
     const error = String(e?.message ?? e);
+    // El intento que no entró queda escrito en la orden, y si el pedido quedó ABIERTO
+    // en Business Central la orden lo dice sola (aviso rojo del detalle). Nunca tumba
+    // la respuesta del error real: ver lib/fallo-posteo.ts.
+    await anotarFalloDeBc({ error, ordenId, orderNo, accion: "facturar", quien, causa: e });
     // Choque de DIMENSIONES (el CC que el almacén amarra en BC): no se reintenta —
     // cada intento da el mismo error— y BC no registró nada. Se explica y se corta.
     // Ver conflictoDeDimensiones en lib/bc.ts.
