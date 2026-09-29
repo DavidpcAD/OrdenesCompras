@@ -197,6 +197,29 @@ export function DataTable<T>({
     return () => window.removeEventListener("keydown", onKey);
   }, [panel]);
   const [modo, setModo] = useState<"tabla" | "grid">(guardado.modo ?? modoInicial);
+
+  // ANCHO VISIBLE del scroll de la tabla, en un custom property.
+  //
+  // El panel de la fila expandida se pega a la izquierda (`position: sticky` en
+  // `.dt-exp-card`) y vive dentro de una celda tan ancha como TODA la tabla. En
+  // una tabla más ancha que la pantalla —la de órdenes lo es— eso dejaba el panel
+  // más ancho que lo que se alcanza a ver, y su lado derecho (el Importe) no había
+  // forma de llegar a verlo: al scrollear, el sticky lo vuelve a traer.
+  //
+  // No se puede resolver en CSS: `100%` mide la CELDA, y `container-type` haría de
+  // la tabla bloque contenedor y rompería los popovers `position: fixed` de los
+  // filtros (es el mismo pozo del comentario de `ds-reveal-in` en globals.css).
+  const wrapRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    const el = wrapRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const medir = () => el.style.setProperty("--dt-vis-w", `${el.clientWidth}px`);
+    medir();
+    const ro = new ResizeObserver(medir);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [modo]);
+
   const [vistaABorrar, setVistaABorrar] = useState<Vista | null>(null);
   // Alta de vista con diálogo del DS (reemplaza window.prompt/confirm).
   const [guardarVistaOpen, setGuardarVistaOpen] = useState(false);
@@ -634,7 +657,7 @@ export function DataTable<T>({
       ) : (
         /* Vista Tabla */
         <Card style={{ padding: 0, overflow: "hidden" }}>
-          <div className="ds-table-wrap" style={{ boxShadow: "none", overflowX: "auto" }}>
+          <div ref={wrapRef} className="ds-table-wrap" style={{ boxShadow: "none", overflowX: "auto" }}>
             <table className="ds-table dt-dark">
               <thead>
                 {table.getHeaderGroups().map((hg) => (
@@ -723,7 +746,10 @@ export function DataTable<T>({
                           <td colSpan={table.getVisibleLeafColumns().length + 1} style={{ padding: 0, border: 0 }}>
                             <div className={`dt-exp-wrap${open ? " is-open" : ""}`}>
                               <div className="dt-exp-clip">
-                                <div className="dt-exp-body">{open ? renderExpanded(row.original) : null}</div>
+                                {/* `.dt-exp-card`: el detalle va contenido en una tarjeta
+                                    pegada a la izquierda, no estirado a lo ancho de la
+                                    tabla (ver el bloque en globals.css). */}
+                                <div className="dt-exp-body"><div className="dt-exp-card">{open ? renderExpanded(row.original) : null}</div></div>
                               </div>
                             </div>
                           </td>

@@ -1,14 +1,18 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { ColumnDef } from "@tanstack/react-table";
 import { Badge, Checkbox, ProgressBar, EmptyState, useToast } from "@/components/ui";
 import { DataTable, TODAS_LAS_FILAS } from "@/components/data-table";
+import { DestinoLinea } from "@/components/destino-linea";
 import { IconChevronDown, IconDescargar } from "@/components/icons";
 import { useStore } from "@/lib/store";
 import { useSoloMias } from "@/lib/use-solo-mias";
-import { money, formatDate, formatDateTime, isoLocal, ordenAlmacenes, ordenAvance, ordenBadge, ordenBadgeDe, ordenObras, ordenRecibidoPct, ordenSubtotal, ordenPedidos, ordenEsDirecta, ordenLineaImporte, proveedorLabel, num, numeroOrden, tieneBc, ordenEsperaCorreccion } from "@/lib/helpers";
+import { useVariantes } from "@/lib/use-variantes";
+import { codigoDeItem } from "@/lib/unidad";
+import { money, formatDate, formatDateTime, isoLocal, ordenAlmacenes, ordenAvance, ordenBadge, ordenBadgeDe, ordenObras, ordenRecibidoPct, ordenSubtotal, ordenPedidos, ordenEsDirecta, ordenLineaImporte, ordenLineaPendiente, esLineaRecibible, etiquetaTipoLinea, proveedorLabel, num, numeroOrden, tieneBc, ordenEsperaCorreccion } from "@/lib/helpers";
 import { ordenEnviada, resumenEnvio, vaAlProveedor } from "@/lib/envio-proveedor";
 import type { Orden } from "@/lib/types";
 
@@ -285,21 +289,7 @@ export function OrdenesLista({
   ], [proveedores, pedidoHref, conEnvioProveedor, facturasBcPorOrden]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const renderLineas = (o: Orden) => (
-    <table className="ds-table" style={{ boxShadow: "none", background: "transparent" }}>
-      <thead>
-        <tr><th>Descripción</th><th className="ds-num">Cantidad</th><th className="ds-num">Precio</th><th className="ds-num">Importe</th></tr>
-      </thead>
-      <tbody>
-        {o.lineas.map((l) => (
-          <tr key={l.id}>
-            <td>{l.descripcion}{l.pedidoNumero && <div className="ds-body-sm ds-muted">{l.pedidoNumero}</div>}</td>
-            <td className="ds-num">{num.format(l.cantidad)} {l.unidad}</td>
-            <td className="ds-num">{money(l.precioUnitario, o.currencyCode)}</td>
-            <td className="ds-num ds-strong">{money(ordenLineaImporte(l), o.currencyCode)}</td>
-          </tr>
-        ))}
-      </tbody>
-    </table>
+    <LineasDeOrden orden={o} href={hrefDetalle(o.id)} pedidoHref={pedidoHref} />
   );
 
   // Agrupación por proveedor (nombre), con total por moneda y % recibido.
@@ -430,5 +420,137 @@ export function OrdenesLista({
         </div>
       )}
     </div>
+  );
+}
+
+// Mete un punto separador entre los pedazos que SÍ existen de un renglón de
+// metadatos. Aparte del `.join(" · ")` de siempre porque acá los pedazos son
+// nodos (un badge, un chip con link), no texto.
+function intercalar(partes: (React.ReactNode | null)[]) {
+  const vivas = partes.filter(Boolean);
+  return vivas.flatMap((n, i) => (i === 0 ? [n] : [<span key={`sep${i}`} className="ocl-line__sep" aria-hidden>·</span>, n]));
+}
+
+// LAS LÍNEAS DE LA ORDEN al expandir la fila. Componente aparte por lo mismo que
+// `LineasDeSolicitud`: las variantes se le piden a BC solo de la orden que se
+// abrió, no de las 594 de la lista.
+//
+// No es una `<table>`: cada línea lleva dos renglones —el material arriba, y
+// debajo su código, el destino y la solicitud—, y eso dentro de una celda se lee
+// como texto suelto. Es la misma pseudo-tabla en rejilla de la recepción
+// (`.rec-line`), con la que la app ya muestra líneas de compra.
+function LineasDeOrden({ orden, href, pedidoHref }: {
+  orden: Orden;
+  href: string;
+  pedidoHref?: (numeroPedido: string) => string | null;
+}) {
+  const variantes = useVariantes(orden.lineas.map((l) => l.articuloId));
+  const n = orden.lineas.length;
+  // `numeroOrden` devuelve "En armado" cuando la orden todavía no está en BC, y
+  // "Líneas de orden en armado" se lee como un estado y no como un rótulo.
+  const rotulo = tieneBc(orden) ? `Líneas de ${numeroOrden(orden)}` : "Líneas de la orden";
+  // Cuántas líneas deben material. Es lo primero que se pregunta al abrir una
+  // orden a medio recibir, y hasta ahora había que sumarlo a ojo.
+  const conFalta = orden.lineas.filter((l) => esLineaRecibible(l) && ordenLineaPendiente(l) > 0).length;
+
+  // Una orden se queda sin líneas cuando el material volvió al ingeniero (ver
+  // `ordenEsperaCorreccion`): el panel vacío se lee como que algo falló.
+  if (n === 0) {
+    return (
+      <div className="ocl-top">
+        <span className="ocl-top__ttl">{rotulo}</span>
+        <span className="ds-body-sm ds-muted">
+          Sin líneas: el material volvió al ingeniero para que lo corrija.
+        </span>
+      </div>
+    );
+  }
+
+  return (
+    <>
+      {/* Cintillo: de qué orden son estas líneas y cuántas son. Reemplaza al
+          encabezado negro anidado con el dato que sí hacía falta. */}
+      <div className="ocl-top">
+        <span className="ocl-top__ttl">{rotulo}</span>
+        <span className="ds-body-sm ds-muted">
+          {n} línea{n === 1 ? "" : "s"}
+          {conFalta > 0 && <> · <span className="ds-pending-text">{conFalta} con faltante</span></>}
+        </span>
+        <span style={{ flex: 1 }} />
+        {/* En la LISTA se entra a la orden haciendo clic en su fila, pero el panel
+            vive en otra `<tr>` que no lleva ese clic: sin este link, tener las
+            líneas abiertas obliga a cerrarlas para poder entrar. */}
+        <Link className="chip-link" href={href} title="Abrir la orden completa">
+          Abrir la orden<span className="chip-link__ir" aria-hidden>↗</span>
+        </Link>
+      </div>
+
+      {/* Sin `aria-hidden`: no es una `<table>`, así que estos rótulos son lo único
+          que nombra las columnas y un lector de pantalla los necesita. */}
+      <div className="ocl-line ocl-line--head">
+        <span>Material</span>
+        <span className="ds-num">Cantidad</span>
+        <span className="ds-num">Precio unit.</span>
+        <span className="ds-num">Importe</span>
+      </div>
+
+      {orden.lineas.map((l) => {
+        const pend = esLineaRecibible(l) ? ordenLineaPendiente(l) : 0;
+        // El CÓDIGO va primero: es con lo que Proveeduría confirma que la línea es
+        // la que se pidió y con lo que se busca en BC. Se muestra pelado (el
+        // guardado puede traer la variante pegada, "M11-0081 -VAR 12", que BC no
+        // conoce). El cargo no tiene: el suyo va en `chargeNo`.
+        const codigo = esLineaRecibible(l) ? codigoDeItem(l.articuloId ?? "") : "";
+        const pedHref = l.pedidoNumero ? pedidoHref?.(l.pedidoNumero) ?? null : null;
+        return (
+          <div key={l.id} className="ocl-line">
+            <div className="ocl-line__desc">
+              <span className="ocl-line__name">{l.descripcion}</span>
+              {/* El subrenglón se arma como lista y se intercala con un punto: sin
+                  separador, "a1 ALM-SSO obra OBRA-003 PED-000101" se lee como una
+                  sola cosa y no se ve dónde termina el código. */}
+              <span className="ocl-line__sub">{intercalar([
+                /* Un cargo no es material (es el flete, la descarga): si no se
+                   dice, se lee como una línea más de inventario. */
+                l.tipo !== "articulo"
+                  ? <Badge key="tipo" tone={l.tipo === "cargo" ? "yellow" : "green"}>{etiquetaTipoLinea(l.tipo)}</Badge>
+                  : null,
+                codigo ? <span key="cod" className="ocl-line__code">{codigo}</span> : null,
+                l.variantCode ? <span key="var">{variantes.etiqueta(l.articuloId, l.variantCode)}</span> : null,
+                /* Destino: la obra que consume el material o el almacén al que
+                   entra. Vale la pena por línea porque una orden reparte: dos
+                   materiales al almacén y el tercero directo a la obra. */
+                esLineaRecibible(l)
+                  ? <DestinoLinea key="dest" inline almacen={l.almacen} obra={l.proyecto} obraInformativa={l.obraSolicitud}
+                      tarea={l.taskNo} maquina={l.maquinaNo} maquinaNombre={l.maquinaNombre} avisarSinTarea={false} />
+                  : null,
+                l.pedidoNumero
+                  ? (pedHref
+                    ? <Link key="ped" className="chip-link" href={pedHref} title={`Ver la solicitud ${l.pedidoNumero} (quién la pidió)`}
+                        onClick={(e) => e.stopPropagation()}>
+                        {l.pedidoNumero}<span className="chip-link__ir" aria-hidden>↗</span>
+                      </Link>
+                    : <span key="ped">{l.pedidoNumero}</span>)
+                  : null,
+                l.descuentoPct ? <span key="desc">−{l.descuentoPct}%</span> : null,
+              ])}</span>
+            </div>
+            <div className="ds-num ocl-line__qty">
+              {num.format(l.cantidad)} <span className="ocl-line__u">{l.unidad}</span>
+              {pend > 0 && <span className="ocl-line__falta">faltan {num.format(pend)}</span>}
+            </div>
+            <div className="ds-num ocl-line__price"><span className="ocl-line__lbl">Precio unit. </span>{money(l.precioUnitario, orden.currencyCode)}</div>
+            <div className="ds-num ocl-line__amt">{money(ordenLineaImporte(l), orden.currencyCode)}</div>
+          </div>
+        );
+      })}
+
+      {/* El total cierra la columna de importes. Está en la fila de arriba, sí,
+          pero con el panel abierto la fila queda fuera de la vista. */}
+      <div className="ocl-foot">
+        <span className="ocl-foot__lbl">Total sin IVA</span>
+        <span className="ocl-foot__val">{money(ordenSubtotal(orden), orden.currencyCode)}</span>
+      </div>
+    </>
   );
 }

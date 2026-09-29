@@ -305,11 +305,14 @@ export function InventariosView({ tablaKey = "inventarios", hrefOrden = (id) => 
         </div>
       );
     })();
+    // `dt-exp-pad`: este panel es texto y secciones, no una tabla a sangre. La
+    // tarjeta del panel expandido no trae padding (las tablas y la rejilla de
+    // líneas ponen el suyo por celda), así que acá se lo pone.
     return (
-      <>
+      <div className="dt-exp-pad">
         {existencias}
         <ComprasInsumo code={a.code} unidad={a.unidad} hrefOrden={hrefOrden} />
-      </>
+      </div>
     );
   };
 

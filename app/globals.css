@@ -831,11 +831,120 @@ td.ds-col-fija {
    + el contenido entra con fade y un leve deslizamiento. */
 .dt-exp-wrap { display: grid; grid-template-rows: 0fr; transition: grid-template-rows .4s cubic-bezier(.22, .61, .36, 1); }
 .dt-exp-wrap.is-open { grid-template-rows: 1fr; }
-.dt-exp-clip { overflow: hidden; }
-.dt-exp-body { padding: 10px 14px 14px 48px; background: color-mix(in srgb, var(--ds-color-surface) 55%, var(--ds-tint-base)); opacity: 0; transform: translateY(-8px); transition: opacity .32s ease .06s, transform .4s cubic-bezier(.22, .61, .36, 1) .06s; }
+/* `overflow-y: clip` y NO `overflow: hidden`: hidden hace de este div un
+   contenedor de scroll, y entonces el `position: sticky` de `.dt-exp-card` se
+   pega a ÉL —que no scrollea— en vez de al scroll de la tabla, o sea no se pega a
+   nada. `clip` recorta igual (es lo que necesita la animación de altura) sin
+   crear scrollport. El eje x queda `visible` a propósito. */
+.dt-exp-clip { overflow-x: visible; overflow-y: clip; }
+.dt-exp-body { padding: 0 var(--ds-space-4) var(--ds-space-4) 52px; background: color-mix(in srgb, var(--ds-color-gray-100) 55%, var(--ds-tint-base)); opacity: 0; transform: translateY(-8px); transition: opacity .32s ease .06s, transform .4s cubic-bezier(.22, .61, .36, 1) .06s; }
 .dt-exp-wrap.is-open .dt-exp-body { opacity: 1; transform: none; }
 .dt-exp-row td { background: transparent; }
 @media (prefers-reduced-motion: reduce) { .dt-exp-wrap, .dt-exp-body { transition: none; } .dt-exp-body { opacity: 1; transform: none; } }
+
+/* El detalle es una TARJETA colgada de la fila, no otra tabla suelta.
+   · `position: sticky` porque la tabla de órdenes es más ancha que la pantalla:
+     antes abrías las líneas, scrolleabas a ver "Factura BC" y el detalle se iba
+     con la tabla. Queda pegado a 52px, justo bajo el chevron que lo abrió.
+   · Ancho tope: estirado a los 1400px de la tabla, Cantidad y Precio quedaban a
+     casi un metro de la descripción con un hueco muerto en medio. */
+.dt-exp-card {
+  position: sticky; left: 52px;
+  /* `--dt-vis-w` es el ancho que se ALCANZA A VER del scroll de la tabla, y lo
+     mide la DataTable (ahí está el por qué). Sin él —o si no hay
+     ResizeObserver— cae a `100%`, que es el ancho de la celda: el comportamiento
+     de antes, no una pantalla roja. */
+  width: min(900px, calc(var(--dt-vis-w, 100%) - 68px));
+  background: var(--ds-surface); border-radius: var(--ds-radius-lg);
+  box-shadow: var(--ds-shadow-01); overflow: hidden;
+}
+/* Un `th` de acá adentro NO es el encabezado de la pantalla. En el DS cualquier
+   `th` es negro (ver `.ds-table thead th`), así que con tres filas abiertas había
+   cuatro barras negras apiladas. Adentro del panel el encabezado es el gris chico
+   con hairline de `.rec-line--head`: hay UN negro por pantalla y es el de la tabla
+   de verdad. */
+.dt-exp-card .ds-table > thead > tr > th,
+.dt-exp-card .ds-table > thead > tr > th:first-child,
+.dt-exp-card .ds-table > thead > tr > th:last-child {
+  background: none; color: var(--ds-color-gray-400); border-radius: 0;
+  border-bottom: 1px solid var(--ds-color-gray-200);
+  padding: 9px var(--ds-space-4); font-size: var(--ds-font-size-body-sm);
+}
+/* La tarjeta ya pone fondo, radio y sombra: el wrap de adentro solo scrollea. */
+.dt-exp-card .ds-table-wrap { background: none; box-shadow: none; border-radius: 0; }
+/* La tarjeta NO trae padding: una tabla y la rejilla `.ocl-*` ponen el suyo por
+   celda y van a sangre. Un panel que en cambio es texto y secciones (el de
+   Inventarios) se envuelve en esto para no quedar pegado al filo. */
+.dt-exp-pad { padding: var(--ds-space-3) var(--ds-space-4); }
+.dt-exp-card .ds-table > tbody > tr:first-child > td { padding-top: var(--ds-space-3); }
+/* En móvil el panel NO se suelta del sticky: la tabla sigue midiendo 1700px y un
+   `width: auto` volvía a estirar la tarjeta a ese ancho, con el Importe y el total
+   fuera de la pantalla. Solo se le arrima el borde. */
+@media (max-width: 760px) {
+  .dt-exp-body { padding-left: var(--ds-space-3); padding-right: var(--ds-space-3); }
+  .dt-exp-card { left: var(--ds-space-3); width: calc(var(--dt-vis-w, 100%) - var(--ds-space-3) * 2); }
+}
+
+/* ── Líneas de una orden de compra (panel expandido de la lista) ──────────
+   Pseudo-tabla en rejilla, hermana de `.rec-line` (la de recepción). No es una
+   `<table>` porque cada línea lleva dos renglones —material arriba, y debajo el
+   código, el destino y la solicitud— y en una celda eso se lee como texto suelto. */
+.ocl-top {
+  display: flex; align-items: center; gap: var(--ds-space-2); flex-wrap: wrap;
+  padding: 10px var(--ds-space-4); border-bottom: 1px solid var(--ds-color-gray-100);
+}
+.ocl-top__ttl {
+  font-size: var(--ds-font-size-body-sm); font-weight: var(--ds-font-weight-semibold);
+  letter-spacing: var(--ds-letter-spacing-wide); text-transform: uppercase;
+  color: var(--ds-color-gray-400);
+}
+/* Columnas repetidas en cada renglón y no con `subgrid`, igual que `.rec-line`:
+   son anchos fijos más un `1fr`, así que calzan solas y sin depender del soporte. */
+.ocl-line, .ocl-foot { grid-template-columns: minmax(0, 1fr) 104px 128px 128px; gap: var(--ds-space-4); }
+.ocl-line { display: grid; align-items: baseline; padding: 10px var(--ds-space-4); border-bottom: 1px solid var(--ds-color-gray-100); }
+.ocl-line:hover { background: color-mix(in srgb, var(--ds-color-gray-100) 45%, var(--ds-tint-base)); }
+.ocl-line--head { padding: 7px var(--ds-space-4); border-bottom: 1px solid var(--ds-color-gray-200); }
+.ocl-line--head:hover { background: none; }
+.ocl-line--head > span { font-size: var(--ds-font-size-body-sm); font-weight: var(--ds-font-weight-semibold); color: var(--ds-color-gray-400); }
+.ocl-line__desc { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+/* Dos líneas, por lo mismo que `.ds-clamp-2`: la medida del material va al final. */
+.ocl-line__name { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.ocl-line__sub { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: var(--ds-font-size-body-sm); color: var(--ds-color-gray-400); }
+.ocl-line__sep { color: var(--ds-color-gray-300); }
+.ocl-line__code { font-weight: 700; letter-spacing: .02em; color: var(--ds-color-gray-500); }
+/* Un badge y un chip de acá son rótulos de un renglón de metadatos, no controles:
+   al tamaño normal pisaban el nombre del material que va arriba. */
+.ocl-line__sub .ds-badge { padding: 1px 8px; }
+.ocl-line__sub .chip-link { padding: 1px 9px; min-height: 0; }
+.ocl-line__qty { white-space: nowrap; font-weight: var(--ds-font-weight-semibold); }
+.ocl-line__u { font-weight: var(--ds-font-weight-regular); color: var(--ds-color-gray-400); }
+.ocl-line__falta { display: block; font-size: var(--ds-font-size-body-sm); font-weight: var(--ds-font-weight-regular); color: var(--ds-text-danger); }
+.ocl-line__price { white-space: nowrap; color: var(--ds-color-gray-500); }
+.ocl-line__amt { white-space: nowrap; font-weight: var(--ds-font-weight-semibold); }
+/* Pie: el total cierra la columna de importes, que es el número que se viene a
+   ver y que hoy había que ir a buscar al encabezado de la fila. */
+.ocl-foot { display: grid; align-items: center; padding: 11px var(--ds-space-4); background: color-mix(in srgb, var(--ds-color-gray-100) 50%, var(--ds-tint-base)); }
+.ocl-foot__lbl { grid-column: 1 / 4; text-align: right; font-size: var(--ds-font-size-body-sm); color: var(--ds-color-gray-400); }
+.ocl-foot__val { white-space: nowrap; text-align: right; font-weight: var(--ds-font-weight-semibold); font-size: var(--ds-font-size-body-md); }
+/* El rótulo de la columna, para el angosto: sin encabezado, "₡7 800,00" solo no
+   dice si es el precio de uno o el de los ochenta. Misma idea que
+   `.addl-pendlbl` en el diálogo de agregar líneas. */
+.ocl-line__lbl { display: none; }
+
+/* En angosto se apila con el mismo reparto que `.addl-line`: los datos a la
+   izquierda en tres renglones y el importe a la derecha, centrado sobre los tres.
+   Las áreas van explícitas, no por auto-placement, porque el "faltan N" hace que
+   la altura de un renglón cambie de línea a línea. */
+@media (max-width: 760px) {
+  .ocl-line, .ocl-foot { grid-template-columns: minmax(0, 1fr) auto; column-gap: var(--ds-space-3); row-gap: 2px; }
+  .ocl-line--head { display: none; }
+  .ocl-line__lbl { display: inline; color: var(--ds-color-gray-400); }
+  .ocl-line__desc { grid-area: 1 / 1 / 2 / 2; }
+  .ocl-line__qty { grid-area: 2 / 1 / 3 / 2; text-align: left; }
+  .ocl-line__price { grid-area: 3 / 1 / 4 / 2; text-align: left; }
+  .ocl-line__amt { grid-area: 1 / 2 / 4 / 3; align-self: center; }
+  .ocl-foot__lbl { grid-column: 1; text-align: left; }
+}
 
 /* NavigationControls del DS: pill blanco con chevron (prev/next de la tabla) */
 .ds-navctrl {
