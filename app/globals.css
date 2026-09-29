@@ -317,11 +317,22 @@ h1, h2, h3, h4, p { margin: 0; }
   font-size: var(--ds-font-size-body-sm); font-weight: var(--ds-font-weight-semibold);
   line-height: var(--ds-line-height-body-sm); white-space: nowrap;
 }
-.ds-badge::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+/* El punto hereda el color del texto salvo que la variante diga otra cosa. */
+.ds-badge::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--ds-badge-punto, currentColor); }
 .ds-badge--gray { background: var(--ds-color-gray-100); color: var(--ds-color-gray-500); }
-.ds-badge--green { background: color-mix(in srgb, var(--ds-color-green-100) 22%, var(--ds-tint-base)); color: var(--ds-color-green-200); }
-.ds-badge--yellow { background: color-mix(in srgb, var(--ds-color-yellow) 26%, var(--ds-tint-base)); color: var(--ds-color-black-100); }
-.ds-badge--red { background: color-mix(in srgb, var(--ds-color-red-100) 22%, var(--ds-tint-base)); color: var(--ds-text-danger); }
+/* Verde, amarillo y rojo: la ETIQUETA va en `--ds-text` y el color queda en el tinte
+   de la pastilla más el punto. Antes el texto iba en el color de la variante sobre su
+   propio tinte, y eso no da contraste: medido, verde 2,60:1 y rojo 3,91:1 en claro, y
+   el amarillo 2,73:1 en oscuro (texto negro sobre tinte oscuro). Lo que el badge
+   SIGNIFICA está en su texto —"Rechazada", "Lanzada"—, así que ahí es donde hace
+   falta que se lea; el punto es refuerzo del tinte, no el dato.
+   El punto va en el tono que sí se distingue sobre el tinte en los dos temas
+   (green-300 y --ds-text-danger se remapean en oscuro). El amarillo no lleva punto
+   propio: amarillo sobre tinte amarillo da 1,42:1, o sea invisible, y hereda el texto
+   como ya lo hacía. */
+.ds-badge--green { background: color-mix(in srgb, var(--ds-color-green-100) 22%, var(--ds-tint-base)); color: var(--ds-text); --ds-badge-punto: var(--ds-color-green-300); }
+.ds-badge--yellow { background: color-mix(in srgb, var(--ds-color-yellow) 26%, var(--ds-tint-base)); color: var(--ds-text); }
+.ds-badge--red { background: color-mix(in srgb, var(--ds-color-red-100) 22%, var(--ds-tint-base)); color: var(--ds-text); --ds-badge-punto: var(--ds-text-danger); }
 .ds-badge--blueish { background: var(--ds-color-gray-100); color: var(--ds-color-gray-500); }
 
 /* =====================  QUANTITY SELECTOR (ring)  ===================== */
