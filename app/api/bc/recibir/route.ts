@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { bcRecibir, diagnosticarFalloBc, verificarLineasPosteables, frenoRegistroActivo, conflictoDeDimensiones, explicarConflictoDimensiones } from "@/lib/bc";
+import { bcRecibir, reponerLanzamientoTrasFallo, type EstadoBcPedido, diagnosticarFalloBc, verificarLineasPosteables, frenoRegistroActivo, conflictoDeDimensiones, explicarConflictoDimensiones } from "@/lib/bc";
 import { frenarPorEncabezado } from "@/lib/freno-encabezado";
 import { actor } from "@/lib/actor";
 import type { Role } from "@/lib/types";
@@ -26,13 +26,17 @@ export async function POST(req: Request) {
   // Se declara ACÁ y no dentro del try porque el catch también lo necesita: el
   // intento fallido se anota a nombre de quien lo hizo (ver lib/fallo-posteo.ts).
   let quien: { usuario: string; rol: Role } | null = null;
+  // Cómo estaba el pedido en BC al EMPEZAR, según el freno de encabezado. Es lo
+  // único que después permite saber si el posteo lo des-lanzó (ver abajo).
+  let estadoBc: EstadoBcPedido | undefined;
   try {
     // FRENO 1 — el ENCABEZADO del pedido en BC: mismo proveedor y LANZADO allá
     // (ver lib/freno-encabezado.ts). Recibir contra el pedido de otro le mete el
     // material al inventario a nombre equivocado; y contra uno sin lanzar, BC
     // rechaza con un error crudo que Bodega no puede interpretar.
     const frenoProv = await frenarPorEncabezado(orderNo, ordenId, vendorNo, "recibir");
-    if (frenoProv) return NextResponse.json(frenoProv, { status: 409 });
+    estadoBc = frenoProv.estadoBc;
+    if (frenoProv.freno) return NextResponse.json(frenoProv.freno, { status: 409 });
     // Mismo freno que en /api/bc/registrar: el codeunit ignora sin avisar la línea
     // que no encuentra en el pedido, y la app la marcaría recibida igual.
     // BC_FRENO_REGISTRO=0 lo apaga desde Azure: si el chequeo diera un falso
@@ -59,21 +63,30 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: true, receiptNo, ...guardado });
   } catch (e: any) {
     const error = String(e?.message ?? e);
+    // RED DE ATRÁS — el posteo pudo des-lanzar el pedido en BC sin que la app se
+    // enterara: el codeunit lo reabre solo para poder moverle la fecha de registro a
+    // un pedido en moneda extranjera. Si al empezar constaba LANZADO y ahora está
+    // Abierto, se lo devuelve así. Ver reponerLanzamientoTrasFallo en lib/bc.ts.
+    const vuelta = await reponerLanzamientoTrasFallo(String(orderNo ?? ""), estadoBc);
+    const avisoVuelta = vuelta ? ` · ${vuelta.texto}` : "";
     // El intento que no entró queda escrito en la orden, y si el pedido quedó ABIERTO
     // en Business Central la orden lo dice sola (aviso rojo del detalle). Nunca tumba
     // la respuesta del error real: ver lib/fallo-posteo.ts.
-    await anotarFalloDeBc({ error, ordenId, orderNo, accion: "recibir", quien, causa: e });
+    await anotarFalloDeBc({
+      error: error + avisoVuelta, ordenId, orderNo, accion: "recibir", quien, causa: e,
+      pedidoAbierto: vuelta?.quedoAbierto ? String(orderNo ?? "") : undefined,
+    });
     // Choque de DIMENSIONES (el CC que el almacén amarra en BC): no se reintenta y
     // no hay nada que conciliar —BC no registró nada—, así que no se le vuelve a
     // preguntar a BC: se explica y se corta. Ver conflictoDeDimensiones en lib/bc.ts.
     const dim = conflictoDeDimensiones(error);
     if (dim) {
       return NextResponse.json({
-        ok: false, error: `NO se recibió: ${explicarConflictoDimensiones(dim, String(orderNo ?? ""))}`,
+        ok: false, error: `NO se recibió: ${explicarConflictoDimensiones(dim, String(orderNo ?? ""))}${avisoVuelta}`,
         frenoDimensiones: true, dimensiones: dim,
       }, { status: 409 });
     }
     const diag = await diagnosticarFalloBc(error, String(orderNo ?? "")).catch(() => null);
-    return NextResponse.json({ ok: false, error, ...(diag ?? {}) }, { status: 502 });
+    return NextResponse.json({ ok: false, error: error + avisoVuelta, ...(diag ?? {}) }, { status: 502 });
   }
 }

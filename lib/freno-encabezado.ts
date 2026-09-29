@@ -14,7 +14,7 @@
 // un freno. `vendorNo` del body queda solo como respaldo para los llamados viejos
 // que todavía no mandan `ordenId`.
 import { getOrden } from "./repo.ts";
-import { frenoProveedorActivo, verificarEncabezadoDelPedido, type FrenoEncabezado } from "./bc.ts";
+import { frenoProveedorActivo, verificarEncabezadoDelPedido, type FrenoEncabezado, type EstadoBcPedido } from "./bc.ts";
 
 export type AccionRegistro = "recibir" | "facturar" | "registrar";
 
@@ -60,15 +60,18 @@ export async function frenarPorEncabezado(
   ordenId: unknown,
   vendorNoBody: unknown,
   accion: AccionRegistro,
-): Promise<Freno409 | null> {
-  if (!frenoProveedorActivo()) return null;
+): Promise<{ freno: Freno409 | null; estadoBc?: EstadoBcPedido }> {
+  if (!frenoProveedorActivo()) return { freno: null };
   const esperado = await proveedorEsperadoDeOrden(ordenId, vendorNoBody);
   const r: FrenoEncabezado = await verificarEncabezadoDelPedido(String(orderNo ?? ""), esperado)
     // Un fallo del propio chequeo no puede trabar el registro: se comporta como
     // "no se pudo verificar", igual que cuando BC no contesta.
     .catch(() => ({ ok: true, verificado: false }));
-  if (r.ok || !r.problema) return null;
-  return {
+  // El estado que se leyó acá viaja de vuelta aunque el freno deje pasar: es la
+  // única constancia de cómo estaba el pedido ANTES del posteo, y con eso se puede
+  // reponer el lanzamiento si el posteo lo des-lanza (ver reponerLanzamientoTrasFallo).
+  if (r.ok || !r.problema) return { freno: null, estadoBc: r.bcEstado };
+  return { freno: {
     ok: false,
     error: `${COMO_EMPIEZA[accion]}: ${r.mensaje}.\n\n${QUE_SIGUE[r.problema]}`,
     frenoEncabezado: true,
@@ -76,5 +79,5 @@ export async function frenarPorEncabezado(
     bcVendorNo: r.bcVendorNo,
     bcVendorName: r.bcVendorName,
     bcEstado: r.bcEstado,
-  };
+  }, estadoBc: r.bcEstado };
 }

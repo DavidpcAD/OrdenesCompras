@@ -3812,6 +3812,46 @@ async function devolverPedidoComoEstaba(orderNo: string, antes: EstadoBcPedido):
   };
 }
 
+// LA RED DE ATRÁS, para el des-lanzamiento que la app NO ve.
+//
+// `devolverPedidoComoEstaba` cubre el reabrir que hace ESTA app. Pero el pedido
+// también se des-lanza del otro lado: el codeunit reabre solo (PrepararFechaRegistro)
+// para poder moverle la fecha de registro a un pedido en moneda extranjera, y si el
+// posteo se cae después, la app nunca vio un "Status must be equal to 'Open'" que la
+// avisara. Así quedó CP-005541: Abierta en BC, "Lanzada" acá, once días.
+//
+// La regla es la misma de siempre y por eso va pura: solo se repone lo que CONSTA que
+// estaba lanzado (el freno de encabezado lo leyó al empezar el registro, ver
+// lib/freno-encabezado.ts). Si no consta, o si ahora está esperando aprobación, no se
+// toca: lanzar de más sería aprobar por la espalda.
+export function hayQueReponerLanzamiento(alEmpezar: EstadoBcPedido | undefined, ahora: EstadoBcPedido): boolean {
+  return alEmpezar === "lanzado" && ahora === "abierto";
+}
+
+// Devuelve null cuando no hay nada que reponer (que es el caso normal). Nunca lanza:
+// esto corre dentro del catch de un posteo que ya falló.
+export async function reponerLanzamientoTrasFallo(
+  orderNo: string,
+  alEmpezar: EstadoBcPedido | undefined,
+): Promise<{ texto: string; quedoAbierto: boolean } | null> {
+  const no = (orderNo ?? "").trim();
+  if (!no || alEmpezar !== "lanzado") return null;
+  let ahora: EstadoBcPedido = "desconocido";
+  try { ahora = estadoLanzamientoBc((await bcEncabezadoPedido(no))?.status); }
+  catch { return null; /* no se pudo mirar: no es un hecho sobre el pedido */ }
+  if (!hayQueReponerLanzamiento(alEmpezar, ahora)) return null;
+  try {
+    await bcReleasePedido(no);
+    return { texto: `El pedido ${no} se había quedado ABIERTO en Business Central y se volvió a lanzar: quedó como estaba antes del intento.`, quedoAbierto: false };
+  } catch (e: any) {
+    return {
+      texto: `OJO: el intento dejó el pedido ${no} ABIERTO en Business Central y NO se pudo volver a lanzar (${String(e?.message ?? e)}). `
+        + `Lanzalo en BC o pedíselo a Aprobación, porque si no Bodega no puede recibir contra él.`,
+      quedoAbierto: true,
+    };
+  }
+}
+
 async function bcPostear(procedimiento: string, etiqueta: string, orderNo: string, body: Record<string, unknown>): Promise<string> {
   const cid = await getStdCompanyId();
   const url = `${odataRoot()}/${procedimiento}?company=${encodeURIComponent(cid)}`;

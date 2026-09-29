@@ -56,6 +56,9 @@ export async function anotarFalloDeBc(input: {
   // el mismo "Sistema" que usa el resto de la app.
   quien?: { usuario: string; rol: Role } | null;
   causa?: unknown;   // el Error tal cual: trae la bandera `pedidoAbiertoEnBc`
+  // El pedido quedó Abierto en BC y la ruta ya lo sabe por otro lado (la red de
+  // atrás de reponerLanzamientoTrasFallo, que no pasa por el Error).
+  pedidoAbierto?: string;
 }): Promise<void> {
   const id = Number(input.ordenId);
   if (!Number.isFinite(id) || id <= 0) return;   // sin orden no hay dónde anotarlo
@@ -63,7 +66,7 @@ export async function anotarFalloDeBc(input: {
   try {
     const no = String(input.orderNo ?? "");
     await anotarFalloBc(id, textoDelFallo(input.accion, no, input.error), quien.usuario, quien.rol);
-    const abierto = (input.causa as { pedidoAbiertoEnBc?: string } | undefined)?.pedidoAbiertoEnBc;
+    const abierto = input.pedidoAbierto || (input.causa as { pedidoAbiertoEnBc?: string } | undefined)?.pedidoAbiertoEnBc;
     if (abierto) {
       await guardarChequeoBc(id, "desalineado", textoPedidoAbierto(input.accion, abierto), quien.usuario, quien.rol);
     }

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { bcFacturarRecibido, verificarLineasPosteables, frenoRegistroActivo, conflictoDeDimensiones, explicarConflictoDimensiones } from "@/lib/bc";
+import { bcFacturarRecibido, reponerLanzamientoTrasFallo, type EstadoBcPedido, verificarLineasPosteables, frenoRegistroActivo, conflictoDeDimensiones, explicarConflictoDimensiones } from "@/lib/bc";
 import { frenarPorEncabezado } from "@/lib/freno-encabezado";
 import { actor } from "@/lib/actor";
 import type { Role } from "@/lib/types";
@@ -23,12 +23,16 @@ export async function POST(req: Request) {
   // Se declara ACÁ y no dentro del try porque el catch también lo necesita: el
   // intento fallido se anota a nombre de quien lo hizo (ver lib/fallo-posteo.ts).
   let quien: { usuario: string; rol: Role } | null = null;
+  // Cómo estaba el pedido en BC al EMPEZAR, según el freno de encabezado. Es lo
+  // único que después permite saber si el posteo lo des-lanzó (ver abajo).
+  let estadoBc: EstadoBcPedido | undefined;
   try {
     // FRENO 1 — el ENCABEZADO del pedido en BC: mismo proveedor y LANZADO allá
     // (ver lib/freno-encabezado.ts). Acá es lo último que queda antes de que la
     // cuenta por pagar se mueva: si algo del encabezado no calza, no se factura.
     const frenoProv = await frenarPorEncabezado(orderNo, ordenId, vendorNo, "facturar");
-    if (frenoProv) return NextResponse.json(frenoProv, { status: 409 });
+    estadoBc = frenoProv.estadoBc;
+    if (frenoProv.freno) return NextResponse.json(frenoProv.freno, { status: 409 });
     // Acá el saldo que importa es lo RECIBIDO SIN FACTURAR: el codeunit filtra por
     // "Qty. Rcd. Not Invoiced" y, si no calza, se salta la línea sin decir nada.
     // BC_FRENO_REGISTRO=0 lo apaga desde Azure: si el chequeo diera un falso
@@ -55,20 +59,29 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: true, postedNo, ...guardado });
   } catch (e: any) {
     const error = String(e?.message ?? e);
+    // RED DE ATRÁS — el posteo pudo des-lanzar el pedido en BC sin que la app se
+    // enterara: el codeunit lo reabre solo para poder moverle la fecha de registro a
+    // un pedido en moneda extranjera. Si al empezar constaba LANZADO y ahora está
+    // Abierto, se lo devuelve así. Ver reponerLanzamientoTrasFallo en lib/bc.ts.
+    const vuelta = await reponerLanzamientoTrasFallo(String(orderNo ?? ""), estadoBc);
+    const avisoVuelta = vuelta ? ` · ${vuelta.texto}` : "";
     // El intento que no entró queda escrito en la orden, y si el pedido quedó ABIERTO
     // en Business Central la orden lo dice sola (aviso rojo del detalle). Nunca tumba
     // la respuesta del error real: ver lib/fallo-posteo.ts.
-    await anotarFalloDeBc({ error, ordenId, orderNo, accion: "facturar", quien, causa: e });
+    await anotarFalloDeBc({
+      error: error + avisoVuelta, ordenId, orderNo, accion: "facturar", quien, causa: e,
+      pedidoAbierto: vuelta?.quedoAbierto ? String(orderNo ?? "") : undefined,
+    });
     // Choque de DIMENSIONES (el CC que el almacén amarra en BC): no se reintenta —
     // cada intento da el mismo error— y BC no registró nada. Se explica y se corta.
     // Ver conflictoDeDimensiones en lib/bc.ts.
     const dim = conflictoDeDimensiones(error);
     if (dim) {
       return NextResponse.json({
-        ok: false, error: `NO se facturó: ${explicarConflictoDimensiones(dim, String(orderNo ?? ""))}`,
+        ok: false, error: `NO se facturó: ${explicarConflictoDimensiones(dim, String(orderNo ?? ""))}${avisoVuelta}`,
         frenoDimensiones: true, dimensiones: dim,
       }, { status: 409 });
     }
-    return NextResponse.json({ ok: false, error }, { status: 502 });
+    return NextResponse.json({ ok: false, error: error + avisoVuelta }, { status: 502 });
   }
 }

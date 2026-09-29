@@ -6,7 +6,7 @@
 //   npm test
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { payloadReplaceLines, sinObrasInexistentes, avisoDeSaneo, lineasOrdenParaBc, obrasSinTarea, lineasSinUnidad, lineasSinAlmacen, centroCostoDeOrden, centroCostoDeLinea, decidirVariantes, crearEnBcAlEnviar, bcPideAbierto, devolucionTrasFallo, ccForzadoDelAlmacen, type LineaReplaceBc } from "./bc.ts";
+import { payloadReplaceLines, sinObrasInexistentes, avisoDeSaneo, lineasOrdenParaBc, obrasSinTarea, lineasSinUnidad, lineasSinAlmacen, centroCostoDeOrden, centroCostoDeLinea, decidirVariantes, crearEnBcAlEnviar, bcPideAbierto, devolucionTrasFallo, hayQueReponerLanzamiento, ccForzadoDelAlmacen, type LineaReplaceBc } from "./bc.ts";
 import type { OrdenLinea } from "./types.ts";
 
 const item = (p: Partial<LineaReplaceBc> = {}): LineaReplaceBc => ({
@@ -396,6 +396,32 @@ test("el que esperaba aprobación NO se relanza: se avisa", () => {
 
 test("si no se pudo leer cómo estaba, tampoco se adivina", () => {
   assert.equal(devolucionTrasFallo("desconocido"), "avisar");
+});
+
+// ---- la red de atrás: el des-lanzamiento que la app NO ve ----------------------
+// El codeunit reabre el pedido por su cuenta para poder moverle la fecha de registro
+// cuando es en divisa, así que la app puede recibir un error cualquiera y el pedido
+// quedar Abierto sin que nada se lo haya dicho. Solo se repone lo que CONSTA que
+// estaba lanzado (lo leyó el freno de encabezado al empezar el registro).
+test("se repone el lanzamiento que el posteo se llevó puesto", () => {
+  assert.equal(hayQueReponerLanzamiento("lanzado", "abierto"), true);
+});
+
+test("si sigue lanzado no hay nada que reponer", () => {
+  assert.equal(hayQueReponerLanzamiento("lanzado", "lanzado"), false);
+});
+
+// Alguien lo mandó a aprobación en el medio: lanzarlo sería saltarse la firma.
+test("si quedó esperando aprobación no se lanza", () => {
+  assert.equal(hayQueReponerLanzamiento("lanzado", "pendiente-aprobacion"), false);
+});
+
+// Sin constancia de cómo estaba (freno apagado, o BC que no contestó al empezar) no
+// se lanza nada: sería lanzar un pedido que a lo mejor nadie aprobó.
+test("sin constancia de que estuviera lanzado, no se toca", () => {
+  assert.equal(hayQueReponerLanzamiento(undefined, "abierto"), false);
+  assert.equal(hayQueReponerLanzamiento("abierto", "abierto"), false);
+  assert.equal(hayQueReponerLanzamiento("lanzado", "desconocido"), false);
 });
 
 // ---- centro de costo: los DOS tipos de pedido ----------------------------------
