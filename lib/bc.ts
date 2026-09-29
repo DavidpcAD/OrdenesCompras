@@ -1909,22 +1909,31 @@ export type LineaReplaceBc = {
 };
 
 // Almacenes que tienen el CC AMARRADO en BC (dimensión predeterminada con registro
-// de valores "Igual código"). Para sus líneas el CC no es negociable: mandarle el de
-// la obra hace que el pedido se cree bien, se lance bien y REVIENTE al registrar,
-// con Bodega mirando el camión (CP-005293 y el almacén F-MUEBLES, 3 sep 2026).
-//
-// Cuál almacén amarra qué es CONFIGURACIÓN DE BC, y la app no tiene por dónde
-// leerla: la API estándar no expone las dimensiones predeterminadas de una
-// ubicación. Así que se declara por env, y se puede cambiar desde Azure sin esperar
-// un despliegue:
+// de valores "Igual código"). Se declara por env porque es configuración de BC:
 //
 //   BC_CC_POR_ALMACEN="F-MUEBLES=F-MUEBLES,VN-M.28=VN-M.28"
 //   BC_CC_POR_ALMACEN="F-MUEBLES"        ← atajo: el valor forzado es el mismo código
 //
-// VACÍO (el default) = no se fuerza nada y todo sigue como siempre. Es un parche
-// para poder registrar cuando BC no se puede tocar, no la solución: la línea pierde
-// EN BC el centro de costo de la obra (acá se conserva). Si en BC se le cambia el
-// "Igual código" por "Código obligatorio", esta env se deja vacía y ya.
+// OJO CON PARA QUÉ SIRVE: solo para líneas SIN centro de costo. Nació el 3 sep 2026
+// (CP-005293, almacén F-MUEBLES) creyendo que en un choque el CC del almacén tenía
+// que ganarle al de la obra, y eso era FALSO: la obra también amarra el suyo con
+// "Igual código", así que el parche no arregló nada, solo movió el "no" de BC del
+// almacén a la obra. Lo que sí hizo fue trabar cuatro pedidos que antes pasaban
+// (CP-005371 el 3 sep, CP-005403, CP-005492 y CP-005701), porque `ALM-GRAL=INV` y
+// `ALM-BAR=INV` le pisan a la línea el CC de la obra. Desde el 29 sep la obra manda
+// (ver dimensionDeLinea) y esto solo actúa cuando no hay obra de por medio.
+//
+// UN CHOQUE DE VERDAD NO SE ARREGLA DESDE ACÁ. Si el almacén amarra un valor y la
+// obra amarra otro, la línea no se puede registrar con NINGÚN CC y el arreglo es en
+// BC (quitarle el "Igual código"). Hoy el único almacén así es ALM-GRAL, que amarra
+// INV sin ser su propio código; los otros 236 amarran el suyo, y ALM-PP y LOTES no
+// amarran nada. El rodeo operativo es mandar la línea al almacén de la obra, que es
+// la convención de la casa (locationCode = N.º de obra).
+//
+// Y SÍ SE PUEDEN LEER, al contrario de lo que decía este comentario antes:
+//   GET /api/v2.0/companies({cid})/defaultDimensions?$filter=dimensionCode eq 'CC'
+// devuelve todas con su `postingValidation`. Gotcha: `parentId` viene en ceros, así
+// que no dice de quién es cada una; se alinean por orden de tabla+clave.
 export function ccForzadoDelAlmacen(locationCode?: string): string {
   const loc = (locationCode ?? "").trim().toUpperCase();
   if (!loc) return "";
@@ -1947,9 +1956,11 @@ export function ccForzadoDelAlmacen(locationCode?: string): string {
 // pone sola por el ítem o el almacén (mismo error que se pagó con la unidad y la
 // variante en CP-003884).
 function dimensionDeLinea(l: LineaReplaceBc): Record<string, string> {
-  // Si el almacén de la línea tiene el CC amarrado en BC, gana el suyo: el de la
-  // obra no lo dejaría registrar (ver ccForzadoDelAlmacen).
-  const valor = ccForzadoDelAlmacen(l.locationCode) || (l.centroCosto ?? "").trim();
+  // CUANDO HAY OBRA, EL CC DE LA OBRA MANDA. Medido contra BC Production el 29 sep
+  // 2026: de 6 990 líneas ya registradas con obra, 6 989 llevan CC = el código de la
+  // obra. Pisárselo con el del almacén es lo que trabó CP-005371, CP-005403,
+  // CP-005492 y CP-005701 (ver ccForzadoDelAlmacen).
+  const valor = (l.centroCosto ?? "").trim() || ccForzadoDelAlmacen(l.locationCode);
   return valor ? { ccCode: codigoDimensionCC(), ccValue: valor } : {};
 }
 

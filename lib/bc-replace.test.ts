@@ -485,12 +485,13 @@ test("el encabezado toma un CC y avisa cuando la orden mezcla obras", () => {
   assert.equal(centroCostoDeOrden([item({})]).cc, "");
 });
 
-// ── ALMACENES CON EL CC AMARRADO (CP-005293) ─────────────────────────────────
-// La ubicación F-MUEBLES tiene en BC una dimensión predeterminada CC = F-MUEBLES
-// con "Igual código": la línea que entre ahí NO puede llevar el CC de la obra, y BC
-// se da cuenta recién al registrar. Cuál almacén amarra qué es configuración de BC
-// —la API estándar no la expone— así que se declara con BC_CC_POR_ALMACEN.
-// Vacía (el default) = no se fuerza nada.
+// ── ALMACENES CON EL CC AMARRADO (CP-005293, CP-005492) ──────────────────────
+// Un almacén puede tener en BC una dimensión predeterminada de CC con "Igual
+// código", que obliga ese valor y ningún otro. Se declara con BC_CC_POR_ALMACEN
+// porque es configuración de BC; vacía (el default) = no se fuerza nada.
+// Pero una OBRA amarra el suyo igual, así que en un choque de verdad la línea no
+// registra con ningún CC y el arreglo es en BC. Por eso la regla de la app es la
+// que se mide en BC: cuando hay obra, gana la obra.
 test("BC_CC_POR_ALMACEN: sin la env, ningún almacén fuerza nada", () => {
   delete process.env.BC_CC_POR_ALMACEN;
   assert.equal(ccForzadoDelAlmacen("F-MUEBLES"), "");
@@ -508,22 +509,27 @@ test("BC_CC_POR_ALMACEN: mapea almacén → valor forzado, y el atajo repite el 
   } finally { delete process.env.BC_CC_POR_ALMACEN; }
 });
 
-test("en un almacén con CC amarrado, gana el CC del almacén y no el de la obra", () => {
-  process.env.BC_CC_POR_ALMACEN = "F-MUEBLES=F-MUEBLES";
+// Medido contra BC Production el 29 sep 2026: de 6 990 líneas YA REGISTRADAS con
+// obra, 6 989 llevan CC = el código de la obra. Pisárselo con el del almacén es lo
+// que trabó CP-005371, CP-005403, CP-005492 y CP-005701 — y no salvaba a F-MUEBLES,
+// porque la obra VN-L.34 amarra el suyo con "Igual código" igual que el almacén.
+test("si la línea tiene obra, su CC le gana al que amarra el almacén", () => {
+  process.env.BC_CC_POR_ALMACEN = "F-MUEBLES=F-MUEBLES,ALM-GRAL=INV";
   try {
     const { lines } = payloadReplaceLines([
       item({ locationCode: "F-MUEBLES", centroCosto: "VN-L.34" }),
-      item({ locationCode: "ALM-GRAL", centroCosto: "VN-L.34" }),
+      item({ locationCode: "ALM-GRAL", centroCosto: "INF-HDAII" }),
+      item({ locationCode: "ALM-BAR", centroCosto: "GEN-BAR" }),
     ]);
-    // La línea que va a F-MUEBLES viaja con el valor que BC exige: mandarle el de la
-    // obra hace que el pedido se cree y se lance bien y reviente AL REGISTRAR.
-    assert.equal(lines[0].ccValue, "F-MUEBLES");
-    // El almacén que no amarra nada sigue llevando el CC de la obra, como siempre.
-    assert.equal(lines[1].ccValue, "VN-L.34");
+    assert.equal(lines[0].ccValue, "VN-L.34");
+    assert.equal(lines[1].ccValue, "INF-HDAII");   // era el bug de CP-005492: iba "INV"
+    assert.equal(lines[2].ccValue, "GEN-BAR");     // ALM-BAR no amarra nada: era daño gratis
   } finally { delete process.env.BC_CC_POR_ALMACEN; }
 });
 
-test("el almacén amarrado pone el CC incluso si la línea no traía ninguno", () => {
+// Sin obra no hay a quién respetarle nada, y ahí el valor del almacén sí sirve: deja
+// la línea con el CC que BC le va a exigir en vez de mandarla sin ninguno.
+test("el almacén amarrado pone el CC cuando la línea no trae obra", () => {
   process.env.BC_CC_POR_ALMACEN = "F-MUEBLES";
   try {
     const { lines } = payloadReplaceLines([item({ locationCode: "F-MUEBLES" })]);
