@@ -34,7 +34,7 @@ export function ComprasProveedores({ filas }: { filas: FilaProv[] }) {
     { id: "ordenes", header: "Órdenes", accessorFn: (r) => r.nOrdenes, meta: { label: "Órdenes", num: true }, enableColumnFilter: false, cell: (c) => c.getValue() },
     { id: "pedido", header: "Pedido", accessorFn: (r) => r.pedido, meta: { label: "Pedido", num: true }, enableColumnFilter: false, cell: (c) => money(c.getValue(), c.row.original.currency) },
     { id: "recibido", header: "Entregado", accessorFn: (r) => r.recibido, meta: { label: "Entregado", num: true }, enableColumnFilter: false, cell: (c) => money(c.getValue(), c.row.original.currency) },
-    { id: "pendiente", header: "Pendiente", accessorFn: (r) => r.pendiente, meta: { label: "Pendiente", num: true }, enableColumnFilter: false, cell: (c) => { const v = Number(c.getValue()); return <span className="ds-strong" style={{ color: v > 0 ? "var(--ds-color-red-200)" : "inherit" }}>{money(v, c.row.original.currency)}</span>; } },
+    { id: "pendiente", header: "Pendiente", accessorFn: (r) => r.pendiente, meta: { label: "Pendiente", num: true }, enableColumnFilter: false, cell: (c) => { const v = Number(c.getValue()); return <span className="ds-strong" style={{ color: v > 0 ? "var(--ds-text-danger)" : "inherit" }}>{money(v, c.row.original.currency)}</span>; } },
     { id: "pct", header: "% entregado", accessorFn: (r) => r.pct, meta: { label: "% entregado", num: true }, enableColumnFilter: false, cell: (c) => { const r = c.row.original; return <div className="row" style={{ justifyContent: "flex-end" }}><ProgressBar compact value={r.recibido} total={r.pedido} /></div>; } },
   ], []);
 

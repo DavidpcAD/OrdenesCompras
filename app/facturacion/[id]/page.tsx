@@ -1063,7 +1063,7 @@ export default function RegistrarFacturaPage() {
         {cargo && nadaRecibidoAun && !completaOrden && (
           <Card flat className="mt-4 ds-form-field--advertencia">
             <div className="row gap-3">
-              <span style={{ color: "var(--ds-color-red-200)" }}><IconWarning /></span>
+              <span style={{ color: "var(--ds-text-danger)" }}><IconWarning /></span>
               <div>
                 <div className="ds-strong">El flete de la orden se factura en esta entrega</div>
                 <p className="ds-label ds-muted">
@@ -1342,7 +1342,7 @@ export default function RegistrarFacturaPage() {
             {!seguro && (
               <Card flat className="mt-4 ds-form-field--advertencia">
                 <div className="row gap-3">
-                  <span style={{ color: "var(--ds-color-red-200)" }}><IconWarning /></span>
+                  <span style={{ color: "var(--ds-text-danger)" }}><IconWarning /></span>
                   <div>
                     <div className="ds-strong">Verificá en BC antes de conciliar</div>
                     <p className="ds-label ds-muted">
@@ -1431,7 +1431,7 @@ export default function RegistrarFacturaPage() {
                 {quedoEnStock.length > 0 && (
                   <Card flat className="mt-4 ds-form-field--advertencia">
                     <div className="row gap-3">
-                      <span style={{ color: "var(--ds-color-red-200)" }}><IconWarning /></span>
+                      <span style={{ color: "var(--ds-text-danger)" }}><IconWarning /></span>
                       <div>
                         <div className="ds-strong">En BC quedó en inventario, no como consumo de la obra</div>
                         <p className="ds-label ds-muted">
@@ -1471,7 +1471,7 @@ export default function RegistrarFacturaPage() {
                               )}
                             </td>
                             <td className="ds-num ds-strong">{verificando ? <Skeleton style={{ display: "inline-block", width: 48, height: 14, borderRadius: 6 }} /> : x.despues == null ? "—" : num.format(x.despues)}</td>
-                            <td className="ds-num">{verificando ? <span className="ds-muted" title="Verificando en BC…">…</span> : sd ? <span className="ds-muted" title="BC no devolvió stock">s/d</span> : ok ? "✅" : <span title="El cambio no coincide con lo que debía entrar a inventario" style={{ color: "var(--ds-color-red-200)" }}>⚠️</span>}</td>
+                            <td className="ds-num">{verificando ? <span className="ds-muted" title="Verificando en BC…">…</span> : sd ? <span className="ds-muted" title="BC no devolvió stock">s/d</span> : ok ? "✅" : <span title="El cambio no coincide con lo que debía entrar a inventario" style={{ color: "var(--ds-text-danger)" }}>⚠️</span>}</td>
                           </tr>
                         );
                       })}

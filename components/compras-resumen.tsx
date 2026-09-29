@@ -129,7 +129,7 @@ export function ComprasResumen({ k, filas, onVerProveedores, onConciliacion, onI
           valor={corto(k.vivo.pendiente)} exacto={fmt(k.vivo.pendiente)}
           delta={null} anioPrevio={k.anioPrevio}
           barra={{ pct: k.vivo.pct, texto: `${k.vivo.pct}% ya entregado` }}
-          acento="var(--ds-color-red-200)"
+          acento="var(--ds-text-danger)"
           // NO dice "vencido". En BC ninguna de las 644 líneas con pendiente tiene una
           // fecha de entrega puesta por una persona (576 la tienen igual a la fecha de
           // la orden, 68 vacía), así que no hay contra qué medir un atraso. Lo que sí
@@ -164,7 +164,7 @@ export function ComprasResumen({ k, filas, onVerProveedores, onConciliacion, onI
                 <li key={i.clave}>
                   <button type="button" className="cancha__fila" onClick={() => irFiltrado(i.vista, i.filtro)}
                     title={i.monto !== null ? fmt(i.monto) : undefined}>
-                    <i className="cancha__marca" style={{ background: i.color }} aria-hidden />
+                    <i className="ds-punto" style={{ background: i.color }} aria-hidden />
                     <span className="cancha__texto">
                       <span className="cancha__etiqueta">{i.etiqueta}</span>
                       <span className="ds-body-sm ds-muted">{i.detalle}</span>
@@ -224,7 +224,7 @@ export function ComprasResumen({ k, filas, onVerProveedores, onConciliacion, onI
                       onFocus={() => setResaltado(s.clave)}
                       onBlur={() => setResaltado(null)}
                       title={`Ver las órdenes: ${s.etiqueta.toLowerCase()} · ${fmt(s.monto)}`}>
-                      <i className="leyenda__marca" style={{ background: s.color }} aria-hidden />
+                      <i className="ds-punto" style={{ background: s.color }} aria-hidden />
                       <span className="leyenda__texto">
                         <span className="ds-body-sm ds-muted">{s.etiqueta}</span>
                         <span className="leyenda__monto">{corto(s.monto)}</span>

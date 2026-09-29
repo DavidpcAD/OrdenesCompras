@@ -46,7 +46,7 @@ function LineaEnvio({ orden }: { orden: Orden }) {
           {ocupado ? "Guardando…" : env ? "Quitar la marca" : "Marcar como enviada"}
         </button>
       )}
-      {error && <span style={{ color: "var(--ds-color-red-200)" }}>{error}</span>}
+      {error && <span style={{ color: "var(--ds-text-danger)" }}>{error}</span>}
     </p>
   );
 }

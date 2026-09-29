@@ -1066,7 +1066,7 @@ export default function EditarOrdenPage() {
               es una obra de BC, el Combobox de arriba no lo encuentra y sale
               vacío: hay que decir por qué, o parece que la línea no tiene obra. */}
           {!!editObra.proyecto && obras.length > 0 && !obras.some((o) => o.codigo === editObra.proyecto) && (
-            <p className="ds-body-sm" style={{ color: "var(--ds-color-red-200)", margin: "8px 0 0" }}>
+            <p className="ds-body-sm" style={{ color: "var(--ds-text-danger)", margin: "8px 0 0" }}>
               La línea trae <span className="ds-strong">{editObra.proyecto}</span>, que no está en el catálogo de obras de
               Business Central (por eso el campo de arriba sale vacío). Elegí la obra real o dejala sin obra: BC rechaza
               el pedido completo si el Project No. no existe.

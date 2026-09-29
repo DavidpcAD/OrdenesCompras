@@ -113,7 +113,7 @@ export function CampoMaquina({
           placeholder={placeholderMaquina(maquinas, cargando)} />
       </Field>
       {desconocida && (
-        <p className="ds-body-sm" style={{ color: "var(--ds-color-red-200)", margin: "8px 0 0" }}>
+        <p className="ds-body-sm" style={{ color: "var(--ds-text-danger)", margin: "8px 0 0" }}>
           La línea trae <span className="ds-strong">{puesta}{nombre && nombre !== puesta ? ` — ${nombre}` : ""}</span>, que no
           está en el parque de maquinaria de Business Central (por eso el campo de arriba sale vacío). Elegí la máquina
           real o dejala sin máquina: BC rechaza la línea si el N.º de máquina no existe.

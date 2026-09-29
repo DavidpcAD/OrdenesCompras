@@ -821,7 +821,7 @@ export default function ArmarOrdenPage() {
                           <button type="button" className="link-btn ds-body-sm"
                             title={igual ? "Precio igual al último" : "Usar este último precio"}
                             onClick={() => setRow(r.key, { precio: String(lp) })}
-                            style={{ color: up ? "var(--ds-color-red-200)" : down ? "var(--ds-color-green-200)" : "var(--ds-color-gray-400)", cursor: igual ? "default" : "pointer" }}>
+                            style={{ color: up ? "var(--ds-text-danger)" : down ? "var(--ds-color-green-200)" : "var(--ds-color-gray-400)", cursor: igual ? "default" : "pointer" }}>
                             últ. {money(lp, currency)} {up ? "↑" : down ? "↓" : "="}
                           </button>
                         );
@@ -911,7 +911,7 @@ export default function ArmarOrdenPage() {
               copiado al campo obra, que es como se hacía antes), el Combobox de
               arriba sale vacío: hay que decir por qué o parece que no tiene obra. */}
           {!!editObra.proyecto && obras.length > 0 && !obras.some((o) => o.codigo === editObra.proyecto) && (
-            <p className="ds-body-sm" style={{ color: "var(--ds-color-red-200)", margin: "8px 0 0" }}>
+            <p className="ds-body-sm" style={{ color: "var(--ds-text-danger)", margin: "8px 0 0" }}>
               La línea trae <span className="ds-strong">{editObra.proyecto}</span>, que no está en el catálogo de obras de
               Business Central (por eso el campo de arriba sale vacío). Elegí la obra real o dejala sin obra: BC rechaza
               el pedido completo si el Project No. no existe.

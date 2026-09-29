@@ -304,7 +304,7 @@ export default function CargoSobreFacturaPage() {
             {buscado && (
               <div className="mt-4">
                 {buscarError && (
-                  <div className="ds-body-sm" style={{ color: "var(--ds-color-red-200)", marginBottom: 8 }}>
+                  <div className="ds-body-sm" style={{ color: "var(--ds-text-danger)", marginBottom: 8 }}>
                     No se pudieron traer las líneas de recepción de BC. {buscarError}
                   </div>
                 )}

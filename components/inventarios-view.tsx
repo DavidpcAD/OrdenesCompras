@@ -280,7 +280,7 @@ export function InventariosView({ tablaKey = "inventarios", hrefOrden = (id) => 
   // stock) y, debajo, el movimiento de compras del insumo.
   const renderExpanded = (a: Row) => {
     const existencias = (() => {
-      if (stockError) return <div className="ds-body-sm" style={{ padding: "6px 2px", color: "var(--ds-color-red-200)" }}>No se pudo cargar el stock de BC. Puede que <code>inventoryByLocation</code> no esté publicado o no haya conexión.</div>;
+      if (stockError) return <div className="ds-body-sm" style={{ padding: "6px 2px", color: "var(--ds-text-danger)" }}>No se pudo cargar el stock de BC. Puede que <code>inventoryByLocation</code> no esté publicado o no haya conexión.</div>;
       const info = stock[a.code];
       if (!info && parcial) return <div className="ds-muted ds-body-sm" style={{ padding: "6px 2px" }}>Buscando existencias… ({avance!.hechos} de {avance!.total} almacenes)</div>;
       const det = (info?.detalle ?? []).filter((e) => Number(e.cantidad) !== 0).sort((x, y) => y.cantidad - x.cantidad);
@@ -405,7 +405,7 @@ function ComprasInsumo({ code, unidad, hrefOrden }: { code: string; unidad: stri
         {bc === null ? (
           <div className="ds-muted ds-body-sm" style={{ padding: "4px 2px" }}>Buscando en Business Central…</div>
         ) : !bc.compras.length && bc.error ? (
-          <div className="ds-body-sm" style={{ padding: "4px 2px", color: "var(--ds-color-red-200)" }}>No se pudo leer el historial de compras de BC ({bc.error}).</div>
+          <div className="ds-body-sm" style={{ padding: "4px 2px", color: "var(--ds-text-danger)" }}>No se pudo leer el historial de compras de BC ({bc.error}).</div>
         ) : !bc.compras.length ? (
           <div className="ds-muted ds-body-sm" style={{ padding: "4px 2px" }}>Business Central no tiene compras registradas de este artículo.</div>
         ) : (

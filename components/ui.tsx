@@ -327,7 +327,7 @@ export function FiltroChip({
       aria-pressed={active}
       title={title}
     >
-      <span className="filtro-chip__dot" aria-hidden />
+      <span className="ds-punto filtro-chip__dot" aria-hidden />
       <span className="filtro-chip__n">{value}</span>
       {/* El rótulo va en su propio span y no suelto: suelto queda como texto anónimo
           y el lector de pantalla lee "3Todas" de corrido. */}
