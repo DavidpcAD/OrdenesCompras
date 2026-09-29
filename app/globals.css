@@ -292,9 +292,10 @@ h1, h2, h3, h4, p { margin: 0; }
 }
 .ds-card--outlined { box-shadow: none; border: 1px solid var(--ds-color-gray-300); }  /* DS Card --outlined */
 .ds-card--filled { background: var(--ds-color-gray-100); }                            /* DS Card --filled */
-.ds-card--interactive { cursor: pointer; transition: box-shadow .15s ease; }
-/* DS: sin hover-lift; el afordance es profundizar la sombra, no desplazar. */
-.ds-card--interactive:hover { box-shadow: var(--ds-shadow-03-big); }
+.ds-card--interactive { cursor: pointer; transition: background-color .15s ease; }
+/* DS: la sombra NO cambia en hover —ningún componente del DS lo hace—. El
+   afordance es el relleno del modificador `--filled` de la Card (gray-100). */
+.ds-card--interactive:hover { background: var(--ds-color-gray-100); }
 
 /* =====================  ICON  ===================== */
 .ds-icon { display: inline-block; flex-shrink: 0; }  /* DS Icon — usa currentColor */
@@ -397,16 +398,15 @@ h1, h2, h3, h4, p { margin: 0; }
 .ds-table tbody tr.row-pending td { background: color-mix(in srgb, var(--ds-color-red-100) 8%, var(--ds-tint-base)); }
 /* Solicitudes en borrador (sin enviar): acento amarillo + tinte para que se noten */
 .ds-table tbody tr.row-borrador td { background: color-mix(in srgb, var(--ds-color-yellow) 10%, var(--ds-tint-base)); }
-.ds-table tbody tr.row-borrador td:first-child { box-shadow: inset 3px 0 0 var(--ds-color-yellow); font-weight: var(--ds-font-weight-semibold); }
+.ds-table tbody tr.row-borrador td:first-child { font-weight: var(--ds-font-weight-semibold); }
 .ds-table tbody tr.row-borrador.is-clickable:hover td { background: color-mix(in srgb, var(--ds-color-yellow) 18%, var(--ds-tint-base)); }
-.ds-card.row-borrador { box-shadow: inset 3px 0 0 var(--ds-color-yellow), var(--ds-shadow-01); }
+.ds-card.row-borrador { background: color-mix(in srgb, var(--ds-color-yellow) 10%, var(--ds-tint-base)); }
 
 /* LA FILA A LA QUE SE VUELVE. Al regresar de un detalle, la tabla se corre hasta la
    última fila abierta y la resalta un momento: en una lista de 200 órdenes, "en qué
    iba" es tan importante como la página. Se apaga sola a los 2 s (clase `is-vuelta`). */
 .ds-table tbody tr.is-vuelta td { background: color-mix(in srgb, var(--ds-color-green-100) 16%, var(--ds-tint-base)); }
-.ds-table tbody tr.is-vuelta td:first-child { box-shadow: inset 3px 0 0 var(--ds-color-green-200); }
-.ds-card.is-vuelta { box-shadow: inset 3px 0 0 var(--ds-color-green-200), var(--ds-shadow-02); }
+.ds-card.is-vuelta { background: color-mix(in srgb, var(--ds-color-green-100) 16%, var(--ds-tint-base)); }
 /* El resaltado lo quita el JS a los 2,2 s; la transición de `td` lo desvanece. */
 
 /* La ACCIÓN de la fila, pegada al borde derecho de la tabla.
@@ -436,14 +436,14 @@ td.ds-col-fija {
   z-index: 1;
   background: var(--ds-surface);
   /* El filo reemplaza a la sombra de "hay más a la derecha" del wrap, que esta celda
-     tapa sí o sí. Sale de --ds-text con color-mix, igual que aquella, y por eso se ve
-     tanto en claro como en oscuro. */
-  box-shadow: -10px 0 10px -10px color-mix(in srgb, var(--ds-text) 22%, transparent);
+     tapa sí o sí. Es una línea de 1 px —el único grosor de separación que usa el DS,
+     en `Card --outlined`— y no un desenfoque. */
+  border-right: 1px solid var(--ds-color-gray-200);
 }
 /* En papel no hay scroll: la columna vuelve a su lugar y sin filo. */
 @media print {
   .ds-table th.ds-col-fija,
-  .ds-table td.ds-col-fija { position: static; box-shadow: none; }
+  .ds-table td.ds-col-fija { position: static; border-right: 0; }
 }
 /* Fila de un cargo de producto dentro del editor de líneas. El tinte va en los td y
    no en el <tr> —igual que `.row-pending` y `.row-borrador`— porque la celda de la
@@ -470,7 +470,7 @@ td.ds-col-fija {
    borde y sin sombra; el menú lo sigue dibujando el DS. */
 .ds-select--celda .ds-select__trigger {
   padding: 6px 10px; border-radius: var(--ds-radius-md);
-  border: 1.5px solid var(--ds-color-gray-200); box-shadow: none;
+  border: 1px solid var(--ds-color-gray-200); box-shadow: none;
   gap: var(--ds-space-1);
   /* Sin esto hereda los 24px de interlínea del campo de formulario grande y queda
      39px de alto contra los 31,5px del input de Cantidad de al lado: la casilla de
@@ -523,7 +523,7 @@ td.ds-col-fija {
    una tabla o cualquier contenedor con overflow), y por eso tiene que quedar por
    ENCIMA del modal (.modal-overlay, z-index 80): fuera del modal en el DOM, con
    z-index 60 las opciones se veían pero el clic se lo comía el modal. */
-.combo__menu { position: absolute; top: calc(100% + 6px); left: 0; right: 0; z-index: 90; max-height: 300px; overflow-y: auto; background: var(--ds-surface); border: 1.5px solid var(--ds-color-gray-200); border-radius: var(--ds-radius-lg); box-shadow: 0 10px 30px #0000002a; padding: 4px; }
+.combo__menu { position: absolute; top: calc(100% + 6px); left: 0; right: 0; z-index: 90; max-height: 300px; overflow-y: auto; background: var(--ds-surface); border: 1px solid var(--ds-color-gray-200); border-radius: var(--ds-radius-lg); box-shadow: var(--ds-shadow-03-big); padding: 4px; }
 .combo__item { display: flex; align-items: center; min-height: 42px; width: 100%; text-align: left; background: transparent; border: 0; padding: 8px 12px; border-radius: 10px; cursor: pointer; font-size: var(--ds-font-size-label); color: var(--ds-text); }
 .combo__item:hover { background: color-mix(in srgb, var(--ds-color-green-100) 12%, var(--ds-tint-base)); }
 .combo__item.is-active { background: color-mix(in srgb, var(--ds-color-green-100) 26%, var(--ds-tint-base)); font-weight: var(--ds-font-weight-semibold); }
@@ -544,11 +544,11 @@ td.ds-col-fija {
 .combo__more { padding: 7px 12px; color: var(--ds-color-gray-400); font-size: 11px; border-top: 1px solid var(--ds-color-gray-100); position: sticky; bottom: 0; background: var(--ds-surface); }
 
 /* Caja del área de agregar materiales (obra + quick-add) */
-.qa-box { margin-top: 4px; padding: 14px; border: 1.5px solid var(--ds-color-gray-100); border-radius: 14px; background: var(--ds-surface); }
+.qa-box { margin-top: 4px; padding: 14px; border: 1px solid var(--ds-color-gray-100); border-radius: 14px; background: var(--ds-surface); }
 @media (max-width: 640px) { .qa-row { grid-template-columns: 1fr; } }
 
 /* Detalle expandible de una factura (proveeduría) */
-.fac-det { margin: 2px 0 6px; background: var(--ds-surface); border: 1.5px solid var(--ds-color-gray-100); border-radius: var(--ds-radius-lg); box-shadow: var(--ds-shadow-01); overflow: hidden; }
+.fac-det { margin: 2px 0 6px; background: var(--ds-surface); border: 1px solid var(--ds-color-gray-100); border-radius: var(--ds-radius-lg); box-shadow: var(--ds-shadow-01); overflow: hidden; }
 .fac-det__head { display: flex; justify-content: space-between; align-items: center; gap: var(--ds-space-3); padding: var(--ds-space-3) var(--ds-space-4); background: var(--ds-color-surface); border-bottom: 1px solid var(--ds-color-gray-100); }
 .fac-det__grid { display: grid; grid-template-columns: 1fr 96px 150px 150px; gap: var(--ds-space-3); align-items: center; padding: var(--ds-space-3) var(--ds-space-4); border-bottom: 1px solid var(--ds-color-gray-100); }
 .fac-det__colhead { color: var(--ds-color-gray-500); font-weight: var(--ds-font-weight-semibold); font-size: var(--ds-font-size-body-sm); background: color-mix(in srgb, var(--ds-color-surface) 60%, var(--ds-tint-base)); }
@@ -571,11 +571,11 @@ td.ds-col-fija {
 .cot-cols { display: grid; grid-template-columns: 1fr 1fr; gap: var(--ds-space-4); align-items: start; }
 @media (max-width: 760px) { .cot-cols { grid-template-columns: 1fr; } }
 .cot-col {
-  min-width: 0; border: 1.5px solid var(--ds-color-gray-100); border-radius: var(--ds-radius-lg);
+  min-width: 0; border: 1px solid var(--ds-color-gray-100); border-radius: var(--ds-radius-lg);
   background: var(--ds-surface); overflow: hidden;
 }
 .cot-col__head {
-  padding: var(--ds-space-3) var(--ds-space-4); border-bottom: 1.5px solid var(--ds-color-gray-100);
+  padding: var(--ds-space-3) var(--ds-space-4); border-bottom: 1px solid var(--ds-color-gray-100);
   background: color-mix(in srgb, var(--ds-color-gray-100) 35%, var(--ds-tint-base));
 }
 .cot-col__meta {
@@ -589,7 +589,7 @@ td.ds-col-fija {
 }
 .cot-linea:last-child { border-bottom: 0; }
 .cot-num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
-.cot-col__pie { border-top: 1.5px solid var(--ds-color-gray-100); background: var(--ds-color-surface); }
+.cot-col__pie { border-top: 1px solid var(--ds-color-gray-100); background: var(--ds-color-surface); }
 .cot-tot {
   display: grid; grid-template-columns: 1fr auto; gap: var(--ds-space-3);
   padding: 6px var(--ds-space-4); font-size: var(--ds-font-size-body-sm); color: var(--ds-color-gray-500);
@@ -613,7 +613,7 @@ td.ds-col-fija {
 .cot-cand:focus-visible { outline: 3px solid color-mix(in srgb, var(--ds-color-green-100) 60%, transparent); outline-offset: -3px; }
 .cot-cand:disabled { cursor: default; opacity: .6; }
 /* Los botones de "sí, es esta" / "soltar", pegados al pie de la columna. */
-.cot-col__acciones { padding: var(--ds-space-3) var(--ds-space-4); border-top: 1.5px solid var(--ds-color-gray-100); }
+.cot-col__acciones { padding: var(--ds-space-3) var(--ds-space-4); border-top: 1px solid var(--ds-color-gray-100); }
 /* El comentario de revisión, debajo de las dos columnas. */
 .cot-nota { display: flex; flex-direction: column; gap: 6px; margin-top: var(--ds-space-4); }
 /* Cerrar el caso: lo que nunca va a estar en BC. Va en una caja aparte y discreta —
@@ -622,13 +622,13 @@ td.ds-col-fija {
   display: flex; justify-content: space-between; align-items: center; gap: var(--ds-space-3);
   flex-wrap: wrap; margin-top: var(--ds-space-4);
   padding: var(--ds-space-3) var(--ds-space-4);
-  border: 1.5px solid var(--ds-color-gray-100); border-radius: var(--ds-radius-lg);
+  border: 1px solid var(--ds-color-gray-100); border-radius: var(--ds-radius-lg);
   background: var(--ds-color-surface);
 }
 
 /* inline cell input */
 .ds-cell-input {
-  width: 90px; text-align: right; border: 1.5px solid var(--ds-color-gray-200);
+  width: 90px; text-align: right; border: 1px solid var(--ds-color-gray-200);
   border-radius: var(--ds-radius-md); padding: 6px 10px; font-family: inherit; font-size: var(--ds-font-size-label);
   font-variant-numeric: tabular-nums; outline: none;
   /* El relleno va tokenizado y NO al gris que el navegador le pone solo a los
@@ -637,12 +637,14 @@ td.ds-col-fija {
      levantados sobre la tarjeta; en claro es blanco, igual que antes. */
   background: var(--ds-surface-2); color: var(--ds-text);
 }
-.ds-cell-input:focus { border-color: var(--ds-color-green-100); box-shadow: 0 0 0 3px color-mix(in srgb, var(--ds-color-green-100) 22%, transparent); }
+/* Foco = `outline`, como en todo el DS (`:focus-visible { outline: 2px solid }`);
+   el halo translúcido de box-shadow no existe en el sistema. */
+.ds-cell-input:focus { border-color: var(--ds-color-green-100); outline: 2px solid var(--ds-color-green-100); outline-offset: 1px; }
 
 /* ── Filtro por columna: botón + popover (buscador + checkboxes) ── */
 .dt-filter-btn {
   display: inline-flex; align-items: center; gap: 5px; width: 100%; justify-content: flex-start;
-  border: 1.5px solid var(--ds-color-gray-200); background: var(--ds-surface);
+  border: 2px solid var(--ds-color-gray-200); background: var(--ds-surface);
   border-radius: var(--ds-radius-md); padding: 5px 8px; cursor: pointer;
   font-family: inherit; font-size: var(--ds-font-size-label); color: var(--ds-color-gray-400);
   white-space: nowrap; transition: border-color .12s, color .12s, background .12s;
@@ -650,7 +652,7 @@ td.ds-col-fija {
 .dt-filter-btn:hover { border-color: var(--ds-color-green-100); color: var(--ds-text); }
 .dt-filter-btn__ico { display: inline-flex; color: currentColor; }
 .dt-filter-btn.is-active { border-color: var(--ds-color-green-200); color: var(--ds-text); background: color-mix(in srgb, var(--ds-color-green-100) 14%, var(--ds-tint-base)); font-weight: var(--ds-font-weight-semibold); }
-.dt-filter-btn.is-open { border-color: var(--ds-color-green-200); box-shadow: 0 0 0 3px color-mix(in srgb, var(--ds-color-green-100) 20%, transparent); }
+.dt-filter-btn.is-open { border-width: 2px; border-color: var(--ds-color-green-200); }
 
 .dt-filter-scrim { position: fixed; inset: 0; z-index: 60; background: transparent; }
 .dt-filter-pop {
@@ -662,7 +664,7 @@ td.ds-col-fija {
 .dt-filter-orden {
   width: 100%; text-align: left; padding: 8px 14px; border: 0;
   background: var(--ds-surface); border-radius: 999px;
-  box-shadow: var(--ds-shadow-02, 0 6px 20px rgba(0,0,0,.14));
+  box-shadow: var(--ds-shadow-03-big);
   color: var(--ds-color-gray-500); cursor: pointer; font-family: inherit;
   font-size: var(--ds-font-size-body-sm); line-height: var(--ds-line-height-body-sm);
   font-weight: var(--ds-font-weight-semibold);
@@ -670,7 +672,7 @@ td.ds-col-fija {
 .dt-filter-orden:hover { color: var(--ds-text); }
 .dt-filter-orden:focus-visible { outline: 2px solid var(--ds-tint-base); outline-offset: 2px; }
 .dt-filter-pop__search {
-  background: var(--ds-surface); border-radius: 999px; box-shadow: var(--ds-shadow-02, 0 6px 20px rgba(0,0,0,.14));
+  background: var(--ds-surface); border-radius: 999px; box-shadow: var(--ds-shadow-03-big);
   padding: 4px 6px;
 }
 .dt-filter-pop__search input {
@@ -679,7 +681,7 @@ td.ds-col-fija {
 }
 .dt-filter-pop__list {
   background: var(--ds-surface); border-radius: var(--ds-radius-xl, 18px);
-  box-shadow: var(--ds-shadow-02, 0 6px 20px rgba(0,0,0,.14)); padding: 6px 0;
+  box-shadow: var(--ds-shadow-03-big); padding: 6px 0;
   max-height: 300px; overflow-y: auto; display: flex; flex-direction: column;
 }
 .dt-filter-row {
@@ -750,17 +752,18 @@ td.ds-col-fija {
 /* Expander estilo DS: cuadrado redondeado, blanco, sombra suave; el chevron rota al abrir (misma interacción que el prototipo). */
 /* Expander estilo DS (nav--overview "close/open"): círculo negro, chevron blanco
    que rota al abrir. Compartido por la DataTable y por cualquier "expandir líneas". */
-.dt-exp-btn { display: inline-grid; place-items: center; width: 38px; height: 38px; border-radius: 50%; border: none; background: var(--ds-color-black); color: var(--ds-color-white); box-shadow: var(--ds-shadow-01); cursor: pointer; vertical-align: middle; transition: box-shadow .15s ease, transform .1s ease; }
+.dt-exp-btn { display: inline-grid; place-items: center; width: 38px; height: 38px; border-radius: 50%; border: none; background: var(--ds-color-black); color: var(--ds-color-white); box-shadow: var(--ds-shadow-01); cursor: pointer; vertical-align: middle; transition: transform .1s ease; }
 .dt-exp-btn svg { transition: transform .28s cubic-bezier(.34, 1.4, .5, 1); }
-.dt-exp-btn:hover { box-shadow: var(--ds-shadow-03-big); }
 .dt-exp-btn:active { transform: scale(.94); }
 .dt-exp-btn.is-open svg { transform: rotate(180deg); }
 @media (prefers-reduced-motion: reduce) { .dt-exp-btn svg { transition: none; } }
 
 /* Botón Exportar del toolbar (a la derecha) + chips CSV/PDF del menú. */
-.dt-export-btn { display: inline-flex; align-items: center; gap: 7px; min-height: 44px; padding: 0 18px; border-radius: var(--ds-radius-xl); border: 0; background: var(--ds-surface); color: var(--ds-text); font: inherit; font-size: var(--ds-font-size-body-sm); font-weight: var(--ds-font-weight-semibold); cursor: pointer; box-shadow: var(--ds-shadow-01); transition: box-shadow .12s ease, transform .06s ease; }
+.dt-export-btn { display: inline-flex; align-items: center; gap: 7px; min-height: 44px; padding: 0 18px; border-radius: var(--ds-radius-xl); border: 0; background: var(--ds-surface); color: var(--ds-text); font: inherit; font-size: var(--ds-font-size-body-sm); font-weight: var(--ds-font-weight-semibold); cursor: pointer; box-shadow: var(--ds-shadow-01); transition: color .12s ease, transform .06s ease; }
 .dt-export-btn svg { color: var(--ds-color-green-200); }
-.dt-export-btn:hover, .dt-export-btn.is-open { box-shadow: var(--ds-shadow-03-big); }
+/* Abierto = borde negro de 2 px y sin sombra, igual que `formField --active`. */
+.dt-export-btn:hover { color: var(--ds-color-gray-500); }
+.dt-export-btn.is-open { border: 2px solid var(--ds-text); box-shadow: none; }
 .dt-export-btn:active { transform: translateY(1px); }
 .dt-export-ic { display: inline-grid; place-items: center; width: 42px; height: 24px; flex-shrink: 0; border-radius: 6px; background: var(--ds-color-black); color: var(--ds-color-white); font-size: 10px; font-weight: 700; letter-spacing: .5px; }
 /* Fila marcada para incluir en la orden (armador por línea). */
@@ -777,8 +780,10 @@ td.ds-col-fija {
 
 /* Date picker DS (componente DateField) — calendario propio y bonito. */
 .datefield { position: relative; }
-.datefield__input { display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%; min-height: 48px; padding: 0 18px; border: 0; border-radius: var(--ds-radius-xl); background: var(--ds-surface); box-shadow: var(--ds-shadow-01); font: inherit; font-size: var(--ds-font-size-body); color: var(--ds-text); cursor: pointer; text-align: left; transition: box-shadow .12s ease; }
-.datefield__input:hover, .datefield__input.is-open { box-shadow: var(--ds-shadow-03-big); }
+.datefield__input { display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%; min-height: 48px; padding: 0 18px; border: 0; border-radius: var(--ds-radius-xl); background: var(--ds-surface); box-shadow: var(--ds-shadow-01); font: inherit; font-size: var(--ds-font-size-body); color: var(--ds-text); cursor: pointer; text-align: left; transition: border-color .12s ease; }
+/* Campo abierto: el DS le pone borde negro de 2 px y le QUITA la sombra
+   (`ds-form-field--active`); nunca profundiza la sombra. */
+.datefield__input.is-open { border: 2px solid var(--ds-text); box-shadow: none; }
 .datefield__input svg { color: var(--ds-color-gray-400); flex-shrink: 0; }
 .datefield__ph { color: var(--ds-color-gray-400); }
 .datefield__pop { position: absolute; z-index: 40; top: calc(100% + 8px); left: 0; width: 300px; max-width: calc(100vw - 32px); background: var(--ds-surface); border-radius: var(--ds-radius-lg); box-shadow: var(--ds-shadow-03-big); padding: 14px; }
@@ -793,9 +798,9 @@ td.ds-col-fija {
 .datefield__day { aspect-ratio: 1; border: 0; background: none; border-radius: 50%; cursor: pointer; font: inherit; font-size: 13px; color: var(--ds-text); display: grid; place-items: center; transition: background .1s, color .1s; }
 .datefield__day:hover:not(:disabled) { background: var(--ds-color-surface); }
 .datefield__day:disabled { color: var(--ds-color-gray-200); cursor: not-allowed; }
-.datefield__day.is-today { box-shadow: inset 0 0 0 1.5px var(--ds-color-green-200); font-weight: 700; }
+.datefield__day.is-today { box-shadow: inset 0 0 0 2px var(--ds-color-green-200); font-weight: 700; }
 .datefield__day.is-sel { background: var(--ds-color-black); color: var(--ds-color-white); font-weight: 700; box-shadow: none; }
-.datefield__foot { display: flex; justify-content: space-between; margin-top: 10px; padding-top: 10px; border-top: 1.5px solid var(--ds-color-gray-100); }
+.datefield__foot { display: flex; justify-content: space-between; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--ds-color-gray-100); }
 .datefield__foot button { border: 0; background: none; color: var(--ds-color-green-200); font: inherit; font-weight: 600; font-size: 13px; cursor: pointer; padding: 4px 8px; border-radius: 8px; }
 .datefield__foot button:hover { background: var(--ds-color-surface); }
 
@@ -906,9 +911,9 @@ td.ds-col-fija {
 .tile__label { color: var(--ds-color-gray-400); font-size: var(--ds-font-size-label); }
 .tile__accent { width: 36px; height: 4px; border-radius: 2px; background: var(--ds-color-green-100); }
 /* tile clickeable (filtro) */
-.tile--clickable { cursor: pointer; text-align: left; border: 1.5px solid transparent; font-family: inherit; transition: border-color .12s ease, box-shadow .12s ease; }
+.tile--clickable { cursor: pointer; text-align: left; border: 2px solid transparent; font-family: inherit; transition: border-color .12s ease, box-shadow .12s ease; }
 .tile--clickable:hover { border-color: var(--ds-color-gray-200); }
-.tile--clickable.is-active { border-color: var(--tile-accent, var(--ds-color-green-100)); box-shadow: 0 0 0 3px color-mix(in srgb, var(--tile-accent, var(--ds-color-green-100)) 22%, transparent); }
+.tile--clickable.is-active { border-width: 2px; border-color: var(--tile-accent, var(--ds-color-green-100)); }
 
 /* segmented totals box */
 .totals { display: grid; grid-template-columns: 1fr 1fr; gap: var(--ds-space-3) var(--ds-space-10); padding: var(--ds-space-5); background: var(--ds-color-gray-100); border-radius: var(--ds-radius-lg); }
@@ -966,11 +971,11 @@ td.ds-col-fija {
   display: flex; align-items: center; gap: var(--ds-space-4); width: 100%; text-align: left;
   background: var(--ds-surface); border: 2px solid var(--ds-color-gray-100); border-radius: var(--ds-radius-lg);
   padding: var(--ds-space-4) var(--ds-space-5); cursor: pointer;
-  transition: border-color .15s ease, box-shadow .15s ease;
+  transition: border-color .15s ease;
 }
-/* DS: sin hover-lift; hover = borde/sombra sutil, sin desplazamiento. */
-.role-option:hover { border-color: var(--ds-color-gray-300); box-shadow: var(--ds-shadow-01); }
-.role-option.is-selected { border-color: var(--ds-color-green-100); box-shadow: 0 0 0 4px color-mix(in srgb, var(--ds-color-green-100) 18%, transparent); }
+/* DS: el hover solo cambia el color del borde; la sombra no se mueve. */
+.role-option:hover { border-color: var(--ds-color-gray-300); }
+.role-option.is-selected { border-color: var(--ds-color-green-100); }
 .role-option__icon { width: 48px; height: 48px; border-radius: var(--ds-radius-md); display: grid; place-items: center; font-size: 22px; flex-shrink: 0; }
 .role-option__title { font-weight: var(--ds-font-weight-semibold); }
 .role-option__desc { color: var(--ds-color-gray-400); font-size: var(--ds-font-size-body-sm); }
@@ -1015,7 +1020,7 @@ td.ds-col-fija {
 }
 .rec-line:last-child { border-bottom: 0; }
 /* Encabezado de columnas (como la línea de compra en BC). */
-.rec-line--head { padding: 8px 2px; border-bottom: 1.5px solid var(--ds-color-gray-200); }
+.rec-line--head { padding: 8px 2px; border-bottom: 1px solid var(--ds-color-gray-200); }
 .rec-line--head > span { font-size: var(--ds-font-size-body-sm); color: var(--ds-color-gray-400); font-weight: var(--ds-font-weight-semibold); }
 .rec-line__desc { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
 .rec-line__code { font-size: 11px; font-weight: 700; letter-spacing: .02em; color: var(--ds-color-gray-400); }
@@ -1029,7 +1034,7 @@ td.ds-col-fija {
 /* Pie de totales de la recepción. */
 .rec-totals { margin-top: var(--ds-space-3); margin-left: auto; width: max-content; min-width: 260px; display: flex; flex-direction: column; gap: 4px; }
 .rec-totals__row { display: flex; justify-content: space-between; gap: var(--ds-space-6); font-size: var(--ds-font-size-label); }
-.rec-totals__row--grand { margin-top: 4px; padding-top: 8px; border-top: 1.5px solid var(--ds-color-gray-200); font-size: var(--ds-font-size-body-md); font-weight: var(--ds-font-weight-semibold); }
+.rec-totals__row--grand { margin-top: 4px; padding-top: 8px; border-top: 1px solid var(--ds-color-gray-200); font-size: var(--ds-font-size-body-md); font-weight: var(--ds-font-weight-semibold); }
 
 /* Panel de ayuda ⓘ ("qué es esta pantalla" + paso a paso). */
 .help-sec { margin-bottom: var(--ds-space-5); }
@@ -1064,7 +1069,7 @@ td.ds-col-fija {
 @media (prefers-reduced-motion: reduce) { .ds-tip::after { transition: none; } }
 
 /* sticky action bar (appears when there's a selection) */
-.action-bar { position: fixed; left: 72px; right: 0; bottom: 0; z-index: 45; background: var(--ds-surface); border-top: 1.5px solid var(--ds-color-gray-100); box-shadow: var(--ds-shadow-bar); padding: var(--ds-space-3) var(--ds-space-6); animation: barUp .2s ease; transition: left .26s cubic-bezier(.34, 1.2, .5, 1); }
+.action-bar { position: fixed; left: 72px; right: 0; bottom: 0; z-index: 45; background: var(--ds-surface); border-top: 1px solid var(--ds-color-gray-100); box-shadow: var(--ds-shadow-bar); padding: var(--ds-space-3) var(--ds-space-6); animation: barUp .2s ease; transition: left .26s cubic-bezier(.34, 1.2, .5, 1); }
 /* La barra sigue al riel: 72px colapsado, nav-w fijado, 0 en móvil. */
 .app-shell.pinned .action-bar { left: var(--nav-w); }
 @media (max-width: 760px) {
@@ -1089,7 +1094,7 @@ td.ds-col-fija {
 .filterbar__label { font-size: var(--ds-font-size-body-sm); color: var(--ds-color-gray-400); margin-right: var(--ds-space-1); }
 .filter-chip {
   display: inline-flex; align-items: center; gap: var(--ds-space-2); min-height: 38px; padding: 6px 14px;
-  border: 1.5px solid var(--ds-color-gray-200); border-radius: 999px; background: var(--ds-surface);
+  border: 1px solid var(--ds-color-gray-200); border-radius: 999px; background: var(--ds-surface);
   color: var(--ds-color-gray-500); font-family: inherit; font-weight: var(--ds-font-weight-semibold);
   font-size: var(--ds-font-size-label); cursor: pointer; transition: border-color .12s, color .12s, background-color .12s;
 }
@@ -1191,7 +1196,7 @@ td.ds-col-fija {
 .fab--menu .app-nav__dot { top: 9px; right: 9px; box-shadow: 0 0 0 2px var(--ds-color-black); }
 .app-nav__ic svg { flex-shrink: 0; }
 .app-nav__item:hover { background: rgba(255, 255, 255, 0.10); color: var(--ds-color-white); }
-.app-nav__item.is-active { background: var(--ds-color-green-100); color: var(--ds-text); box-shadow: 0 2px 12px color-mix(in srgb, var(--ds-color-green-100) 32%, transparent); }
+.app-nav__item.is-active { background: var(--ds-color-green-100); color: var(--ds-text); }
 .app-nav__item.is-active:hover { background: var(--ds-color-green-100); color: var(--ds-text); }
 .app-nav__label { overflow: hidden; white-space: nowrap; max-width: 0; opacity: 0; transition: max-width .26s cubic-bezier(.34, 1.2, .5, 1), opacity .18s ease; }
 .app-nav__salir { margin-top: auto; }
@@ -1261,7 +1266,7 @@ td.ds-col-fija {
     transform: translateX(-100%);
   }
   .app-shell.is-ready .app-nav { transition: transform .28s cubic-bezier(.34, 1.2, .5, 1), box-shadow .2s ease; }
-  .app-nav.is-open { transform: translateX(0); box-shadow: 0 12px 44px rgba(0, 0, 0, .5); }
+  .app-nav.is-open { transform: translateX(0); box-shadow: var(--ds-shadow-03-big); }
   /* Sin expand/push en móvil: ancho fijo, contenido a ancho completo. */
   .app-shell.pinned .app-nav { width: 280px; box-shadow: none; }
   .app-content, .topbar,
@@ -1320,16 +1325,16 @@ td.ds-col-fija {
 .md-aside { position: sticky; top: 80px; max-height: calc(100dvh - 104px); display: flex; flex-direction: column; min-width: 0; }
 .md-list { display: flex; flex-direction: column; gap: var(--ds-space-2); padding-right: 4px; min-width: 0; overflow-y: auto; }
 /* Filtro pegajoso de la lista de pedidos (compacto). Foco al estilo DS. */
-.md-filtro { width: 100%; box-sizing: border-box; margin-bottom: var(--ds-space-2); border-radius: var(--ds-radius-md); padding: 7px 10px; font: inherit; font-size: 13px; border: 1.5px solid var(--ds-color-gray-100); background: var(--ds-surface); color: var(--ds-text); position: sticky; top: 0; z-index: 1; outline: none; transition: border-color .12s ease; }
+.md-filtro { width: 100%; box-sizing: border-box; margin-bottom: var(--ds-space-2); border-radius: var(--ds-radius-md); padding: 7px 10px; font: inherit; font-size: 13px; border: 1px solid var(--ds-color-gray-100); background: var(--ds-surface); color: var(--ds-text); position: sticky; top: 0; z-index: 1; outline: none; transition: border-color .12s ease; }
 .md-filtro:focus { border-color: var(--ds-text); }
 .md-filtro::placeholder { color: var(--ds-color-gray-300); }
 /* columna derecha: encabezado fijo + tabla con scroll propio dentro del contenedor */
 /* min-width:0 evita el "grid blowout": sin él, el min-content de la tabla ancha
    expande la pista 1fr y desborda en móvil en vez de scrollear dentro. */
 .md-detail { display: flex; flex-direction: column; min-width: 0; }
-.md-item { text-align: left; background: var(--ds-surface); border: 1.5px solid var(--ds-color-gray-100); border-radius: var(--ds-radius-lg); padding: var(--ds-space-3) var(--ds-space-4); cursor: pointer; transition: border-color .12s ease, box-shadow .12s ease; display: flex; flex-direction: column; gap: 2px; }
+.md-item { text-align: left; background: var(--ds-surface); border: 2px solid var(--ds-color-gray-100); border-radius: var(--ds-radius-lg); padding: var(--ds-space-3) var(--ds-space-4); cursor: pointer; transition: border-color .12s ease, box-shadow .12s ease; display: flex; flex-direction: column; gap: 2px; }
 .md-item:hover { border-color: var(--ds-color-gray-300); }
-.md-item.is-active { border-color: var(--ds-color-green-100); box-shadow: 0 0 0 3px color-mix(in srgb, var(--ds-color-green-100) 18%, transparent); }
+.md-item.is-active { border-width: 2px; border-color: var(--ds-color-green-100); }
 .md-item__top { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
 /* Solicitante (usuario que creó el pedido) en la tarjeta. */
 .md-item__solic { display: inline-flex; align-items: center; gap: 5px; margin-top: 3px; font-size: var(--ds-font-size-body-sm); color: var(--ds-color-gray-400); }
@@ -1342,7 +1347,7 @@ td.ds-col-fija {
 .md-filtros .md-filtro { position: static; margin-bottom: 0; }
 /* El dropdown de solicitante matchea el input compacto de arriba (mismo alto,
    borde fino y tipografía), en vez del input grande por defecto del DS. */
-.md-select .ds-select__trigger { padding: 7px 10px; border: 1.5px solid var(--ds-color-gray-100); border-radius: var(--ds-radius-md); box-shadow: none; font-size: 13px; }
+.md-select .ds-select__trigger { padding: 7px 10px; border: 1px solid var(--ds-color-gray-100); border-radius: var(--ds-radius-md); box-shadow: none; font-size: 13px; }
 .md-select .ds-select__trigger:focus,
 .md-select .ds-select__trigger[aria-expanded="true"] { border-color: var(--ds-text); }
 .md-select .ds-select__ph { color: var(--ds-color-gray-300); }
@@ -1355,10 +1360,10 @@ td.ds-col-fija {
   width: 100%; min-height: 260px; display: flex; flex-direction: column; align-items: center;
   gap: var(--ds-space-3); padding: var(--ds-space-3) 0; cursor: pointer; font: inherit;
   background: var(--ds-surface); color: var(--ds-color-gray-400);
-  border: 1.5px solid var(--ds-color-gray-100); border-radius: var(--ds-radius-lg);
+  border: 1px solid var(--ds-color-gray-100); border-radius: var(--ds-radius-lg);
   transition: border-color .12s ease, color .12s ease, box-shadow .12s ease;
 }
-.md-rail:hover { border-color: var(--ds-color-gray-300); color: var(--ds-text); box-shadow: var(--ds-shadow-01); }
+.md-rail:hover { border-color: var(--ds-color-gray-300); color: var(--ds-text); }
 .md-rail:focus-visible { outline: 2px solid var(--ds-color-green-100); outline-offset: 2px; }
 .md-rail__n { font-size: var(--ds-font-size-body-sm); font-weight: var(--ds-font-weight-semibold);
   background: var(--ds-color-green-100); color: var(--ds-color-black); border-radius: 999px; padding: 1px 7px; }
@@ -1443,7 +1448,7 @@ td.ds-col-fija {
    flecha ↗ avisa que te saca de esta fila. */
 .chip-link {
   display: inline-flex; align-items: center; gap: 4px;
-  border: 1.5px solid color-mix(in srgb, var(--ds-color-green-100) 45%, var(--ds-color-gray-200));
+  border: 1px solid color-mix(in srgb, var(--ds-color-green-100) 45%, var(--ds-color-gray-200));
   background: color-mix(in srgb, var(--ds-color-green-100) 10%, var(--ds-surface));
   color: var(--ds-color-green-300);
   font-family: inherit; font-size: var(--ds-font-size-label); font-weight: var(--ds-font-weight-semibold);
@@ -1473,7 +1478,7 @@ td.ds-col-fija {
 .envio-check:disabled { opacity: .55; cursor: progress; }
 .envio-check__box {
   width: 18px; height: 18px; border-radius: var(--ds-radius-sm); display: grid; place-items: center;
-  border: 1.5px solid var(--ds-color-gray-300); color: var(--ds-color-white);
+  border: 1px solid var(--ds-color-gray-300); color: var(--ds-color-white);
   font-size: 12px; font-weight: var(--ds-font-weight-semibold); line-height: 1;
 }
 .envio-check.is-on { color: var(--ds-color-green-300); font-weight: var(--ds-font-weight-semibold); }
@@ -1514,8 +1519,7 @@ td.ds-col-fija {
 /* Botón cerrar del modal, estilo DS (cuadrado redondeado negro, ícono blanco). */
 .modal-close { display: inline-grid; place-items: center; flex-shrink: 0; width: 36px; height: 36px; border: 0; cursor: pointer;
   border-radius: var(--ds-radius-md); background: var(--ds-color-black); color: var(--ds-color-white);
-  transition: box-shadow .15s ease, transform .1s ease; }
-.modal-close:hover { box-shadow: var(--ds-shadow-03-big); }
+  transition: transform .1s ease; }
 .modal-close:active { transform: scale(.94); }
 /* Volver estilo DS (nav--overview): círculo blanco con sombra suave + chevron ‹,
    y el destino como etiqueta al lado. El "‹ " ya no va en el texto (lo pone ::before). */
@@ -1535,9 +1539,8 @@ td.ds-col-fija {
   transition: box-shadow .15s ease, transform .12s ease;
 }
 .back-link:hover { color: var(--ds-text); }
-.back-link:hover::before { box-shadow: var(--ds-shadow-03-big); }
 .back-link:active::before { transform: scale(.94); }
-.back-link:focus-visible::before { box-shadow: 0 0 0 3px color-mix(in srgb, var(--ds-color-green-100) 60%, transparent), var(--ds-shadow-01); }
+.back-link:focus-visible::before { outline: 2px solid var(--ds-color-green-100); outline-offset: 2px; }
 /* En oscuro el chevron negro quedaba casi invisible sobre la superficie oscura →
    chevron claro (gris-500 del tema). */
 :root[data-theme="dark"] .back-link::before {
@@ -1607,31 +1610,31 @@ td.ds-col-fija {
 }
 
 /* ---- Plantillas: panel, tarjetas y filtro mini ---- */
-.tpl-panel { border: 1.5px solid var(--ds-color-gray-100); border-radius: var(--ds-radius-lg); background: var(--ds-surface); overflow: hidden; }
+.tpl-panel { border: 1px solid var(--ds-color-gray-100); border-radius: var(--ds-radius-lg); background: var(--ds-surface); overflow: hidden; }
 .tpl-panel__head {
   display: flex; align-items: center; justify-content: space-between; gap: var(--ds-space-2); flex-wrap: wrap;
-  padding: 11px 14px; border-bottom: 1.5px solid var(--ds-color-gray-100);
+  padding: 11px 14px; border-bottom: 1px solid var(--ds-color-gray-100);
   background: color-mix(in srgb, var(--ds-color-gray-100) 35%, var(--ds-tint-base));
 }
 .tpl-panel__body { display: flex; flex-direction: column; gap: 12px; padding: 14px; }
 /* Disparador tipo select que abre el popup de plantillas */
-.tpl-pick { display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%; min-height: 48px; padding: 0 16px; border: 1.5px solid var(--ds-color-gray-200); border-radius: var(--ds-radius-xl); background: var(--ds-surface); font: inherit; font-size: var(--ds-font-size-body); color: var(--ds-text); cursor: pointer; text-align: left; transition: border-color .12s ease; }
+.tpl-pick { display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%; min-height: 48px; padding: 0 16px; border: 1px solid var(--ds-color-gray-200); border-radius: var(--ds-radius-xl); background: var(--ds-surface); font: inherit; font-size: var(--ds-font-size-body); color: var(--ds-text); cursor: pointer; text-align: left; transition: border-color .12s ease; }
 .tpl-pick:hover { border-color: var(--ds-color-gray-300); }
 .tpl-pick > span:first-child { min-width: 0; }
 /* Fila de opción dentro del popup */
-.tpl-opt { display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; padding: 11px 14px; border: 1.5px solid var(--ds-color-gray-100); border-radius: var(--ds-radius-lg); background: var(--ds-surface); font: inherit; cursor: pointer; text-align: left; transition: background-color .12s ease, border-color .12s ease; }
+.tpl-opt { display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; padding: 11px 14px; border: 1px solid var(--ds-color-gray-100); border-radius: var(--ds-radius-lg); background: var(--ds-surface); font: inherit; cursor: pointer; text-align: left; transition: background-color .12s ease, border-color .12s ease; }
 .tpl-opt:hover { background: color-mix(in srgb, var(--ds-color-green-100) 12%, var(--ds-tint-base)); border-color: var(--ds-color-green-100); }
 .tpl-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(172px, 1fr)); gap: 10px; }
 .tpl-card {
   position: relative; display: flex; flex-direction: column; gap: 3px;
   padding: 10px 32px 10px 16px;
-  border-radius: var(--ds-radius-md); border: 1.5px solid var(--ds-color-gray-100); background: var(--ds-surface);
+  border-radius: var(--ds-radius-md); border: 1px solid var(--ds-color-gray-100); background: var(--ds-surface);
   cursor: pointer; text-align: left;
   transition: border-color .12s, background .12s, box-shadow .12s;
 }
 .tpl-card::before { content: ""; position: absolute; left: 0; top: 10px; bottom: 10px; width: 3px; border-radius: 0 3px 3px 0; background: var(--ds-color-gray-200); transition: background .12s; }
 /* DS: sin hover-lift; hover = borde verde + sombra sutil. */
-.tpl-card:hover { border-color: var(--ds-color-green-100); box-shadow: var(--ds-shadow-01); }
+.tpl-card:hover { border-color: var(--ds-color-green-100); }
 .tpl-card:hover::before { background: var(--ds-color-green-100); }
 .tpl-card.is-active { border-color: var(--ds-color-green-200); background: color-mix(in srgb, var(--ds-color-green-100) 12%, var(--ds-tint-base)); }
 .tpl-card.is-active::before { background: var(--ds-color-green-200); }
@@ -1644,7 +1647,7 @@ td.ds-col-fija {
   transition: background .12s, color .12s;
 }
 .tpl-card__del:hover { background: color-mix(in srgb, var(--ds-color-red-100) 16%, var(--ds-tint-base)); color: var(--ds-color-red-200); }
-.seg-mini { display: inline-flex; border: 1.5px solid var(--ds-color-gray-100); border-radius: 8px; overflow: hidden; }
+.seg-mini { display: inline-flex; border: 1px solid var(--ds-color-gray-100); border-radius: 8px; overflow: hidden; }
 .seg-mini button { border: none; background: var(--ds-surface); padding: 4px 12px; font-size: 12px; cursor: pointer; color: var(--ds-color-gray-400); }
 .seg-mini button.is-active { background: var(--ds-color-green-100); color: var(--ds-text); font-weight: 600; }
 
@@ -1663,7 +1666,7 @@ td.ds-col-fija {
   .app-nav__logout { width: 44px; height: 44px; }
 }
 .notif-overlay { position: fixed; inset: 0; z-index: 40; }
-.notif-panel { position: absolute; top: calc(100% + 10px); right: 0; z-index: 41; width: 360px; max-height: 440px; overflow-y: auto; background: var(--ds-surface); border: 1px solid var(--ds-color-gray-100); border-radius: var(--ds-radius-lg); box-shadow: var(--ds-shadow-01), var(--ds-shadow-02-soft); overflow: hidden; }
+.notif-panel { position: absolute; top: calc(100% + 10px); right: 0; z-index: 41; width: 360px; max-height: 440px; overflow-y: auto; background: var(--ds-surface); border: 1px solid var(--ds-color-gray-100); border-radius: var(--ds-radius-lg); box-shadow: var(--ds-shadow-03-big); overflow: hidden; }
 .notif-panel__head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--ds-space-3); padding: var(--ds-space-4) var(--ds-space-4) var(--ds-space-3); position: sticky; top: 0; background: var(--ds-surface); border-bottom: 1px solid var(--ds-color-gray-100); }
 .notif-panel__title { font-weight: var(--ds-font-weight-semibold); font-size: var(--ds-font-size-body-md); color: var(--ds-text); }
 .notif-panel__count { font-size: var(--ds-font-size-body-sm); font-weight: var(--ds-font-weight-semibold); color: var(--ds-color-green-200); }
@@ -1784,10 +1787,10 @@ td.ds-col-fija {
    eran ~240 px de alto para siete números que solo sirven para filtrar: de acá sale
    casi todo el espacio que gana la tabla. El conteo grande quedó en las pestañas. */
 .filtros { display: flex; align-items: center; gap: var(--ds-space-3); flex-wrap: wrap; margin-top: var(--ds-space-5); }
-.filtro-chip { display: inline-flex; align-items: center; gap: var(--ds-space-2); background: var(--ds-surface); border: 1.5px solid transparent; border-radius: var(--ds-radius-xl); box-shadow: var(--ds-shadow-01); padding: 8px 16px; font-family: inherit; font-size: var(--ds-font-size-label); line-height: var(--ds-line-height-label); color: var(--ds-color-gray-500); cursor: pointer; transition: border-color .12s ease, box-shadow .12s ease, color .12s ease; }
+.filtro-chip { display: inline-flex; align-items: center; gap: var(--ds-space-2); background: var(--ds-surface); border: 2px solid transparent; border-radius: var(--ds-radius-xl); box-shadow: var(--ds-shadow-01); padding: 8px 16px; font-family: inherit; font-size: var(--ds-font-size-label); line-height: var(--ds-line-height-label); color: var(--ds-color-gray-500); cursor: pointer; transition: border-color .12s ease, box-shadow .12s ease, color .12s ease; }
 .filtro-chip:hover { border-color: var(--ds-color-gray-200); color: var(--ds-text); }
 .filtro-chip:focus-visible { outline: 2px solid var(--ds-color-green-100); outline-offset: 2px; }
-.filtro-chip.is-active { border-color: var(--filtro-accent, var(--ds-color-green-100)); color: var(--ds-text); font-weight: var(--ds-font-weight-semibold); box-shadow: 0 0 0 3px color-mix(in srgb, var(--filtro-accent, var(--ds-color-green-100)) 22%, transparent); }
+.filtro-chip.is-active { border-width: 2px; border-color: var(--filtro-accent, var(--ds-color-green-100)); color: var(--ds-text); font-weight: var(--ds-font-weight-semibold); }
 .filtro-chip__dot { width: 10px; height: 10px; border-radius: 50%; background: var(--filtro-accent, var(--ds-color-green-100)); flex-shrink: 0; }
 .filtro-chip__n { font-size: var(--ds-font-size-body-md); font-weight: var(--ds-font-weight-semibold); color: var(--ds-text); font-variant-numeric: tabular-nums; }
 
@@ -1812,7 +1815,8 @@ td.ds-col-fija {
    ranking con barras y serie mensual. Los gráficos son SVG a mano (components/charts.tsx)
    porque acá no entran librerías; acá va solo su envoltura. */
 .resumen { margin-top: var(--ds-space-5); }
-.resumen__aviso { margin-bottom: var(--ds-space-4); padding: var(--ds-space-3) var(--ds-space-4); border-left: 3px solid var(--ds-color-yellow); background: color-mix(in srgb, var(--ds-color-yellow) 10%, var(--ds-tint-base)); }
+/* Nota de "los montos están en colones": mismo bloque tintado y plano del callout. */
+.resumen__aviso { margin-bottom: var(--ds-space-4); padding: var(--ds-space-3) var(--ds-space-4); border-radius: var(--ds-radius-lg); background: color-mix(in srgb, var(--ds-color-yellow) 16%, var(--ds-tint-base)); }
 
 /* ---- Tarjetas KPI ----
    auto-fit + minmax: a 1 760 px entran las cuatro en fila; abajo de ~1 100 px se parten
@@ -1844,7 +1848,7 @@ td.ds-col-fija {
    La única que sale de BC en vivo. Es un <button> porque abre Conciliación BC, así que
    necesita heredar la tipografía y alinear a la izquierda, que un botón no hace solo. */
 .kpi--sinfac { padding-bottom: var(--ds-space-5); gap: 4px; }
-.kpi--click { font-family: inherit; text-align: left; border: 1.5px solid transparent; cursor: pointer; transition: border-color .12s ease, box-shadow .12s ease; }
+.kpi--click { font-family: inherit; text-align: left; border: 2px solid transparent; cursor: pointer; transition: border-color .12s ease, box-shadow .12s ease; }
 .kpi--click:hover { border-color: var(--ds-color-red-100); }
 .kpi--click:focus-visible { outline: 2px solid var(--ds-color-green-100); outline-offset: 2px; }
 .kpi--sinfac .kpi__valor { color: var(--ds-color-red-200); }
@@ -1948,7 +1952,7 @@ td.ds-col-fija {
 
 /* ---- Órdenes agrupadas por proveedor ---- */
 .ord-grp {
-  border: 1.5px solid var(--ds-color-gray-100);
+  border: 1px solid var(--ds-color-gray-100);
   border-radius: var(--ds-radius-lg);
   background: var(--ds-surface);
   overflow: hidden;
@@ -1992,16 +1996,15 @@ td.ds-col-fija {
   position: relative;
   overflow: hidden;
   display: flex; flex-direction: column; gap: 4px;
-  border: 1.5px solid color-mix(in srgb, var(--ds-color-gray-100) 85%, var(--ds-tint-base));
+  border: 2px solid color-mix(in srgb, var(--ds-color-gray-100) 85%, var(--ds-tint-base));
   font: inherit; width: 100%;
-  transition: border-color .12s ease, box-shadow .15s ease, transform .06s ease;
+  transition: border-color .12s ease, transform .06s ease;
 }
 button.ana-kpi { cursor: pointer; }
-button.ana-kpi:hover { box-shadow: var(--ds-shadow-03-big); }
 button.ana-kpi:active { transform: translateY(1px); }
 .ana-kpi.is-selected {
+  border-width: 2px;
   border-color: var(--ds-color-green-200);
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--ds-color-green-100) 55%, var(--ds-tint-base)), var(--ds-shadow-01);
 }
 .ana-kpi.is-selected::after { background: color-mix(in srgb, var(--ds-color-green-100) 26%, var(--ds-tint-base)); }
 .ana-kpi::after {
@@ -2030,7 +2033,7 @@ button.ana-kpi:active { transform: translateY(1px); }
   background: linear-gradient(180deg, var(--ds-color-green-100), var(--ds-color-green-200));
   border-radius: 4px 4px 0 0;
 }
-.ana-panel { border: 1.5px solid color-mix(in srgb, var(--ds-color-gray-100) 85%, var(--ds-tint-base)); }
+.ana-panel { border: 1px solid color-mix(in srgb, var(--ds-color-gray-100) 85%, var(--ds-tint-base)); }
 
 /* Dashboard: detalle principal (izq) + contexto (der) */
 .dash-cols { display: grid; grid-template-columns: minmax(0, 1.7fr) minmax(0, 1fr); gap: var(--ds-space-4); align-items: start; }
@@ -2137,7 +2140,7 @@ button.ana-kpi:active { transform: translateY(1px); }
   display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
   padding: 10px 12px; border-radius: var(--ds-radius-lg);
   background: color-mix(in srgb, var(--ds-color-red-100) 6%, var(--ds-tint-base));
-  border: 1.5px solid color-mix(in srgb, var(--ds-color-red-100) 22%, var(--ds-tint-base));
+  border: 1px solid color-mix(in srgb, var(--ds-color-red-100) 22%, var(--ds-tint-base));
 }
 .nc-mark__label { font-size: var(--ds-font-size-body-sm); font-weight: var(--ds-font-weight-semibold); color: var(--ds-color-red-200); }
 .nc-mark__quitar { margin-left: auto; }
@@ -2145,7 +2148,7 @@ button.ana-kpi:active { transform: translateY(1px); }
 /* Notas de crédito: encabezado del grupo clickeable → abre la orden facturada. */
 .nc-grp-head {
   display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;
-  padding: 12px 16px; border-bottom: 1.5px solid var(--ds-color-gray-100);
+  padding: 12px 16px; border-bottom: 1px solid var(--ds-color-gray-100);
   text-decoration: none; color: inherit; cursor: pointer; transition: background .12s ease;
 }
 .nc-grp-head:hover { background: color-mix(in srgb, var(--ds-color-green-100) 8%, var(--ds-tint-base)); }
@@ -2162,7 +2165,7 @@ button.ana-kpi:active { transform: translateY(1px); }
 .nc-linkbtn {
   display: inline-flex; align-items: center; gap: 7px;
   height: 34px; padding: 0 14px; border-radius: 999px;
-  border: 1.5px solid var(--ds-color-gray-200); background: var(--ds-surface);
+  border: 1px solid var(--ds-color-gray-200); background: var(--ds-surface);
   color: var(--ds-text); font-size: var(--ds-font-size-body-sm); font-weight: var(--ds-font-weight-semibold);
   text-decoration: none; white-space: nowrap; cursor: pointer;
   transition: border-color .12s ease, background .12s ease, color .12s ease;
@@ -2195,18 +2198,21 @@ button.ana-kpi:active { transform: translateY(1px); }
 
 .recv-list { display: flex; flex-direction: column; gap: var(--ds-space-2); }
 
-/* Tarjeta COMPACTA de línea: nombre + precio + selector. Barra de color a la
-   izquierda para el estado (verde = se recibe todo · ámbar = pendiente en 0). */
+/* Tarjeta COMPACTA de línea: nombre + precio + campo de cantidad. La tarjeta es
+   una superficie lisa —sin borde y sin sombra—; el ESTADO de la línea lo dice el
+   campo de cantidad, que es el control con el que se trabaja. Esa es la gramática
+   del DS (`Form/formField`): en reposo el campo no tiene estado, y cuando lo tiene
+   se marca con un borde parejo de 2 px —verde en el estado `x`, rojo en
+   `advertencia`—. El acento de color al costado de la tarjeta no existe en el DS. */
 .recv-card {
   position: relative;
-  border: 1.5px solid var(--ds-color-gray-200); border-left-width: 4px; border-radius: var(--ds-radius-lg);
-  background: var(--ds-surface); padding: var(--ds-space-3) var(--ds-space-4);
+  border-radius: var(--ds-radius-lg);
+  /* Relleno gris y no blanco: la lista va DENTRO de una Card blanca, así que una
+     tarjeta blanca sin borde ni sombra desaparecería. Es el modificador `--filled`
+     de la Card del DS (gray-100), que separa con relleno en vez de con contorno. */
+  background: var(--ds-color-gray-100); padding: var(--ds-space-3) var(--ds-space-4);
   display: flex; flex-direction: column; gap: var(--ds-space-2);
-  transition: border-color .14s ease;
 }
-.recv-card:not(.is-full):not(.is-zero):not(.is-nc) { border-left-color: var(--ds-color-gray-300); }
-.recv-card.is-full { border-left-color: var(--ds-color-green-100); }
-.recv-card.is-zero { border-left-color: var(--ds-color-yellow); }
 
 .recv-card__row { display: flex; align-items: flex-start; gap: var(--ds-space-2); }
 .recv-card__name { flex: 1; min-width: 0; font-weight: var(--ds-font-weight-semibold); font-size: var(--ds-font-size-body-md); line-height: 1.25; }
@@ -2226,21 +2232,24 @@ button.ana-kpi:active { transform: translateY(1px); }
 .qty-field__unit { font-size: var(--ds-font-size-body-sm); color: var(--ds-color-gray-400); }
 .qty-input {
   width: 76px; height: 48px; text-align: center; border-radius: 999px;
-  border: 1.5px solid var(--ds-color-gray-200); background: var(--ds-surface); color: var(--ds-text);
+  border: 2px solid var(--ds-color-gray-200); background: var(--ds-surface); color: var(--ds-text);
   font-size: var(--ds-font-size-subtitle); font-weight: var(--ds-font-weight-semibold);
   -moz-appearance: textfield; font-family: inherit;
   transition: border-color .12s ease, box-shadow .12s ease;
 }
-/* Con cantidad cargada → borde verde (se va a recibir). */
+/* El estado de la línea vive acá, con los bordes de estado del DS: 2 px parejos,
+   verde = se recibe completo (`formField --x`), ámbar = pendiente sin cargar,
+   rojo = va a nota de crédito (`formField --advertencia`). */
 .qty-input.is-active { border-color: var(--ds-color-green-100); }
-.qty-input:focus { outline: none; border-color: var(--ds-color-green-100); box-shadow: 0 0 0 3px color-mix(in srgb, var(--ds-color-green-100) 22%, transparent); }
+.recv-card.is-full .qty-input { border-width: 2px; border-color: var(--ds-color-green-100); }
+.recv-card.is-zero .qty-input { border-width: 2px; border-color: var(--ds-color-yellow); }
+.recv-card.is-nc .qty-input { border-width: 2px; border-color: var(--ds-color-red-100); }
+.qty-input:focus { outline: 2px solid var(--ds-color-green-100); outline-offset: 2px; border-color: var(--ds-color-green-100); }
 .qty-input:disabled { opacity: .5; }
 .qty-input::-webkit-outer-spin-button, .qty-input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
 
 /* Nota de crédito (móvil): la línea marcada NO se expande. El tipo + comentario
-   se editan en un POPUP (Modal). La tarjeta queda con acento rojo + un chip para
-   identificarla de un vistazo. */
-.recv-card.is-nc { border-left-color: var(--ds-color-red-200); }
+   se editan en un POPUP (Modal). La identifica el chip rojo, no un acento. */
 .recv-nc-chip {
   align-self: flex-start; display: inline-flex; align-items: center; gap: 7px;
   margin: -2px 0 2px; padding: 5px 10px; border: 0; border-radius: 999px;
@@ -2257,7 +2266,7 @@ button.ana-kpi:active { transform: translateY(1px); }
 .bc-doc {
   display: flex; flex-direction: column; gap: 2px;
   padding: var(--ds-space-3) var(--ds-space-4); margin-bottom: var(--ds-space-4);
-  border: 1.5px solid color-mix(in srgb, var(--ds-color-green-100) 40%, var(--ds-tint-base));
+  border: 1px solid color-mix(in srgb, var(--ds-color-green-100) 40%, var(--ds-tint-base));
   border-radius: var(--ds-radius-lg);
   background: color-mix(in srgb, var(--ds-color-green-100) 8%, var(--ds-tint-base));
 }
@@ -2276,7 +2285,7 @@ button.ana-kpi:active { transform: translateY(1px); }
 .foto-strip { display: flex; flex-wrap: wrap; gap: var(--ds-space-2); }
 .foto-thumb {
   width: 84px; height: 84px; padding: 0; overflow: hidden; flex-shrink: 0;
-  border: 1.5px solid var(--ds-color-gray-200); border-radius: var(--ds-radius-md);
+  border: 1px solid var(--ds-color-gray-200); border-radius: var(--ds-radius-md);
   background: var(--ds-tint-base); cursor: pointer;
   transition: border-color .12s ease, transform .12s ease;
 }
@@ -2330,7 +2339,7 @@ button.ana-kpi:active { transform: translateY(1px); }
 .kebab__overlay { position: fixed; inset: 0; z-index: 40; }
 .kebab-menu {
   position: absolute; top: 40px; right: var(--ds-space-3); z-index: 41; min-width: 210px;
-  background: var(--ds-surface); border: 1.5px solid var(--ds-color-gray-100); border-radius: var(--ds-radius-lg);
+  background: var(--ds-surface); border: 1px solid var(--ds-color-gray-100); border-radius: var(--ds-radius-lg);
   box-shadow: var(--ds-shadow-03-big); padding: 6px; display: flex; flex-direction: column; gap: 2px;
   animation: fade .12s ease;
 }
@@ -2350,7 +2359,7 @@ button.ana-kpi:active { transform: translateY(1px); }
 .nc-mark__row .ds-form-field__textarea { min-height: 60px; }
 
 /* Flete/cargo de la orden como tarjeta informativa dentro de la lista móvil. */
-.recv-cargo { display: flex; align-items: center; gap: var(--ds-space-3); padding: var(--ds-space-3) var(--ds-space-4); border-radius: var(--ds-radius-lg); border: 1.5px dashed var(--ds-color-gray-200); }
+.recv-cargo { display: flex; align-items: center; gap: var(--ds-space-3); padding: var(--ds-space-3) var(--ds-space-4); border-radius: var(--ds-radius-lg); border: 1px dashed var(--ds-color-gray-200); }
 
 /* Botonera de acciones a ancho completo en móvil (objetivos táctiles grandes). */
 @media (max-width: 760px) {
@@ -2359,34 +2368,31 @@ button.ana-kpi:active { transform: translateY(1px); }
 }
 
 /* Callout: aviso contextual dentro de una página (p. ej. el motivo por el que
-   Aprobación rechazó una orden). Paleta DS: rojo = atención, amarillo = ojo. */
+   Aprobación rechazó una orden). PLANO a propósito: ni borde de acento ni sombra.
+   Lo que lo separa de la página es el color, igual que `.ds-badge` —tinte de fondo
+   + ícono y título en el color del estado—. Paleta: rojo = atención, amarillo = ojo. */
 .ds-callout {
   display: flex; align-items: flex-start; gap: var(--ds-space-3);
   padding: var(--ds-space-4); border-radius: var(--ds-radius-lg);
-  border: 1.5px solid var(--ds-color-gray-200); border-left-width: 4px;
   background: var(--ds-surface);
 }
 .ds-callout__icon { flex-shrink: 0; display: inline-grid; place-items: center; color: var(--ds-color-gray-400); }
 .ds-callout__title { font-size: var(--ds-font-size-label); font-weight: var(--ds-font-weight-semibold); color: var(--ds-text); }
 .ds-callout__body { font-size: var(--ds-font-size-body-sm); color: var(--ds-text); margin-top: 2px; }
+/* 9 % y no más: el título va en red-200 y a partir de ~10 % de tinte el contraste
+   sobre claro cae por debajo de 4,5:1. */
 .ds-callout--red {
-  border-color: color-mix(in srgb, var(--ds-color-red-100) 22%, var(--ds-tint-base));
-  border-left-color: var(--ds-color-red-200);
-  background: color-mix(in srgb, var(--ds-color-red-100) 6%, var(--ds-tint-base));
+  background: color-mix(in srgb, var(--ds-color-red-100) 9%, var(--ds-tint-base));
 }
 .ds-callout--red .ds-callout__icon, .ds-callout--red .ds-callout__title { color: var(--ds-color-red-200); }
 .ds-callout--yellow {
-  border-color: color-mix(in srgb, var(--ds-color-yellow) 30%, var(--ds-tint-base));
-  border-left-color: var(--ds-color-yellow);
-  background: color-mix(in srgb, var(--ds-color-yellow) 8%, var(--ds-tint-base));
+  background: color-mix(in srgb, var(--ds-color-yellow) 16%, var(--ds-tint-base));
 }
 /* Verde: la confirmación de que algo se VERIFICÓ y salió bien (el cotejo contra
    Business Central). Hacía falta un "sí" con el mismo peso visual que el "no":
    decir solo lo malo enseña a ignorar el aviso, no a mirarlo. */
 .ds-callout--green {
-  border-color: color-mix(in srgb, var(--ds-color-green-200) 26%, var(--ds-tint-base));
-  border-left-color: var(--ds-color-green-200);
-  background: color-mix(in srgb, var(--ds-color-green-200) 7%, var(--ds-tint-base));
+  background: color-mix(in srgb, var(--ds-color-green-200) 12%, var(--ds-tint-base));
 }
 /* El título va en el verde OSCURO (green-300): el 200 sobre el fondo claro del
    callout da ~2,8:1 y no llega al mínimo de contraste. En modo oscuro el token
@@ -2413,7 +2419,7 @@ button.ana-kpi:active { transform: translateY(1px); }
 .sync-chip {
   display: inline-flex; align-items: center; gap: var(--ds-space-2);
   height: 36px; padding: 0 var(--ds-space-3);
-  border: 1.5px solid var(--ds-color-gray-200); border-radius: var(--ds-radius-xl);
+  border: 1px solid var(--ds-color-gray-200); border-radius: var(--ds-radius-xl);
   background: var(--ds-surface); color: var(--ds-color-gray-500);
   font-size: var(--ds-font-size-label); font-weight: var(--ds-font-weight-semibold);
   cursor: pointer; transition: border-color .15s ease, color .15s ease;
@@ -2485,7 +2491,7 @@ button.ana-kpi:active { transform: translateY(1px); }
      0,88·alto − 260; los 300 son esos 260 con 40px de holgura. El tope en
      píxeles solo recorta pantallas muy altas, donde 520px ya son ~9 filas. */
   max-height: max(160px, min(calc(88vh - 300px), 520px)); overflow-y: auto; overscroll-behavior: contain;
-  border: 1.5px solid var(--ds-color-gray-100); border-radius: var(--ds-radius-lg);
+  border: 1px solid var(--ds-color-gray-100); border-radius: var(--ds-radius-lg);
   background: var(--ds-surface);
   /* Con 6 líneas o menos no hay buscador, y sin él la caja quedaba pegada al texto
      de ayuda. Cuando el buscador está, él pone la separación. */
@@ -2504,7 +2510,7 @@ button.ana-kpi:active { transform: translateY(1px); }
    FINAL ("… 1-1/4\" METALICO"). */
 .addl-line { grid-template-columns: minmax(260px, 1fr) 148px 104px 104px; gap: var(--ds-space-3); padding: 8px 12px; }
 
-/* La tipografía del encabezado (12px, semibold, gray-400) y su filo de 1.5px ya
+/* La tipografía del encabezado (12px, semibold, gray-400) y su filo de 1px ya
    los pone `.rec-line--head` (864-865); acá solo se lo hace pegajoso. */
 .addl-line--head { position: sticky; top: 0; z-index: 1; padding: 7px 12px; background: var(--ds-surface); }
 
@@ -2526,7 +2532,7 @@ button.ana-kpi:active { transform: translateY(1px); }
    del DS (en oscuro se remapea al verde de marca, 112). El filo verde de 3px
    evita repetir la marca fila por fila. */
 .addl-grp__origen { font-weight: 700; color: var(--ds-color-green-300); }
-.addl-grp--origen .combo__group { box-shadow: inset 3px 0 0 var(--ds-color-green-100); }
+.addl-grp--origen .combo__group { background: color-mix(in srgb, var(--ds-color-green-100) 12%, var(--ds-tint-base)); }
 
 /* En desktop el rótulo lo dice la columna; en móvil no hay encabezado. */
 .addl-pendlbl { display: none; font-size: var(--ds-font-size-body-sm); font-weight: var(--ds-font-weight-regular); color: var(--ds-color-gray-400); }
@@ -2587,7 +2593,7 @@ button.ana-kpi:active { transform: translateY(1px); }
 .maq-fila {
   display: grid; grid-template-columns: minmax(0, 1fr) 96px 32px;
   align-items: center; gap: var(--ds-space-3);
-  padding: 10px 0; border-top: 1.5px solid var(--ds-color-gray-100);
+  padding: 10px 0; border-top: 1px solid var(--ds-color-gray-100);
 }
 .maq-fila__no { font-size: var(--ds-font-size-label); font-weight: var(--ds-font-weight-semibold); }
 .maq-fila__nombre {
@@ -2598,7 +2604,7 @@ button.ana-kpi:active { transform: translateY(1px); }
    repartió MÁS de lo que trae la línea, que es el único caso que no se puede
    guardar. */
 .maq-cuenta { display: flex; flex-wrap: wrap; gap: var(--ds-space-2); align-items: baseline; justify-content: space-between;
-  margin-top: var(--ds-space-3); padding-top: var(--ds-space-3); border-top: 1.5px solid var(--ds-color-gray-200); }
+  margin-top: var(--ds-space-3); padding-top: var(--ds-space-3); border-top: 1px solid var(--ds-color-gray-200); }
 .maq-cuenta--pasado { color: var(--ds-color-red-100); }
 
 /* =========================================================================
@@ -2625,7 +2631,7 @@ button.ana-kpi:active { transform: translateY(1px); }
 
 .cal-atajos { display: flex; flex-wrap: wrap; gap: 6px; }
 .cal-atajos button {
-  border: 1.5px solid var(--ds-color-gray-200); background: var(--ds-surface);
+  border: 1px solid var(--ds-color-gray-200); background: var(--ds-surface);
   border-radius: 999px; padding: 6px 10px; font: inherit; font-size: 12px;
   font-weight: var(--ds-font-weight-semibold); color: var(--ds-text); cursor: pointer;
   white-space: nowrap; transition: border-color .12s, background .12s;
@@ -2686,19 +2692,19 @@ button.ana-kpi:active { transform: translateY(1px); }
 .cal-campo { position: relative; display: inline-block; }
 .cal-campo__btn {
   display: inline-flex; align-items: center; gap: 8px; min-width: 210px; justify-content: space-between;
-  border: 1.5px solid var(--ds-color-gray-200); background: var(--ds-surface); color: var(--ds-text);
+  border: 1px solid var(--ds-color-gray-200); background: var(--ds-surface); color: var(--ds-text);
   border-radius: var(--ds-radius-md, 10px); padding: 9px 12px; font: inherit; font-size: 14px; cursor: pointer;
   transition: border-color .12s;
 }
 .cal-campo__btn:hover { border-color: var(--ds-color-gray-300); }
 .cal-campo__btn.is-puesto { border-color: var(--ds-color-green-200); font-weight: var(--ds-font-weight-semibold); }
-.cal-campo__btn:focus-visible { outline: none; border-color: var(--ds-color-green-100); box-shadow: 0 0 0 3px color-mix(in srgb, var(--ds-color-green-100) 20%, transparent); }
+.cal-campo__btn:focus-visible { outline: 2px solid var(--ds-color-green-100); outline-offset: 2px; border-color: var(--ds-color-green-100); }
 
 .cal-scrim { position: fixed; inset: 0; z-index: 60; }
 .cal-pop {
   position: absolute; z-index: 61; top: calc(100% + 6px); left: 0; width: max-content; max-width: min(92vw, 620px);
   background: var(--ds-surface); border-radius: var(--ds-radius-xl, 18px);
-  box-shadow: var(--ds-shadow-02, 0 6px 20px rgba(0,0,0,.14)); padding: 14px;
+  box-shadow: var(--ds-shadow-03-big); padding: 14px;
 }
 
 /* En pantallas angostas (Bodega trabaja en celular) el segundo mes no cabe: se deja
