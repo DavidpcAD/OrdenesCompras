@@ -2107,13 +2107,17 @@ export function payloadReplaceLines(lineas: LineaReplaceBc[]): { lines: Record<s
 //      existe: BC contestaba `Internal_InvalidTableRelation` en cada reescritura. El
 //      aviso "no se pudo volver a poner el grupo" salía siempre, sobre un pedido que
 //      quedaba bien.
-//   2. Ya no hace falta. La orden dice qué IVA lleva la compra y ese 0% viaja a BC
-//      (ver `codigosConIvaCero` más abajo). No hay nada que "conservar": si la compra
-//      no lleva IVA, se pone en la orden y BC queda igual, todas las veces.
+//   2. Ya no hace falta. La orden dice qué IVA lleva la compra y ese % viaja a BC
+//      (ver `ivaDecididoPorCodigo` más abajo). No hay nada que "conservar": el IVA
+//      se pone en la orden y BC queda igual, todas las veces.
 export type LineaIvaBc = { id: string; code: string; taxCode: string;
   // El % que BC calcula HOY con ese grupo. Es el dato que manda: los textos de
   // `taxCode` no se pueden comparar entre leer y escribir.
-  taxPercent?: number };
+  taxPercent?: number;
+  // El N.º de línea de BC (10000, 20000…). Es la llave con la que se le pide a la
+  // página Purchase_Order_Line_Excel la FAMILIA del grupo de IVA, que la API
+  // estándar no devuelve (ver `bcFamiliasIvaDeLineas`).
+  sequence?: number };
 
 // Las líneas del pedido con su grupo de IVA, por la API estándar. null si no se pudo.
 // Trae también el ESTADO del pedido: un pedido lanzado no se edita en BC, y decirlo
@@ -2126,7 +2130,7 @@ async function bcLineasIvaDePedido(cid: string, orderNo: string): Promise<{ poId
   const poId = po?.id;
   if (!poId) return null;
   const resL = await bcFetch(
-    `${stdRoot()}/companies(${cid})/purchaseOrders(${poId})/purchaseOrderLines?$select=id,lineObjectNumber,taxCode,taxPercent`,
+    `${stdRoot()}/companies(${cid})/purchaseOrders(${poId})/purchaseOrderLines?$select=id,sequence,lineObjectNumber,taxCode,taxPercent`,
     { cache: "no-store" });
   if (!resL.ok) return null;
   const lineas: LineaIvaBc[] = (((await resL.json())?.value ?? []) as any[])
@@ -2135,44 +2139,139 @@ async function bcLineasIvaDePedido(cid: string, orderNo: string): Promise<{ poId
       code: String(l?.lineObjectNumber ?? "").trim().toUpperCase(),
       taxCode: String(l?.taxCode ?? "").trim(),
       taxPercent: Number(l?.taxPercent),
+      sequence: Number(l?.sequence),
     }))
     .filter((l) => l.id && l.code);
   return { poId, status: String(po?.status ?? "").trim(), lineas };
 }
 
-// Los códigos (artículo o cargo) que la ORDEN tiene en 0% de IVA. El default de la
-// app es 13, así que un 0 es una decisión de quien la armó, no un campo vacío: una
-// línea SIN `ivaPct` no cuenta como cero, para que una orden vieja no se quede sin
-// IVA en BC por omisión.
-export function codigosConIvaCero(lineas: LineaReplaceBc[]): string[] {
-  const out = new Set<string>();
+// El IVA% que la app pone sola cuando nadie toca el campo. No es un detalle de
+// pantalla: es lo único que separa un % puesto a propósito de un campo que quedó
+// como venía, y de eso depende qué se le escribe a BC y qué no.
+export const IVA_DEFAULT_APP = 13;
+
+// La familia de grupos de IVA con la que se trabaja cuando BC no dice otra cosa. Es
+// la que la app venía usando para el exento (EXENTO-BIENES).
+export const FAMILIA_IVA_DEFAULT = "BIENES";
+
+// Código (artículo o cargo) → el IVA% que la ORDEN decidió para él, y los códigos
+// que quedaron ambiguos. Solo viaja a BC lo que es una DECISIÓN:
+//
+//   - una línea en el default (13) no se puede distinguir de "no lo toqué", así que
+//     ahí manda el grupo del artículo, que es el que Contabilidad configuró en BC.
+//     Empujarle 13 a todo le pisaría los artículos que tiene en 1%, 2% o 4%
+//     (M17-0043 ESCOBA GRANDE es IVA1%-BIENES en BC desde antes de esta app).
+//   - una línea SIN `ivaPct` es una que nadie llenó: cuenta como el default.
+//
+// OJO CON EL MISMO CÓDIGO DOS VECES: las líneas de la app y las de BC se casan por
+// código, que es lo único que comparten después de que el codeunit las reescribe. Si
+// el mismo artículo aparece dos veces con IVA distinto, allá no hay forma de saber
+// cuál es cuál, así que ese código no se toca y se avisa.
+export function ivaDecididoPorCodigo(lineas: LineaReplaceBc[]): { porCodigo: Record<string, number>; ambiguos: string[] } {
+  const vistos = new Map<string, Set<number>>();
   for (const l of lineas ?? []) {
-    if (l?.ivaPct === undefined || l?.ivaPct === null) continue;
-    if (Number(l.ivaPct) !== 0) continue;
-    const code = String(l.tipo === "cargo" ? l.chargeNo : codigoDeItem(String(l.itemNo ?? ""))).trim().toUpperCase();
-    if (code) out.add(code);
+    const code = String(l?.tipo === "cargo" ? l?.chargeNo : codigoDeItem(String(l?.itemNo ?? ""))).trim().toUpperCase();
+    if (!code) continue;
+    const crudo = l?.ivaPct === undefined || l?.ivaPct === null ? IVA_DEFAULT_APP : Number(l.ivaPct);
+    const pct = Number.isFinite(crudo) && crudo >= 0 ? crudo : IVA_DEFAULT_APP;
+    if (!vistos.has(code)) vistos.set(code, new Set());
+    vistos.get(code)!.add(pct);
   }
-  return [...out];
+  const porCodigo: Record<string, number> = {};
+  const ambiguos: string[] = [];
+  for (const [code, pcts] of vistos) {
+    if (pcts.size > 1) { ambiguos.push(code); continue; }
+    const pct = [...pcts][0];
+    if (pct === IVA_DEFAULT_APP) continue;
+    porCodigo[code] = pct;
+  }
+  return { porCodigo, ambiguos };
 }
 
-// De las líneas que BC tiene, las que hay que poner en cero: las que la orden marcó
-// en 0% y a las que BC les sigue calculando IVA. Las que allá ya están en 0 se dejan
-// quietas — un PATCH de más es una escritura en BC que no hace falta.
-export function lineasAPonerEnCero(codigosCero: string[], lineasBc: LineaIvaBc[]): LineaIvaBc[] {
-  const ceros = new Set((codigosCero ?? []).map((c) => String(c).trim().toUpperCase()).filter(Boolean));
-  if (!ceros.size) return [];
-  return (lineasBc ?? []).filter((l) => {
-    if (!l?.id || !ceros.has(String(l.code ?? "").trim().toUpperCase())) return false;
-    const pct = Number(l.taxPercent);
-    return !(Number.isFinite(pct) && Math.abs(pct) < 1e-9);
-  });
+// De las líneas que BC tiene, las que hay que tocar: aquellas cuyo código la orden
+// decidió y a las que BC les está calculando otra cosa. Las que ya coinciden se
+// dejan quietas — un PATCH de más es una escritura en BC que no hace falta.
+export function lineasConIvaDistinto(porCodigo: Record<string, number>, lineasBc: LineaIvaBc[]): { linea: LineaIvaBc; pct: number }[] {
+  const out: { linea: LineaIvaBc; pct: number }[] = [];
+  for (const l of lineasBc ?? []) {
+    if (!l?.id) continue;
+    const pct = porCodigo?.[String(l.code ?? "").trim().toUpperCase()];
+    if (pct === undefined) continue;
+    const actual = Number(l.taxPercent);
+    if (Number.isFinite(actual) && Math.abs(actual - pct) < 1e-9) continue;
+    out.push({ linea: l, pct });
+  }
+  return out;
+}
+
+// La familia de un grupo de IVA de BC: lo que va después del primer guion
+// ("IVA13%-BIENES" → "BIENES"). Vacío si el texto no tiene esa forma.
+export function familiaDeGrupoIva(grupo?: string): string {
+  const g = String(grupo ?? "").trim().toUpperCase();
+  const i = g.indexOf("-");
+  return i < 0 ? "" : g.slice(i + 1).trim();
+}
+
+// El VAT Prod. Posting Group con el que BC da una tasa, dentro de una FAMILIA: así
+// se llaman en `taxGroups` (EXENTO-BIENES, IVA1%-BIENES, IVA13%-SERV…). La familia
+// se conserva de la que la línea ya tiene allá: cambiarle la tasa a un servicio no
+// lo convierte en un bien, y el grupo equivocado manda el IVA a otra cuenta.
+export function grupoIvaDeTasa(pct: number, familia?: string): string {
+  const fam = (familia ?? "").trim().toUpperCase() || FAMILIA_IVA_DEFAULT;
+  if (Math.abs(Number(pct)) < 1e-9) {
+    // El nombre del exento sale de env por si en BC lo renombran; de ahí se toma el
+    // prefijo y se le pone la familia de la línea.
+    const base = grupoIvaExento();
+    const i = base.indexOf("-");
+    return i < 0 ? base : `${base.slice(0, i)}-${fam}`;
+  }
+  return `IVA${Number(pct)}%-${fam}`;
+}
+
+// Los % de IVA que BC tiene configurados para una familia, leídos de los nombres de
+// sus grupos ("IVA4%-BIENES" → 4; el exento cuenta como 0). Sirve para que, cuando
+// alguien pide un % que no existe, el error diga qué SÍ se puede poner.
+export function tasasIvaDisponibles(grupos: string[], familia?: string): number[] {
+  const fam = (familia ?? "").trim().toUpperCase() || FAMILIA_IVA_DEFAULT;
+  const out = new Set<number>();
+  for (const g of grupos ?? []) {
+    const code = String(g ?? "").trim().toUpperCase();
+    if (familiaDeGrupoIva(code) !== fam) continue;
+    if (code.startsWith("EXENTO")) { out.add(0); continue; }
+    const m = code.match(/^IVA(\d+(?:[.,]\d+)?)%/);
+    if (m) out.add(Number(m[1].replace(",", ".")));
+  }
+  return [...out].sort((a, b) => a - b);
+}
+
+// La familia del grupo de IVA que cada línea tiene HOY en BC, por N.º de línea.
+// Hace falta porque la API estándar, al leer, devuelve el VAT Identifier ("IVA13") y
+// de ahí no sale la familia; la página Purchase_Order_Line_Excel sí da el grupo
+// entero ("IVA13%-BIENES"). Es MEJOR ESFUERZO: si esa página no está publicada en el
+// entorno, se devuelve vacío y cada línea cae en BIENES, que es exactamente lo que
+// la app venía haciendo cuando solo empujaba el exento.
+async function bcFamiliasIvaDeLineas(cid: string, orderNo: string): Promise<Record<number, string>> {
+  try {
+    const filtro = encodeURIComponent(`Document_Type eq 'Order' and Document_No eq '${odataStr(orderNo)}'`);
+    const res = await bcFetch(
+      `${odataRoot()}/Purchase_Order_Line_Excel?company=${encodeURIComponent(cid)}&$filter=${filtro}&$select=Line_No,VAT_Prod_Posting_Group`,
+      { cache: "no-store" });
+    if (!res.ok) return {};
+    const out: Record<number, string> = {};
+    for (const l of (((await res.json())?.value ?? []) as any[])) {
+      const n = Number(l?.Line_No);
+      const fam = familiaDeGrupoIva(l?.VAT_Prod_Posting_Group);
+      if (Number.isFinite(n) && fam) out[n] = fam;
+    }
+    return out;
+  } catch { return {}; }
 }
 
 export type ResultadoReplace = {
   resultado: string;
   omitidas: string[];
-  // Líneas que la orden tiene en 0% y que quedaron en 0 también en BC ("M05-0804 → EXENTO-BIENES").
-  ivaCeroAplicado: string[];
+  // Líneas cuyo IVA quedó en BC como lo dice la orden ("M17-0051 → IVA1%-BIENES").
+  ivaAplicado: string[];
   // Solo cuando algo NO se pudo: el IVA del pedido en BC quedó distinto al de la orden.
   avisoIva?: string;
 };
@@ -2199,39 +2298,60 @@ export async function bcReplaceOrderLines(orderNo: string, lineas: LineaReplaceB
   const resultado = String(d?.value ?? "Líneas reescritas en BC.");
   let avisoIva: string | undefined;
 
-  // ── EL 0% DE LA ORDEN VIAJA A BC ────────────────────────────────────────────
-  // Si Proveeduría le puso 0% de IVA a una línea, en BC tiene que salir en 0. Punto.
-  // Antes no: el IVA% de la app se quedaba en el estimado y en el PDF, BC calculaba
-  // el suyo con el grupo del artículo (13%), y la diferencia había que ir a
-  // arreglarla a mano allá. Esto la aplica sola, en el mismo movimiento en que se
-  // crean o se reescriben las líneas.
+  // ── EL IVA DE LA ORDEN VIAJA A BC ───────────────────────────────────────────
+  // Si Proveeduría le puso a una línea un IVA distinto al que la app pone sola, en
+  // BC tiene que salir ese. Antes solo viajaba el 0 (la importación exenta) y
+  // cualquier otro % se quedaba en el estimado y en el PDF: BC calculaba el suyo con
+  // el grupo del artículo y la diferencia había que ir a arreglarla a mano allá.
   //
-  // Solo se toca el 0: con cualquier otro %, manda el grupo del artículo, que es el
-  // que Contabilidad tiene configurado en BC para cada cosa.
-  const ivaCeroAplicado: string[] = [];
-  const ceros = codigosConIvaCero(lineas);
-  if (ceros.length) {
+  // CP-005814 (30 sep 2026, Multisuministros): dos líneas puestas en 1%. ESCOBA
+  // GRANDE salió en 1% —de casualidad, porque el artículo ya era IVA1%-BIENES en
+  // BC— y PALA PARA RECOGER BASURA salió en 13%, ₡511,20 de más sobre ₡4.260. El
+  // 1% de la app nunca había viajado: el único que viajaba era el 0.
+  //
+  // El 13 NO viaja, a propósito: es el default de la app, no se distingue de "no lo
+  // toqué", y empujarlo le pisaría a Contabilidad los artículos que tiene
+  // configurados en BC al 1%, 2% o 4%.
+  const ivaAplicado: string[] = [];
+  const { porCodigo, ambiguos } = ivaDecididoPorCodigo(lineas);
+  if (ambiguos.length) {
+    avisoIva = `OJO con el IVA: ${ambiguos.join(", ")} está en más de una línea con IVA distinto, y en Business Central las líneas se reconocen por código, así que allá ese IVA quedó como lo calcula BC. Poneles el mismo % a todas las líneas del mismo artículo.`;
+  }
+  if (Object.keys(porCodigo).length) {
     try {
       const post = await bcLineasIvaDePedido(cid, orderNo);
-      const grupo = grupoIvaExento();
-      for (const l of lineasAPonerEnCero(ceros, post?.lineas ?? [])) {
-        const pct = Number(l.taxPercent);
-        const r = await bcFetch(`${stdRoot()}/companies(${cid})/purchaseOrders(${post!.poId})/purchaseOrderLines(${l.id})`, {
-          method: "PATCH", cache: "no-store",
-          headers: { "Content-Type": "application/json", "If-Match": "*" },
-          body: JSON.stringify({ taxCode: grupo }),
-        });
-        if (r.ok) ivaCeroAplicado.push(`${l.code} → ${grupo}`);
-        else {
-          // No es fatal: el pedido está bien, lo que quedó mal es el IVA. Se dice.
-          avisoIva = [avisoIva, `OJO con el IVA: la orden dice 0% en ${l.code} pero Business Central le sigue calculando ${pct}% y no dejó cambiarlo (${mensajeBc((await r.text()).slice(0, 300))}).`].filter(Boolean).join(" ");
+      const pendientes = lineasConIvaDistinto(porCodigo, post?.lineas ?? []);
+      if (pendientes.length) {
+        const familias = await bcFamiliasIvaDeLineas(cid, orderNo);
+        const existentes = await bcGruposIvaProducto(cid);
+        for (const { linea: l, pct } of pendientes) {
+          const fam = familias[Number(l.sequence)] || FAMILIA_IVA_DEFAULT;
+          const grupo = grupoIvaDeTasa(pct, fam);
+          const actual = Number(l.taxPercent);
+          // Un grupo que no existe en BC da un error suyo que no dice qué hacer. Se
+          // corta antes y se nombran los % que esa familia sí tiene configurados.
+          if (existentes && !existentes.includes(grupo.toUpperCase())) {
+            const tasas = tasasIvaDisponibles(existentes, fam);
+            avisoIva = [avisoIva, `OJO con el IVA: la orden dice ${pct}% en ${l.code}, pero Business Central no tiene el grupo ${grupo}, así que esa línea quedó en ${actual}%.${tasas.length ? ` Los % configurados para ${fam} son ${tasas.join(", ")}.` : ""} Corregí el % en la orden o pedile a Contabilidad que cree el grupo.`].filter(Boolean).join(" · ");
+            continue;
+          }
+          const r = await bcFetch(`${stdRoot()}/companies(${cid})/purchaseOrders(${post!.poId})/purchaseOrderLines(${l.id})`, {
+            method: "PATCH", cache: "no-store",
+            headers: { "Content-Type": "application/json", "If-Match": "*" },
+            body: JSON.stringify({ taxCode: grupo }),
+          });
+          if (r.ok) ivaAplicado.push(`${l.code} → ${grupo}`);
+          else {
+            // No es fatal: el pedido está bien, lo que quedó mal es el IVA. Se dice.
+            avisoIva = [avisoIva, `OJO con el IVA: la orden dice ${pct}% en ${l.code} pero Business Central le sigue calculando ${actual}% y no dejó cambiarlo (${mensajeBc((await r.text()).slice(0, 300))}).`].filter(Boolean).join(" · ");
+          }
         }
       }
     } catch (e: any) {
-      avisoIva = [avisoIva, `OJO con el IVA: no se pudo aplicar en Business Central el 0% que la orden tiene en ${ceros.length} línea(s) (${String(e?.message ?? e)}). Revisá el IVA del pedido allá.`].filter(Boolean).join(" ");
+      avisoIva = [avisoIva, `OJO con el IVA: no se pudo aplicar en Business Central el IVA que la orden tiene en ${Object.keys(porCodigo).length} línea(s) (${String(e?.message ?? e)}). Revisá el IVA del pedido allá.`].filter(Boolean).join(" · ");
     }
   }
-  return { resultado, omitidas, ivaCeroAplicado, avisoIva };
+  return { resultado, omitidas, ivaAplicado, avisoIva };
 }
 
 // ── DEJAR EL PEDIDO EXENTO DE IVA EN BC ──────────────────────────────────────

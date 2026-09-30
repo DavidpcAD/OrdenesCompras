@@ -205,7 +205,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
           const { valor: r, reabierto } = await conPedidoAbierto(o.bcNumber, () => bcReplaceOrderLines(o.bcNumber!, lineasBc));
           if (reabierto) bcAviso = [bcAviso, `El pedido ${o.bcNumber} estaba Lanzado en BC: se reabrió para poder pasarle los cambios y quedó ABIERTO, listo para que Aprobación lo lance.`].filter(Boolean).join(" · ");
           if (r.omitidas.length) bcAviso = [bcAviso, `Enviada a aprobación. OJO: BC no recibió ${r.omitidas.length} línea(s) — ${r.omitidas.join("; ")}.`].filter(Boolean).join(" · ");
-          // El 0% de la orden se aplica solo en BC. Que HAYA funcionado no se avisa:
+          // El IVA que la orden decidió se aplica solo en BC. Que HAYA funcionado no se avisa:
           // este canal es el de "algo quedó mal", y un pedido correcto no es noticia.
           // Si NO se pudo, `avisoIva` lo dice con el dato concreto.
           if (r.avisoIva) bcAviso = [bcAviso, r.avisoIva].filter(Boolean).join(" · ");

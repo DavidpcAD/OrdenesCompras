@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { lineasAExonerar, grupoIvaExento, codigosConIvaCero, lineasAPonerEnCero, bcPideAbierto,
+import { lineasAExonerar, grupoIvaExento, ivaDecididoPorCodigo, lineasConIvaDistinto,
+  grupoIvaDeTasa, familiaDeGrupoIva, tasasIvaDisponibles, bcPideAbierto,
   type LineaIvaBc, type LineaReplaceBc } from "./bc.ts";
 
 // Quitarle el IVA al pedido en BC (importación): a qué líneas hay que tocarles el
@@ -80,44 +81,99 @@ test("grupoIvaExento: default EXENTO-BIENES (el código real de taxGroups)", () 
   else process.env.BC_IVA_GRUPO_EXENTO = antes;
 });
 
-// ── EL 0% DE LA ORDEN VIAJA A BC ───────────────────────────────────────────────
-// "Si yo no le pongo IVA, entonces va en 0". El IVA% de la app se quedaba en el
-// estimado y en el PDF; ahora, cuando es CERO, se le pone el grupo exento a esa
-// línea en BC en el mismo movimiento en que se crean o reescriben las líneas.
+// ── EL IVA DE LA ORDEN VIAJA A BC ──────────────────────────────────────────────
+// "Si yo le pongo 1%, en BC tiene que salir 1%". El IVA% de la app se quedaba en el
+// estimado y en el PDF —solo el 0 viajaba—; ahora cualquier % que sea una DECISIÓN
+// se le escribe a la línea en BC en el mismo movimiento en que se crean o se
+// reescriben las líneas.
 
 const A = (itemNo: string, ivaPct?: number): LineaReplaceBc =>
   ({ tipo: "articulo", itemNo, cantidad: 1, precio: 100, ivaPct });
 
-test("codigosConIvaCero: solo las líneas que dicen 0", () => {
-  const lineas = [A("M05-0804", 0), A("M17-0321", 13), A("M20-1088", 0)];
-  assert.deepEqual(codigosConIvaCero(lineas), ["M05-0804", "M20-1088"]);
+test("ivaDecididoPorCodigo: viaja lo que no es el default (0, 1, 4…)", () => {
+  const lineas = [A("M05-0804", 0), A("M17-0321", 13), A("M20-1088", 1), A("M11-0500", 4)];
+  assert.deepEqual(ivaDecididoPorCodigo(lineas).porCodigo,
+    { "M05-0804": 0, "M20-1088": 1, "M11-0500": 4 });
 });
 
-// El default de la app es 13: una línea sin ivaPct es una que nadie tocó, no una
-// exenta. Si contara como cero, una orden vieja se quedaría sin IVA en BC sola.
-test("codigosConIvaCero: sin ivaPct NO es cero", () => {
-  assert.deepEqual(codigosConIvaCero([A("M05-0804"), A("M17-0321", 0)]), ["M17-0321"]);
+// EL CASO DE CP-005814: dos líneas en 1%. Antes solo el 0 viajaba y las dos quedaban
+// a merced del grupo del artículo en BC (una salió 1%, la otra 13%).
+test("ivaDecididoPorCodigo: el 1% de CP-005814 viaja (antes no)", () => {
+  const { porCodigo } = ivaDecididoPorCodigo([A("M17-0051", 1), A("M17-0043", 1), A("M17-0032", 13)]);
+  assert.deepEqual(porCodigo, { "M17-0051": 1, "M17-0043": 1 });
 });
 
-test("codigosConIvaCero: la variante no cuenta, el código es el pelado", () => {
-  assert.deepEqual(codigosConIvaCero([A("M11-0081 -VAR 12", 0)]), ["M11-0081"]);
+// El default de la app es 13: una línea sin ivaPct es una que nadie tocó. Empujar 13
+// le pisaría en BC los artículos que Contabilidad tiene en 1%, 2% o 4%.
+test("ivaDecididoPorCodigo: el default (13) y el campo vacío NO viajan", () => {
+  assert.deepEqual(ivaDecididoPorCodigo([A("M05-0804"), A("M17-0321", 13)]).porCodigo, {});
 });
 
-test("codigosConIvaCero: un cargo entra por su chargeNo", () => {
+test("ivaDecididoPorCodigo: la variante no cuenta, el código es el pelado", () => {
+  assert.deepEqual(ivaDecididoPorCodigo([A("M11-0081 -VAR 12", 0)]).porCodigo, { "M11-0081": 0 });
+});
+
+test("ivaDecididoPorCodigo: un cargo entra por su chargeNo", () => {
   const cargo: LineaReplaceBc = { tipo: "cargo", chargeNo: "03", cantidad: 1, precio: 669.04, ivaPct: 0 };
-  assert.deepEqual(codigosConIvaCero([cargo]), ["03"]);
+  assert.deepEqual(ivaDecididoPorCodigo([cargo]).porCodigo, { "03": 0 });
 });
 
-test("lineasAPonerEnCero: solo las que BC todavía cobra", () => {
+// Las líneas de la app y las de BC se casan por código. El mismo artículo dos veces
+// con IVA distinto no se puede resolver allá: no se toca ninguna y se avisa.
+test("ivaDecididoPorCodigo: el mismo código con dos IVA queda ambiguo", () => {
+  const r = ivaDecididoPorCodigo([A("M05-0804", 1), A("M05-0804", 4), A("M20-1088", 0)]);
+  assert.deepEqual(r.ambiguos, ["M05-0804"]);
+  assert.deepEqual(r.porCodigo, { "M20-1088": 0 });
+});
+
+// Y el choque contra el DEFAULT también es ambiguo: una línea en 1% y otra sin tocar
+// no se distinguen en BC, así que empujar el 1% a las dos sería inventar.
+test("ivaDecididoPorCodigo: 1% en una línea y el default en otra también es ambiguo", () => {
+  const r = ivaDecididoPorCodigo([A("M05-0804", 1), A("M05-0804")]);
+  assert.deepEqual(r.ambiguos, ["M05-0804"]);
+  assert.deepEqual(r.porCodigo, {});
+});
+
+test("lineasConIvaDistinto: solo las que BC calcula distinto", () => {
   const enBc = [
-    { id: "a", code: "M05-0804", taxCode: "IVA13", taxPercent: 13 },
-    { id: "b", code: "03", taxCode: "EXENTO", taxPercent: 0 },   // ya está en 0
-    { id: "c", code: "M17-0321", taxCode: "IVA13", taxPercent: 13 },  // la orden dice 13
+    { id: "a", code: "M05-0804", taxCode: "IVA13", taxPercent: 13 },  // la orden dice 0
+    { id: "b", code: "03", taxCode: "EXENTO", taxPercent: 0 },        // ya coincide
+    { id: "c", code: "M17-0051", taxCode: "IVA13", taxPercent: 13 },  // la orden dice 1
+    { id: "d", code: "M17-0321", taxCode: "IVA13", taxPercent: 13 },  // la orden no decidió
   ];
-  assert.deepEqual(lineasAPonerEnCero(["M05-0804", "03"], enBc).map((l) => l.code), ["M05-0804"]);
+  assert.deepEqual(
+    lineasConIvaDistinto({ "M05-0804": 0, "03": 0, "M17-0051": 1 }, enBc).map((p) => [p.linea.code, p.pct]),
+    [["M05-0804", 0], ["M17-0051", 1]]);
 });
 
-test("lineasAPonerEnCero: sin líneas en cero no se escribe nada en BC", () => {
+test("lineasConIvaDistinto: sin nada decidido no se escribe en BC", () => {
   const enBc = [{ id: "a", code: "M05-0804", taxCode: "IVA13", taxPercent: 13 }];
-  assert.deepEqual(lineasAPonerEnCero([], enBc), []);
+  assert.deepEqual(lineasConIvaDistinto({}, enBc), []);
+});
+
+// Escribir un grupo se hace con el NOMBRE de `taxGroups`, y la familia importa: el
+// grupo de un servicio manda el IVA a otra cuenta que el de un bien.
+test("grupoIvaDeTasa: arma el nombre del grupo y conserva la familia", () => {
+  assert.equal(grupoIvaDeTasa(1), "IVA1%-BIENES");
+  assert.equal(grupoIvaDeTasa(13, "SERV"), "IVA13%-SERV");
+  assert.equal(grupoIvaDeTasa(4, "BIECAP"), "IVA4%-BIECAP");
+  assert.equal(grupoIvaDeTasa(0), "EXENTO-BIENES");
+  assert.equal(grupoIvaDeTasa(0, "SERV"), "EXENTO-SERV");
+});
+
+test("familiaDeGrupoIva: lo que va después del guion", () => {
+  assert.equal(familiaDeGrupoIva("IVA13%-BIENES"), "BIENES");
+  assert.equal(familiaDeGrupoIva("EXENTO-SERV"), "SERV");
+  assert.equal(familiaDeGrupoIva("IVA13"), "");   // el identifier, no el grupo
+  assert.equal(familiaDeGrupoIva(undefined), "");
+});
+
+// Para que "ese % no existe en BC" diga qué SÍ se puede poner. Son los grupos reales
+// de la compañía (21 en ADELANTE_DESARROLLOS_NUEVA, 30 sep 2026).
+test("tasasIvaDisponibles: los % de esa familia, el exento como 0", () => {
+  const grupos = ["EXENTO-BIENES", "EXENTO-SERV", "IVA1%-BIENES", "IVA2%-BIENES",
+    "IVA4%-BIENES", "IVA13%-BIENES", "IVA13%-SERV", "IVA3%-BIECAP", "RET-SALA10"];
+  assert.deepEqual(tasasIvaDisponibles(grupos, "BIENES"), [0, 1, 2, 4, 13]);
+  assert.deepEqual(tasasIvaDisponibles(grupos, "SERV"), [0, 13]);
+  assert.deepEqual(tasasIvaDisponibles(grupos, "BIECAP"), [3]);
 });
