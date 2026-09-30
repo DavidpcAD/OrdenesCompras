@@ -70,7 +70,7 @@ export default function ArchivoPage() {
           });
           const d = await r.json().catch(() => ({}));
           if (r.ok) { aviso = ` · registrada en BC (${d.postedNo ?? "OK"})`; yaFacturada = !!d.facturada; }
-          else { error = String(d.error ?? `BC ${r.status}`); freno = !!(d.frenoDimensiones || d.frenoEncabezado || d.frenoLineas); }
+          else { error = String(d.error ?? `BC ${r.status}`); freno = !!(d.frenoDimensiones || d.frenoEncabezado || d.frenoLineas || d.frenoConfigBc); }
         } catch (e: any) { error = `Business Central no está disponible (${String(e?.message ?? e)})`; }
         if (error) {
           toast(freno ? error : `NO se registró la factura ${numFac}: ${error}. La recepción queda en revisión para reintentar.`, "error");

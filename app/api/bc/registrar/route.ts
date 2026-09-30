@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { bcRegistrarFactura, reponerLanzamientoTrasFallo, type EstadoBcPedido, diagnosticarFalloBc, verificarLineasPosteables, frenoRegistroActivo, conflictoDeDimensiones, explicarConflictoDimensiones } from "@/lib/bc";
+import { bcRegistrarFactura, reponerLanzamientoTrasFallo, type EstadoBcPedido, diagnosticarFalloBc, verificarLineasPosteables, frenoRegistroActivo, conflictoDeDimensiones, explicarConflictoDimensiones, faltaConfigContable, explicarFaltaConfigContable } from "@/lib/bc";
 import { frenarPorEncabezado } from "@/lib/freno-encabezado";
 import { actor } from "@/lib/actor";
 import type { Role } from "@/lib/types";
@@ -98,6 +98,17 @@ export async function POST(req: Request) {
       return NextResponse.json({
         ok: false, error: `NO se registró: ${explicarConflictoDimensiones(dim, String(orderNo ?? ""))}${avisoVuelta}`,
         frenoDimensiones: true, dimensiones: dim,
+      }, { status: 409 });
+    }
+    // FALTA CONFIGURACIÓN CONTABLE en BC (la combinación almacén × grupo de registro
+    // que nunca se dio de alta): mismo trato que el choque de dimensiones —no se
+    // reintenta, BC no registró nada y no hay qué conciliar—, pero lo arregla
+    // Contabilidad y no Proveeduría. Ver faltaConfigContable en lib/bc.ts.
+    const cfg = faltaConfigContable(error);
+    if (cfg) {
+      return NextResponse.json({
+        ok: false, error: `NO se registró: ${explicarFaltaConfigContable(cfg, String(orderNo ?? ""))}${avisoVuelta}`,
+        frenoConfigBc: true, configFaltante: cfg,
       }, { status: 409 });
     }
     // El diagnóstico habla con BC otra vez: si eso también falla, se responde el

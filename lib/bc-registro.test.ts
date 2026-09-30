@@ -9,7 +9,7 @@
 //   npm test
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { clasificarFalloBc, cotejoProveedor, estadoLanzamientoBc, conflictoDeDimensiones, explicarConflictoDimensiones, nombreRealizadoPor, tipoLineaBc } from "./bc.ts";
+import { clasificarFalloBc, cotejoProveedor, estadoLanzamientoBc, conflictoDeDimensiones, explicarConflictoDimensiones, faltaConfigContable, explicarFaltaConfigContable, nombreRealizadoPor, tipoLineaBc } from "./bc.ts";
 
 const envuelto = (mensaje: string) =>
   `BC registrar 400: {"error":{"code":"Application_DialogException","message":"${mensaje} CorrelationId: 5ad0cc6c-2ef8-49b6-8f26-c9893727c69f."}}`;
@@ -162,6 +162,68 @@ test("lo mismo con BC contestando en español", () => {
   assert.equal(c.dimension, "CC");
   assert.equal(c.debeSer, "F-MUEBLES");
   assert.equal(c.actual, "VN-L.34");
+});
+
+// ── FALTA CONFIGURACIÓN CONTABLE (CP-005759, 28 sep 2026) ────────────────────
+// Una FAJA INDUSTRIAL (grupo REPUESTOS) hacia el almacén F-MAD-NUE: esa pareja
+// nunca se configuró en BC. Texto REAL, tal como le llegó a Bodega — con el
+// "Invt. Posting Group Code" que lleva punto adentro y el CorrelationId pegado.
+const CFG_REAL = envuelto(
+  "Inventory Account is missing in Inventory Posting Setup Location Code: F-MAD-NUE, "
+  + "Invt. Posting Group Code: REPUESTOS. CorrelationId: 70050bd8-2d7d-41c0-8d37-c6a053cd3028.",
+);
+
+test("la configuración contable que falta se reconoce y se desarma", () => {
+  const c = faltaConfigContable(CFG_REAL);
+  assert.ok(c, "no lo reconoció como configuración faltante");
+  assert.equal(c.cuenta, "Inventory Account");
+  assert.equal(c.tabla, "Inventory Posting Setup");
+  assert.deepEqual(c.claves, [
+    { etiqueta: "el almacén", valor: "F-MAD-NUE" },
+    { etiqueta: "el grupo de registro de inventario", valor: "REPUESTOS" },
+  ]);
+});
+
+test("el aviso dice la combinación, que no se reintenta y a quién avisarle", () => {
+  const texto = explicarFaltaConfigContable(faltaConfigContable(CFG_REAL)!, "CP-005759");
+  assert.match(texto, /el almacén F-MAD-NUE y el grupo de registro de inventario REPUESTOS/);
+  assert.match(texto, /NO se arregla reintentando/);
+  assert.match(texto, /Contabilidad/);
+  assert.match(texto, /Nada se guardó/);
+  // El que se equivocó NO es quien está en la pantalla: el aviso lo dice.
+  assert.match(texto, /No es un error tuyo/);
+});
+
+test("también la de registro general y la de IVA, que son el mismo Text001", () => {
+  const gen = faltaConfigContable(envuelto(
+    "Purch. Account is missing in General Posting Setup Gen. Bus. Posting Group: NACIONAL, "
+    + "Gen. Prod. Posting Group: INVENTARIO.",
+  ));
+  assert.ok(gen);
+  assert.equal(gen.tabla, "General Posting Setup");
+  assert.deepEqual(gen.claves.map((k) => k.valor), ["NACIONAL", "INVENTARIO"]);
+  const iva = faltaConfigContable(envuelto(
+    "Purchase VAT Account is missing in VAT Posting Setup VAT Bus. Posting Group: NAC, "
+    + "VAT Prod. Posting Group: IVA13.",
+  ));
+  assert.ok(iva);
+  assert.deepEqual(iva.claves.map((k) => k.etiqueta), ["el grupo de IVA del negocio", "el grupo de IVA del producto"]);
+});
+
+test("sin pares que desarmar el aviso sigue sirviendo", () => {
+  const c = faltaConfigContable(envuelto("Inventory Account is missing in Inventory Posting Setup."));
+  assert.ok(c);
+  assert.deepEqual(c.claves, []);
+  assert.match(explicarFaltaConfigContable(c), /NO se arregla reintentando/);
+});
+
+// Las dos familias NO se pisan: cada una tiene su aviso y su destinatario
+// (Proveeduría corrige dimensiones, Contabilidad agrega la cuenta).
+test("la configuración faltante y el choque de dimensiones no se confunden", () => {
+  assert.equal(faltaConfigContable(DIM_REAL), null);
+  assert.equal(conflictoDeDimensiones(CFG_REAL), null);
+  assert.equal(faltaConfigContable(envuelto("Purchase Invoice 586265 already exists for this vendor.")), null);
+  assert.equal(faltaConfigContable(""), null);
 });
 
 test("cualquier otro 'no' de BC no es un choque de dimensiones", () => {

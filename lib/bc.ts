@@ -2831,6 +2831,96 @@ export function explicarConflictoDimensiones(c: ConflictoDimensiones, orderNo = 
     + `Avisale a Proveeduría. Nada se guardó.`;
 }
 
+// ── FALTA CONFIGURACIÓN CONTABLE EN BC ───────────────────────────────────────
+//
+// Familia entera de "no" que salen del mismo Text001 de la Base Application
+// —"%1 is missing in %2 %3."— cuando una COMBINACIÓN no está dada de alta en una
+// tabla de configuración de registro: Inventory Posting Setup (almacén × grupo de
+// inventario), General Posting Setup, VAT Posting Setup.
+//
+// CP-005759 (28 sep 2026) fue el primero: una FAJA INDUSTRIAL (grupo REPUESTOS)
+// hacia F-MAD-NUE, y en BC esa pareja nunca se configuró — al almacén nuevo de la
+// mueblería habían entrado 825 líneas de MATERIALES y ni un repuesto. Bodega vio el
+// JSON de BC en crudo, en inglés, y abajo "La orden queda por recibir para
+// reintentar", que es un consejo FALSO: reintentar da exactamente lo mismo.
+//
+// Es el mismo patrón que conflictoDeDimensiones, con dos diferencias que importan:
+// no es por línea (es la combinación entera), y lo arregla CONTABILIDAD, no
+// Proveeduría: quien agrega la cuenta en la configuración de BC.
+export type FaltaConfigContable = {
+  cuenta: string;   // "Inventory Account"      — qué cuenta falta (puede venir vacío)
+  tabla: string;    // "Inventory Posting Setup"— dónde falta (puede venir vacío)
+  claves: { etiqueta: string; valor: string }[];  // el almacén F-MAD-NUE, el grupo REPUESTOS
+};
+
+const BC_FALTA_CONFIG =
+  /\bis missing in\b[^"{}]{0,70}?\bSetup\b|\bFalta\b[^"{}]{0,80}?\ben\s+(?:Config|Configuraci[óo]n)/i;
+
+// `.{3,40}?Posting Setup` perezoso corta en el PRIMER "Posting Setup", que es el
+// nombre de la tabla: lo que sigue ya son las claves.
+const CFG_CUENTA_TABLA = /([^"{}:,]{3,60}?)\s+is missing in\s+(.{3,40}?Posting Setup)/i;
+
+// Las etiquetas se reconocen por SUBSTRING y no por igualdad: el texto de BC llega
+// embebido en el JSON del error, así que lo que precede a los dos puntos arrastra
+// basura ("...is missing in Inventory Posting Setup Location Code"). El valor sí
+// sale limpio porque los códigos de BC no llevan espacios ni comas.
+const CFG_ETIQUETAS: [RegExp, string][] = [
+  [/location|almac[ée]n/i, "el almacén"],
+  [/invt\.?\s*posting group|grupo.*inventario/i, "el grupo de registro de inventario"],
+  [/gen\.?\s*bus\.?\s*posting group|grupo.*negocio/i, "el grupo registro negocio"],
+  [/gen\.?\s*prod\.?\s*posting group|grupo.*producto/i, "el grupo registro producto"],
+  [/vat bus|iva.*negocio/i, "el grupo de IVA del negocio"],
+  [/vat prod|iva.*producto/i, "el grupo de IVA del producto"],
+];
+
+// Pares "Etiqueta: VALOR" del final del mensaje. Se parte por coma primero porque
+// los valores son códigos (sin comas ni espacios) y las etiquetas sí traen puntos
+// adentro ("Invt. Posting Group Code"), o sea que cortar por punto los partiría.
+const CFG_PAR = /([A-Za-zÁÉÍÓÚÑáéíóúñ][^:"{}]{1,60}):\s*([A-Z0-9][A-Z0-9\-_.]*)/;
+
+/**
+ * ¿El "no" de BC es una configuración contable que falta? Devuelve lo que se le pudo
+ * sacar al mensaje, o null si es otra cosa. Los campos van vacíos cuando el texto no
+ * se pudo desarmar: el aviso tiene que servir igual. (cubierto por tests)
+ */
+export function faltaConfigContable(textoDelError: string): FaltaConfigContable | null {
+  const t = textoDelError ?? "";
+  if (!BC_FALTA_CONFIG.test(t)) return null;
+  const limpio = t.split(/\s*CorrelationId/i)[0];
+  const ct = CFG_CUENTA_TABLA.exec(limpio);
+  const claves: { etiqueta: string; valor: string }[] = [];
+  for (const trozo of limpio.split(",")) {
+    const m = CFG_PAR.exec(trozo);
+    if (!m) continue;
+    const crudo = m[1].trim();
+    const conocida = CFG_ETIQUETAS.find(([re]) => re.test(crudo));
+    claves.push({
+      // Sin etiqueta conocida se deja lo último del texto, que es donde vive el
+      // nombre del campo; el ruido de adelante es del JSON, no de BC.
+      etiqueta: conocida ? conocida[1] : crudo.split(/\s+/).slice(-3).join(" "),
+      valor: m[2].replace(/\.$/, ""),
+    });
+  }
+  return { cuenta: ct?.[1]?.trim() ?? "", tabla: ct?.[2]?.trim() ?? "", claves };
+}
+
+/**
+ * La falta contada para quien está en la pantalla: qué combinación no está dada de
+ * alta en BC y a quién avisarle (que NO es reintentar). Sin el verbo del principio
+ * — ese lo pone cada ruta. (cubierto por tests)
+ */
+export function explicarFaltaConfigContable(c: FaltaConfigContable, orderNo = ""): string {
+  const donde = orderNo ? ` del pedido ${orderNo}` : "";
+  const combo = c.claves.length
+    ? c.claves.map((k) => `${k.etiqueta} ${k.valor}`).join(" y ")
+    : "la combinación de esta línea";
+  return `Business Central no tiene configurada la cuenta contable para ${combo}.\n\n`
+    + `Esto NO se arregla reintentando: en Business Central falta dar de alta esa combinación `
+    + `en la configuración de registro${c.tabla ? ` (${c.tabla})` : ""}, y mientras no esté, `
+    + `cada intento va a dar el mismo error. No es un error tuyo ni de la orden${donde}: `
+    + `avisale a Contabilidad para que agregue la cuenta. Nada se guardó.`;
+}
+
 export type BcPedidoEstado = "existe" | "no-existe" | "sin-respuesta";
 
 // ¿Existe el pedido de compra en BC? Distingue "no está" de "BC no contesta",
