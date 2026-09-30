@@ -9,7 +9,7 @@
 //   npm test
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { clasificarFalloBc, cotejoProveedor, estadoLanzamientoBc, conflictoDeDimensiones, explicarConflictoDimensiones, faltaConfigContable, explicarFaltaConfigContable, nombreRealizadoPor, tipoLineaBc } from "./bc.ts";
+import { clasificarFalloBc, cotejoProveedor, estadoLanzamientoBc, conflictoDeDimensiones, explicarConflictoDimensiones, faltaConfigContable, explicarFaltaConfigContable, campoVacioEnBc, explicarCampoVacioEnBc, nombreRealizadoPor, tipoLineaBc } from "./bc.ts";
 
 const envuelto = (mensaje: string) =>
   `BC registrar 400: {"error":{"code":"Application_DialogException","message":"${mensaje} CorrelationId: 5ad0cc6c-2ef8-49b6-8f26-c9893727c69f."}}`;
@@ -224,6 +224,56 @@ test("la configuración faltante y el choque de dimensiones no se confunden", ()
   assert.equal(conflictoDeDimensiones(CFG_REAL), null);
   assert.equal(faltaConfigContable(envuelto("Purchase Invoice 586265 already exists for this vendor.")), null);
   assert.equal(faltaConfigContable(""), null);
+});
+
+// ── FICHA A MEDIO LLENAR EN BC (PROV-000477, 30 sep 2026) ────────────────────
+// CARMIOL INDUSTRIAL se creó ese día en BC sin "Gen. Bus. Posting Group", y BC se
+// negó a crear el pedido. Texto REAL, tal como lo vio Proveeduría.
+const CAMPO_REAL = envuelto(
+  "Gen. Bus. Posting Group must have a value in Vendor: No.=PROV-000477. "
+  + "It cannot be zero or empty.  CorrelationId:  b1e529a6-c2a0-4ff6-bc1a-407958292dcd.",
+);
+
+test("la ficha incompleta se reconoce y dice qué campo y cuál registro", () => {
+  const c = campoVacioEnBc(CAMPO_REAL);
+  assert.ok(c, "no lo reconoció como campo obligatorio vacío");
+  assert.equal(c.campo, "Gen. Bus. Posting Group");
+  assert.equal(c.ficha, "Vendor");
+  // El "No.=" se saca, y el punto de "No." NO parte el código del proveedor.
+  assert.equal(c.cual, "PROV-000477");
+});
+
+test("el aviso nombra la ficha en castellano y a quién avisarle", () => {
+  const texto = explicarCampoVacioEnBc(campoVacioEnBc(CAMPO_REAL)!);
+  assert.match(texto, /ficha del proveedor PROV-000477/);
+  assert.match(texto, /Gen\. Bus\. Posting Group/);
+  assert.match(texto, /NO se arregla reintentando/);
+  assert.match(texto, /Nada se guardó/);
+});
+
+test("otra ficha maestra también, con su propio nombre en castellano", () => {
+  const c = campoVacioEnBc(envuelto("Base Unit of Measure must have a value in Item: No.=M20-0611. It cannot be zero or empty."));
+  assert.ok(c);
+  assert.equal(c.ficha, "Item");
+  assert.equal(c.cual, "M20-0611");
+  assert.match(explicarCampoVacioEnBc(c), /ficha del artículo M20-0611/);
+});
+
+// El MISMO TestField sale sobre el documento, y ahí no hay ficha que completar ni
+// nadie a quien mandar: ese se deja pasar al diagnóstico de siempre antes que dar
+// una instrucción falsa.
+test("el campo vacío del DOCUMENTO no se disfraza de ficha incompleta", () => {
+  assert.equal(campoVacioEnBc(envuelto("Posting Date must have a value in Purchase Header: Document Type=Order, No.=CP-005492. It cannot be zero or empty.")), null);
+  assert.equal(campoVacioEnBc(envuelto("Job Task No. must have a value in Purchase Line: Document Type=Order, Document No.=CP-005492, Line No.=10000. It cannot be zero or empty.")), null);
+});
+
+test("las tres familias de 'no' de BC no se pisan entre ellas", () => {
+  assert.equal(campoVacioEnBc(DIM_REAL), null);
+  assert.equal(campoVacioEnBc(CFG_REAL), null);
+  assert.equal(faltaConfigContable(CAMPO_REAL), null);
+  assert.equal(conflictoDeDimensiones(CAMPO_REAL), null);
+  assert.equal(campoVacioEnBc(envuelto("Purchase Invoice 586265 already exists for this vendor.")), null);
+  assert.equal(campoVacioEnBc(""), null);
 });
 
 test("cualquier otro 'no' de BC no es un choque de dimensiones", () => {

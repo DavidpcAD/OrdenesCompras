@@ -2921,6 +2921,80 @@ export function explicarFaltaConfigContable(c: FaltaConfigContable, orderNo = ""
     + `avisale a Contabilidad para que agregue la cuenta. Nada se guardó.`;
 }
 
+// ── UN CAMPO OBLIGATORIO VACÍO EN UNA FICHA DE BC ────────────────────────────
+//
+// El `TestField` de la Base Application: "%1 must have a value in %2: %3. It cannot
+// be zero or empty." Sale cuando una FICHA de BC está a medio llenar y recién se
+// nota al usarla.
+//
+// PROV-000477 (CARMIOL INDUSTRIAL, 30 sep 2026): el proveedor se creó ese mismo día
+// en BC sin "Gen. Bus. Posting Group", y BC se negó a crear el pedido. Proveeduría
+// vio el JSON crudo de BC, en inglés, y ni qué campo era ni a quién decirle. Nada
+// de esto lo arregla la app: la ficha se completa en BC.
+export type CampoVacioBc = {
+  campo: string;   // "Gen. Bus. Posting Group"
+  ficha: string;   // "Vendor"       — qué tabla de BC
+  cual: string;    // "PROV-000477"  — cuál registro (sin el "No.=")
+};
+
+const BC_CAMPO_VACIO =
+  /must have a value in\b|debe tener un valor en\b/i;
+// La clave llega como "No.=PROV-000477" (a veces con varias partes separadas por
+// coma). Se corta en el punto FINAL de la oración, no en el primero: "No." lo lleva
+// adentro, igual que "Invt. Posting Group Code" en faltaConfigContable.
+const CAMPO_VACIO =
+  /([^"{}:,]{2,60}?)\s+(?:must have a value in|debe tener un valor en)\s+([^:"{}]{2,60}?):\s*([^"{}]{1,120}?)\.\s*(?:It cannot|No puede|CorrelationId|$)/i;
+
+// Las fichas de BC dichas en castellano, y a quién le toca completarlas.
+const FICHAS_BC: [RegExp, string, string][] = [
+  [/vendor|proveedor/i, "la ficha del proveedor", "quien mantiene proveedores en Business Central"],
+  [/customer|cliente/i, "la ficha del cliente", "Contabilidad"],
+  [/^item$|art[íi]culo/i, "la ficha del artículo", "quien mantiene el catálogo en Business Central"],
+  [/location|almac[ée]n/i, "la ficha del almacén", "Contabilidad"],
+  [/resource|recurso/i, "la ficha del recurso", "quien mantiene el catálogo en Business Central"],
+  [/fixed asset|activo/i, "la ficha del activo fijo", "Contabilidad"],
+];
+
+/**
+ * ¿El "no" de BC es una ficha a medio llenar? Devuelve el campo, la ficha y cuál
+ * registro, o null si es otra cosa. (cubierto por tests)
+ */
+export function campoVacioEnBc(textoDelError: string): CampoVacioBc | null {
+  const t = textoDelError ?? "";
+  if (!BC_CAMPO_VACIO.test(t)) return null;
+  const m = CAMPO_VACIO.exec(t.split(/\s*CorrelationId/i)[0]);
+  if (!m) return null;
+  const ficha = m[2].trim();
+  // SOLO las fichas MAESTRAS que se saben nombrar. El mismo TestField sale también
+  // sobre el documento ("Posting Date must have a value in Purchase Header"), y ahí
+  // ni es una ficha que alguien deba completar ni el consejo de este aviso sirve:
+  // eso se deja pasar al diagnóstico de siempre en vez de dar una instrucción falsa.
+  if (!FICHAS_BC.some(([re]) => re.test(ficha))) return null;
+  return {
+    campo: m[1].trim(),
+    ficha,
+    // "No.=PROV-000477" → "PROV-000477"; si trae varias partes se deja tal cual.
+    cual: m[3].trim().replace(/^[^=]{0,30}=\s*/, ""),
+  };
+}
+
+/**
+ * La ficha incompleta contada para quien está en la pantalla: qué falta, dónde y a
+ * quién avisarle. Sin el verbo del principio — ese lo pone cada ruta.
+ * (cubierto por tests)
+ */
+export function explicarCampoVacioEnBc(c: CampoVacioBc): string {
+  const conocida = FICHAS_BC.find(([re]) => re.test(c.ficha));
+  const donde = conocida ? conocida[1] : c.ficha ? `la ficha de ${c.ficha}` : "una ficha de Business Central";
+  const aQuien = conocida ? conocida[2] : "quien mantiene esa ficha en Business Central";
+  const que = c.campo ? `el campo «${c.campo}»` : "un campo obligatorio";
+  return `${donde.charAt(0).toUpperCase()}${donde.slice(1)}${c.cual ? ` ${c.cual}` : ""} está incompleta en `
+    + `Business Central: le falta ${que}, y sin eso BC no deja crear el pedido.\n\n`
+    + `Esto NO se arregla reintentando ni cambiando la orden: es la ficha en Business Central, `
+    + `y mientras esté así cada intento va a dar el mismo error. Avisale a ${aQuien} `
+    + `para que la complete, y volvé a enviar la orden cuando esté lista. Nada se guardó.`;
+}
+
 export type BcPedidoEstado = "existe" | "no-existe" | "sin-respuesta";
 
 // ¿Existe el pedido de compra en BC? Distingue "no está" de "BC no contesta",

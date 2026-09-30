@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getOrden, setOrdenEstado, setOrdenBcNumber, updateOrden, descartarOrden, ordenTieneRecepciones, obrasDeLineasPedido, asignarBcNumber, guardarChequeoBc, guardarVariantesResueltas, anotarEncabezadoBc, MSG_NO_REABRIR } from "@/lib/repo";
-import { bcReopenPedido, bcReplaceOrderLines, bcCrearPedidoAbierto, crearEnBcAlEnviar, lineasOrdenParaBc, obrasSinTarea, lineasSinUnidad, lineasSinAlmacen, resolverVariantesRequeridas, sanearObrasDeLineas, avisoDeSaneo, bcOrdenTotales, bcEstadoDelPedido, chequearOrdenContraBc, lineasReplaceParaCotejo, lineasOrdenParaCotejo, paredAprobacionActiva, itemsBloqueadosDeLineas, bcSincronizarEncabezado, bcBorrarPedidoAbierto, conPedidoAbierto } from "@/lib/bc";
+import { bcReopenPedido, bcReplaceOrderLines, bcCrearPedidoAbierto, crearEnBcAlEnviar, lineasOrdenParaBc, obrasSinTarea, lineasSinUnidad, lineasSinAlmacen, resolverVariantesRequeridas, sanearObrasDeLineas, avisoDeSaneo, bcOrdenTotales, bcEstadoDelPedido, chequearOrdenContraBc, lineasReplaceParaCotejo, lineasOrdenParaCotejo, paredAprobacionActiva, itemsBloqueadosDeLineas, bcSincronizarEncabezado, bcBorrarPedidoAbierto, conPedidoAbierto, campoVacioEnBc, explicarCampoVacioEnBc } from "@/lib/bc";
 import { ordenTotalConIva } from "@/lib/helpers";
 import { actor } from "@/lib/actor";
 
@@ -245,6 +245,17 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
           ].filter(Boolean);
           if (avisos.length) bcAviso = avisos.join(" · ");
         } catch (e: any) {
+          // Una FICHA de BC a medio llenar (PROV-000477 sin "Gen. Bus. Posting
+          // Group", 30 sep 2026): no es la orden, no se arregla reintentando y no
+          // lo arregla quien está en la pantalla. Se dice qué falta y a quién
+          // avisarle, en vez de mostrarle el JSON de BC en inglés.
+          const vacio = campoVacioEnBc(String(e?.message ?? e));
+          if (vacio) {
+            return NextResponse.json({
+              error: `La orden NO se envió a aprobación: ${explicarCampoVacioEnBc(vacio)}`,
+              frenoFichaBc: true, fichaIncompleta: vacio,
+            }, { status: 409 });
+          }
           return NextResponse.json({
             error: `La orden NO se envió a aprobación porque no se pudo crear el pedido en Business Central — ${String(e?.message ?? e)}`,
           }, { status: 502 });

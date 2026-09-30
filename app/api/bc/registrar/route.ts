@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { bcRegistrarFactura, reponerLanzamientoTrasFallo, type EstadoBcPedido, diagnosticarFalloBc, verificarLineasPosteables, frenoRegistroActivo, conflictoDeDimensiones, explicarConflictoDimensiones, faltaConfigContable, explicarFaltaConfigContable } from "@/lib/bc";
+import { bcRegistrarFactura, reponerLanzamientoTrasFallo, type EstadoBcPedido, diagnosticarFalloBc, verificarLineasPosteables, frenoRegistroActivo, conflictoDeDimensiones, explicarConflictoDimensiones, faltaConfigContable, explicarFaltaConfigContable, campoVacioEnBc, explicarCampoVacioEnBc } from "@/lib/bc";
 import { frenarPorEncabezado } from "@/lib/freno-encabezado";
 import { actor } from "@/lib/actor";
 import type { Role } from "@/lib/types";
@@ -109,6 +109,15 @@ export async function POST(req: Request) {
       return NextResponse.json({
         ok: false, error: `NO se registró: ${explicarFaltaConfigContable(cfg, String(orderNo ?? ""))}${avisoVuelta}`,
         frenoConfigBc: true, configFaltante: cfg,
+      }, { status: 409 });
+    }
+    // Y una FICHA maestra de BC a medio llenar: mismo desenlace, pero lo completa
+    // quien mantiene esa ficha. Ver campoVacioEnBc en lib/bc.ts.
+    const ficha = campoVacioEnBc(error);
+    if (ficha) {
+      return NextResponse.json({
+        ok: false, error: `NO se registró: ${explicarCampoVacioEnBc(ficha)}${avisoVuelta}`,
+        frenoFichaBc: true, fichaIncompleta: ficha,
       }, { status: 409 });
     }
     // El diagnóstico habla con BC otra vez: si eso también falla, se responde el

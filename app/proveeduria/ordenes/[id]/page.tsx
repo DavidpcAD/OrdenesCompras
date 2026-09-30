@@ -430,7 +430,17 @@ export default function ProvOrdenDetallePage() {
           <div className="ds-callout ds-callout--yellow mb-4" role="alert">
             <span className="ds-callout__icon"><IconWarning size={18} /></span>
             <div style={{ flex: 1 }}>
-              <div className="ds-callout__title">Business Central quedó desalineado</div>
+              {/* "Desalineado" es el título de SIEMPRE: la orden y el pedido de BC
+                  dicen cosas distintas. Pero cuando BC se negó porque una FICHA suya
+                  está a medio llenar, no quedó nada desalineado —el pedido ni se
+                  creó— y ese título acusa en falso. El marcador sale de
+                  explicarCampoVacioEnBc (lib/bc.ts); acá llega como texto porque el
+                  fetch solo propaga el mensaje. */}
+              <div className="ds-callout__title">
+                {/^(?!.*desalineado).*est[áa] incompleta en Business Central/is.test(avisoBc)
+                  ? "Una ficha de Business Central está incompleta"
+                  : "Business Central quedó desalineado"}
+              </div>
               <div className="ds-callout__body" style={{ whiteSpace: "pre-wrap" }}>{avisoBc}</div>
             </div>
             <Button variant="outline" size="sm" onClick={() => setAvisoBc(null)}>Entendido</Button>
