@@ -2108,7 +2108,7 @@ export function payloadReplaceLines(lineas: LineaReplaceBc[]): { lines: Record<s
 //      aviso "no se pudo volver a poner el grupo" salía siempre, sobre un pedido que
 //      quedaba bien.
 //   2. Ya no hace falta. La orden dice qué IVA lleva la compra y ese % viaja a BC
-//      (ver `ivaDecididoPorCodigo` más abajo). No hay nada que "conservar": el IVA
+//      (ver `ivaOrdenPorCodigo` más abajo). No hay nada que "conservar": el IVA
 //      se pone en la orden y BC queda igual, todas las veces.
 export type LineaIvaBc = { id: string; code: string; taxCode: string;
   // El % que BC calcula HOY con ese grupo. Es el dato que manda: los textos de
@@ -2145,29 +2145,35 @@ async function bcLineasIvaDePedido(cid: string, orderNo: string): Promise<{ poId
   return { poId, status: String(po?.status ?? "").trim(), lineas };
 }
 
-// El IVA% que la app pone sola cuando nadie toca el campo. No es un detalle de
-// pantalla: es lo único que separa un % puesto a propósito de un campo que quedó
-// como venía, y de eso depende qué se le escribe a BC y qué no.
+// El IVA% que la app pone sola cuando nadie toca el campo. Ya no decide si algo
+// viaja a BC o no —viaja todo—, pero sigue siendo el valor con el que se llena una
+// línea a la que le falta el dato.
 export const IVA_DEFAULT_APP = 13;
 
 // La familia de grupos de IVA con la que se trabaja cuando BC no dice otra cosa. Es
 // la que la app venía usando para el exento (EXENTO-BIENES).
 export const FAMILIA_IVA_DEFAULT = "BIENES";
 
-// Código (artículo o cargo) → el IVA% que la ORDEN decidió para él, y los códigos
-// que quedaron ambiguos. Solo viaja a BC lo que es una DECISIÓN:
+// Código (artículo o cargo) → el IVA% que la ORDEN le puso, y los códigos que
+// quedaron ambiguos.
 //
-//   - una línea en el default (13) no se puede distinguir de "no lo toqué", así que
-//     ahí manda el grupo del artículo, que es el que Contabilidad configuró en BC.
-//     Empujarle 13 a todo le pisaría los artículos que tiene en 1%, 2% o 4%
-//     (M17-0043 ESCOBA GRANDE es IVA1%-BIENES en BC desde antes de esta app).
-//   - una línea SIN `ivaPct` es una que nadie llenó: cuenta como el default.
+// EL % DE LA ORDEN MANDA, TODOS. Hubo una versión de unas horas (30 sep 2026) en la
+// que el 13 no viajaba, para no pisarle a Contabilidad los artículos que tiene
+// configurados en BC al 1%, 2% o 4%. David lo pidió al revés y tiene razón: quien
+// arma la orden tiene enfrente la cotización del proveedor, que es mejor dato que
+// una ficha de BC que nadie revisa. Medido ese día sobre los 266 pedidos vivos: de
+// 834 líneas, 790 están en IVA13% y solo 4 tienen otra cosa por la ficha del
+// artículo (M17-0290 inscripción de vehículo ×2, AF-0190, y M17-0300 papel higiénico
+// en 1%); los 6 pedidos 100% exentos son importaciones, donde la orden ya dice 0.
+//
+// Una línea SIN `ivaPct` no es una decisión de nadie, pero el tipo la exige y del
+// SQL siempre viene un número: se normaliza al default para que el caso no exista.
 //
 // OJO CON EL MISMO CÓDIGO DOS VECES: las líneas de la app y las de BC se casan por
 // código, que es lo único que comparten después de que el codeunit las reescribe. Si
 // el mismo artículo aparece dos veces con IVA distinto, allá no hay forma de saber
 // cuál es cuál, así que ese código no se toca y se avisa.
-export function ivaDecididoPorCodigo(lineas: LineaReplaceBc[]): { porCodigo: Record<string, number>; ambiguos: string[] } {
+export function ivaOrdenPorCodigo(lineas: LineaReplaceBc[]): { porCodigo: Record<string, number>; ambiguos: string[] } {
   const vistos = new Map<string, Set<number>>();
   for (const l of lineas ?? []) {
     const code = String(l?.tipo === "cargo" ? l?.chargeNo : codigoDeItem(String(l?.itemNo ?? ""))).trim().toUpperCase();
@@ -2181,9 +2187,7 @@ export function ivaDecididoPorCodigo(lineas: LineaReplaceBc[]): { porCodigo: Rec
   const ambiguos: string[] = [];
   for (const [code, pcts] of vistos) {
     if (pcts.size > 1) { ambiguos.push(code); continue; }
-    const pct = [...pcts][0];
-    if (pct === IVA_DEFAULT_APP) continue;
-    porCodigo[code] = pct;
+    porCodigo[code] = [...pcts][0];
   }
   return { porCodigo, ambiguos };
 }
@@ -2299,21 +2303,19 @@ export async function bcReplaceOrderLines(orderNo: string, lineas: LineaReplaceB
   let avisoIva: string | undefined;
 
   // ── EL IVA DE LA ORDEN VIAJA A BC ───────────────────────────────────────────
-  // Si Proveeduría le puso a una línea un IVA distinto al que la app pone sola, en
-  // BC tiene que salir ese. Antes solo viajaba el 0 (la importación exenta) y
-  // cualquier otro % se quedaba en el estimado y en el PDF: BC calculaba el suyo con
-  // el grupo del artículo y la diferencia había que ir a arreglarla a mano allá.
+  // El % que Proveeduría le puso a la línea es el que tiene que salir en BC. Antes
+  // solo viajaba el 0 (la importación exenta) y cualquier otro se quedaba en el
+  // estimado y en el PDF: BC calculaba el suyo con el grupo del artículo y la
+  // diferencia había que ir a arreglarla a mano allá.
   //
   // CP-005814 (30 sep 2026, Multisuministros): dos líneas puestas en 1%. ESCOBA
   // GRANDE salió en 1% —de casualidad, porque el artículo ya era IVA1%-BIENES en
-  // BC— y PALA PARA RECOGER BASURA salió en 13%, ₡511,20 de más sobre ₡4.260. El
-  // 1% de la app nunca había viajado: el único que viajaba era el 0.
+  // BC— y PALA PARA RECOGER BASURA salió en 13%, ₡511,20 de más sobre ₡4.260.
   //
-  // El 13 NO viaja, a propósito: es el default de la app, no se distingue de "no lo
-  // toqué", y empujarlo le pisaría a Contabilidad los artículos que tiene
-  // configurados en BC al 1%, 2% o 4%.
+  // Solo se escribe lo que está DISTINTO allá (`lineasConIvaDistinto`): en la compra
+  // normal la orden dice 13 y BC ya calcula 13, así que no sale ni un PATCH.
   const ivaAplicado: string[] = [];
-  const { porCodigo, ambiguos } = ivaDecididoPorCodigo(lineas);
+  const { porCodigo, ambiguos } = ivaOrdenPorCodigo(lineas);
   if (ambiguos.length) {
     avisoIva = `OJO con el IVA: ${ambiguos.join(", ")} está en más de una línea con IVA distinto, y en Business Central las líneas se reconocen por código, así que allá ese IVA quedó como lo calcula BC. Poneles el mismo % a todas las líneas del mismo artículo.`;
   }

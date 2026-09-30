@@ -236,13 +236,12 @@ export function OrdenDetalle({
   // con BC ni con su propio papel.
   const iva = ordenIva(orden);
   const flete = orden.lineas.filter(esLineaCargo).reduce((s, l) => s + ordenLineaImporte(l), 0);
-  // BC contra el estimado de la orden. El IVA% de la orden viaja a BC cuando es una
-  // DECISIÓN —un % distinto al 13 que la app pone sola— y se le escribe el grupo a
-  // la línea allá; con 13 manda el grupo del artículo, que es el que Contabilidad
-  // configuró en BC (hay artículos en 1%). O sea que los dos totales pueden seguir
-  // sin cuadrar, y este cotejo es lo único que lo canta: caso CP-005814, ESCOBA
-  // GRANDE es IVA1%-BIENES en BC y una orden que la deje en el 13 por defecto queda
-  // 12 puntos larga. El camino para cerrarlo sigue siendo "Usar el IVA de BC".
+  // BC contra el estimado de la orden. Desde el 30 sep 2026 el IVA% de la orden
+  // VIAJA a BC —el que Proveeduría ponga, el que sea— así que estos dos totales
+  // deberían cuadrar solos. Cuando no cuadran ya no es "la app estima distinto":
+  // es que alguna línea no se pudo escribir allá (el aviso lo dice con nombre) o
+  // que el pedido se tocó a mano en BC. Sigue habiendo "Usar el IVA de BC" para el
+  // caso en que el bueno sea el de allá.
   // Solo se compara en la MISMA moneda: contra un pedido en dólares la resta no
   // significaría nada.
   const estimadoLocal = ordenTotalConIva(orden);

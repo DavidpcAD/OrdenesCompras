@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { lineasAExonerar, grupoIvaExento, ivaDecididoPorCodigo, lineasConIvaDistinto,
+import { lineasAExonerar, grupoIvaExento, ivaOrdenPorCodigo, lineasConIvaDistinto,
   grupoIvaDeTasa, familiaDeGrupoIva, tasasIvaDisponibles, bcPideAbierto,
   type LineaIvaBc, type LineaReplaceBc } from "./bc.ts";
 
@@ -82,68 +82,84 @@ test("grupoIvaExento: default EXENTO-BIENES (el código real de taxGroups)", () 
 });
 
 // ── EL IVA DE LA ORDEN VIAJA A BC ──────────────────────────────────────────────
-// "Si yo le pongo 1%, en BC tiene que salir 1%". El IVA% de la app se quedaba en el
-// estimado y en el PDF —solo el 0 viajaba—; ahora cualquier % que sea una DECISIÓN
-// se le escribe a la línea en BC en el mismo movimiento en que se crean o se
-// reescriben las líneas.
+// "Que el porcentaje salga según el que Proveeduría ponga". El IVA% de la app se
+// quedaba en el estimado y en el PDF —solo el 0 viajaba—; ahora se le escribe a la
+// línea en BC, sea cual sea, en el mismo movimiento en que se crean o se reescriben
+// las líneas. Lo que evita las escrituras de más es `lineasConIvaDistinto`, no una
+// lista de % privilegiados.
 
 const A = (itemNo: string, ivaPct?: number): LineaReplaceBc =>
   ({ tipo: "articulo", itemNo, cantidad: 1, precio: 100, ivaPct });
 
-test("ivaDecididoPorCodigo: viaja lo que no es el default (0, 1, 4…)", () => {
+test("ivaOrdenPorCodigo: viaja el % de la orden, el que sea", () => {
   const lineas = [A("M05-0804", 0), A("M17-0321", 13), A("M20-1088", 1), A("M11-0500", 4)];
-  assert.deepEqual(ivaDecididoPorCodigo(lineas).porCodigo,
-    { "M05-0804": 0, "M20-1088": 1, "M11-0500": 4 });
+  assert.deepEqual(ivaOrdenPorCodigo(lineas).porCodigo,
+    { "M05-0804": 0, "M17-0321": 13, "M20-1088": 1, "M11-0500": 4 });
 });
 
 // EL CASO DE CP-005814: dos líneas en 1%. Antes solo el 0 viajaba y las dos quedaban
 // a merced del grupo del artículo en BC (una salió 1%, la otra 13%).
-test("ivaDecididoPorCodigo: el 1% de CP-005814 viaja (antes no)", () => {
-  const { porCodigo } = ivaDecididoPorCodigo([A("M17-0051", 1), A("M17-0043", 1), A("M17-0032", 13)]);
+test("ivaOrdenPorCodigo: el 1% de CP-005814 viaja (antes no)", () => {
+  const { porCodigo } = ivaOrdenPorCodigo([A("M17-0051", 1), A("M17-0043", 1)]);
   assert.deepEqual(porCodigo, { "M17-0051": 1, "M17-0043": 1 });
 });
 
-// El default de la app es 13: una línea sin ivaPct es una que nadie tocó. Empujar 13
-// le pisaría en BC los artículos que Contabilidad tiene en 1%, 2% o 4%.
-test("ivaDecididoPorCodigo: el default (13) y el campo vacío NO viajan", () => {
-  assert.deepEqual(ivaDecididoPorCodigo([A("M05-0804"), A("M17-0321", 13)]).porCodigo, {});
+// EL 13 TAMBIÉN MANDA. Si la orden dice 13 y BC tiene el artículo en 1% por su
+// ficha, el que gana es el de la orden: quien la arma tiene la cotización enfrente.
+test("ivaOrdenPorCodigo: el 13 también viaja, y le gana a la ficha de BC", () => {
+  assert.deepEqual(ivaOrdenPorCodigo([A("M17-0043", 13)]).porCodigo, { "M17-0043": 13 });
 });
 
-test("ivaDecididoPorCodigo: la variante no cuenta, el código es el pelado", () => {
-  assert.deepEqual(ivaDecididoPorCodigo([A("M11-0081 -VAR 12", 0)]).porCodigo, { "M11-0081": 0 });
+// El tipo exige `ivaPct` y del SQL siempre viene un número: el caso no debería
+// existir. Si llega, se normaliza al default en vez de dejar la línea sin IVA.
+test("ivaOrdenPorCodigo: sin ivaPct se normaliza al default", () => {
+  assert.deepEqual(ivaOrdenPorCodigo([A("M05-0804")]).porCodigo, { "M05-0804": 13 });
 });
 
-test("ivaDecididoPorCodigo: un cargo entra por su chargeNo", () => {
+test("ivaOrdenPorCodigo: la variante no cuenta, el código es el pelado", () => {
+  assert.deepEqual(ivaOrdenPorCodigo([A("M11-0081 -VAR 12", 0)]).porCodigo, { "M11-0081": 0 });
+});
+
+test("ivaOrdenPorCodigo: un cargo entra por su chargeNo", () => {
   const cargo: LineaReplaceBc = { tipo: "cargo", chargeNo: "03", cantidad: 1, precio: 669.04, ivaPct: 0 };
-  assert.deepEqual(ivaDecididoPorCodigo([cargo]).porCodigo, { "03": 0 });
+  assert.deepEqual(ivaOrdenPorCodigo([cargo]).porCodigo, { "03": 0 });
 });
 
 // Las líneas de la app y las de BC se casan por código. El mismo artículo dos veces
 // con IVA distinto no se puede resolver allá: no se toca ninguna y se avisa.
-test("ivaDecididoPorCodigo: el mismo código con dos IVA queda ambiguo", () => {
-  const r = ivaDecididoPorCodigo([A("M05-0804", 1), A("M05-0804", 4), A("M20-1088", 0)]);
+test("ivaOrdenPorCodigo: el mismo código con dos IVA queda ambiguo", () => {
+  const r = ivaOrdenPorCodigo([A("M05-0804", 1), A("M05-0804", 4), A("M20-1088", 0)]);
   assert.deepEqual(r.ambiguos, ["M05-0804"]);
   assert.deepEqual(r.porCodigo, { "M20-1088": 0 });
 });
 
-// Y el choque contra el DEFAULT también es ambiguo: una línea en 1% y otra sin tocar
-// no se distinguen en BC, así que empujar el 1% a las dos sería inventar.
-test("ivaDecididoPorCodigo: 1% en una línea y el default en otra también es ambiguo", () => {
-  const r = ivaDecididoPorCodigo([A("M05-0804", 1), A("M05-0804")]);
+// Y el choque contra el DEFAULT también es ambiguo: una línea en 1% y otra en 13 no
+// se distinguen en BC, así que empujar cualquiera de los dos a las dos sería inventar.
+test("ivaOrdenPorCodigo: 1% en una línea y 13 en otra del mismo código es ambiguo", () => {
+  const r = ivaOrdenPorCodigo([A("M05-0804", 1), A("M05-0804", 13)]);
   assert.deepEqual(r.ambiguos, ["M05-0804"]);
   assert.deepEqual(r.porCodigo, {});
 });
 
+// LO QUE EVITA LAS ESCRITURAS DE MÁS. La compra normal dice 13 y BC ya calcula 13:
+// esa línea no genera ni un PATCH, aunque su % ahora también "viaje".
 test("lineasConIvaDistinto: solo las que BC calcula distinto", () => {
   const enBc = [
     { id: "a", code: "M05-0804", taxCode: "IVA13", taxPercent: 13 },  // la orden dice 0
     { id: "b", code: "03", taxCode: "EXENTO", taxPercent: 0 },        // ya coincide
     { id: "c", code: "M17-0051", taxCode: "IVA13", taxPercent: 13 },  // la orden dice 1
-    { id: "d", code: "M17-0321", taxCode: "IVA13", taxPercent: 13 },  // la orden no decidió
+    { id: "d", code: "M17-0321", taxCode: "IVA13", taxPercent: 13 },  // la orden dice 13: ya coincide
   ];
   assert.deepEqual(
-    lineasConIvaDistinto({ "M05-0804": 0, "03": 0, "M17-0051": 1 }, enBc).map((p) => [p.linea.code, p.pct]),
+    lineasConIvaDistinto({ "M05-0804": 0, "03": 0, "M17-0051": 1, "M17-0321": 13 }, enBc).map((p) => [p.linea.code, p.pct]),
     [["M05-0804", 0], ["M17-0051", 1]]);
+});
+
+// El caso al revés del de CP-005814: la orden dice 13 y la ficha de BC tiene 1%.
+// Gana la orden, así que esa línea sí se escribe.
+test("lineasConIvaDistinto: la orden en 13 contra una ficha en 1% sí se escribe", () => {
+  const enBc = [{ id: "a", code: "M17-0043", taxCode: "IVA1", taxPercent: 1 }];
+  assert.deepEqual(lineasConIvaDistinto({ "M17-0043": 13 }, enBc).map((p) => p.pct), [13]);
 });
 
 test("lineasConIvaDistinto: sin nada decidido no se escribe en BC", () => {
