@@ -2,7 +2,7 @@
 
 import { useRef, useState } from "react";
 import Link from "next/link";
-import { Button, Card, EmptyState, Field, Tile } from "@/components/ui";
+import { Badge, Button, Card, EmptyState, Field, Tile } from "@/components/ui";
 import { CampoRangoFechas } from "@/components/calendario-rango";
 import type { Rango } from "@/lib/fechas";
 import { IconWarning } from "@/components/icons";
@@ -26,6 +26,23 @@ type Fila = {
   importeEnJuego: number; diferencias: Diferencia[]; facturas: string[];
 };
 type Resumen = { ok: number; desalineadas: number; sinPedido: number; sinLectura: number; importeEnJuego: number };
+
+// ── EL BARRIDO ───────────────────────────────────────────────────────────────
+// La revisión de abajo va orden por orden y son minutos. Esta hace UNA pregunta a
+// BC ("dame todas las facturas que registraste en el período") y la cruza contra
+// las recepciones de la app: segundos, y encuentra lo que la otra nunca alcanzó a
+// mirar porque nadie la corre completa. La primera vez que se corrió —30 de
+// setiembre de 2026— sacó 70 órdenes por ₡41,4 millones.
+type Faltante = {
+  numero: string; fecha: string; facturaProveedor: string; total: number;
+  currencyCode: string; usuario: string; laPosteoLaApp: boolean;
+};
+type FilaBarrido = {
+  id: string; numero: string; bcNumber: string; fecha: string; proveedor: string;
+  estadoOrden: string; moneda: string; recepcionesApp: number;
+  faltantes: Faltante[]; importe: number; clase: "app" | "persona" | "mixto";
+};
+type ResumenBarrido = { ordenes: number; facturas: number; importe: number; deLaApp: number; dePersona: number };
 
 function haceTresMeses(): string {
   const d = new Date();
@@ -56,6 +73,28 @@ export default function ConciliacionBcPage() {
   const [revisadas, setRevisadas] = useState(0);
   const [total, setTotal] = useState(0);
   const [error, setError] = useState("");
+
+  // El barrido rápido, que usa el MISMO rango de fechas de arriba.
+  const [barriendo, setBarriendo] = useState(false);
+  const [barrido, setBarrido] = useState<FilaBarrido[] | null>(null);
+  const [resBarrido, setResBarrido] = useState<ResumenBarrido | null>(null);
+  const [errorBarrido, setErrorBarrido] = useState("");
+
+  async function barrer() {
+    setBarriendo(true); setErrorBarrido(""); setBarrido(null); setResBarrido(null);
+    try {
+      const q = new URLSearchParams();
+      if (rango.from) q.set("desde", rango.from);
+      if (rango.to) q.set("hasta", rango.to);
+      const r = await fetch(`/api/reportes/barrido-bc?${q}`, { cache: "no-store" });
+      const d = await r.json();
+      if (!r.ok) { setErrorBarrido(String(d?.error ?? `Error ${r.status}`)); return; }
+      setBarrido(d.filas ?? []);
+      setResBarrido(d.resumen ?? null);
+    } catch (e: any) {
+      setErrorBarrido(String(e?.message ?? e));
+    } finally { setBarriendo(false); }
+  }
 
   async function revisar() {
     setCorriendo(true); setParar(false); pararRef.current = false; setError("");
@@ -110,11 +149,21 @@ export default function ConciliacionBcPage() {
           <Field label="Órdenes emitidas">
             <CampoRangoFechas valor={rango} onCambio={setRango} vacio="Todas las fechas" max={todayISO()} />
           </Field>
-          <Button onClick={() => void revisar()} disabled={corriendo}>
-            {corriendo ? `Revisando… ${revisadas}/${total}` : "Revisar"}
+          <Button onClick={() => void barrer()} disabled={barriendo} loading={barriendo}>
+            {barriendo ? "Barriendo…" : "Barrer facturas de BC"}
+          </Button>
+          <Button variant="outline" onClick={() => void revisar()} disabled={corriendo}>
+            {corriendo ? `Revisando… ${revisadas}/${total}` : "Revisar orden por orden"}
           </Button>
           {corriendo && <Button variant="outline" disabled={parar} onClick={() => { pararRef.current = true; setParar(true); }}>{parar ? "Parando…" : "Parar al terminar la tanda"}</Button>}
         </div>
+        <p className="ds-body-sm ds-muted mt-2">
+          El <span className="ds-strong">barrido</span> le pregunta a BC todas las facturas que registró en el período y las
+          cruza contra las recepciones de la app: son segundos, y encuentra los pedidos que allá ya se facturaron y acá
+          siguen sin recibir. La <span className="ds-strong">revisión orden por orden</span> compara línea por línea contra el
+          pedido de BC: encuentra material que no llegó a BC, pero son una o dos llamadas por orden y toma minutos.
+        </p>
+        {errorBarrido && <div className="ds-callout ds-callout--red mt-4"><span className="ds-callout__icon"><IconWarning size={18} /></span><div className="ds-callout__body">{errorBarrido}</div></div>}
         {(corriendo || revisadas > 0) && (
           <div className="mt-2">
             <div className="ds-body-sm ds-muted">{revisadas} de {total} órdenes revisadas ({pct}%)</div>
@@ -122,6 +171,67 @@ export default function ConciliacionBcPage() {
         )}
         {error && <div className="ds-callout ds-callout--red mt-4"><span className="ds-callout__icon"><IconWarning size={18} /></span><div className="ds-callout__body">{error}</div></div>}
       </Card>
+
+      {resBarrido && (
+        <section className="mb-4">
+          <div className="tiles mb-4">
+            <Tile
+              label="Órdenes sin recibir que BC ya facturó"
+              value={String(resBarrido.ordenes)}
+              accent={resBarrido.ordenes ? "var(--ds-color-red-200)" : "var(--ds-color-green-200)"}
+            />
+            <Tile label="Facturas que faltan acá" value={String(resBarrido.facturas)} accent={resBarrido.facturas ? "var(--ds-color-yellow)" : undefined} />
+            <Tile label="Ya facturado en BC" value={money(resBarrido.importe)} accent={resBarrido.importe > 0.01 ? "var(--ds-color-red-200)" : undefined} />
+            {/* Separadas a propósito: las que posteó la app son un fallo de la app y
+                se arreglan una vez; las de una persona son el proceso —se registró en
+                BC sin pasar por Bodega— y van a volver a pasar mañana. */}
+            <Tile label="Las posteó esta app" value={String(resBarrido.deLaApp)} accent={resBarrido.deLaApp ? "var(--ds-color-red-200)" : undefined} />
+          </div>
+
+          {!barrido?.length && (
+            <EmptyState
+              title="No falta nada"
+              hint="Cada factura que BC registró en el período tiene su recepción guardada en la app."
+            />
+          )}
+
+          {barrido?.map((f) => (
+            <Card key={`b-${f.id}`} className="mb-4">
+              <div className="row gap-3 wrap" style={{ justifyContent: "space-between", alignItems: "flex-start" }}>
+                <div>
+                  <div className="row gap-2 wrap">
+                    <Link href={`/proveeduria/ordenes/${f.id}`} className="ds-strong">{f.bcNumber}</Link>
+                    <span className="ds-muted ds-body-sm">{f.proveedor} · {formatDate(f.fecha)} · {f.estadoOrden}</span>
+                    <Badge tone={f.clase === "app" ? "red" : "yellow"}>
+                      {f.clase === "app" ? "La posteó esta app" : f.clase === "mixto" ? "Mitad y mitad" : "Registrada a mano en BC"}
+                    </Badge>
+                  </div>
+                  <div className="ds-body-sm" style={{ marginTop: 4 }}>
+                    BC ya facturó este pedido y acá {f.recepcionesApp
+                      ? `solo hay ${f.recepcionesApp} recepción${f.recepcionesApp === 1 ? "" : "es"} guardada${f.recepcionesApp === 1 ? "" : "s"}`
+                      : "no hay ninguna recepción"}.
+                  </div>
+                  <ul style={{ margin: "6px 0 0 18px" }}>
+                    {f.faltantes.map((x) => (
+                      <li key={x.numero} className="ds-body-sm">
+                        <span className="ds-strong">{x.numero}</span> · {formatDate(x.fecha)} · {money(x.total, x.currencyCode)}
+                        {x.facturaProveedor ? ` · factura del proveedor ${x.facturaProveedor}` : ""}
+                        {x.usuario ? <span className="ds-muted"> · la registró {x.laPosteoLaApp ? "esta app" : x.usuario}</span> : null}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+                <div className="col" style={{ alignItems: "flex-end", gap: 2 }}>
+                  <span className="ds-strong">{money(f.importe, f.moneda)}</span>
+                  {/* Guardarla es de Bodega o Contabilidad: la pantalla se abre para
+                      cualquiera, pero el guardado pide ese rol y lo dice al intentarlo. */}
+                  <Link href={`/facturacion/${f.id}`} className="ds-body-sm">Ponerla al día →</Link>
+                </div>
+              </div>
+            </Card>
+          ))}
+        </section>
+      )}
 
       {revisadas > 0 && (
         <div className="tiles mb-4">

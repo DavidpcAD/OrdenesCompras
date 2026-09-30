@@ -1304,6 +1304,11 @@ export default function RegistrarFacturaPage() {
               aviso: soloGuardado
                 ? ` · guardada acá (en BC ya estaba registrada${fBc?.numero ? `: ${fBc.numero}` : ""})`
                 : ` · conciliada: BC ya tenía el movimiento, no se volvió a registrar allá${fBc?.numero ? ` (factura ${fBc.numero} en BC)` : ""}`,
+              // El N.º del documento de BC se guarda EN LA RECEPCIÓN, no solo en la
+              // bitácora: es lo que después le pone el link "ver la factura en BC" y
+              // lo que deja que el barrido (lib/barrido-bc.ts) la reconozca como ya
+              // registrada. Sin esto, una orden conciliada a mano volvía a aparecer.
+              bcFacturaNo: fBc?.numero || undefined,
               bcOk: false, nota: [
                 soloGuardado
                   ? "El registro en BC salió bien y el guardado en la app falló; se guardó después, sin volver a registrar en BC."

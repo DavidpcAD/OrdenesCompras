@@ -9,6 +9,7 @@ import type { OrdenLinea } from "./types.ts";
 import { claveVariante } from "./variantes.ts";
 import { codigoDeItem } from "./unidad.ts";
 import { cotejarLineas, type Cotejo, type LineaApp, type LineaBc } from "./bc-conciliacion.ts";
+import type { FacturaBcPeriodo } from "./barrido-bc.ts";
 
 type TokenCache = { token: string; exp: number };
 let tokenCache: TokenCache | null = null;
@@ -3319,6 +3320,81 @@ export async function bcFacturasRegistradasDePedido(orderNo: string): Promise<Fa
       currencyCode: String(f.currencyCode ?? "").trim(),
     }));
   } catch { return null; }
+}
+
+// ── TODAS LAS FACTURAS DEL PERÍODO, DE UN SOLO VIAJE ─────────────────────────
+// `bcFacturasRegistradasDePedido` pregunta por UN pedido. Conciliación BC la llama
+// orden por orden y por eso va por tandas: barrer 657 órdenes son 657 viajes a BC
+// y varios minutos.
+//
+// Esta es la misma pregunta al revés: "dame TODO lo que registraste en el período".
+// Son 4.744 facturas del 2026 en dos o tres páginas, segundos, y con eso se cruza
+// la app entera sin volver a hablar con BC. Así se encontraron, el 30 de setiembre
+// de 2026, las 70 órdenes que BC ya había facturado y acá seguían "por recibir".
+// El tipo y la constante viven en `barrido-bc.ts` (el módulo puro que hace el
+// cruce): así las pruebas lo importan sin arrastrar este archivo entero.
+export type { FacturaBcPeriodo } from "./barrido-bc.ts";
+
+export async function bcFacturasRegistradasDelPeriodo(desde: string, hasta?: string): Promise<FacturaBcPeriodo[]> {
+  const d = (desde ?? "").trim();
+  if (!d) return [];
+  const cid = await getStdCompanyId();
+  const cond = [`postingDate ge ${d}`, `orderNumber ne ''`];
+  if ((hasta ?? "").trim()) cond.push(`postingDate le ${hasta!.trim()}`);
+  const sel = "number,orderNumber,postingDate,vendorNumber,vendorName,vendorInvoiceNumber,totalAmountIncludingTax,currencyCode,status";
+  let url: string | null =
+    `${stdRoot()}/companies(${cid})/purchaseInvoices?$filter=${encodeURIComponent(cond.join(" and "))}&$select=${sel}`;
+  const out: FacturaBcPeriodo[] = [];
+  let guard = 0;
+  while (url && guard++ < 50) {
+    const res = await bcFetch(url, { cache: "no-store" });
+    if (!res.ok) throw new Error(`BC ${res.status} al leer las facturas registradas: ${(await res.text()).slice(0, 200)}`);
+    const data: any = await res.json();
+    for (const f of data.value ?? []) {
+      out.push({
+        numero: String(f.number ?? "").trim(),
+        pedido: String(f.orderNumber ?? "").trim(),
+        fecha: String(f.postingDate ?? "").slice(0, 10),
+        vendorNo: String(f.vendorNumber ?? "").trim(),
+        vendorName: String(f.vendorName ?? "").trim(),
+        facturaProveedor: String(f.vendorInvoiceNumber ?? "").trim(),
+        total: Number(f.totalAmountIncludingTax) || 0,
+        currencyCode: String(f.currencyCode ?? "").trim(),
+        estado: String(f.status ?? "").trim(),
+      });
+    }
+    url = data["@odata.nextLink"] ?? null;
+  }
+  return out;
+}
+
+// ── QUIÉN REGISTRÓ LA FACTURA EN BC ──────────────────────────────────────────
+// La pregunta que parte el hallazgo en dos: si el usuario es la integración
+// (BUSINESSCENTRAL_API_ADELANTE) fue ESTA app la que posteó y no alcanzó a guardar
+// acá; si es una persona (KATTYA, BRENDA, JESSIE…) la factura se registró a mano en
+// BC y la app nunca se enteró. Sin esto, las dos se ven iguales.
+//
+// El usuario NO sale ni de la API estándar ni de `Histórico_facturas_compra_Excel`:
+// solo del movimiento de proveedor (`Facturas_Proveedores`, tabla 25). Se pide por
+// tandas porque el filtro va en la URL y BC corta las muy largas.
+export async function bcQuienRegistro(documentos: string[]): Promise<Record<string, string>> {
+  const docs = [...new Set(documentos.map((d) => (d ?? "").trim()).filter(Boolean))];
+  if (!docs.length) return {};
+  const empresa = await getCompanyName();
+  const base = `${odataRoot()}/Company('${encodeURIComponent(empresa)}')/Facturas_Proveedores`;
+  const out: Record<string, string> = {};
+  for (let i = 0; i < docs.length; i += 40) {
+    const filtro = docs.slice(i, i + 40).map((d) => `Document_No eq '${odataStr(d)}'`).join(" or ");
+    try {
+      const res = await bcFetch(`${base}?$filter=${encodeURIComponent(filtro)}&$select=Document_No,User_ID`, { cache: "no-store" });
+      if (!res.ok) continue;   // sin el usuario el barrido igual sirve: no se tumba por esto
+      for (const e of (await res.json())?.value ?? []) {
+        const doc = String(e.Document_No ?? "").trim();
+        if (doc) out[doc] = String(e.User_ID ?? "").trim();
+      }
+    } catch { /* idem: es un dato de color, no el hallazgo */ }
+  }
+  return out;
 }
 
 // ── EL FRENO ANTES DE REGISTRAR ──────────────────────────────────────────────
