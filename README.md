@@ -246,6 +246,14 @@ como variables `--ds-*`, con tokens semánticos (`--ds-bg`, `--ds-surface`, `--d
   pero cuando eso esté resuelto conviene ponerlo detrás de un flag.
 - **Notificaciones**: la campana solo se llena en modo prueba. Falta decidir si se generan
   server-side o si se saca de la topbar en producción.
+- **El gris de los textos de apoyo** (`--ds-color-gray-400`, que usa `.ds-muted`) contrasta
+  4,27:1 sobre blanco y 3,85:1 sobre el fondo, debajo del 4,5:1 que pide un texto normal. Es
+  el token del DS, así que cambiarlo es decisión del sistema y no de una pantalla: con
+  `gray-500` daría 6,06 y 5,46. En oscuro no pasa (ahí el remapeo lo deja bien).
+- **El PDF del proveedor imprime los montos en formato en-US** (`1,234.56`) y la pantalla en
+  es-CR (`1 234,56`): el mismo monto se ve distinto en el papel y en la app. Cambiarlo es
+  tocar un documento que sale de la empresa, y `es-CR` separa los miles con un espacio duro
+  (U+00A0) que habría que verificar impreso, así que no lo toqué.
 
 ## Pendientes conocidos
 
@@ -259,3 +267,8 @@ como variables `--ds-*`, con tokens semánticos (`--ds-bg`, `--ds-surface`, `--d
   `/api/mi-etapa`, con sus funciones en `repo.ts`. No las borré por si Ingeniería vuelve acá;
   si se decide que no, se pueden eliminar junto con su CSS (`.tpl-card__*`, popup de
   plantillas).
+- **`/api/bc/ordenes` (POST) tampoco tiene consumidor**, y esta sí escribe: crea un Pedido
+  directo en Business Central con `bcCrearPedido`, que quedó de antes de que el pedido se
+  creara al enviar a aprobación (hoy lo hace `/api/ordenes/[id]` con `bcCrearPedidoAbierto`).
+  Ya se le puso regla de rol —era de cualquiera con sesión—, pero lo que corresponde es
+  borrar la ruta y la función: nadie las llama y crean documentos en BC.
