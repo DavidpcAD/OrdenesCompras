@@ -1942,6 +1942,25 @@ td.ds-col-fija {
   .filtros { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; padding-bottom: var(--ds-space-1); }
   .filtros::-webkit-scrollbar { display: none; }
   .filtro-chip { flex-shrink: 0; }
+
+  /* QUE SE VEA QUE HAY MÁS AL COSTADO.
+     Las dos tiras de arriba se corren de lado y la barra de scroll está escondida
+     a propósito (en la de pestañas se dibuja encima de la raya de abajo y se ve
+     sucia). Pero escondida la barra no quedaba NINGUNA señal de que hubiera algo
+     más: en un teléfono de 375 px las pestañas miden 510, así que "Proveedores"
+     sencillamente no existía para quien no adivinara que se podía deslizar.
+     Las dos capas `local` son tapas del color del fondo pegadas a cada borde: se
+     mueven CON el contenido, así que al llegar a una punta tapan la sombrita de
+     abajo, que va fija (`scroll`). O sea, la señal aparece sola, y solo del lado
+     donde todavía queda algo por ver. Sin JS y sin medir nada. */
+  .tabs-compras__tabs,
+  .filtros {
+    background:
+      linear-gradient(to right, var(--ds-bg), transparent) 0 0 / 28px 100% no-repeat local,
+      linear-gradient(to left,  var(--ds-bg), transparent) 100% 0 / 28px 100% no-repeat local,
+      linear-gradient(to right, color-mix(in srgb, var(--ds-text) 16%, transparent), transparent) 0 0 / 14px 100% no-repeat scroll,
+      linear-gradient(to left,  color-mix(in srgb, var(--ds-text) 16%, transparent), transparent) 100% 0 / 14px 100% no-repeat scroll;
+  }
 }
 
 /* =====================  PESTAÑA "RESUMEN"  =====================
