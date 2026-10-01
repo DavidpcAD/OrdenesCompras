@@ -263,6 +263,9 @@ export function StoreProvider({ children, useApi }: { children: React.ReactNode;
   useEffect(() => { usuarioRef.current = usuario; }, [usuario]);
   // Fallos seguidos del auto-refresh: uno suelto puede ser la red, dos ya hay que avisarlo.
   const fallosSeguidos = useRef(0);
+  // Cuándo se confirmó por última vez con el servidor. Va en un ref además del estado
+  // porque lo lee un efecto, y ahí una closure vieja daría una hora vieja.
+  const ultimaSyncRef = useRef<number | null>(null);
 
   // hidratación
   useEffect(() => {
@@ -379,11 +382,20 @@ export function StoreProvider({ children, useApi }: { children: React.ReactNode;
   // recargar a mano si el poll de 45s todavía no había corrido.
   const pathname = usePathname();
   const pathAnterior = useRef<string | null>(null);
+  // …pero NO si se acaba de confirmar. Moverse por la app son varias pantallas en
+  // pocos segundos (entrar a una orden, volver, entrar a otra) y cada una pedía el
+  // bootstrap entero. Para el servidor eso no es gratis ni cuando contesta 304: arma
+  // el payload completo igual —las cuatro consultas y la huella— y recién ahí compara.
+  // Diez segundos es menos de la cuarta parte del poll, así que lo que se ahorra son
+  // los viajes repetidos de la misma navegación, no la frescura.
+  const FRESCO_MS = 10_000;
   useEffect(() => {
     if (!USE_API || !hydrated || !role) return;
     // La primera vez no: la carga inicial ya trajo los datos recién.
     if (pathAnterior.current === null || pathAnterior.current === pathname) { pathAnterior.current = pathname; return; }
     pathAnterior.current = pathname;
+    const ult = ultimaSyncRef.current;
+    if (ult && Date.now() - ult < FRESCO_MS) return;
     refreshFromApi().catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pathname, hydrated, role]);
@@ -412,6 +424,7 @@ export function StoreProvider({ children, useApi }: { children: React.ReactNode;
     setErrorCarga(null);   // volvió a responder: se limpia el aviso
     setSesionExpirada(false);
     setUltimaSync(Date.now());
+    ultimaSyncRef.current = Date.now();
     // null = el servidor contestó 304: nada cambió desde la última vez. No bajó
     // cuerpo, no hay nada que comparar ni que volver a pintar. Es el caso NORMAL
     // del poll de 45 s (y el que ahorra datos móviles y batería).
