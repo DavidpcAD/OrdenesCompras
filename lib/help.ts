@@ -19,7 +19,8 @@ const RESUMEN: HelpEntry = {
     "Las cuatro tarjetas de arriba son del AÑO EN CURSO, salvo la última: “Pendiente por entregar” es el saldo vivo de todas las órdenes abiertas, sin importar el año.",
     "El chip con flecha compara contra el MISMO PERÍODO del año pasado (enero hasta el mes de hoy), no contra el año entero. Si no hay año anterior con datos, el chip no sale: un “+100%” contra cero sería mentira.",
     "Los montos son SIN IVA, con el descuento de línea aplicado, y no incluyen los cargos (un flete no es material que se reciba).",
-    "Si hay órdenes en otra moneda, los montos NO las suman y arriba sale un aviso diciendo cuántas quedaron fuera: la app no tiene tipo de cambio.",
+    "Todo va en COLONES. Lo que se ordenó en dólares o en euros se pasa con el tipo de cambio de Business Central —el mismo con el que se registran las facturas allá— y el aviso de arriba dice a cómo y de qué día quedó.",
+    "Lo único que queda afuera del total es la moneda para la que BC no tenga tipo de cambio, y el aviso dice cuántas órdenes son: sumarlas 1 a 1 sería peor que dejarlas afuera.",
   ],
   pasos: [
     "Mirá las cuatro tarjetas para el panorama; pasá el mouse por un número para ver el monto exacto.",
