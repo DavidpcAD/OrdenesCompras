@@ -195,7 +195,13 @@ export async function listPedidos(): Promise<Pedido[]> {
   await ensureEstados();
   const pool = await getPool();
   const h = await pool.request().query("SELECT * FROM dbo.PedidoCompra WHERE esEliminada = 0 ORDER BY idPedidoCompra DESC");
-  const d = await pool.request().query("SELECT * FROM dbo.PedidoCompraDet ORDER BY idPedidoCompraDet");
+  // Solo las líneas de solicitudes VIVAS. El encabezado de arriba ya filtra las
+  // eliminadas, pero el detalle se traía entero: esas líneas viajaban desde SQL,
+  // se agrupaban en memoria y se tiraban sin que nadie las leyera nunca.
+  const d = await pool.request().query(`SELECT * FROM dbo.PedidoCompraDet det
+      WHERE EXISTS (SELECT 1 FROM dbo.PedidoCompra p
+                    WHERE p.idPedidoCompra = det.idPedidoCompra AND p.esEliminada = 0)
+      ORDER BY idPedidoCompraDet`);
   const porPedido = porCabecera(d.recordset, "idPedidoCompra");
   const [unidades, devoluciones] = await Promise.all([mapaUnidades(), devolucionesDeSolicitudes()]);
   return h.recordset.map((p) => mapPedido(p, porPedido.get(p.idPedidoCompra) ?? [], unidades, devoluciones));
@@ -1155,10 +1161,14 @@ export async function listOrdenes(): Promise<Orden[]> {
   const h = await pool.request().query("SELECT * FROM dbo.OrdenCompra WHERE esEliminada = 0 ORDER BY idOrdenCompra DESC");
   // pedidoNumero se resuelve desde el vínculo idPedidoCompraDet → PedidoCompra.pedidoNo
   // (si no, la orden se veía siempre como "Directa" aunque naciera de un pedido).
+  // Ídem: solo las líneas de órdenes vivas (ver listPedidos). EXISTS y no un JOIN
+  // más porque EXISTS no puede multiplicar filas si algún día hay un duplicado.
   const d = await pool.request().query(`SELECT det.*, pc.pedidoNo AS pedidoNumero, ${SQL_OBRA_SOLICITUD}
       FROM dbo.OrdenCompraDet det
       LEFT JOIN dbo.PedidoCompraDet pcd ON pcd.idPedidoCompraDet = det.idPedidoCompraDet
       LEFT JOIN dbo.PedidoCompra pc ON pc.idPedidoCompra = pcd.idPedidoCompra
+      WHERE EXISTS (SELECT 1 FROM dbo.OrdenCompra o
+                    WHERE o.idOrdenCompra = det.idOrdenCompra AND o.esEliminada = 0)
       ORDER BY det.idOrdenCompraDet`);
   const rechazadas = h.recordset.filter((o) => codigoDeId(o.idEstado) === "rechazado").map((o) => o.idOrdenCompra as number);
   const motivos = await motivosRechazo(rechazadas);
@@ -2395,7 +2405,11 @@ async function fotosPorRecepcion(): Promise<Map<number, RecepcionFoto[]>> {
 export async function listRecepciones(): Promise<Recepcion[]> {
   const pool = await getPool();
   const h = await pool.request().query("SELECT * FROM dbo.RecepcionCompra WHERE esEliminada = 0 ORDER BY idRecepcionCompra DESC");
-  const d = await pool.request().query("SELECT * FROM dbo.RecepcionCompraDet ORDER BY idRecepcionCompraDet");
+  // Ídem: solo las líneas de recepciones vivas (ver listPedidos).
+  const d = await pool.request().query(`SELECT * FROM dbo.RecepcionCompraDet det
+      WHERE EXISTS (SELECT 1 FROM dbo.RecepcionCompra r
+                    WHERE r.idRecepcionCompra = det.idRecepcionCompra AND r.esEliminada = 0)
+      ORDER BY idRecepcionCompraDet`);
   const porRecepcion = porCabecera(d.recordset, "idRecepcionCompra");
   // Si la migración de fotos no está corrida, esto devuelve un mapa vacío.
   const fotos = await fotosPorRecepcion().catch(() => new Map<number, RecepcionFoto[]>());

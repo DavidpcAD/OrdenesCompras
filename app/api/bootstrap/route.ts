@@ -45,7 +45,13 @@ export async function GET(req: Request) {
     marcas.total = Date.now() - t0;
 
     const kb = Math.round(Buffer.byteLength(body) / 1024);
-    console.info(`[bootstrap] ${marcas.total} ms · ${kb} kB · ${pedidos.length} solicitudes, ${ordenes.length} órdenes, ${recepciones.length} recepciones · pedidos ${marcas.pedidos} ms, ordenes ${marcas.ordenes} ms, recepciones ${marcas.recepciones} ms, notas ${marcas.notas} ms`);
+    // Las LÍNEAS, no solo los encabezados: el peso del payload se va casi todo ahí y
+    // ninguna de las tres consultas tiene techo —traen toda la historia—, así que este
+    // número es el que dice cuándo hay que empezar a acotar por fecha. Se cuentan (O(n)
+    // y barato); medir los bytes de cada bloque obligaría a serializarlo aparte, que es
+    // justo el trabajo que acá se está tratando de no hacer de más.
+    const nLineas = (xs: Array<{ lineas?: unknown[] }>) => xs.reduce((t, x) => t + (x.lineas?.length ?? 0), 0);
+    console.info(`[bootstrap] ${marcas.total} ms · ${kb} kB · ${pedidos.length} solicitudes (${nLineas(pedidos)} líneas), ${ordenes.length} órdenes (${nLineas(ordenes)} líneas), ${recepciones.length} recepciones (${nLineas(recepciones)} líneas), ${notas.length} notas · pedidos ${marcas.pedidos} ms, ordenes ${marcas.ordenes} ms, recepciones ${marcas.recepciones} ms, notas ${marcas.notas} ms`);
     const serverTiming = Object.entries(marcas).map(([k, v]) => `${k};dur=${v}`).join(", ");
 
     if (req.headers.get("if-none-match") === etag) {
