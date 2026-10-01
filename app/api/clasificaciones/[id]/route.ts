@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { updateClasificacion } from "@/lib/repo";
+import { mensajeSeguro } from "@/lib/error-sql";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -19,6 +20,6 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     await updateClasificacion(id, { nombre, partidaId, subPartidaId });
     return NextResponse.json({ ok: true });
   } catch (e: any) {
-    return NextResponse.json({ error: String(e?.message ?? e) }, { status: 500 });
+    return NextResponse.json({ error: mensajeSeguro(e) }, { status: 500 });
   }
 }

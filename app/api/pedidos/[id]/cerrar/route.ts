@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { cerrarSolicitud, reabrirSolicitud } from "@/lib/repo";
 import { actor } from "@/lib/actor";
+import { mensajeSeguro } from "@/lib/error-sql";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -20,7 +21,7 @@ export async function POST(req: Request, { params }: { params: { id: string } })
     const r = await cerrarSolicitud(Number(params.id), String(motivo).trim(), a.usuario, a.rol);
     return NextResponse.json(r);
   } catch (e: any) {
-    return NextResponse.json({ error: String(e?.message ?? e) }, { status: estado(e) });
+    return NextResponse.json({ error: mensajeSeguro(e) }, { status: estado(e) });
   }
 }
 
@@ -33,7 +34,7 @@ export async function DELETE(req: Request, { params }: { params: { id: string } 
     const r = await reabrirSolicitud(Number(params.id), String((body as any)?.motivo ?? ""), a.usuario, a.rol);
     return NextResponse.json(r);
   } catch (e: any) {
-    return NextResponse.json({ error: String(e?.message ?? e) }, { status: estado(e) });
+    return NextResponse.json({ error: mensajeSeguro(e) }, { status: estado(e) });
   }
 }
 

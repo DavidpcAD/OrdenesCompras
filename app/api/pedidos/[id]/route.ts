@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getPedido, setPedidoEstado, softDeletePedido, updatePedido } from "@/lib/repo";
 import { actor } from "@/lib/actor";
+import { mensajeSeguro } from "@/lib/error-sql";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -11,7 +12,7 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
     if (!p) return NextResponse.json({ error: "no encontrado" }, { status: 404 });
     return NextResponse.json(p);
   } catch (e: any) {
-    return NextResponse.json({ error: String(e?.message ?? e) }, { status: 500 });
+    return NextResponse.json({ error: mensajeSeguro(e) }, { status: 500 });
   }
 }
 
@@ -23,7 +24,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     await setPedidoEstado(Number(params.id), estado, a.usuario, a.rol, motivo);
     return NextResponse.json({ ok: true });
   } catch (e: any) {
-    return NextResponse.json({ error: String(e?.message ?? e) }, { status: 500 });
+    return NextResponse.json({ error: mensajeSeguro(e) }, { status: 500 });
   }
 }
 
@@ -33,7 +34,7 @@ export async function PUT(req: Request, { params }: { params: { id: string } }) 
     await updatePedido({ id: Number(params.id), ...body, ...(await actor(body)) });
     return NextResponse.json({ ok: true });
   } catch (e: any) {
-    return NextResponse.json({ error: String(e?.message ?? e) }, { status: 500 });
+    return NextResponse.json({ error: mensajeSeguro(e) }, { status: 500 });
   }
 }
 
@@ -44,6 +45,6 @@ export async function DELETE(req: Request, { params }: { params: { id: string } 
     await softDeletePedido(Number(params.id), a.usuario, a.rol);
     return NextResponse.json({ ok: true });
   } catch (e: any) {
-    return NextResponse.json({ error: String(e?.message ?? e) }, { status: 500 });
+    return NextResponse.json({ error: mensajeSeguro(e) }, { status: 500 });
   }
 }

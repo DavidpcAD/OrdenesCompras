@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { deletePlantilla, updatePlantilla } from "@/lib/repo";
+import { mensajeSeguro } from "@/lib/error-sql";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -17,7 +18,7 @@ export async function PUT(req: Request, { params }: { params: { id: string } }) 
     });
     return NextResponse.json({ ok: true });
   } catch (e: any) {
-    return NextResponse.json({ error: String(e?.message ?? e) }, { status: 500 });
+    return NextResponse.json({ error: mensajeSeguro(e) }, { status: 500 });
   }
 }
 
@@ -27,6 +28,6 @@ export async function DELETE(req: Request, { params }: { params: { id: string } 
     await deletePlantilla(Number(params.id), usuario);
     return NextResponse.json({ ok: true });
   } catch (e: any) {
-    return NextResponse.json({ error: String(e?.message ?? e) }, { status: 500 });
+    return NextResponse.json({ error: mensajeSeguro(e) }, { status: 500 });
   }
 }

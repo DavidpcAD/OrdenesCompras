@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { addRecepcionFotos, getRecepcionFoto } from "@/lib/repo";
 import { actor } from "@/lib/actor";
+import { mensajeSeguro } from "@/lib/error-sql";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -29,7 +30,7 @@ export async function GET(req: Request, { params }: { params: { id: string } }) 
       },
     });
   } catch (e: any) {
-    return NextResponse.json({ error: String(e?.message ?? e) }, { status: 500 });
+    return NextResponse.json({ error: mensajeSeguro(e) }, { status: 500 });
   }
 }
 
@@ -52,6 +53,6 @@ export async function POST(req: Request, { params }: { params: { id: string } })
     const guardadas = await addRecepcionFotos(Number(params.id), limpias, a.usuario);
     return NextResponse.json({ guardadas }, { status: 201 });
   } catch (e: any) {
-    return NextResponse.json({ error: String(e?.message ?? e) }, { status: 500 });
+    return NextResponse.json({ error: mensajeSeguro(e) }, { status: 500 });
   }
 }

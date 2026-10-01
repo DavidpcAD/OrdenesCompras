@@ -3,6 +3,7 @@ import { getOrden, setOrdenEstado, setOrdenBcNumber, updateOrden, descartarOrden
 import { bcReopenPedido, bcReplaceOrderLines, bcCrearPedidoAbierto, crearEnBcAlEnviar, lineasOrdenParaBc, obrasSinTarea, lineasSinUnidad, lineasSinAlmacen, resolverVariantesRequeridas, sanearObrasDeLineas, avisoDeSaneo, bcOrdenTotales, bcEstadoDelPedido, chequearOrdenContraBc, lineasReplaceParaCotejo, lineasOrdenParaCotejo, paredAprobacionActiva, itemsBloqueadosDeLineas, bcSincronizarEncabezado, bcBorrarPedidoAbierto, conPedidoAbierto, campoVacioEnBc, explicarCampoVacioEnBc } from "@/lib/bc";
 import { ordenTotalConIva } from "@/lib/helpers";
 import { actor } from "@/lib/actor";
+import { mensajeSeguro } from "@/lib/error-sql";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -13,7 +14,7 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
     if (!o) return NextResponse.json({ error: "no encontrada" }, { status: 404 });
     return NextResponse.json(o);
   } catch (e: any) {
-    return NextResponse.json({ error: String(e?.message ?? e) }, { status: 500 });
+    return NextResponse.json({ error: mensajeSeguro(e) }, { status: 500 });
   }
 }
 
@@ -357,7 +358,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     await setOrdenEstado(id, estado, a.usuario, a.rol, motivo, bcNo);
     return NextResponse.json({ ok: true, bcAviso });
   } catch (e: any) {
-    return NextResponse.json({ error: String(e?.message ?? e) }, { status: 500 });
+    return NextResponse.json({ error: mensajeSeguro(e) }, { status: 500 });
   }
 }
 
@@ -445,7 +446,7 @@ export async function PUT(req: Request, { params }: { params: { id: string } }) 
     bcAviso = avisos.join(" · ") || undefined;
     return NextResponse.json({ ok: true, bcAviso });
   } catch (e: any) {
-    return NextResponse.json({ error: String(e?.message ?? e) }, { status: 500 });
+    return NextResponse.json({ error: mensajeSeguro(e) }, { status: 500 });
   }
 }
 

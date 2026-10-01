@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { bcVariantsEx, bcVariantesDeItems } from "@/lib/bc";
+import { mensajeSeguro } from "@/lib/error-sql";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -23,6 +24,6 @@ export async function GET(req: Request) {
     const { variantes, disponible } = await bcVariantsEx(item);
     return NextResponse.json({ variantes, disponible });
   } catch (e: any) {
-    return NextResponse.json({ error: String(e?.message ?? e) }, { status: 500 });
+    return NextResponse.json({ error: mensajeSeguro(e) }, { status: 500 });
   }
 }

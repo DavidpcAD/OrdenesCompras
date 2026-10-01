@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createPlantilla, listPlantillas } from "@/lib/repo";
+import { mensajeSeguro } from "@/lib/error-sql";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -8,7 +9,7 @@ export async function GET() {
   try {
     return NextResponse.json({ plantillas: await listPlantillas() });
   } catch (e: any) {
-    return NextResponse.json({ error: String(e?.message ?? e) }, { status: 500 });
+    return NextResponse.json({ error: mensajeSeguro(e) }, { status: 500 });
   }
 }
 
@@ -27,6 +28,6 @@ export async function POST(req: Request) {
     });
     return NextResponse.json({ idPlantillaSolicitud: id }, { status: 201 });
   } catch (e: any) {
-    return NextResponse.json({ error: String(e?.message ?? e) }, { status: 500 });
+    return NextResponse.json({ error: mensajeSeguro(e) }, { status: 500 });
   }
 }

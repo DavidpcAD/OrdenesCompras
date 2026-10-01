@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { chequearOrdenPorId } from "@/lib/chequeo-orden";
 import { getOrden, guardarChequeoBc } from "@/lib/repo";
 import { actor } from "@/lib/actor";
+import { mensajeSeguro } from "@/lib/error-sql";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -61,6 +62,6 @@ export async function POST(req: Request, { params }: { params: { id: string } })
     );
     return NextResponse.json({ ok: true });
   } catch (e: any) {
-    return NextResponse.json({ error: String(e?.message ?? e) }, { status: 500 });
+    return NextResponse.json({ error: mensajeSeguro(e) }, { status: 500 });
   }
 }

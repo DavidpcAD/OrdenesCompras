@@ -2,7 +2,7 @@
 // qué hacer. Hay que poder distinguirlos sin mirar qué tan feo se ve el texto.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mensajeParaPantalla, vieneDelMotor } from "./error-sql.ts";
+import { mensajeParaPantalla, mensajeSeguro, vieneDelMotor } from "./error-sql.ts";
 
 const comoMssql = (name: string, code: string, message: string) => Object.assign(new Error(message), { name, code });
 
@@ -40,4 +40,16 @@ test("sin mensaje queda la frase sola, no un 'undefined' en pantalla", () => {
 
 test("se reconoce el error del motor aunque venga sin name ni code", () => {
   assert.equal(vieneDelMotor(new Error("Failed to connect to 10.0.0.4:1433 - timeout")), true);
+});
+
+test("mensajeSeguro deja IGUAL lo que no viene del motor (cambiar una ruta no toca nada)", () => {
+  assert.equal(mensajeSeguro(new Error("Ya hay una recepción con esa factura")), "Ya hay una recepción con esa factura");
+  // Los de Business Central tampoco se tocan: son los que explican qué arreglar allá.
+  assert.equal(mensajeSeguro(new Error("BC 400: Gen. Bus. Posting Group no está en la ficha")),
+    "BC 400: Gen. Bus. Posting Group no está en la ficha");
+});
+
+test("mensajeSeguro sí tapa el del motor, sin frase de adelante", () => {
+  const e = Object.assign(new Error("Failed to connect to mysqladelante.database.windows.net:1433"), { name: "ConnectionError" });
+  assert.equal(mensajeSeguro(e), "la base no contestó. Reintentá y, si sigue, avisale a TI");
 });

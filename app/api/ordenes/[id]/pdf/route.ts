@@ -4,6 +4,7 @@ import { actor } from "@/lib/actor";
 import { ordenAPdf } from "@/lib/orden-pdf";
 import { bcDescripcionUnidades, bcNombresDeVariante } from "@/lib/bc";
 import { nombreArchivoOrden, ordenImprimible } from "@/lib/orden-doc";
+import { mensajeSeguro } from "@/lib/error-sql";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -58,6 +59,6 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     });
   } catch (e: any) {
     console.error("PDF de orden", id, e);
-    return NextResponse.json({ error: String(e?.message ?? e) }, { status: 500 });
+    return NextResponse.json({ error: mensajeSeguro(e) }, { status: 500 });
   }
 }

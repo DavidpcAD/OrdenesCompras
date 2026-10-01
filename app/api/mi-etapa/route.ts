@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { etapasDeUsuario } from "@/lib/repo";
+import { mensajeSeguro } from "@/lib/error-sql";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -12,6 +13,6 @@ export async function GET(req: NextRequest) {
   try {
     return NextResponse.json({ etapaIds: await etapasDeUsuario(username) });
   } catch (e: any) {
-    return NextResponse.json({ etapaIds: [], error: String(e?.message ?? e) });
+    return NextResponse.json({ etapaIds: [], error: mensajeSeguro(e) });
   }
 }

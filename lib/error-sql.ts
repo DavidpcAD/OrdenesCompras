@@ -28,3 +28,12 @@ export function mensajeParaPantalla(e: unknown, queFallo: string): string {
   const m = String((e as { message?: unknown })?.message ?? e ?? "").trim();
   return m ? `${queFallo}: ${m}` : `${queFallo}.`;
 }
+
+// La misma decisión, pero SIN la frase de adelante: para las rutas cuyo cliente ya
+// arma el "No se pudo tal cosa: …" por su cuenta y volvería a ponerlo. Si el error no
+// viene del motor devuelve exactamente lo que devolvía antes, así que cambiarlo en
+// una ruta no toca ningún mensaje de negocio ni los que llegan de Business Central.
+export function mensajeSeguro(e: unknown): string {
+  if (vieneDelMotor(e)) return "la base no contestó. Reintentá y, si sigue, avisale a TI";
+  return String((e as { message?: unknown })?.message ?? e);
+}

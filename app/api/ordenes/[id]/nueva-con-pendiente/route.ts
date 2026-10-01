@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { nuevaOrdenDesdePendiente } from "@/lib/repo";
 import { actor } from "@/lib/actor";
+import { mensajeSeguro } from "@/lib/error-sql";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -14,6 +15,6 @@ export async function POST(req: Request, { params }: { params: { id: string } })
     const r = await nuevaOrdenDesdePendiente(Number(params.id), String(body?.motivo ?? ""), a.usuario, a.rol);
     return NextResponse.json({ ok: true, ...r });
   } catch (e: any) {
-    return NextResponse.json({ error: String(e?.message ?? e) }, { status: 400 });
+    return NextResponse.json({ error: mensajeSeguro(e) }, { status: 400 });
   }
 }

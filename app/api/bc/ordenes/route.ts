@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { bcCrearPedido, bcDeepLinkPedido } from "@/lib/bc";
+import { mensajeSeguro } from "@/lib/error-sql";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -12,6 +13,6 @@ export async function POST(req: Request) {
     const { number, id, omitidas } = await bcCrearPedido(body);
     return NextResponse.json({ number, id, omitidas, deepLink: bcDeepLinkPedido(number) }, { status: 201 });
   } catch (e: any) {
-    return NextResponse.json({ error: String(e?.message ?? e) }, { status: 500 });
+    return NextResponse.json({ error: mensajeSeguro(e) }, { status: 500 });
   }
 }

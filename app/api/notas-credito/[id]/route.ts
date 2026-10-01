@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { setNotaCreditoEstado } from "@/lib/repo";
 import { actor } from "@/lib/actor";
+import { mensajeSeguro } from "@/lib/error-sql";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -15,6 +16,6 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     await setNotaCreditoEstado(Number(params.id), estado, a.usuario, a.rol);
     return NextResponse.json({ ok: true });
   } catch (e: any) {
-    return NextResponse.json({ error: String(e?.message ?? e) }, { status: 500 });
+    return NextResponse.json({ error: mensajeSeguro(e) }, { status: 500 });
   }
 }

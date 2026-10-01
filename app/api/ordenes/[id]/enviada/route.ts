@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { marcarEnvioProveedor } from "@/lib/repo";
 import { actor } from "@/lib/actor";
+import { mensajeSeguro } from "@/lib/error-sql";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -26,6 +27,6 @@ async function marcar(req: Request, id: string, deshacer: boolean) {
     const r = await marcarEnvioProveedor(Number(id), a.usuario, a.rol, { manual: true, deshacer });
     return NextResponse.json({ ok: true, ...r });
   } catch (e: any) {
-    return NextResponse.json({ error: String(e?.message ?? e) }, { status: 400 });
+    return NextResponse.json({ error: mensajeSeguro(e) }, { status: 400 });
   }
 }
