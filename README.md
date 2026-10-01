@@ -6,8 +6,11 @@ App web (Next.js 14, App Router) que Adelante Desarrollos usa **en producción**
 
 - Producción: `proveeduria.adelante.cr` (Azure App Service `app-ordenescompra-eus2`).
 - Deploy: push a `main` → GitHub Actions (`.github/workflows/main_app-ordenescompra-eus2.yml`).
-- Base: `AdelanteSBX` (SQL Server en Azure), compartida con la app de Producción.
-- BC: entorno **Sandbox** (las pruebas de integración se hacen ahí, no en Production).
+- Base: `AdelantePRO` (SQL Server en Azure), compartida con la app de Producción.
+  Las tablas de compras se movieron ahí; `AdelanteSBX` quedó como la de pruebas.
+- BC: entorno **Production** (`BC_ENVIRONMENT`). **Lo que se prueba contra BC desde acá
+  toca la empresa de verdad.** Sandbox quedó para probar la extensión AL y configuración,
+  no para el día a día.
 
 ## Los 3 roles
 
