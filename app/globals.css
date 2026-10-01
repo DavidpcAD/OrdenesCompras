@@ -2822,11 +2822,21 @@ button.ana-kpi:active { transform: translateY(1px); }
 
 /* El campo que lo abre */
 .cal-campo { position: relative; display: inline-block; }
+/* El rango de fechas es un CAMPO de formulario: los tres lugares donde se usa lo
+   ponen dentro de un <Field> con su label, al lado de inputs, selects y botones.
+   Por eso toma la MISMA caja que `.ds-form-field__input` (padding, radio, borde,
+   sombra y tipografía del DS) en vez de una propia: con 9px de padding medía 44 px
+   contra los 60 px de sus vecinos y, como esas filas alinean por abajo
+   (`align-items: flex-end`), su label quedaba 16 px más abajo que los demás.
+   El calendario de los filtros de columna es otro componente (`CalendarioRango`,
+   dentro del popover de la tabla) y ahí sigue compacto, que es lo que corresponde. */
 .cal-campo__btn {
-  display: inline-flex; align-items: center; gap: 8px; min-width: 210px; justify-content: space-between;
-  border: 1px solid var(--ds-color-gray-200); background: var(--ds-surface); color: var(--ds-text);
-  border-radius: var(--ds-radius-md, 10px); padding: 9px 12px; font: inherit; font-size: 14px; cursor: pointer;
-  transition: border-color .12s;
+  display: inline-flex; align-items: center; gap: var(--ds-space-2); min-width: 210px; justify-content: space-between;
+  border: 2px solid transparent; background: var(--ds-surface); color: var(--ds-text);
+  border-radius: var(--ds-radius-xl); box-shadow: var(--ds-shadow-01);
+  padding: var(--ds-space-4) var(--ds-space-5);
+  font-family: inherit; font-size: var(--ds-font-size-label); line-height: var(--ds-line-height-body-md);
+  cursor: pointer; transition: border-color 120ms ease, box-shadow 120ms ease;
 }
 .cal-campo__btn:hover { border-color: var(--ds-color-gray-300); }
 .cal-campo__btn.is-puesto { border-color: var(--ds-color-green-200); font-weight: var(--ds-font-weight-semibold); }
