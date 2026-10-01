@@ -24,9 +24,13 @@ export interface Bootstrap {
   notas: NotaCreditoLinea[];
 }
 
-// ETag del último bootstrap recibido. El servidor calcula la "versión" de los datos
-// con una consulta barata (conteos + última modificación) y contesta 304 si nada
-// cambió: el poll de 45 s deja de bajar TODAS las órdenes y líneas cada vez.
+// ETag del último bootstrap recibido: el servidor contesta 304 si nada cambió, y el
+// poll de 45 s deja de BAJAR todas las órdenes y líneas cada vez.
+// OJO con lo que el 304 ahorra y lo que no: el servidor arma el payload completo
+// igual (consulta SQL + huella) y recién ahí compara, así que lo que se ahorra es el
+// viaje y el parseo en el cliente, no el trabajo de la base. Es a propósito: la huella
+// se saca de lo que REALMENTE se iba a mandar, y cualquier atajo más barato se
+// arriesga a no ver un cambio y dejar la pantalla vieja creyéndose al día.
 let etagBootstrap: string | null = null;
 // La caché del navegador (lib/cache-bootstrap.ts) guarda el ETag junto con el cuerpo:
 // al abrir la app se lo devuelve acá para que el primer viaje ya pueda contestar 304.

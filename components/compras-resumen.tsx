@@ -138,12 +138,18 @@ export function ComprasResumen({ k, filas, onVerProveedores, onConciliacion, onI
           // la base de la app y está disponible de una.
           alerta={bc.datos
             ? (bc.datos.sinFecha.total > 0
-              ? `${corto(bc.datos.sinFecha.total)} sin fecha de entrega · ${bc.datos.sinFecha.proveedores} proveedores a los que preguntarle`
+              // Dice "en BC" a propósito. El número grande de esta tarjeta sale de la
+              // base de la app (lo que ESTA app ordenó); este sale de Business Central,
+              // que tiene además todo lo que se ordenó por fuera. El de abajo puede ser
+              // MAYOR que el de arriba sin que nada esté mal, y sin el "en BC" la
+              // tarjeta se lee como una resta imposible y le quita crédito a la pantalla.
+              ? `en BC: ${corto(bc.datos.sinFecha.total)} sin fecha de entrega · ${bc.datos.sinFecha.proveedores} proveedores a los que preguntarle`
               : null)
             : (() => { const d = diasDesde(k.vivo.masViejoISO, hoy); return d && d > 30 ? `lo más viejo lleva ${num.format(d)} días esperando` : null; })()}
           alertaTitulo={bc.datos && bc.datos.sinFecha.total > 0
             ? `${bc.datos.sinFecha.lineas} líneas en ${bc.datos.sinFecha.ordenes} órdenes con la fecha de entrega en blanco en Business Central. `
-              + `Las demás traen la fecha de la orden, que BC rellena solo: tampoco es una fecha que alguien haya prometido.`
+              + `Las demás traen la fecha de la orden, que BC rellena solo: tampoco es una fecha que alguien haya prometido. `
+              + `Este monto se cuenta sobre TODAS las órdenes abiertas de BC, no solo las de esta app: por eso puede ser mayor que el pendiente de arriba.`
             : undefined}
         />
         <TarjetaSinFacturar datos={bc.datos?.sinFacturar ?? null} error={bc.error} cargando={bc.cargando}

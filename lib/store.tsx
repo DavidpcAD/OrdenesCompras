@@ -430,20 +430,26 @@ export function StoreProvider({ children, useApi }: { children: React.ReactNode;
       else setTimeout(guardar, 0);
     }
     // Segunda red: aunque el servidor haya mandado 200, si el contenido es igual al
-    // que ya teníamos no se toca el estado (no se re-renderiza la app entera por
-    // gusto). Comparar el JSON es mucho más barato que el re-render.
-    const firma = JSON.stringify(b);
+    // que ya teníamos no se toca el estado (no se re-renderiza la app entera por gusto).
+    //
+    // La firma es el ETag, que el servidor ya calculó como huella (sha1) del cuerpo
+    // exacto: mismo ETag ⇒ mismo contenido. Antes acá se volvía a serializar el
+    // bootstrap entero con JSON.stringify —~1,2 MB, en el mismo hilo que está
+    // pintando— solo para compararlo. Sin ETag (servidor viejo) cae al texto tal cual
+    // vino, que tampoco hay que re-serializar.
+    const firma = fresco.etag ?? fresco.texto;
     if (firma !== ultimoBootstrap.current) {
       ultimoBootstrap.current = firma;
       // OJO: `movimientos` NO viene en el bootstrap (el historial se pide por entidad
       // en components/timeline.tsx). Bajar la tabla entera cada 45s era carísimo.
       setData((d) => ({ ...d, pedidos: b.pedidos, ordenes: b.ordenes, recepciones: b.recepciones }));
+      // Notas de crédito: vienen en el MISMO payload (antes eran un request aparte que
+      // las pantallas pedían solo al montar, así que Contabilidad no veía una NC nueva
+      // hasta recargar a mano — y un segundo viaje cada 45 s). Van ADENTRO del if: si
+      // el cuerpo no cambió, ellas tampoco, y así tampoco se serializan de gusto.
+      const firmaNc = JSON.stringify(b.notas ?? []);
+      if (firmaNc !== ultimaNc.current) { ultimaNc.current = firmaNc; setNotasCredito(b.notas ?? []); }
     }
-    // Notas de crédito: vienen en el MISMO payload (antes eran un request aparte que
-    // las pantallas pedían solo al montar, así que Contabilidad no veía una NC nueva
-    // hasta recargar a mano — y un segundo viaje cada 45 s).
-    const firmaNc = JSON.stringify(b.notas ?? []);
-    if (firmaNc !== ultimaNc.current) { ultimaNc.current = firmaNc; setNotasCredito(b.notas ?? []); }
   }
 
   // Reintento manual desde el aviso de error (no recarga la página).
