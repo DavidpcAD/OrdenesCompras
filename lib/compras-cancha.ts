@@ -1,6 +1,6 @@
-import { esLineaRecibible, ordenEsperaCorreccion, pedidoOrdenadoPct } from "./helpers";
-import { monedaDe } from "./compras-kpis";
-import type { Orden, Pedido } from "./types";
+import { esLineaRecibible, ordenEsperaCorreccion, pedidoOrdenadoPct } from "./helpers.ts";
+import { monedaDe } from "./compras-kpis.ts";
+import type { Orden, Pedido } from "./types.ts";
 
 // LO QUE ESTÁ EN LA CANCHA DE PROVEEDURÍA.
 //

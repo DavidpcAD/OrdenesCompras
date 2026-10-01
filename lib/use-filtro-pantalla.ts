@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { escribirFiltro, leerFiltro } from "./memoria-tabla";
+import { escribirFiltro, leerFiltro } from "./memoria-tabla.ts";
 
 // EL FILTRO DE LA PANTALLA: el panel que se toca arriba (Abiertas, Lanzadas…), "Solo
 // mis órdenes". Se recuerda por pestaña y por la misma razón que la búsqueda de la

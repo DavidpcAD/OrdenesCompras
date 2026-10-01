@@ -1,4 +1,4 @@
-import { useFiltroPantalla } from "./use-filtro-pantalla";
+import { useFiltroPantalla } from "./use-filtro-pantalla.ts";
 
 // Toggle "Solo mis órdenes" (compara Orden.creadoPor con el usuario de la sesión).
 // La elección se recuerda por sesión y se COMPARTE entre las vistas Por orden y

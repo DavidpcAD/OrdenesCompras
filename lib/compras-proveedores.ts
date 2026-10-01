@@ -1,6 +1,6 @@
-import { esLineaRecibible } from "./helpers";
-import { numeroOrden } from "./helpers";
-import type { Orden, Proveedor } from "./types";
+import { esLineaRecibible } from "./helpers.ts";
+import { numeroOrden } from "./helpers.ts";
+import type { Orden, Proveedor } from "./types.ts";
 
 // Lo pedido vs. lo entregado, agrupado por proveedor. Vivía dentro de la pantalla de
 // Dashboard; salió acá cuando esa pantalla pasó a ser la pestaña "Proveedores" de

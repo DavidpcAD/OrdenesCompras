@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { todayISO } from "./helpers";
-import type { BcSinFacturar, BcSinFecha } from "./bc";
+import { todayISO } from "./helpers.ts";
+import type { BcSinFacturar, BcSinFecha } from "./bc.ts";
 
 export type PanoramaBc = { sinFacturar: BcSinFacturar; sinFecha: BcSinFecha };
 
