@@ -5,7 +5,8 @@
 -- estas líneas se marcan para emitir una NOTA DE CRÉDITO al proveedor.
 -- Es DISTINTO de Devoluciones.
 --
--- Ejecutar una sola vez en la base de la app (AdelanteSBX / Sandbox).
+-- Ejecutar una sola vez en la base de la app (hoy AdelantePRO; ver la memoria del
+-- proyecto). Lo corre David.
 -- Convenciones iguales al resto: esEliminada / fechaCreacion / creadoPor.
 -- ============================================================================
 IF NOT EXISTS (SELECT 1 FROM sys.tables WHERE name = 'NotaCreditoDet' AND schema_id = SCHEMA_ID('dbo'))

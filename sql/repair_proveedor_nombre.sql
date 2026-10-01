@@ -11,7 +11,8 @@
    Este script recupera el nombre desde OTRA orden del mismo proveedor que sí lo
    tenga. Es idempotente: solo toca filas con el nombre vacío.
 
-   Correr en la base de la app (AdelanteSBX). Paso 1 para ver qué se va a tocar,
+   Correr en la base de la app (hoy AdelantePRO; ver la memoria del proyecto).
+   Paso 1 para ver qué se va a tocar,
    paso 2 para aplicarlo.
    ============================================================================ */
 

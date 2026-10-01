@@ -2,7 +2,8 @@
 --  Mapeo INGENIERO -> ETAPA(s)  (especialidad: acabados / obra gris / electromec.)
 --  Muchos-a-muchos: un ingeniero puede cubrir varias etapas.
 --  Se usa en la Matriz: al entrar, cada ingeniero ve por defecto las
---  clasificaciones de SU etapa.  Base: AdelanteSBX.
+--  clasificaciones de SU etapa.  Base: la del PADRÓN (hoy AdelantePRO; ver la
+--  memoria del proyecto), igual que usuario_obra.sql.
 -- ============================================================================
 
 IF OBJECT_ID('dbo.UsuarioEtapa', 'U') IS NULL

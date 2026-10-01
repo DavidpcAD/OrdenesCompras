@@ -4,7 +4,8 @@
 --   bodega  → solo lista de materiales (p. ej. las cargadas del Excel), sin
 --             clasificación.
 --
--- Ejecutar una sola vez en la base de la app (AdelanteSBX / Sandbox).
+-- Ejecutar una sola vez en la base de la app (hoy AdelantePRO; ver la memoria del
+-- proyecto). Lo corre David.
 -- El código funciona con o sin esta columna; correrla activa la persistencia
 -- del tipo (mientras tanto se infiere: sin clasificación ⇒ bodega).
 -- ============================================================================
