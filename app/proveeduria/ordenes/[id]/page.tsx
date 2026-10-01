@@ -7,7 +7,7 @@ import { IconWarning } from "@/components/icons";
 import { OrdenDetalle } from "@/components/orden-detalle";
 import { useStore } from "@/lib/store";
 import { useOrden } from "@/lib/use-orden";
-import { cuenta, money, num, ordenPendienteResumen, numeroOrden, etiquetaInterna, ordenAdmiteDevolucion, puedeDevolverLineaOrden, motivoNoDevolverLineaOrden, ordenQuedaSinMaterial, ordenEsperaCorreccion, lineasCorregidasDeOrden, ordenPedidos } from "@/lib/helpers";
+import { cuenta, money, num, ordenPendienteResumen, numeroOrden, ordenAdmiteDevolucion, puedeDevolverLineaOrden, motivoNoDevolverLineaOrden, ordenQuedaSinMaterial, ordenEsperaCorreccion, lineasCorregidasDeOrden, ordenPedidos } from "@/lib/helpers";
 
 export default function ProvOrdenDetallePage() {
   const { id } = useParams<{ id: string }>();

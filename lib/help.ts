@@ -114,7 +114,7 @@ const ORDENES: HelpEntry = {
   detalle: [
     "Lista de las órdenes que armaste. Quedan abiertas hasta recibir el 100% del material.",
     "Los filtros de arriba cuentan las órdenes por estado.",
-    "El N.º que ves (CP-005…) es el del pedido en Business Central, y aparece en cuanto enviás la orden a aprobación: ahí se crea el pedido en BC, ABIERTO. Aprobación después lo lanza. Mientras la orden esté abierta acá todavía no existe en BC y se muestra un rótulo interno (“Interno 37”), que sirve para nombrarla acá pero no se puede buscar en BC.",
+    "El N.º que ves (CP-005…) es el del pedido en Business Central, y aparece en cuanto enviás la orden a aprobación: ahí se crea el pedido en BC, ABIERTO. Aprobación después lo lanza. Mientras la orden esté abierta acá todavía no existe en BC y en su lugar dice “Orden en armado”: no es que le falte el número, es que todavía no hay pedido allá que numerar. El consecutivo viejo de la app igual sirve para buscarla (ver abajo).",
   ],
   pasos: [
     "Tocá un filtro de arriba para acotar por estado (abiertas, pendientes de aprobación, rechazadas, completadas).",
