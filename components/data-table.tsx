@@ -335,11 +335,16 @@ export function DataTable<T>({
     const config: VistaCfg = { columnOrder, columnVisibility, sorting, columnFilters, globalFilter, pageSize: pagination.pageSize, modo };
     try {
       const r = await fetch("/api/vistas", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ usuario, tabla: tablaKey, nombre, config, esPredeterminada: predVista }) });
-      if (!r.ok) throw new Error();
+      // El servidor SÍ dice qué pasó ("Faltan usuario, tabla o nombre", o que la base
+      // no contestó) y acá se tiraba a la basura con un throw pelado: quedaba un
+      // "No se pudo guardar la vista." sin nada que hacer con él. El mensaje viene
+      // armado de allá —con el "No se pudo guardar la vista" adelante— así que se
+      // muestra tal cual en vez de volver a ponerle el prefijo.
+      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || `No se pudo guardar la vista (HTTP ${r.status})`);
       setGuardarVistaOpen(false);
       await cargarVistas();
       toast("Vista guardada.", "success");
-    } catch { toast("No se pudo guardar la vista.", "error"); }
+    } catch (e: any) { toast(String(e?.message ?? e) || "No se pudo guardar la vista.", "error"); }
   }
   async function borrarVista(v: Vista) {
     // Antes fallaba en silencio: la vista seguía ahí y parecía que el botón no hizo
