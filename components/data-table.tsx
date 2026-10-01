@@ -476,18 +476,32 @@ export function DataTable<T>({
     const w = window.open("", "_blank");
     if (!w) return;
     const fecha = new Intl.DateTimeFormat("es-CR", { dateStyle: "long", timeStyle: "short" }).format(new Date());
+    // LOS COLORES DE MARCA SALEN DEL DS, NO DE UNA COPIA.
+    // Esto se escribe en una ventana APARTE, donde las variables --ds-* no existen, así
+    // que el verde de Adelante estaba clavado como #add010 en dos lugares: el día que el
+    // DS cambie el verde, la pantalla cambia y el reporte impreso se queda con el viejo
+    // sin que nadie se entere. Se leen de la hoja viva y se escriben en el documento nuevo.
+    // Son los tres tokens que NO se remapean en oscuro (el DS los deja fijos por ser
+    // marca), así que da igual con qué tema esté abierta la app: el reporte sale igual.
+    const dsTok = (n: string) => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+    const verde = dsTok("--ds-color-green-100") || "#add010";
+    const negro = dsTok("--ds-color-black") || "#000";
+    const blanco = dsTok("--ds-color-white") || "#fff";
     w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${escH(titulo)}</title>
       <style>
+        /* Los grises de acá abajo son TINTA SOBRE PAPEL, no color de interfaz: por eso
+           no salen de los tokens semánticos del DS, que se remapean en oscuro —con el
+           tema oscuro puesto, un informe impreso saldría con el fondo negro—. */
         *{font-family:-apple-system,Segoe UI,Roboto,Helvetica,sans-serif;box-sizing:border-box}
         body{margin:34px;color:#1a1a1a}
         .brand{display:flex;align-items:center;gap:10px;margin-bottom:18px}
-        .brand .mark{display:grid;place-items:center;width:38px;height:38px;border-radius:10px;background:#add010;color:#000;font-weight:800;font-size:22px;line-height:1}
+        .brand .mark{display:grid;place-items:center;width:38px;height:38px;border-radius:10px;background:${verde};color:${negro};font-weight:800;font-size:22px;line-height:1}
         .brand .name{font-weight:700;font-size:16px}
-        .head{display:flex;align-items:flex-end;justify-content:space-between;border-bottom:3px solid #add010;padding-bottom:12px;margin-bottom:16px}
+        .head{display:flex;align-items:flex-end;justify-content:space-between;border-bottom:3px solid ${verde};padding-bottom:12px;margin-bottom:16px}
         h1{font-size:22px;margin:0}
         .meta{color:#888;font-size:12px;text-align:right;line-height:1.5}
         table{border-collapse:collapse;width:100%;font-size:12px}
-        thead th{background:#111;color:#fff;text-align:left;padding:9px 10px;font-weight:600}
+        thead th{background:${negro};color:${blanco};text-align:left;padding:9px 10px;font-weight:600}
         thead th:first-child{border-top-left-radius:8px}
         thead th:last-child{border-top-right-radius:8px}
         tbody td{padding:7px 10px;border-bottom:1px solid #eee}
