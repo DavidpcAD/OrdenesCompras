@@ -9,7 +9,7 @@ import { useStore } from "@/lib/store";
 import { useVolver } from "@/lib/use-volver";
 import { useVariantes } from "@/lib/use-variantes";
 import { codigoDeItem } from "@/lib/unidad";
-import { formatDate, num, pedidoBadge, pedidoLineaPendiente, recibidoDeLineaPedido, destinoCodigo, destinoLabel, tipoSolicitudBadge, esConsumoDirecto, claseDestinoSolicitud, destinoSolicitudBadge, almacenesDeSolicitud, puedeDevolverLinea, motivoNoDevolver, ordenesDeLineaPedido, estadoDeDevolucion, correccionDeSolicitud, ordenDeDevolucion, numeroOrden, motivoDeCierreSolicitud, comentarioDeSolicitud } from "@/lib/helpers";
+import { cuenta, formatDate, num, pedidoBadge, pedidoLineaPendiente, recibidoDeLineaPedido, destinoCodigo, destinoLabel, tipoSolicitudBadge, esConsumoDirecto, claseDestinoSolicitud, destinoSolicitudBadge, almacenesDeSolicitud, puedeDevolverLinea, motivoNoDevolver, ordenesDeLineaPedido, estadoDeDevolucion, correccionDeSolicitud, ordenDeDevolucion, numeroOrden, motivoDeCierreSolicitud, comentarioDeSolicitud } from "@/lib/helpers";
 
 // Por qué se archiva una solicitud, en las palabras del oficio. Es un Select y no
 // un campo libre a propósito: el motivo es LA razón de ser del cierre, y con una
@@ -135,7 +135,7 @@ export default function ProveeduriaPedidoDetallePage() {
       const r = await cerrarSolicitud(pedido!.id, texto);
       setCerrarOpen(false);
       toast(r.lineasCanceladas > 0
-        ? `${pedido!.numero} archivada · ${num.format(r.unidadesCanceladas)} u. en ${r.lineasCanceladas} línea(s) ya no se van a comprar`
+        ? `${pedido!.numero} archivada · ${num.format(r.unidadesCanceladas)} u. en ${cuenta(r.lineasCanceladas, "línea", "líneas")} que ya no se van a comprar`
         : `${pedido!.numero} archivada`, "success");
     } catch (e: any) {
       toast(`No se pudo cerrar: ${String(e?.message ?? e)}`, "error");
@@ -173,7 +173,7 @@ export default function ProveeduriaPedidoDetallePage() {
       } else {
         // El pedido sigue vivo con el resto de las líneas: no se sale de la pantalla,
         // así se ve cómo quedaron marcadas.
-        toast(`${r.devueltas} línea(s) devuelta(s) al ingeniero · ${pedido!.numero} sigue abierta con el resto.`, "info");
+        toast(`${cuenta(r.devueltas, "línea devuelta", "líneas devueltas")} al ingeniero · ${pedido!.numero} sigue abierta con el resto.`, "info");
       }
     } catch (e: any) {
       toast(`No se pudo devolver: ${String(e?.message ?? e)}`, "error");
@@ -263,7 +263,7 @@ export default function ProveeduriaPedidoDetallePage() {
                   ? <>El ingeniero ya corrigió lo que devolviste{fecha ? <> el <span className="ds-strong">{formatDate(fecha)}</span></> : ""}{quien ? <> ({quien})</> : ""}. {origen
                       ? <>El material vuelve a <span className="ds-strong">{numeroOrden(origen)}</span>, la orden de la que salió.</>
                       : <>Revisá las líneas y armá la orden.</>}</>
-                  : <>Esperando al ingeniero. La(s) línea(s) devuelta(s) quedan bloqueadas hasta que las corrija en Producción.</>}
+                  : <>Esperando al ingeniero. Las líneas devueltas quedan bloqueadas hasta que las corrija en Producción.</>}
               </p>
               {/* Volver a LA MISMA orden, que en BC es el mismo pedido: se le
                   reescriben las líneas y se re-envía a aprobación con su número. */}
@@ -323,7 +323,7 @@ export default function ProveeduriaPedidoDetallePage() {
                 una solicitud archivada, y de ahí saldría un llamado a Bodega. */}
             <p className="ds-body-sm ds-muted" style={{ margin: "6px 0 0" }}>
               Las órdenes de compra que ya se le hicieron siguen su curso: ese material se recibe y se factura igual.
-              {unidadesSinComprar > 0 && <> Se dieron de baja <span className="ds-strong">{num.format(unidadesSinComprar)} u.</span> en {sinComprar.length} línea(s).</>}
+              {unidadesSinComprar > 0 && <> Se dieron de baja <span className="ds-strong">{num.format(unidadesSinComprar)} u.</span> en {cuenta(sinComprar.length, "línea", "líneas")}.</>}
             </p>
           </Card>
         )}
@@ -424,7 +424,7 @@ export default function ProveeduriaPedidoDetallePage() {
                 queda afuera es la forma de arrepentirse después. */}
             <p className="ds-body-sm" style={{ marginTop: 0 }}>
               {unidadesSinComprar > 0
-                ? <>Quedan <span className="ds-strong">{num.format(unidadesSinComprar)} unidad(es)</span> sin ordenar en {sinComprar.length} línea(s). Al archivar dejan de estar pendientes y la solicitud sale de tus bandejas.</>
+                ? <>Quedan <span className="ds-strong">{num.format(unidadesSinComprar)} {unidadesSinComprar === 1 ? "unidad" : "unidades"}</span> sin ordenar en {cuenta(sinComprar.length, "línea", "líneas")}. Al archivar dejan de estar pendientes y la solicitud sale de tus bandejas.</>
                 : <>Esta solicitud ya está ordenada por completo. Al archivarla sale de tus bandejas.</>}
             </p>
             {/* La confusión cara: creer que archivar cancela lo que ya se le pidió al
@@ -460,7 +460,7 @@ export default function ProveeduriaPedidoDetallePage() {
           footer={<>
             <Button variant="outline" disabled={devolviendo} onClick={() => setDevolverOpen(false)}>Cancelar</Button>
             <Button variant="red" disabled={devolviendo || !elegidas.length} onClick={confirmarDevolver}>
-              {devolviendo ? "Devolviendo…" : `Devolver ${elegidas.length} línea(s)`}
+              {devolviendo ? "Devolviendo…" : `Devolver ${cuenta(elegidas.length, "línea", "líneas")}`}
             </Button>
           </>}>
           {!devolvibles.length && (

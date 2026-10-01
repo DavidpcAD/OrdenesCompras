@@ -9,7 +9,7 @@ import { IconWarning } from "@/components/icons";
 import { Combobox } from "@/components/combobox";
 import { CampoMaquina, RepartoMaquinasModal, nombreDeMaquina, useMaquinasBc } from "@/components/maquina-linea";
 import { useStore } from "@/lib/store";
-import { etiquetaTipoLinea, money, num, ordenEsDirecta, ordenEsperaCorreccion, lineasCorregidasDeOrden, ordenLineaImporte, ordenPedidos, almacenesParaRecepcion, esAlmacenFisico, repartoDeLineaSolicitud, pedidoLineaPendiente, obraDeLinea, obraParaOrden, ultimoPrecioProveedor, monedaApp, numeroOrden, MONEDAS } from "@/lib/helpers";
+import { cuenta, etiquetaTipoLinea, money, num, ordenEsDirecta, ordenEsperaCorreccion, lineasCorregidasDeOrden, ordenLineaImporte, ordenPedidos, almacenesParaRecepcion, esAlmacenFisico, repartoDeLineaSolicitud, pedidoLineaPendiente, obraDeLinea, obraParaOrden, ultimoPrecioProveedor, monedaApp, numeroOrden, MONEDAS } from "@/lib/helpers";
 import { precioEnUnidad, precioEntreUnidades, cantidadEntreUnidades, equivalencia, equivalenciaDeUnidad, mismaMoneda, codigoDeItem, opcionesDeUnidad, type UnidadDeItem, type PrecioRef } from "@/lib/unidad";
 import { useVariantes } from "@/lib/use-variantes";
 import type { LineaDeMaquina } from "@/lib/maquinas";
@@ -1115,12 +1115,12 @@ export default function EditarOrdenPage() {
           yaAgregada={(l) => yaEnOrden.has(l.id)}
           onAgregar={agregarDeSolicitud}
           onQuitar={quitarDeSolicitud}
-          onClose={(n) => { setAddOpen(false); if (n > 0) toast(`${n} línea(s) agregada(s) — todavía hay que darle a “Guardar cambios”.`, "success"); }} />
+          onClose={(n) => { setAddOpen(false); if (n > 0) toast(`${cuenta(n, "línea agregada", "líneas agregadas")} — todavía hay que darle a “Guardar cambios”.`, "success"); }} />
       )}
 
       <div className="action-bar">
         <div className="action-bar__inner">
-          <span className="ds-muted">{rows.length} línea(s) · <span className="ds-strong">{money(total, currency)}</span></span>
+          <span className="ds-muted">{cuenta(rows.length, "línea", "líneas")} · <span className="ds-strong">{money(total, currency)}</span></span>
           <div className="row gap-3 action-bar__cta">
             <Button variant="outline" onClick={() => router.push(`/proveeduria/ordenes/${id}`)}>Cancelar</Button>
             <Button onClick={guardar} disabled={guardando}>{guardando ? "Guardando…" : "Guardar cambios"}</Button>

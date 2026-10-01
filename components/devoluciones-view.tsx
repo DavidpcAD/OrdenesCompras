@@ -6,7 +6,7 @@ import type { ColumnDef } from "@tanstack/react-table";
 import { Badge, Card } from "@/components/ui";
 import { DataTable } from "@/components/data-table";
 import { useStore } from "@/lib/store";
-import { correccionDeSolicitud, destinoLabel, devolucionesDeRol, formatDate, motivoDevolucion, numeroOrden, pedidoLineaPendiente, ordenDeDevolucion } from "@/lib/helpers";
+import { cuenta, correccionDeSolicitud, destinoLabel, devolucionesDeRol, formatDate, motivoDevolucion, numeroOrden, pedidoLineaPendiente, ordenDeDevolucion } from "@/lib/helpers";
 import type { Role } from "@/lib/types";
 
 type Dev = {
@@ -85,7 +85,7 @@ export function DevolucionesView({ role }: { role: Role }) {
         id: o.id, tipo: "Orden", numero: numeroOrden(o),
         contra: o.proveedorNombre ?? prov?.nombre ?? o.proveedorNo ?? prov?.code ?? "—",
         motivo: o.motivoRechazo ?? "—", fecha: o.fecha,
-        que: `${o.lineas.filter((l) => l.tipo === "articulo").length} línea(s)`,
+        que: `${cuenta(o.lineas.filter((l) => l.tipo === "articulo").length, "línea", "líneas")}`,
         estado: "Rechazada por Aprobación",
         href: role === "proveeduria" ? `/proveeduria/ordenes/${o.id}` : "",
       };

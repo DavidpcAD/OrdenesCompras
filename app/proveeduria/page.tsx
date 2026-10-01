@@ -9,7 +9,7 @@ import { DestinoLinea } from "@/components/destino-linea";
 import { VistaToggle } from "@/components/vista-toggle";
 import { IconChevronLeft, IconEye, IconReceipt, IconList } from "@/components/icons";
 import { useStore } from "@/lib/store";
-import { destinoLabel, destinoCodigo, esConsumoDirecto, formatDate, money, num, obraDeLinea, obraParaOrden, pedidoLineaPendiente, solicitudResumen, tipoSolicitudBadge, estadoDeDevolucion, claseDestinoSolicitud, destinoSolicitudBadge } from "@/lib/helpers";
+import { cuenta, destinoLabel, destinoCodigo, esConsumoDirecto, formatDate, money, num, obraDeLinea, obraParaOrden, pedidoLineaPendiente, solicitudResumen, tipoSolicitudBadge, estadoDeDevolucion, claseDestinoSolicitud, destinoSolicitudBadge } from "@/lib/helpers";
 import { useVariantes } from "@/lib/use-variantes";
 
 interface Row {
@@ -442,8 +442,8 @@ export default function ProveeduriaMaterialesPage() {
         <div className="action-bar">
           <div className="action-bar__inner">
             <div className="row gap-4 wrap">
-              <span className="ds-strong">{incluidas.length} línea(s)</span>
-              <span className="ds-muted">de {pedidosDistintos} pedido(s) · los precios se ponen al armar la orden</span>
+              <span className="ds-strong">{cuenta(incluidas.length, "línea", "líneas")}</span>
+              <span className="ds-muted">de {cuenta(pedidosDistintos, "pedido", "pedidos")} · los precios se ponen al armar la orden</span>
             </div>
             <div className="row gap-3">
               <button className="link-btn" onClick={() => setRows((rs) => rs.map((r) => ({ ...r, incluir: false })))}>Limpiar</button>

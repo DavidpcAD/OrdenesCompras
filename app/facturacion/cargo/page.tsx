@@ -8,7 +8,7 @@ import { DateField } from "@/components/date-field";
 import { IconChevronLeft } from "@/components/icons";
 import { IconWarning } from "@/components/icons";
 import { useStore } from "@/lib/store";
-import { money, MONEDAS } from "@/lib/helpers";
+import { cuenta, money, MONEDAS } from "@/lib/helpers";
 
 // Línea de recepción registrada (albarán) tal como la devuelve
 // /api/bc/recepciones-registradas.
@@ -341,7 +341,7 @@ export default function CargoSobreFacturaPage() {
                     </table>
                   </div>
                 )}
-                {lineasSel.length > 0 && <p className="ds-body-sm ds-muted mt-2">{lineasSel.length} línea(s) seleccionada(s).</p>}
+                {lineasSel.length > 0 && <p className="ds-body-sm ds-muted mt-2">{cuenta(lineasSel.length, "línea seleccionada", "líneas seleccionadas")}.</p>}
               </div>
             )}
           </Card>
@@ -353,7 +353,7 @@ export default function CargoSobreFacturaPage() {
             <div className="row row--between wrap gap-3" style={{ alignItems: "center", marginBottom: 12 }}>
               <div className="col" style={{ gap: 2 }}>
                 <span className="ds-subtitle">Reparto del cargo</span>
-                <span className="ds-muted ds-body-sm">{lineasSel.length} línea(s) seleccionada(s) · cargo {money(cargoTotal, currency)}</span>
+                <span className="ds-muted ds-body-sm">{cuenta(lineasSel.length, "línea seleccionada", "líneas seleccionadas")} · cargo {money(cargoTotal, currency)}</span>
               </div>
               <div>
                 <span className="ds-label ds-muted" style={{ display: "block", marginBottom: 4 }}>Método de asignación</span>
@@ -416,7 +416,7 @@ export default function CargoSobreFacturaPage() {
           </div>
           <span className="ds-muted ds-body-sm" style={{ textAlign: "right" }}>
             cargo <span className="ds-strong">{money(cargoTotal, currency)}</span>
-            {lineasSel.length > 0 && <> · {lineasSel.length} línea(s)</>}
+            {lineasSel.length > 0 && <> · {cuenta(lineasSel.length, "línea", "líneas")}</>}
             {chargeVendor && <> · {chargeVendor.nombre}</>}
           </span>
           <div className="row gap-3">

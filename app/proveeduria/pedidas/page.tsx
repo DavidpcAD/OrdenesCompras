@@ -7,7 +7,7 @@ import { DataTable } from "@/components/data-table";
 import { VistaToggle } from "@/components/vista-toggle";
 import { IconReceipt, IconList } from "@/components/icons";
 import { useStore } from "@/lib/store";
-import { esLineaRecibible, formatDate, num, numeroOrden } from "@/lib/helpers";
+import { cuenta, esLineaRecibible, formatDate, num, numeroOrden } from "@/lib/helpers";
 import { useSoloMias } from "@/lib/use-solo-mias";
 
 type Estado = "pendiente" | "parcial" | "llego";
@@ -138,7 +138,7 @@ export default function ProveeduriaLineasPedidasPage() {
               <div style={{ fontSize: 20, fontWeight: 800 }}>Líneas pedidas</div>
               <div style={{ color: "var(--ds-color-gray-500)", marginTop: 4 }}>{EMPRESA_NOMBRE}</div>
               <div style={{ color: "var(--ds-color-gray-500)" }}>Generado {formatDate(new Date().toISOString())} · Filtro: {estadoFLabel}</div>
-              <div style={{ color: "var(--ds-color-gray-500)" }}>{base.length} línea(s)</div>
+              <div style={{ color: "var(--ds-color-gray-500)" }}>{cuenta(base.length, "línea", "líneas")}</div>
             </div>
           </div>
           <table style={{ width: "100%", borderCollapse: "collapse", marginTop: 16, fontSize: 10 }}>

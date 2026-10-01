@@ -5,7 +5,7 @@ import Link from "next/link";
 import { Badge, Button, Card, EmptyState, Tile, useToast } from "@/components/ui";
 import { IconEdit, IconReceipt, IconBox, IconEye } from "@/components/icons";
 import { useStore } from "@/lib/store";
-import { money, formatDate } from "@/lib/helpers";
+import { cuenta, money, formatDate } from "@/lib/helpers";
 import type { MotivoNC } from "@/lib/types";
 
 const MOTIVO: Record<MotivoNC, { label: string; tone: string }> = {
@@ -99,7 +99,7 @@ export default function NotasCreditoPage() {
                 <div className="nc-grp-head">
                   <span className="ds-strong">{g.ordenNumero || "— sin orden"}{g.proveedor ? <span className="ds-muted"> · {g.proveedor}</span> : null}</span>
                   <span className="row gap-3 wrap" style={{ alignItems: "center" }}>
-                    <span className="ds-body-sm ds-muted">{g.lineas.length} línea(s)</span>
+                    <span className="ds-body-sm ds-muted">{cuenta(g.lineas.length, "línea", "líneas")}</span>
                     {g.bcFacturaUrl && (
                       <a href={g.bcFacturaUrl} target="_blank" rel="noopener noreferrer" className="nc-linkbtn nc-linkbtn--primary" title="Ver la factura registrada en Business Central (para hacer la nota de crédito)">
                         <IconReceipt size={16} /> Factura registrada

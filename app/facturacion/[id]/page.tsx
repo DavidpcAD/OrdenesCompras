@@ -8,7 +8,7 @@ import { DateField } from "@/components/date-field";
 import { useStore } from "@/lib/store";
 import { useOrden } from "@/lib/use-orden";
 import { useVolver } from "@/lib/use-volver";
-import { esLineaCargo, esLineaRecibible, esNombreObraVacio, etiquetaTipoLinea, formatDate, money, distribuirCargo, num, ordenBadge, ordenLineaImporte, ordenLineaPendiente, ordenRecibidoPct, todayISO, numeroOrden } from "@/lib/helpers";
+import { cuenta, esLineaCargo, esLineaRecibible, esNombreObraVacio, etiquetaTipoLinea, formatDate, money, distribuirCargo, num, ordenBadge, ordenLineaImporte, ordenLineaPendiente, ordenRecibidoPct, todayISO, numeroOrden } from "@/lib/helpers";
 import { codigoDeItem } from "@/lib/unidad";
 import { comprimirFoto, pesoLegible } from "@/lib/foto";
 import type { FotoComprimida } from "@/lib/foto";
@@ -223,7 +223,7 @@ export default function RegistrarFacturaPage() {
     if (!fotos.length) return "";
     try {
       const n = await guardarFotosRecepcion(recepcionId, fotos);
-      return n ? ` · ${n} foto(s) de la factura guardada(s)` : "";
+      return n ? ` · ${cuenta(n, "foto de la factura guardada", "fotos de la factura guardadas")}` : "";
     } catch (e: any) {
       return ` · OJO: la foto de la factura NO se guardó (${String(e?.message ?? e)})`;
     }
@@ -555,7 +555,7 @@ export default function RegistrarFacturaPage() {
       let avisoNc = "";
       if (nc.length) {
         try { await marcarNotasCredito(orden!.id, numeroOrden(orden!), orden!.proveedorNombre ?? prov?.nombre, nc); }
-        catch (e: any) { avisoNc = ` · OJO: no se pudieron guardar las ${nc.length} línea(s) marcadas para nota de crédito (${String(e?.message ?? e)}). Avisale a Contabilidad.`; }
+        catch (e: any) { avisoNc = ` · OJO: no se pudieron guardar las ${cuenta(nc.length, "línea marcada", "líneas marcadas")} para nota de crédito (${String(e?.message ?? e)}). Avisale a Contabilidad.`; }
       }
       const falloBc = aviso.includes("NO se pudo") || aviso.includes("no disponible") || aviso.includes("conciliada");
       toast(`Factura ${numeroFactura} registrada${completaOrden ? " — orden completada" : " (parcial)"}${aviso}${cargoAvisoPayload() ? " · se avisó a Contabilidad del cargo adicional" : ""}${avisoNc}${avisoFoto}`, falloBc || avisoNc || avisoFoto.includes("OJO") ? "info" : "success");
@@ -701,7 +701,7 @@ export default function RegistrarFacturaPage() {
       let avisoNc = "";
       if (nc.length) {
         try { await marcarNotasCredito(orden!.id, numeroOrden(orden!), orden!.proveedorNombre ?? prov?.nombre, nc); }
-        catch (e: any) { avisoNc = ` · OJO: no se pudieron guardar las ${nc.length} línea(s) marcadas para nota de crédito (${String(e?.message ?? e)}). Avisale a Contabilidad.`; }
+        catch (e: any) { avisoNc = ` · OJO: no se pudieron guardar las ${cuenta(nc.length, "línea marcada", "líneas marcadas")} para nota de crédito (${String(e?.message ?? e)}). Avisale a Contabilidad.`; }
       }
       const falloBc = aviso.includes("NO se pudo") || aviso.includes("no disponible");
       toast(`Material recibido — factura EN REVISIÓN${aviso}${cargoAvisoPayload() ? " · se avisó a Contabilidad del cargo adicional" : ""}${avisoNc}${avisoFoto}`, falloBc || avisoNc || avisoFoto.includes("OJO") ? "info" : "success");
@@ -871,7 +871,7 @@ export default function RegistrarFacturaPage() {
         {esContabilidad && (
         <Card className="mt-4" style={{ padding: 0, overflow: "hidden" }}>
           <div className="row row--between" style={{ padding: "12px 16px", borderBottom: "1.5px solid var(--ds-color-gray-100)" }}>
-            <span className="ds-label ds-muted">{recibiblesVisibles.length} línea(s) de artículo</span>
+            <span className="ds-label ds-muted">{cuenta(recibiblesVisibles.length, "línea de artículo", "líneas de artículo")}</span>
             <div className="row gap-3">
               <button className="link-btn" title="Poner en 'a recibir' toda la cantidad pendiente de cada línea" onClick={recibirTodoPend}>Recibir todo lo pendiente</button>
               <button className="link-btn" title="Dejar en 0 las cantidades a recibir" onClick={limpiarCant}>Limpiar cantidades</button>
@@ -951,7 +951,7 @@ export default function RegistrarFacturaPage() {
         {!esContabilidad && (
         <Card className="mt-4">
           <div className="recv-head">
-            <span className="ds-label ds-muted">{recibiblesVisibles.length} artículo(s) a recibir</span>
+            <span className="ds-label ds-muted">{cuenta(recibiblesVisibles.length, "artículo", "artículos")} a recibir</span>
           </div>
           {recibiblesVisibles.length > 0 && (
             <div className="recv-head__actions">
@@ -1157,7 +1157,7 @@ export default function RegistrarFacturaPage() {
                 ))}
               </div>
               <p className="ds-body-sm ds-muted" style={{ margin: "8px 0 0" }}>
-                {fotos.length} foto(s) · {pesoLegible(fotos.reduce((s2, f) => s2 + f.tamano, 0))} en total
+                {cuenta(fotos.length, "foto", "fotos")} · {pesoLegible(fotos.reduce((s2, f) => s2 + f.tamano, 0))} en total
               </p>
             </>
           )}

@@ -6,7 +6,7 @@ import type { ColumnDef } from "@tanstack/react-table";
 import { Badge, Button, Card, Field, Input, Modal, Tile, useToast } from "@/components/ui";
 import { DataTable } from "@/components/data-table";
 import { useStore } from "@/lib/store";
-import { money, formatDate, numeroOrden } from "@/lib/helpers";
+import { cuenta, money, formatDate, numeroOrden } from "@/lib/helpers";
 import type { Recepcion } from "@/lib/types";
 
 const esEnRevision = (r: Recepcion) => !!r.facturaEnRevision || !r.numeroFactura;
@@ -140,7 +140,7 @@ export default function ArchivoPage() {
                       <tr key={r.id}>
                         <td className="ds-strong ds-body-sm">{o ? numeroOrden(o) : "—"}</td>
                         <td className="ds-body-sm">{(o ? (o.proveedorNombre ?? prov(o.proveedorId)?.nombre) : "") ?? "—"}</td>
-                        <td className="ds-body-sm ds-muted">{formatDate(r.fechaRecepcion)} · {r.lineas.length} línea(s)</td>
+                        <td className="ds-body-sm ds-muted">{formatDate(r.fechaRecepcion)} · {cuenta(r.lineas.length, "línea", "líneas")}</td>
                         <td className="ds-num">{money(r.total, o?.currencyCode)}</td>
                         <td className="ds-num"><Button variant="green" size="sm" onClick={() => { setNumFac(""); setFacObj(r); }}>Registrar factura</Button></td>
                       </tr>

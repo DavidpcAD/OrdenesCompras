@@ -6,7 +6,7 @@ import { IconWarning } from "@/components/icons";
 import { FotosFactura } from "@/components/fotos-factura";
 import { useStore } from "@/lib/store";
 import { useVolver } from "@/lib/use-volver";
-import { etiquetaTipoLinea, money, formatDate, num, numeroOrden } from "@/lib/helpers";
+import { cuenta, etiquetaTipoLinea, money, formatDate, num, numeroOrden } from "@/lib/helpers";
 
 // Detalle de UNA recepción/factura: qué se recibió exactamente en ese registro
 // (líneas, cantidad recibida, precio e importe), distinto del detalle acumulado
@@ -74,7 +74,7 @@ export default function RecepcionDetallePage() {
 
         <Card className="mt-4" style={{ padding: 0, overflow: "hidden" }}>
           <div className="row row--between" style={{ padding: "12px 16px", borderBottom: "1.5px solid var(--ds-color-gray-100)" }}>
-            <span className="ds-label ds-muted">{filas.length} línea(s) recibida(s) en esta factura</span>
+            <span className="ds-label ds-muted">{cuenta(filas.length, "línea recibida", "líneas recibidas")} en esta factura</span>
           </div>
           <div className="ds-table-wrap" style={{ boxShadow: "none" }}>
             <table className="ds-table">

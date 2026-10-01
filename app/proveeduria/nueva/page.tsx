@@ -9,7 +9,7 @@ import { Combobox } from "@/components/combobox";
 import { IconCheck, IconWarning } from "@/components/icons";
 import { useStore } from "@/lib/store";
 import { leerBorrador, guardarBorrador, borrarBorrador, hace, type BorradorOrden } from "@/lib/borrador-orden";
-import { money, num, ultimoPrecioProveedor, almacenesParaRecepcion, esAlmacenFisico, pedidoLineaPendiente, repartoDeLineaSolicitud, obraDeLinea, obraParaOrden, monedaApp, numeroOrden, MONEDAS } from "@/lib/helpers";
+import { cuenta, money, num, ultimoPrecioProveedor, almacenesParaRecepcion, esAlmacenFisico, pedidoLineaPendiente, repartoDeLineaSolicitud, obraDeLinea, obraParaOrden, monedaApp, numeroOrden, MONEDAS } from "@/lib/helpers";
 import { precioEnUnidad, precioEntreUnidades, cantidadEntreUnidades, equivalencia, equivalenciaDeUnidad, mismaMoneda, codigoDeItem, opcionesDeUnidad, type PrecioRef, type UnidadDeItem } from "@/lib/unidad";
 import { useVariantes } from "@/lib/use-variantes";
 import type { OrdenLinea } from "@/lib/types";
@@ -496,7 +496,7 @@ export default function ArmarOrdenPage() {
     // Precio obligatorio para enviar a aprobación: ninguna línea puede ir a BC en 0.
     if (aprobar) {
       const sinPrecio = rows.filter((r) => !(Number(r.precio) > 0)).length;
-      if (sinPrecio) { toast(`${sinPrecio} línea(s) sin precio. Poné el precio acordado antes de enviar a aprobación.`, "error"); return; }
+      if (sinPrecio) { toast(`${cuenta(sinPrecio, "línea", "líneas")} sin precio. Poné el precio acordado antes de enviar a aprobación.`, "error"); return; }
       // Obra sin tarea: BC rechaza el pedido ENTERO, y ahora el pedido se crea al
       // enviar. Solo se exige si las tareas de esa obra ya cargaron: si BC no
       // contestó, no se bloquea el envío por algo que no se pudo verificar.
@@ -703,7 +703,7 @@ export default function ArmarOrdenPage() {
               <span className="ds-muted ds-body-sm">Solo materiales de solicitudes ya hechas. ¿Material sin solicitud? Usá <span className="ds-strong">Compra directa</span>.</span>
               {sinTarea > 0 && (
                 <span className="ds-muted ds-body-sm">
-                  {sinTarea} línea(s) de consumo de obra <span className="ds-strong">sin tarea</span>: elegila en “Cambiar obra/tarea”. Business Central no acepta una obra sin tarea.
+                  {cuenta(sinTarea, "línea", "líneas")} de consumo de obra <span className="ds-strong">sin tarea</span>: elegila en “Cambiar obra/tarea”. Business Central no acepta una obra sin tarea.
                 </span>
               )}
             </div>
@@ -882,7 +882,7 @@ export default function ArmarOrdenPage() {
 
       <div className="action-bar">
         <div className="action-bar__inner">
-          <span className="ds-muted">{rows.length} línea(s) · {pedidosDistintos.length} pedido(s) · <span className="ds-strong">{money(total, currency)}</span></span>
+          <span className="ds-muted">{cuenta(rows.length, "línea", "líneas")} · {cuenta(pedidosDistintos.length, "pedido", "pedidos")} · <span className="ds-strong">{money(total, currency)}</span></span>
           <div className="row gap-3 action-bar__cta">
             <Button variant="outline" onClick={() => crear(false)} disabled={!puedeCrear || guardando}>Guardar como abierta</Button>
             <Button onClick={() => crear(true)} disabled={!puedeCrear || guardando}>{guardando ? "Enviando…" : "Enviar a aprobación"}</Button>
@@ -934,7 +934,7 @@ export default function ArmarOrdenPage() {
           yaAgregada={(l) => yaEnOrden.has(l.id)}
           onAgregar={agregarDeSolicitud}
           onQuitar={quitarDeSolicitud}
-          onClose={(n) => { setAddOpen(false); if (n > 0) toast(`${n} línea(s) agregada(s) — todavía hay que darle a “Guardar como abierta”.`, "success"); }} />
+          onClose={(n) => { setAddOpen(false); if (n > 0) toast(`${cuenta(n, "línea agregada", "líneas agregadas")} — todavía hay que darle a “Guardar como abierta”.`, "success"); }} />
       )}
     </>
   );

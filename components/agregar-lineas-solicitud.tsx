@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Button, EmptyState, Modal } from "@/components/ui";
 import { DestinoLinea } from "@/components/destino-linea";
 import { IconCheck } from "@/components/icons";
-import { esConsumoDirecto, num, obraDeLinea } from "@/lib/helpers";
+import { cuenta, esConsumoDirecto, num, obraDeLinea } from "@/lib/helpers";
 import type { Pedido, PedidoLinea } from "@/lib/types";
 
 // Diálogo para SUMARLE a una orden líneas de solicitud que quedaron pendientes por
@@ -24,7 +24,7 @@ import type { Pedido, PedidoLinea } from "@/lib/types";
 // líneas de recepción: `.rec-line` + `.rec-line--head` (853-874).
 export type LineaDisponible = { p: Pedido; l: PedidoLinea; pend: number; origen?: boolean };
 
-// Debajo de esto, buscador y contador son adorno: "1 de 2 línea(s)" arriba de dos
+// Debajo de esto, buscador y contador son adorno: "1 de 2 líneas" arriba de dos
 // filas es justamente el tipo de detalle que hace ver mal una pantalla.
 const CON_BUSCADOR = 6;
 
@@ -112,7 +112,7 @@ export function AgregarLineasSolicitud({
     <Modal wide title="Agregar líneas de solicitud" onClose={cerrar}
       footer={<>
         <span className="ds-body-sm ds-muted" style={{ marginRight: "auto", alignSelf: "center" }} aria-live="polite">
-          {agregadas > 0 ? `${agregadas} línea(s) agregada(s)` : ""}
+          {agregadas > 0 ? `${cuenta(agregadas, "línea agregada", "líneas agregadas")}` : ""}
         </span>
         <Button onClick={cerrar}>Listo</Button>
       </>}>
@@ -215,7 +215,7 @@ export function AgregarLineasSolicitud({
                 las filas pasen por detrás en vez de cortarse a media altura. */}
             {conBuscador && grupos.length > 0 && (
               <div className="combo__more">
-                {mostradas === snap.length ? `${mostradas} línea(s)` : `${mostradas} de ${snap.length} línea(s)`}
+                {mostradas === snap.length ? `${cuenta(mostradas, "línea", "líneas")}` : `${mostradas} de ${cuenta(snap.length, "línea", "líneas")}`}
                 {" · "}{grupos.length} {grupos.length === 1 ? "solicitud" : "solicitudes"}
               </div>
             )}

@@ -10,7 +10,7 @@ import {
 } from "@tanstack/react-table";
 import { Button, Card, Checkbox, ConfirmDialog, EmptyState, Field, Input, Modal, Select, Skeleton, useToast } from "@/components/ui";
 import { IconTable } from "@/components/icons";
-import { num } from "@/lib/helpers";
+import { cuenta, num } from "@/lib/helpers";
 import { useStore } from "@/lib/store";
 import { visitaDe } from "@/lib/navegacion";
 import { conservaBusqueda, escribirMarcaFila, leerMarcaFila, type MarcaFila } from "@/lib/memoria-tabla";
@@ -498,7 +498,7 @@ export function DataTable<T>({
       <div class="brand"><span class="mark">A</span><span class="name">Compras Adelante</span></div>
       <div class="head">
         <h1>${escH(titulo)}</h1>
-        <div class="meta">${escH(fecha)}<br>${filas.length} registro(s)</div>
+        <div class="meta">${escH(fecha)}<br>${cuenta(filas.length, "registro", "registros")}</div>
       </div>
       <table><thead><tr>${ths}</tr></thead><tbody>${trs}</tbody></table>
       <div class="foot">Generado desde Compras Adelante</div>
@@ -583,7 +583,7 @@ export function DataTable<T>({
         )}
         {panel === "export" && (
           <Card flat style={{ position: "absolute", right: 0, top: "calc(100% + 8px)", zIndex: 31, width: 260, padding: 8 }}>
-            <div className="ds-label ds-muted" style={{ padding: "4px 8px 8px" }}>Descargar {table.getFilteredRowModel().rows.length} fila(s) filtradas</div>
+            <div className="ds-label ds-muted" style={{ padding: "4px 8px 8px" }}>Descargar {cuenta(table.getFilteredRowModel().rows.length, "fila filtrada", "filas filtradas")}</div>
             <button type="button" className="dt-filter-row" onClick={() => { exportCSV(); setPanel(null); }}>
               <span className="dt-export-ic" aria-hidden>CSV</span>
               <span>Excel / CSV</span>
@@ -693,7 +693,7 @@ export function DataTable<T>({
                             </button>
                             {canFilter && (
                               <button type="button" className={`dt-hpill__filter${activos ? " is-active" : ""}${filterCol === h.column.id ? " is-open" : ""}`}
-                                title={activos ? `${activos} filtro(s)` : "Filtrar"}
+                                title={activos ? cuenta(activos, "filtro", "filtros") : "Filtrar"}
                                 aria-label={`Filtrar ${labelDe(h.column.id)}${activos ? ` (${activos} activo${activos > 1 ? "s" : ""})` : ""}`}
                                 aria-haspopup="dialog" aria-expanded={filterCol === h.column.id}
                                 onClick={(e) => { e.stopPropagation(); abrirFiltro(h.column.id, e.currentTarget); }}>
@@ -771,7 +771,7 @@ export function DataTable<T>({
       <div className="row row--between wrap gap-3 mt-4 dt-pagination" style={{ alignItems: "center" }}>
         <span className="ds-body-sm ds-muted">
           {sinPaginar
-            ? `${num.format(table.getFilteredRowModel().rows.length)} fila(s), todas a la vista`
+            ? `${num.format(table.getFilteredRowModel().rows.length)} ${table.getFilteredRowModel().rows.length === 1 ? "fila" : "filas"}, todas a la vista`
             : `Página ${table.getState().pagination.pageIndex + 1} de ${Math.max(1, table.getPageCount())}`}
         </span>
         <div className="row gap-2" style={{ alignItems: "center" }}>

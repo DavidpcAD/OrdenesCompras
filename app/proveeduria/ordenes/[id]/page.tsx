@@ -7,7 +7,7 @@ import { IconWarning } from "@/components/icons";
 import { OrdenDetalle } from "@/components/orden-detalle";
 import { useStore } from "@/lib/store";
 import { useOrden } from "@/lib/use-orden";
-import { money, num, ordenPendienteResumen, numeroOrden, etiquetaInterna, ordenAdmiteDevolucion, puedeDevolverLineaOrden, motivoNoDevolverLineaOrden, ordenQuedaSinMaterial, ordenEsperaCorreccion, lineasCorregidasDeOrden, ordenPedidos } from "@/lib/helpers";
+import { cuenta, money, num, ordenPendienteResumen, numeroOrden, etiquetaInterna, ordenAdmiteDevolucion, puedeDevolverLineaOrden, motivoNoDevolverLineaOrden, ordenQuedaSinMaterial, ordenEsperaCorreccion, lineasCorregidasDeOrden, ordenPedidos } from "@/lib/helpers";
 
 export default function ProvOrdenDetallePage() {
   const { id } = useParams<{ id: string }>();
@@ -168,7 +168,7 @@ export default function ProvOrdenDetallePage() {
       const r = await devolverLineasOrden(orden!.id, motivoDev.trim(), elegidasDev);
       setDevolviendo(false);
       if (r.bcAviso) setAvisoBc(r.bcAviso);
-      toast(`${r.devueltas} línea(s) volvieron al ingeniero${r.ordenDescartada ? ` · ${numeroOrden(orden!)} se descartó (quedó sin material)` : ""}`, "success");
+      toast(`${cuenta(r.devueltas, "línea volvió", "líneas volvieron")} al ingeniero${r.ordenDescartada ? ` · ${numeroOrden(orden!)} se descartó (quedó sin material)` : ""}`, "success");
       // Sin material la orden ya no existe: quedarse en su detalle mostraría una
       // pantalla de "no encontrada".
       if (r.ordenDescartada) router.push("/proveeduria/compras?vista=ordenes");
@@ -186,7 +186,7 @@ export default function ProvOrdenDetallePage() {
       const r = await alinearIvaConBc(orden!.id);
       setRefrescoBc((n) => n + 1);
       toast(r.cambiadas > 0
-        ? `IVA alineado con BC en ${r.cambiadas} línea(s) · ${r.detalle.join(" · ")}`
+        ? `IVA alineado con BC en ${cuenta(r.cambiadas, "línea", "líneas")} · ${r.detalle.join(" · ")}`
         : "El IVA de la orden ya coincide con el de BC: no había nada que cambiar.", r.cambiadas > 0 ? "success" : "info");
     } catch (e: any) {
       toast(String(e?.message ?? e), "error");
@@ -213,7 +213,7 @@ export default function ProvOrdenDetallePage() {
       if (r.cambiadas.length > 0) {
         toast(`${orden!.bcNumber} quedó exento en BC · IVA ${money(r.ivaAntes, r.moneda || orden!.currencyCode)} → ${money(r.ivaDespues, r.moneda || orden!.currencyCode)}`
           + (r.reabierto ? (r.relanzado ? " · hubo que des-lanzarlo y se volvió a lanzar" : " · quedó ABIERTO en BC, hay que lanzarlo") : "")
-          + (r.alineadas > 0 ? ` · la orden se alineó en ${r.alineadas} línea(s)` : ""),
+          + (r.alineadas > 0 ? ` · la orden se alineó en ${cuenta(r.alineadas, "línea", "líneas")}` : ""),
           r.reabierto && !r.relanzado ? "error" : "success");
       } else if (r.aviso) {
         toast(`Business Central no le cambió el IVA al pedido ${orden!.bcNumber}. El motivo está en el aviso de arriba.`, "error");
@@ -408,7 +408,7 @@ export default function ProvOrdenDetallePage() {
               <div className="ds-callout__body">
                 {corregidas.length > 0 ? (
                   <>
-                    <span className="ds-strong">El ingeniero ya corrigió {corregidas.length} línea(s)</span> y están listas para volver a esta
+                    <span className="ds-strong">El ingeniero ya corrigió {cuenta(corregidas.length, "línea", "líneas")}</span> y están listas para volver a esta
                     orden, que conserva su N.º <span className="ds-strong">{orden.bcNumber}</span>. Entrá a <span className="ds-strong">Editar</span> y
                     tocá <span className="ds-strong">“Traer el material corregido”</span>: entran con su pendiente y el último precio. Al guardar y
                     reenviar, a ese mismo pedido de Business Central se le REESCRIBEN todas las líneas — se limpia y le caen las
@@ -552,7 +552,7 @@ export default function ProvOrdenDetallePage() {
           <>
             <Button variant="outline" onClick={() => setDevolviendo(false)} disabled={procesando}>Cancelar</Button>
             <Button variant="red" onClick={() => void confirmarDevolucion()} disabled={procesando || !elegidasDev.length || !motivoDev.trim()}>
-              {procesando ? "Devolviendo…" : `Devolver ${elegidasDev.length} línea(s)`}
+              {procesando ? "Devolviendo…" : `Devolver ${cuenta(elegidasDev.length, "línea", "líneas")}`}
             </Button>
           </>
         }>
@@ -619,7 +619,7 @@ export default function ProvOrdenDetallePage() {
           <div className="col gap-4">
             <p className="ds-body-sm">
               {pendiente.unidades > 0
-                ? <>Quedan <span className="ds-strong">{num.format(pendiente.unidades)} unidad(es)</span> sin recibir en {pendiente.lineas} línea(s). La orden pasa a <span className="ds-strong">Completada</span> y sale de “por recibir”.</>
+                ? <>Quedan <span className="ds-strong">{num.format(pendiente.unidades)} {pendiente.unidades === 1 ? "unidad" : "unidades"}</span> sin recibir en {cuenta(pendiente.lineas, "línea", "líneas")}. La orden pasa a <span className="ds-strong">Completada</span> y sale de “por recibir”.</>
                 : <>Esta orden ya se recibió completa. Pasa a <span className="ds-strong">Completada</span>.</>}
             </p>
             <Field label="Motivo del cierre">
