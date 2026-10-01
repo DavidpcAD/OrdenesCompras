@@ -80,9 +80,20 @@ npm run build      # build de producción
 
 Node 18.18+ (probado en 22 y 26). `npm test` corre con el runner de Node y
 `--experimental-strip-types` (hace falta en Node 22; en 23+ ya es el default), así que no
-hay paso de compilación ni dependencias de testing. **Los archivos de prueba están listados
-explícitamente en el script** —no por glob— para que el comando se comporte igual en CI:
-si agregás un `*.test.ts`, sumalo ahí.
+hay paso de compilación ni dependencias de testing. El script agarra los archivos con
+`lib/*.test.ts`: **basta con crear el archivo, no hay lista que actualizar.**
+
+> Hasta el 1 oct 2026 estaban enumerados uno por uno, a propósito, para que el comando se
+> comportara igual acá que en CI. Se cambió porque el precio era peor que el problema: al
+> agregar una prueba y olvidar sumarla a la lista, `npm test` daba verde con el mismo
+> número de siempre y la prueba nueva no corría — y eso no se ve. Si alguna vez hace falta
+> volver a la lista explícita, el motivo original está acá escrito.
+
+**Ojo con los imports al escribir una prueba:** el módulo que se prueba tiene que importar
+sus vecinos CON la extensión (`from "./helpers.ts"`). Webpack resuelve sin ella y la app
+anda igual, pero el runner de Node no, y la prueba muere con `ERR_MODULE_NOT_FOUND`. Y
+`lib/repo.ts` no se puede importar desde una prueba (arrastra la conexión a SQL): la
+lógica que haya que probar se saca a un módulo aparte.
 
 El workflow de deploy corre `npm test` **antes** del build: si una prueba falla, no se
 despliega.
