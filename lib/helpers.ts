@@ -1138,3 +1138,12 @@ export function chequeoBcVencido(
   if (!Number.isFinite(t)) return true;        // fecha ilegible: se coteja, no se supone
   return ahora - t > CHEQUEO_BC_FRESCO_MS;     // en el futuro (reloj corrido) cuenta como fresca
 }
+
+// "1 línea" / "3 líneas", sin el "(s)" a la vista. Se le pasan las DOS formas
+// enteras y no una raíz con sufijo porque el español no se pluraliza con una regla:
+// "vez" → "veces", "artículo" → "artículos", y la concordancia arrastra al
+// participio ("1 línea recibida" / "2 líneas recibidas"). El cero va en plural, que
+// es como se dice ("0 líneas").
+export function cuenta(n: number, singular: string, plural: string): string {
+  return `${n} ${n === 1 ? singular : plural}`;
+}
