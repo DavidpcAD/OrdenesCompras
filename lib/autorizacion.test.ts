@@ -93,3 +93,14 @@ test("el interruptor de emergencia: AUTORIZACION_ROLES=0 la desactiva", () => {
     else process.env.AUTORIZACION_ROLES = antes;
   }
 });
+
+test("crear un pedido directo en BC es de Proveeduría, igual que armar la orden acá", () => {
+  // Esta ruta no la llama ninguna pantalla (el flujo vivo crea el pedido al enviar a
+  // aprobación), pero mientras exista, con sesión de cualquier rol se podía crear un
+  // pedido en Business Central a mano. Armar órdenes es de Angie, acá y allá.
+  assert.equal(rolPuede("/api/bc/ordenes", "POST", "proveeduria"), true);
+  assert.equal(rolPuede("/api/bc/ordenes", "POST", "facturacion"), false);
+  assert.equal(rolPuede("/api/bc/ordenes", "POST", "contabilidad"), false);
+  // Leerla sigue abierto, como todas las lecturas.
+  assert.equal(rolPuede("/api/bc/ordenes", "GET", "facturacion"), true);
+});

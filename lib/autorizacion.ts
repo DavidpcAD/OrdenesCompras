@@ -46,6 +46,13 @@ const REGLAS: Regla[] = [
   { prefijo: "/api/bc/registrar", roles: ["facturacion", "contabilidad"], nota: "recibir + facturar en BC" },
   { prefijo: "/api/bc/recibir", roles: ["facturacion", "contabilidad"], nota: "solo recibir en BC" },
   { prefijo: "/api/notas-credito", metodos: ["POST"], roles: ["facturacion", "contabilidad"], nota: "marcar líneas para NC" },
+
+  // Crea un pedido DIRECTO en Business Central. Hoy no la llama ninguna pantalla —el
+  // flujo vivo crea el pedido al enviar a aprobación, por /api/ordenes/[id] con
+  // `bcCrearPedidoAbierto`— pero mientras exista la ruta, cualquiera con sesión puede
+  // crear un pedido allá a mano. Armar órdenes es de Proveeduría, acá y en BC.
+  // (Candidata a borrarse junto con `bcCrearPedido`: ver la nota para David.)
+  { prefijo: "/api/bc/ordenes", roles: ["proveeduria"], nota: "crear pedido directo en BC (ruta sin uso)" },
 ];
 
 /** ¿Está activa la autorización por rol? Se apaga con AUTORIZACION_ROLES=0. */
