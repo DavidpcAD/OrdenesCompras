@@ -136,8 +136,11 @@
 
 /* En oscuro, el texto sobre relleno de marca sólido (verde/amarillo) debe seguir
    siendo OSCURO (esos fondos no cambian). --ds-text es claro en oscuro, así que
-   forzamos negro en esos casos puntuales. */
-:root[data-theme="dark"] .ds-btn--green,
+   forzamos negro en esos casos puntuales.
+   El `:not([disabled])` del botón verde importa: apagado su fondo YA NO es verde
+   sino el gris del estado, y esta regla —más específica que `.ds-btn[disabled]`— le
+   dejaba el texto negro encima, contrastando 2,05:1. */
+:root[data-theme="dark"] .ds-btn--green:not([disabled]),
 :root[data-theme="dark"] .app-nav__item.is-active,
 :root[data-theme="dark"] .topnav__item.is-active,
 :root[data-theme="dark"] .seg-mini button.is-active,
@@ -207,8 +210,14 @@ h1, h2, h3, h4, p { margin: 0; }
   overflow: visible;
 }
 .ds-btn:focus-visible { outline: 3px solid color-mix(in srgb, var(--ds-color-green-100) 60%, transparent); outline-offset: 2px; }
+/* El botón apagado tiene que SEGUIR LEYÉNDOSE. Con gris-300 encima de gris-200 el
+   texto contrastaba 1,56:1 en claro y 2,12:1 en oscuro —o sea, no se leía—, y en un
+   formulario el botón apagado es justo la pista de qué falta: si no se puede leer
+   cuál es, no dice nada. Gris-400 lo deja en 3,02:1 y 3,94:1, que es el mínimo de
+   WCAG para un componente de interfaz, y se sigue viendo claramente apagado contra
+   el fondo (que no cambia). */
 .ds-btn[disabled], .ds-btn--disabled, .ds-btn--gray {
-  background: var(--ds-color-gray-200); color: var(--ds-color-gray-300);
+  background: var(--ds-color-gray-200); color: var(--ds-color-gray-400);
   cursor: not-allowed; pointer-events: none; box-shadow: none;
 }
 
