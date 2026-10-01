@@ -1687,10 +1687,15 @@ td.ds-col-fija {
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 24 24' fill='none' stroke='%23c3c8d1' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M15 18l-6-6 6-6'/%3E%3C/svg%3E");
 }
 
-/* Enlace en línea (p.ej. Nº de solicitud en una tabla) */
+/* Enlace en línea (p.ej. Nº de solicitud en una tabla).
+   Va en verde-300 y NO en verde-200 porque es texto para leer, no un adorno: el 200
+   es el mismo tono en los dos temas (#88a024) y sobre blanco contrasta 2,96:1, por
+   debajo del 4,5:1 que pide un texto normal —y estos números son de 12 px—. El 300 sí
+   se remapea (#5f7a1a en claro, #add010 en oscuro), que es justo lo que hace falta
+   para un texto sobre superficie: queda en 4,9:1 en claro y 8,61:1 en oscuro. */
 .linklike {
   border: 0; background: transparent; padding: 0; cursor: pointer; font: inherit;
-  color: var(--ds-color-green-200); font-weight: var(--ds-font-weight-semibold);
+  color: var(--ds-color-green-300); font-weight: var(--ds-font-weight-semibold);
   text-decoration: underline; text-underline-offset: 2px;
 }
 .linklike:hover { color: var(--ds-text); }
