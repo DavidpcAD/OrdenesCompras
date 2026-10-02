@@ -3149,6 +3149,46 @@ export function explicarCampoVacioEnBc(c: CampoVacioBc): string {
     + `para que la complete, y volvé a enviar la orden cuando esté lista. Nada se guardó.`;
 }
 
+// ── EL PERIODO CONTABLE CERRADO ──────────────────────────────────────────────
+//
+// "Posting Date is not within your range of allowed posting dates."
+//
+// La fecha de registro cae fuera del rango que BC permite. El rango sale de DOS
+// lados y gana el más estrecho: la FICHA DE USUARIO (User Setup) del usuario con el
+// que la app postea, y Configuración contabilidad ("Registro permitido desde/hasta").
+// El "your" del mensaje es literal: habla del rango de ESE usuario, no del de la
+// empresa — por eso el aviso nombra los dos lugares.
+//
+// 2 oct 2026, primer intento del mes nuevo con octubre todavía sin abrir: Bodega vio
+// el JSON crudo de BC, en inglés y con CorrelationId, debajo de un "la orden queda
+// por recibir para reintentar" que acá miente. Reintentar con la MISMA fecha da
+// siempre lo mismo; con una fecha de adentro del rango, entra. De ahí que el aviso
+// diga las dos salidas en vez de mandar a reintentar a ciegas.
+const BC_FECHA_FUERA_DE_RANGO =
+  /posting date is not within your range of allowed posting dates|fecha de registro no est[áa] dentro d(?:el|e)\s*(?:su\s*)?(?:rango|intervalo)/i;
+
+export function fechaFueraDeRangoBc(textoDelError: string): boolean {
+  return BC_FECHA_FUERA_DE_RANGO.test(textoDelError ?? "");
+}
+
+// dd/mm/aaaa a partir del ISO que viajó. Vacío si no vino o no se entiende: el aviso
+// tiene que servir igual, como el resto de los "no" de BC.
+function fechaCrDeIso(iso: string): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec((iso ?? "").trim());
+  return m ? `${m[3]}/${m[2]}/${m[1]}` : "";
+}
+
+export function explicarFechaFueraDeRangoBc(postingDate = ""): string {
+  const f = fechaCrDeIso(postingDate);
+  const cual = f ? `la fecha de registro ${f}` : "la fecha de registro que se mandó";
+  return `Business Central no acepta ${cual}: está fuera del rango de fechas permitidas para registrar.\n\n`
+    + `No es un error de la orden ni de la factura: en Business Central ese periodo está cerrado. `
+    + `Hay dos salidas — registrarla con una fecha que sí esté abierta (la del periodo que Contabilidad `
+    + `todavía tiene abierto), o pedirle a Contabilidad que abra el rango: "Registro permitido desde/hasta" `
+    + `en Configuración contabilidad, y el de la ficha de usuario con la que registra la app, que manda `
+    + `sobre el de la empresa. Reintentar con la MISMA fecha va a dar siempre lo mismo. Nada se guardó.`;
+}
+
 export type BcPedidoEstado = "existe" | "no-existe" | "sin-respuesta";
 
 // ¿Existe el pedido de compra en BC? Distingue "no está" de "BC no contesta",

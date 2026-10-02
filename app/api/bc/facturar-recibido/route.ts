@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { bcFacturarRecibido, reponerLanzamientoTrasFallo, type EstadoBcPedido, verificarLineasPosteables, frenoRegistroActivo, conflictoDeDimensiones, explicarConflictoDimensiones, faltaConfigContable, explicarFaltaConfigContable, campoVacioEnBc, explicarCampoVacioEnBc } from "@/lib/bc";
+import { bcFacturarRecibido, reponerLanzamientoTrasFallo, type EstadoBcPedido, verificarLineasPosteables, frenoRegistroActivo, conflictoDeDimensiones, explicarConflictoDimensiones, faltaConfigContable, explicarFaltaConfigContable, campoVacioEnBc, explicarCampoVacioEnBc, fechaFueraDeRangoBc, explicarFechaFueraDeRangoBc } from "@/lib/bc";
 import { frenarPorEncabezado } from "@/lib/freno-encabezado";
 import { actor } from "@/lib/actor";
 import type { Role } from "@/lib/types";
@@ -75,6 +75,16 @@ export async function POST(req: Request) {
     // Choque de DIMENSIONES (el CC que el almacén amarra en BC): no se reintenta —
     // cada intento da el mismo error— y BC no registró nada. Se explica y se corta.
     // Ver conflictoDeDimensiones en lib/bc.ts.
+    // PERIODO CONTABLE CERRADO en BC: la fecha de registro cae fuera del rango
+    // permitido. No es la orden ni la factura, y reintentar con LA MISMA FECHA da
+    // siempre lo mismo, así que va al aviso que se queda en pantalla en vez de al
+    // toast de "queda para reintentar". Ver fechaFueraDeRangoBc en lib/bc.ts.
+    if (fechaFueraDeRangoBc(error)) {
+      return NextResponse.json({
+        ok: false, error: `NO se facturó: ${explicarFechaFueraDeRangoBc("")}${avisoVuelta}`,
+        frenoFechaBc: true,
+      }, { status: 409 });
+    }
     const dim = conflictoDeDimensiones(error);
     if (dim) {
       return NextResponse.json({

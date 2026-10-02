@@ -9,7 +9,7 @@
 //   npm test
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { clasificarFalloBc, cotejoProveedor, estadoLanzamientoBc, conflictoDeDimensiones, explicarConflictoDimensiones, faltaConfigContable, explicarFaltaConfigContable, campoVacioEnBc, explicarCampoVacioEnBc, nombreRealizadoPor, tipoLineaBc } from "./bc.ts";
+import { clasificarFalloBc, cotejoProveedor, estadoLanzamientoBc, conflictoDeDimensiones, explicarConflictoDimensiones, faltaConfigContable, explicarFaltaConfigContable, campoVacioEnBc, explicarCampoVacioEnBc, fechaFueraDeRangoBc, explicarFechaFueraDeRangoBc, nombreRealizadoPor, tipoLineaBc } from "./bc.ts";
 
 const envuelto = (mensaje: string) =>
   `BC registrar 400: {"error":{"code":"Application_DialogException","message":"${mensaje} CorrelationId: 5ad0cc6c-2ef8-49b6-8f26-c9893727c69f."}}`;
@@ -53,6 +53,28 @@ test("pedido lanzado (lo arregla el reintento reabriéndolo) sigue siendo reinte
     clasificarFalloBc("BC registrar 400: Status must be equal to 'Open' in Purchase Header"),
     "reintentable",
   );
+});
+
+// EL PERIODO CONTABLE CERRADO, con nombre propio.
+// 2 oct 2026: el primer intento del mes nuevo con octubre todavía sin abrir le salió
+// a Bodega como el JSON crudo de BC, en inglés y con CorrelationId.
+test("periodo cerrado: se reconoce en inglés y en español, y no se confunde con otro no", () => {
+  assert.equal(fechaFueraDeRangoBc(envuelto("Posting Date is not within your range of allowed posting dates.")), true);
+  assert.equal(fechaFueraDeRangoBc("La fecha de registro no está dentro del rango de fechas de registro permitidas."), true);
+  assert.equal(fechaFueraDeRangoBc("BC registrar 400: Status must be equal to 'Open' in Purchase Header"), false);
+  assert.equal(fechaFueraDeRangoBc(""), false);
+});
+
+test("periodo cerrado: el aviso dice la fecha que se mandó y las dos salidas", () => {
+  const t = explicarFechaFueraDeRangoBc("2026-10-02");
+  assert.match(t, /02\/10\/2026/);
+  assert.match(t, /Contabilidad/);
+  assert.match(t, /MISMA fecha/);
+  assert.match(t, /Nada se guardó/);
+});
+
+test("periodo cerrado: sin fecha el aviso sigue sirviendo", () => {
+  assert.match(explicarFechaFueraDeRangoBc(""), /la fecha de registro que se mandó/);
 });
 
 test("periodo contable cerrado: reintentable (se cambia la fecha y va)", () => {

@@ -145,7 +145,7 @@ export default function RegistrarFacturaPage() {
   // muestran en el MISMO aviso que se queda en pantalla: ninguno se arregla
   // reintentando, y cada uno dice a quién avisarle. "ficha" es una ficha maestra de
   // BC a medio llenar (PROV-000477 sin grupo registro negocio).
-  const [frenoBc, setFrenoBc] = useState<null | { error: string; problemas: string[]; tipo: "lineas" | "proveedor" | "no-lanzado" | "dimensiones" | "config" | "ficha" }>(null);
+  const [frenoBc, setFrenoBc] = useState<null | { error: string; problemas: string[]; tipo: "lineas" | "proveedor" | "no-lanzado" | "dimensiones" | "config" | "ficha" | "fecha" }>(null);
   // Sonda al ABRIR: ¿está el pedido en BC? Si BC contesta que no lo tiene, registrar
   // va a fallar seguro — y es mejor decirlo antes de que Bodega cuente el camión
   // entero. "BC no contesta" NO cuenta como ausencia (eso se arregla solo), por eso
@@ -473,7 +473,7 @@ export default function RegistrarFacturaPage() {
         if (d.recepcionId) recepcionYa = String(d.recepcionId);
         errorLocal = String(d.errorLocal ?? "");
       }
-      else if (d?.frenoLineas || d?.frenoEncabezado || d?.frenoDimensiones || d?.frenoConfigBc || d?.frenoFichaBc) {
+      else if (d?.frenoLineas || d?.frenoEncabezado || d?.frenoDimensiones || d?.frenoConfigBc || d?.frenoFichaBc || d?.frenoFechaBc) {
         // El servidor comprobó contra BC que esto NO se puede registrar: las líneas
         // no están en el pedido / no queda saldo, el pedido de allá es de OTRO
         // proveedor, o todavía no está lanzado en BC. Ninguno se concilia ni se
@@ -481,7 +481,7 @@ export default function RegistrarFacturaPage() {
         // exactamente el error que se perdía en un toast de 3 segundos.
         setFrenoBc({
           error: String(d.error ?? ""), problemas: (d.problemas ?? []) as string[],
-          tipo: d?.frenoFichaBc ? "ficha" : d?.frenoConfigBc ? "config" : d?.frenoDimensiones ? "dimensiones" : d?.frenoNoLanzado ? "no-lanzado" : d?.frenoProveedor ? "proveedor" : "lineas",
+          tipo: d?.frenoFechaBc ? "fecha" : d?.frenoFichaBc ? "ficha" : d?.frenoConfigBc ? "config" : d?.frenoDimensiones ? "dimensiones" : d?.frenoNoLanzado ? "no-lanzado" : d?.frenoProveedor ? "proveedor" : "lineas",
         });
         setGuardando(false);
         return;
@@ -745,6 +745,8 @@ export default function RegistrarFacturaPage() {
                   ? <>A Business Central le falta una cuenta para registrar el pedido {orden.bcNumber}</>
                   : frenoBc.tipo === "ficha"
                   ? <>Una ficha de Business Central está incompleta</>
+                  : frenoBc.tipo === "fecha"
+                  ? <>Business Central tiene cerrado el periodo de esa fecha</>
                   : <>NO se registró: Business Central no tiene estas líneas en el pedido {orden.bcNumber}</>}
               </div>
               <div className="ds-callout__body">
@@ -779,6 +781,14 @@ export default function RegistrarFacturaPage() {
                     plata, y eso <span className="ds-strong">no se ve hasta que se usa</span>. No es un error
                     tuyo ni de la orden: reintentar va a dar exactamente el mismo error hasta que
                     completen la ficha allá. Nada se guardó.
+                  </>
+                ) : frenoBc.tipo === "fecha" ? (
+                  <>
+                    <div style={{ margin: "6px 0 8px", whiteSpace: "pre-line" }}>{frenoBc.error}</div>
+                    Business Central solo deja registrar dentro de un <span className="ds-strong">rango de fechas
+                    abierto</span>, y el de esta fecha está cerrado — pasa sobre todo al cambiar de mes. No es un
+                    error tuyo ni de la orden: cambiá la fecha de registro por una del periodo abierto, o esperá a
+                    que Contabilidad abra el rango. Nada se guardó.
                   </>
                 ) : frenoBc.tipo === "no-lanzado" ? (
                   <>
