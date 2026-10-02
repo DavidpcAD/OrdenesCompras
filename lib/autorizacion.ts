@@ -40,8 +40,9 @@ const REGLAS: Regla[] = [
 
   // ---- Bodega (Pedro) — y Contabilidad, porque la pantalla de recibir tiene una
   // variante hecha a propósito para ella (edita las tres fechas, tabla de
-  // escritorio). Si Kattya NO debe registrar recepciones, sacar "contabilidad"
-  // de estas tres reglas y esconderle la pantalla.
+  // escritorio). Desde el 2 oct 2026 Kattya además la tiene en su menú
+  // ("Órdenes por recibir"). Si NO debe registrar recepciones, sacar
+  // "contabilidad" de estas cuatro reglas y de su nav en components/shell.tsx.
   { prefijo: "/api/recepciones", metodos: ["POST"], roles: ["facturacion", "contabilidad"], nota: "registrar recepción" },
   { prefijo: "/api/bc/registrar", roles: ["facturacion", "contabilidad"], nota: "recibir + facturar en BC" },
   { prefijo: "/api/bc/recibir", roles: ["facturacion", "contabilidad"], nota: "solo recibir en BC" },

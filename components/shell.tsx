@@ -86,14 +86,21 @@ const ROLE_META: Record<Role, { label: string; persona: string; home: string; na
     ],
   },
   contabilidad: {
-    // Contabilidad (ej. Kathya): notas de crédito, cargos de tercero, consulta, archivo
-    // y la auditoría del buzón de facturación contra Business Central.
+    // Contabilidad (ej. Kattya): recibir y facturar, notas de crédito, cargos de
+    // tercero, consulta, archivo y la auditoría del buzón contra Business Central.
     label: "Contabilidad", persona: "Kattya", home: "/facturacion/notas-credito", color: "var(--ds-color-gray-300)",
     nav: [
+      // Recibir también es de ella. La pantalla de Bodega ya tenía lista la variante
+      // de Contabilidad (tabla de escritorio, las tres fechas editables) y la API ya
+      // la dejaba registrar; lo único que faltaba era la entrada en el menú.
+      { href: "/facturacion", label: "Órdenes por recibir", icon: IconDelivery },
       { href: "/facturacion/notas-credito", label: "Notas de crédito", icon: IconEdit },
       { href: "/facturacion/cargo", label: "Cargo sobre factura", icon: IconPlus },
-      { href: "/facturacion/todas", label: "Todas las órdenes", icon: IconReceipt },
-      { href: "/facturacion/archivo", label: "Archivo", icon: IconFolder },
+      // Los detalles que cuelgan de estas dos entran por `alt`: sin eso, ahora que
+      // "/facturacion" está en el menú, el riel saltaba a Órdenes por recibir al abrir
+      // una orden desde Todas o una factura desde Archivo.
+      { href: "/facturacion/todas", label: "Todas las órdenes", icon: IconReceipt, alt: ["/facturacion/ver/"] },
+      { href: "/facturacion/archivo", label: "Archivo", icon: IconFolder, alt: ["/facturacion/recepcion/"] },
       // Auditoría de facturas: lee el buzón de facturación y dice, de cada comprobante
       // que llegó, si ya se registró en BC y cuánto tardó. Más las señales que BC
       // delata solo: borradores, dobles registros, proveedores que se callaron. Va con
