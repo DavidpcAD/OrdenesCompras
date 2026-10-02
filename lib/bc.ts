@@ -1189,19 +1189,50 @@ export async function bcIvaDeLineasOrden(orderNo: string): Promise<Record<string
   } catch { return null; }
 }
 
+// Los totales del pedido sumados DE SUS LÍNEAS, que es el IVA que de verdad quedó
+// escrito allá — y por lo tanto el que la orden le puso.
+//
+// OJO: EL ENCABEZADO DE LA API ESTÁNDAR MIENTE, igual que su `status`. CP-005410
+// (2 oct 2026): sus tres líneas quedaron en EXENTO (0%) y, EN LA MISMA RESPUESTA, el
+// encabezado seguía devolviendo `totalTaxAmount` 35,75 y `totalAmountIncludingTax`
+// 495,75 — el 13% viejo del cargo de transporte — mientras la pantalla de BC ya
+// mostraba 460,00 / 460,00. La app repetía ese 35,75 y el aviso amarillo acusaba en
+// falso a una orden que en BC estaba perfecta. Las líneas sí se recalculan cuando se
+// les cambia el grupo de IVA; el encabezado se queda pegado.
+//
+// null si no hay líneas: ahí no hay nada que sumar y el que llama se cae al
+// encabezado, que es lo que había antes.
+export function totalesDeLineasBc(lineas: unknown): { subtotal: number; iva: number; total: number } | null {
+  if (!Array.isArray(lineas) || !lineas.length) return null;
+  let subtotal = 0, iva = 0, total = 0;
+  for (const l of lineas) {
+    const neto = Number((l as Record<string, unknown>)?.netAmount) || 0;
+    const impuesto = Number((l as Record<string, unknown>)?.netTaxAmount) || 0;
+    const conIva = Number((l as Record<string, unknown>)?.amountIncludingTax);
+    subtotal += neto;
+    iva += impuesto;
+    total += Number.isFinite(conIva) ? conIva : neto + impuesto;
+  }
+  const c = (n: number) => Math.round(n * 100) / 100;
+  return { subtotal: c(subtotal), iva: c(iva), total: c(total) };
+}
+
 export async function bcOrdenTotales(orderNo: string): Promise<BcOrdenTotales | null> {
   if (!orderNo) return null;
   try {
     const cid = await getStdCompanyId();
-    const filtro = `$filter=${encodeURIComponent(`number eq '${odataStr(orderNo)}'`)}&$select=totalAmountExcludingTax,totalTaxAmount,totalAmountIncludingTax,currencyCode&$top=1`;
+    const campos = "$select=totalAmountExcludingTax,totalTaxAmount,totalAmountIncludingTax,currencyCode"
+      + "&$expand=purchaseOrderLines($select=netAmount,netTaxAmount,amountIncludingTax)";
+    const filtro = `$filter=${encodeURIComponent(`number eq '${odataStr(orderNo)}'`)}&${campos}&$top=1`;
     const res = await bcFetch(`${stdRoot()}/companies(${cid})/purchaseOrders?${filtro}`, { cache: "no-store" });
     if (!res.ok) return null;
     const po = ((await res.json())?.value ?? [])[0];
     if (!po) return null;
+    const deLineas = totalesDeLineasBc(po.purchaseOrderLines);
     return {
-      subtotal: Number(po.totalAmountExcludingTax) || 0,
-      iva: Number(po.totalTaxAmount) || 0,
-      total: Number(po.totalAmountIncludingTax) || 0,
+      subtotal: deLineas ? deLineas.subtotal : Number(po.totalAmountExcludingTax) || 0,
+      iva: deLineas ? deLineas.iva : Number(po.totalTaxAmount) || 0,
+      total: deLineas ? deLineas.total : Number(po.totalAmountIncludingTax) || 0,
       currencyCode: po.currencyCode || "",
     };
     // OJO: NO agregar acá el estado de lanzamiento leyendo `po.status`. Se probó

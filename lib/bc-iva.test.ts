@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { lineasAExonerar, grupoIvaExento, ivaOrdenPorCodigo, lineasConIvaDistinto,
   grupoIvaDeTasa, familiaDeGrupoIva, tasasIvaDisponibles, bcPideAbierto,
+  totalesDeLineasBc,
   type LineaIvaBc, type LineaReplaceBc } from "./bc.ts";
 
 // Quitarle el IVA al pedido en BC (importación): a qué líneas hay que tocarles el
@@ -192,4 +193,35 @@ test("tasasIvaDisponibles: los % de esa familia, el exento como 0", () => {
   assert.deepEqual(tasasIvaDisponibles(grupos, "BIENES"), [0, 1, 2, 4, 13]);
   assert.deepEqual(tasasIvaDisponibles(grupos, "SERV"), [0, 13]);
   assert.deepEqual(tasasIvaDisponibles(grupos, "BIECAP"), [3]);
+});
+
+// EL ENCABEZADO DE BC MIENTE: los totales salen de las LÍNEAS.
+// Caso real CP-005410 (2 oct 2026): las tres líneas quedaron exentas y el encabezado
+// de la misma respuesta seguía devolviendo 35,75 de IVA (el 13% viejo del cargo de
+// transporte, USD 275). La orden decía 0% y la pantalla acusaba una diferencia que
+// en BC no existía.
+test("totalesDeLineasBc: el IVA es el de las líneas, no el del encabezado pegado", () => {
+  const lineas = [
+    { netAmount: 100, netTaxAmount: 0, amountIncludingTax: 100 },
+    { netAmount: 85, netTaxAmount: 0, amountIncludingTax: 85 },
+    { netAmount: 275, netTaxAmount: 0, amountIncludingTax: 275 },
+  ];
+  assert.deepEqual(totalesDeLineasBc(lineas), { subtotal: 460, iva: 0, total: 460 });
+});
+
+test("totalesDeLineasBc: con IVA de verdad lo suma", () => {
+  const lineas = [
+    { netAmount: 100, netTaxAmount: 13, amountIncludingTax: 113 },
+    { netAmount: 275, netTaxAmount: 35.75, amountIncludingTax: 310.75 },
+  ];
+  assert.deepEqual(totalesDeLineasBc(lineas), { subtotal: 375, iva: 48.75, total: 423.75 });
+});
+
+test("totalesDeLineasBc: sin líneas devuelve null y el que llama usa el encabezado", () => {
+  assert.equal(totalesDeLineasBc([]), null);
+  assert.equal(totalesDeLineasBc(undefined), null);
+});
+
+test("totalesDeLineasBc: sin amountIncludingTax lo arma con neto + impuesto", () => {
+  assert.deepEqual(totalesDeLineasBc([{ netAmount: 100, netTaxAmount: 13 }]), { subtotal: 100, iva: 13, total: 113 });
 });
