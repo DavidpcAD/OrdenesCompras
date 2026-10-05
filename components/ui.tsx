@@ -2,7 +2,7 @@
 
 import React, { createContext, useCallback, useContext, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { IconClose, IconChevronDown } from "@/components/icons";
+import { IconClose, IconChevronDown, IconUser } from "@/components/icons";
 import { haptic } from "@/lib/haptic";
 
 // ---------------------------------------------------------------- Button
@@ -249,6 +249,27 @@ export function Checkbox({
 // ---------------------------------------------------------------- Badge
 export function Badge({ tone = "gray", children }: { tone?: string; children: React.ReactNode }) {
   return <span className={`ds-badge ds-badge--${tone}`}>{children}</span>;
+}
+
+// ---------------------------------------------------------------- Persona
+// QUIÉN hizo algo —creó la orden, la recibió— para leerlo sin abrir el detalle.
+// Va como pieza propia y no como un "· Fulano" más dentro de la línea gris: ahí
+// el nombre se perdía entre el proveedor y la fecha, que es justo la pregunta
+// que Contabilidad hacía parada frente a la lista. El ícono ancla el dato y el
+// nombre va en `--ds-text`, no en gris, porque es lo que se viene buscando.
+export function Persona({ rotulo, nombre, className = "" }: {
+  rotulo?: string; nombre?: string | null; className?: string;
+}) {
+  // Órdenes viejas, de antes de que se guardara quién las creó, no tienen nombre:
+  // no se pinta un "—" que no dice nada. Ahí la respuesta está en el Historial.
+  if (!nombre) return null;
+  return (
+    <span className={`ds-persona ${className}`.trim()} title={rotulo ? `${rotulo} ${nombre}` : nombre}>
+      <IconUser size={13} />
+      {rotulo && <span className="ds-persona__rot">{rotulo}</span>}
+      <span className="ds-persona__nombre">{nombre}</span>
+    </span>
+  );
 }
 
 // ---------------------------------------------------------------- Card

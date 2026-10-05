@@ -2,7 +2,7 @@
 
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Badge, Button, Card, Checkbox, EmptyState, Field, Input, Modal, Select, Skeleton, Textarea, useToast } from "@/components/ui";
+import { Badge, Button, Card, Checkbox, EmptyState, Field, Input, Modal, Persona, Select, Skeleton, Textarea, useToast } from "@/components/ui";
 import { IconWarning } from "@/components/icons";
 import { DateField } from "@/components/date-field";
 import { useStore } from "@/lib/store";
@@ -723,6 +723,11 @@ export default function RegistrarFacturaPage() {
               <Badge tone={ordenBadge(orden.estado).tone}>{ordenBadge(orden.estado).label}</Badge>
             </div>
             <p className="ds-muted">{orden.proveedorNombre ?? prov?.nombre} · recibido {ordenRecibidoPct(orden)}%</p>
+            {/* Quién armó la orden. Acá es donde se decide si la factura que se tiene
+                en la mano calza o hay que ir a preguntarle a alguien: antes había que
+                salirse a "Todas las órdenes" o abrir el Historial de la otra pantalla
+                de detalle, porque esta no lo pinta. */}
+            <Persona rotulo="Creada por" nombre={orden.creadoPor} />
           </div>
         </div>
 

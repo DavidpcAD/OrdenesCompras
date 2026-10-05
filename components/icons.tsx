@@ -62,6 +62,7 @@ export const IconPlus = ds("plus", 18);
 export const IconEdit = ds("edit", 18);          // editar
 export const IconTable = ds("list", 16);        // vista tabla
 export const IconGrid = ds("cuadrillas", 16);   // vista grid
+export const IconUser = ds("user", 16);         // quién hizo algo (creó / recibió)
 
 // Chevrons: el DS no tiene chevron plano → trazo mínimo (afordancia de UI).
 export const IconChevronDown = ({ size = 20, ...p }: P) => (

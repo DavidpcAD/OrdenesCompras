@@ -2,7 +2,7 @@
 
 import { useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Badge, Button, Card, EmptyState, Input, QtyRing, Tile } from "@/components/ui";
+import { Badge, Button, Card, EmptyState, Input, Persona, QtyRing, Tile } from "@/components/ui";
 import { IconDelivery } from "@/components/icons";
 import { useStore } from "@/lib/store";
 import { money, formatDate, ordenAvance, ordenEsParcial, ordenRecibidoPct, ordenSubtotal, ordenTotalConIva, numeroOrden } from "@/lib/helpers";
@@ -59,7 +59,9 @@ export default function FacturacionPage() {
       // y también por el CP- interno crudo, que es el que anda en correos y en
       // la bitácora.
       const pedidos = [...new Set(o.lineas.map((l) => l.pedidoNumero).filter(Boolean))].join(" ");
-      return [numeroOrden(o), o.numero, o.bcNumber, provNombre, o.proveedorId, pedidos]
+      // `creadoPor` entra al buscador porque ahora se LEE en la tarjeta: un dato que
+      // se ve y no se puede buscar se siente roto ("ahí dice Angie y no me las trae").
+      return [numeroOrden(o), o.numero, o.bcNumber, provNombre, o.proveedorId, pedidos, o.creadoPor]
         .some((v) => (v ?? "").toLowerCase().includes(t));
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -91,7 +93,7 @@ export default function FacturacionPage() {
         {base.length > 0 && (
           <div className="mt-4">
             <Input value={q} onChange={(e) => setQ(e.target.value)} aria-label="Buscar orden"
-              placeholder="Buscar por N.º de orden, proveedor o pedido…" />
+              placeholder="Buscar por N.º de orden, proveedor, pedido o quién la creó…" />
             {q.trim() !== "" && (
               <p className="ds-body-sm ds-muted" style={{ margin: "6px 0 0" }} role="status">
                 {lista.length} de {base.length} orden(es)
@@ -112,7 +114,7 @@ export default function FacturacionPage() {
               : filtro === "parcial" ? "Ninguna orden viene a medias."
               : "Todavía no hay órdenes completadas."}
             hint={filtro === "porRecibir" ? <>Cuando llegue material a bodega vas a verlo acá.</> : <>Tocá otro panel de arriba para ver el resto.</>} /></Card>}
-          {base.length > 0 && lista.length === 0 && <Card><EmptyState icon={<IconDelivery size={24} />} title="Ninguna orden coincide con la búsqueda." hint={<>Probá con el N.º de la orden (CP-…), el nombre del proveedor o el N.º de pedido.</>} /></Card>}
+          {base.length > 0 && lista.length === 0 && <Card><EmptyState icon={<IconDelivery size={24} />} title="Ninguna orden coincide con la búsqueda." hint={<>Probá con el N.º de la orden (CP-…), el nombre del proveedor, el N.º de pedido o quién la creó.</>} /></Card>}
           {lista.map((o) => {
             // Mismo cálculo que la lista de órdenes (`ordenSubtotal`): antes esta
             // tarjeta ignoraba el descuento de línea, así que la misma orden se veía
@@ -135,8 +137,14 @@ export default function FacturacionPage() {
                           : <Badge tone="green">Lanzado</Badge>}
                       </div>
                       <span className="ds-muted ds-label">{o.proveedorNombre ?? prov(o.proveedorId)?.nombre} · emitida {formatDate(o.fecha)}</span>
+                      {/* Quién armó la orden, en la línea de AFUERA: Contabilidad lo
+                          preguntaba parada en esta lista y la única respuesta estaba en
+                          "Todas las órdenes" (columna "Creada por") o en el Historial del
+                          detalle, o sea entrando a cada orden. Va en la fila de los chips
+                          para no crecerle una línea a cada tarjeta. */}
                       <div className="row gap-2 wrap">
                         {[...new Set(o.lineas.filter((l) => l.pedidoNumero).map((l) => l.pedidoNumero!))].slice(0, 3).map((n) => <Badge key={n} tone="gray">{n}</Badge>)}
+                        <Persona rotulo="Creada por" nombre={o.creadoPor} />
                       </div>
                     </div>
                   </div>

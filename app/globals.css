@@ -345,6 +345,20 @@ h1, h2, h3, h4, p { margin: 0; }
 .ds-badge--red { background: color-mix(in srgb, var(--ds-color-red-100) 22%, var(--ds-tint-base)); color: var(--ds-text); --ds-badge-punto: var(--ds-text-danger); }
 .ds-badge--blueish { background: var(--ds-color-gray-100); color: var(--ds-color-gray-500); }
 
+/* =====================  PERSONA  =====================
+   "Creada por Angie" en una línea de lista o bajo un título. El rótulo y el ícono
+   quedan en gris (son el andamio) y el NOMBRE en `--ds-text`: es el dato que se
+   viene a buscar. `nowrap` porque un nombre partido en dos renglones dentro de una
+   fila de chips se lee como dos personas. */
+.ds-persona {
+  display: inline-flex; align-items: center; gap: 5px; min-width: 0; max-width: 100%;
+  font-size: var(--ds-font-size-body-sm); line-height: var(--ds-line-height-body-sm);
+  color: var(--ds-color-gray-400); white-space: nowrap;
+}
+.ds-persona svg { flex-shrink: 0; opacity: .8; }
+.ds-persona__rot { flex-shrink: 0; }
+.ds-persona__nombre { color: var(--ds-text); font-weight: var(--ds-font-weight-semibold); overflow: hidden; text-overflow: ellipsis; }
+
 /* =====================  QUANTITY SELECTOR (ring)  ===================== */
 .ds-qty-selector {
   position: relative; width: 44px; height: 44px; border: 0; background: transparent; cursor: default; padding: 0;

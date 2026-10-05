@@ -115,7 +115,7 @@ export const pedidos: Pedido[] = [
 export const ordenes: Orden[] = [
   {
     id: "ord1", numero: "CP-000862", proveedorId: "p2", fecha: "2026-06-05",
-    currencyCode: "", estado: "lanzado", versionesArchivadas: 2,
+    currencyCode: "", estado: "lanzado", versionesArchivadas: 2, creadoPor: "Angie",
     // Aprobada por Aprobación (el mismo momento del movimiento m3). En modo prueba
     // se pone a mano; con base sale de la bitácora o de OrdenCompra.fechaAprobado.
     aprobacion: { fecha: "2026-06-05T14:02:00", usuario: "Luis Roberto" },
@@ -135,7 +135,7 @@ export const ordenes: Orden[] = [
   },
   {
     id: "ord2", numero: "CP-000863", proveedorId: "p3", fecha: "2026-06-12",
-    currencyCode: "", estado: "pendiente_aprobacion", versionesArchivadas: 0,
+    currencyCode: "", estado: "pendiente_aprobacion", versionesArchivadas: 0, creadoPor: "Angie",
     lineas: [
       // `obraSolicitud` = la CASA para la que se pidió. Entra al almacén central (no
       // es consumo directo, así que no lleva Job No.) y aun así la orden tiene que
