@@ -358,7 +358,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     await setOrdenEstado(id, estado, a.usuario, a.rol, motivo, bcNo);
     return NextResponse.json({ ok: true, bcAviso });
   } catch (e: any) {
-    return NextResponse.json({ error: mensajeSeguro(e) }, { status: 500 });
+    return NextResponse.json({ error: mensajeSeguro(e, `PATCH /api/ordenes/${params.id} · cambiar estado`) }, { status: 500 });
   }
 }
 
@@ -446,7 +446,7 @@ export async function PUT(req: Request, { params }: { params: { id: string } }) 
     bcAviso = avisos.join(" · ") || undefined;
     return NextResponse.json({ ok: true, bcAviso });
   } catch (e: any) {
-    return NextResponse.json({ error: mensajeSeguro(e) }, { status: 500 });
+    return NextResponse.json({ error: mensajeSeguro(e, `PUT /api/ordenes/${params.id} · editar orden`) }, { status: 500 });
   }
 }
 

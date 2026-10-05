@@ -21,6 +21,6 @@ export async function POST(req: Request) {
     const id = await createPedido({ ...body, ...(await actor(body)) });
     return NextResponse.json({ idPedidoCompra: id }, { status: 201 });
   } catch (e: any) {
-    return NextResponse.json({ error: mensajeSeguro(e) }, { status: 500 });
+    return NextResponse.json({ error: mensajeSeguro(e, "POST /api/pedidos · crear solicitud") }, { status: 500 });
   }
 }

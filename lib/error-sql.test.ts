@@ -6,17 +6,27 @@ import { mensajeParaPantalla, mensajeSeguro, vieneDelMotor } from "./error-sql.t
 
 const comoMssql = (name: string, code: string, message: string) => Object.assign(new Error(message), { name, code });
 
+// Taparlo en pantalla y anotarlo en el log son la misma función, así que las pruebas
+// del mensaje tienen que atrapar el log: si no, `npm test` escupe trazas de errores
+// inventados y parece que algo se rompió. De paso, lo atrapado es lo que se verifica.
+function conLog<T>(fn: () => T): { valor: T; log: string } {
+  const real = console.error;
+  const lineas: string[] = [];
+  console.error = (...xs: unknown[]) => { lineas.push(xs.map(String).join(" ")); };
+  try { return { valor: fn(), log: lineas.join("\n") }; } finally { console.error = real; }
+}
+
 test("el error de conexión no cuenta el servidor ni el puerto", () => {
   const e = comoMssql("ConnectionError", "ESOCKET", "Failed to connect to mysqladelante.database.windows.net:1433");
   assert.equal(vieneDelMotor(e), true);
-  const m = mensajeParaPantalla(e, "No se pudo guardar la vista");
+  const m = conLog(() => mensajeParaPantalla(e, "No se pudo guardar la vista")).valor;
   assert.match(m, /la base no contestó/);
   assert.doesNotMatch(m, /1433|windows\.net|mysqladelante/);
 });
 
 test("el error de consulta tampoco: nombra tablas y columnas", () => {
   const e = comoMssql("RequestError", "EREQUEST", "Invalid column name 'esPredeterminada' en dbo.VistaTabla");
-  const m = mensajeParaPantalla(e, "No se pudo guardar la vista");
+  const m = conLog(() => mensajeParaPantalla(e, "No se pudo guardar la vista")).valor;
   assert.doesNotMatch(m, /dbo\.|esPredeterminada/);
 });
 
@@ -51,5 +61,33 @@ test("mensajeSeguro deja IGUAL lo que no viene del motor (cambiar una ruta no to
 
 test("mensajeSeguro sí tapa el del motor, sin frase de adelante", () => {
   const e = Object.assign(new Error("Failed to connect to mysqladelante.database.windows.net:1433"), { name: "ConnectionError" });
-  assert.equal(mensajeSeguro(e), "la base no contestó. Reintentá y, si sigue, avisale a TI");
+  assert.equal(conLog(() => mensajeSeguro(e)).valor, "la base no contestó. Reintentá y, si sigue, avisale a TI");
+});
+
+// ── El crudo no se muestra, pero TIENE que quedar ──────────────────────────────
+// Sin esto, una captura con "la base no contestó" no se puede diagnosticar: fue lo
+// que pasó el 5 oct 2026 con una orden que no se pudo crear.
+
+test("el crudo del motor queda en el log del server, aunque la pantalla no lo vea", () => {
+  const e = comoMssql("ConnectionError", "ESOCKET", "Failed to connect to mysqladelante.database.windows.net:1433");
+  const { valor, log } = conLog(() => mensajeParaPantalla(e, "No se pudo crear la orden"));
+  assert.doesNotMatch(valor, /1433/);
+  assert.match(log, /mysqladelante\.database\.windows\.net:1433/);
+  assert.match(log, /ESOCKET/);
+  assert.match(log, /No se pudo crear la orden/);
+});
+
+test("el log trae el número de error de SQL y el rótulo de la ruta", () => {
+  // 8152: "String or binary data would be truncated" — el que dice QUÉ arreglar.
+  const e = Object.assign(comoMssql("RequestError", "EREQUEST", "String or binary data would be truncated in dbo.OrdenCompra"),
+    { number: 8152, originalError: new Error("Statement(s) could not be prepared") });
+  const { log } = conLog(() => mensajeSeguro(e, "POST /api/ordenes · crear orden"));
+  assert.match(log, /nro=8152/);
+  assert.match(log, /POST \/api\/ordenes/);
+  assert.match(log, /driver: Statement\(s\) could not be prepared/);
+});
+
+test("lo que NO viene del motor no se loguea: ya se lee en pantalla", () => {
+  const { log } = conLog(() => mensajeSeguro(new Error("Ya hay una factura con ese número")));
+  assert.equal(log, "");
 });

@@ -12,6 +12,6 @@ export async function POST(req: Request) {
     const id = await createRecepcion({ ...body, ...(await actor(body)) });
     return NextResponse.json({ idRecepcionCompra: id }, { status: 201 });
   } catch (e: any) {
-    return NextResponse.json({ error: mensajeSeguro(e) }, { status: 500 });
+    return NextResponse.json({ error: mensajeSeguro(e, "POST /api/recepciones · registrar recepción") }, { status: 500 });
   }
 }
