@@ -19,8 +19,9 @@ import { CLAVE_CACHE_BOOTSTRAP } from "./cache-bootstrap.ts";
 //   1. Timeout de verdad (un fetch sin timeout se queda colgado para siempre).
 //   2. Un reintento automático en fallos transitorios (red móvil, 502/503/504,
 //      Azure SQL serverless despertando) — solo en GET, que es seguro repetir.
-//   3. Manejo CENTRAL del 401: sesión vencida → aviso + vuelta al login guardando
-//      a dónde volver. Nunca más la app "logueada" mostrando datos que no cargan.
+//   3. Manejo CENTRAL del 401: sesión vencida → un aviso que tapa la pantalla y
+//      lleva de vuelta al login guardando a dónde volver (components/sesion-vencida.tsx).
+//      Nunca más la app "logueada" mostrando datos que no cargan.
 
 export const EVENTO_SESION_VENCIDA = "adelante:sesion-vencida";
 // "Algo cambió de verdad": una escritura nuestra que el servidor aceptó (se avisa
@@ -70,7 +71,7 @@ export function mensajeTimeoutEscritura(ruta: string, ms: number): string {
 }
 
 let instalado = false;
-let redirigiendo = false;
+let avisado = false;
 
 function rutaApi(input: RequestInfo | URL): string | null {
   try {
@@ -107,11 +108,29 @@ function esReintentable(metodo: string, res: Response | null): boolean {
 
 const esperar = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-// Sesión vencida: se limpia el rastro local y se vuelve al login diciendo por qué
-// y a dónde volver. Una sola vez (si vencen 5 llamadas juntas, no son 5 redirects).
+// A dónde mandar a entrar de nuevo: al login, diciéndole POR QUÉ está ahí y a qué
+// pantalla devolver a la persona después (app/page.tsx lee las dos cosas).
+export function urlDeReingreso(): string {
+  const volverA = window.location.pathname + window.location.search;
+  return `/?motivo=sesion&next=${encodeURIComponent(volverA)}`;
+}
+
+// Sesión vencida: se limpia el rastro local y se AVISA. Quien saca a la gente de la
+// app es el aviso (components/sesion-vencida.tsx), no esto.
+//
+// Por qué ya no redirige de una: el 401 casi siempre llega del refresco de fondo,
+// o sea sin que nadie haya tocado nada, y la pantalla desaparecía sola en medio del
+// trabajo — con media orden escrita y sin saber qué pasó. Ahora la pantalla se queda
+// donde estaba, tapada por un aviso que dice qué pasó y tiene un solo botón.
+//
+// Una sola vez: si vencen 5 llamadas juntas, no son 5 avisos.
 export function sesionVencida() {
-  if (redirigiendo) return;
-  redirigiendo = true;
+  // Ya estamos en el login: no hay sesión que perder ni pantalla que tapar. Y sobre
+  // todo NO se toca la URL: si el middleware nos trajo con ?next=…, moverla acá
+  // borraría justamente la pantalla a la que hay que volver después de entrar.
+  if (window.location.pathname === "/") return;
+  if (avisado) return;
+  avisado = true;
   try {
     localStorage.removeItem("adelante_oc_role");
     localStorage.removeItem("adelante_oc_usuario");
@@ -119,15 +138,9 @@ export function sesionVencida() {
     // por qué ver las órdenes de quien se quedó sin sesión (ver lib/cache-bootstrap.ts).
     localStorage.removeItem(CLAVE_CACHE_BOOTSTRAP);
   } catch {}
-  window.dispatchEvent(new Event(EVENTO_SESION_VENCIDA));
-  // Ya estamos en el login: no hay a dónde mandar a nadie. Y sobre todo NO se toca
-  // la URL: si el middleware nos trajo con ?next=…, navegar acá borraría justamente
-  // la pantalla a la que hay que volver después de entrar.
-  if (window.location.pathname === "/") { redirigiendo = false; return; }
-  const volverA = window.location.pathname + window.location.search;
-  // replace (no href): la pantalla vencida no queda en el historial, así el botón
-  // "atrás" no devuelve a una pantalla que ya no carga.
-  window.location.replace(`/?motivo=sesion&next=${encodeURIComponent(volverA)}`);
+  window.dispatchEvent(
+    new CustomEvent(EVENTO_SESION_VENCIDA, { detail: { volverA: urlDeReingreso() } }),
+  );
 }
 
 export function instalarGuardFetch() {

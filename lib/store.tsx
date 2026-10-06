@@ -327,17 +327,18 @@ export function StoreProvider({ children, useApi }: { children: React.ReactNode;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hydrated, role, ultimaSync]);
 
-  // Sesión vencida (la avisa lib/fetch-guard.ts ante cualquier 401): se deja de
-  // fingir que hay alguien logueado. Sin esto, la app seguía pintando el nombre y
-  // el menú del rol mientras NADA cargaba — exactamente la pantalla que había que
-  // eliminar. El guard además manda al login guardando a dónde volver.
+  // Sesión vencida (la avisa lib/fetch-guard.ts ante cualquier 401): se marca y se
+  // deja de pedirle datos al servidor. Quien tapa la pantalla y saca a la persona al
+  // login es el aviso de components/sesion-vencida.tsx, que se monta en el layout.
+  //
+  // Por qué NO se borra acá lo que había (rol, nombre, datos): el aviso cubre toda la
+  // pantalla y no se puede cerrar, así que no queda app "logueada" usable por detrás;
+  // y vaciarlo convertía el fondo del aviso en una pantalla de "no hay nada", que es
+  // justo la cara de "se rompió" que se está tratando de evitar. El rastro local sí se
+  // borra (lo hace el guard): al recargar, esta pestaña no sabe de nadie.
   useEffect(() => {
     const alVencer = () => {
       setSesionExpirada(true);
-      setRole(null);
-      setUsuario(null);
-      setData(freshData(USE_API));
-      setNotasCredito([]);
       setErrorCarga("Tu sesión venció. Iniciá sesión otra vez.");
     };
     window.addEventListener(EVENTO_SESION_VENCIDA, alVencer);
@@ -349,8 +350,10 @@ export function StoreProvider({ children, useApi }: { children: React.ReactNode;
   // página a mano. Así los pedidos creados en Producción aparecen en Proveeduría
   // (comparten la misma base). Poll cada 45s con la pestaña visible + refresco al
   // volver a la pestaña (instantáneo al cambiar de app). No corre oculta (ahorra).
+  // Con la sesión vencida tampoco: sin esto, una pestaña olvidada con el aviso
+  // encima le seguiría pidiendo el bootstrap al servidor cada 45 s para nada.
   useEffect(() => {
-    if (!USE_API || !hydrated || !role) return;
+    if (!USE_API || !hydrated || !role || sesionExpirada) return;
     const refrescar = () => {
       if (document.hidden) return;
       refreshFromApi()
@@ -375,7 +378,7 @@ export function StoreProvider({ children, useApi }: { children: React.ReactNode;
       window.removeEventListener("pageshow", refrescar);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hydrated, role]);
+  }, [hydrated, role, sesionExpirada]);
 
   // Al cambiar de pantalla, resincronizar. Es el momento en que la gente espera ver
   // lo nuevo (entra a "Órdenes" a ver si ya le llegó algo) y donde antes tenía que

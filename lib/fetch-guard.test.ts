@@ -1,17 +1,22 @@
 // El guard envuelve TODAS las llamadas a /api/* del navegador. Es el punto donde
 // se decide qué pasa cuando la red falla o la sesión venció, así que su contrato
 // tiene que estar clavado: un reintento de más en un POST duplicaría una orden de
-// compra, y un 401 sin redirigir es exactamente la pantalla que hay que eliminar
+// compra, y un 401 que no avisa es exactamente la pantalla que hay que eliminar
 // (app "logueada" con el aviso rojo encima).
 import { test, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 
 // Ventana falsa: el guard envuelve `window.fetch` y usa location/eventos.
-type Estado = { llamadas: Array<{ url: string; cache?: string }>; redirigido: string | null; eventos: string[] };
+type Estado = {
+  llamadas: Array<{ url: string; cache?: string }>;
+  redirigido: string | null;
+  eventos: string[];
+  volverA: string | null;   // a dónde dice el aviso que hay que volver
+};
 let estado: Estado;
 
 function montarVentana(pathname: string, respuestas: Array<{ status?: number; error?: boolean }>) {
-  estado = { llamadas: [], redirigido: null, eventos: [] };
+  estado = { llamadas: [], redirigido: null, eventos: [], volverA: null };
   let i = 0;
   const fetchBase = async (input: any, init?: any) => {
     estado.llamadas.push({ url: String(input), cache: init?.cache });
@@ -27,7 +32,12 @@ function montarVentana(pathname: string, respuestas: Array<{ status?: number; er
       search: "",
       replace: (u: string) => { estado.redirigido = u; },
     },
-    dispatchEvent: (e: Event) => { estado.eventos.push(e.type); return true; },
+    dispatchEvent: (e: Event) => {
+      estado.eventos.push(e.type);
+      const d = (e as CustomEvent<{ volverA?: string }>).detail;
+      if (d?.volverA) estado.volverA = d.volverA;
+      return true;
+    },
   };
   (globalThis as any).localStorage = { removeItem: () => {} };
 }
@@ -40,7 +50,7 @@ async function instalar() {
   return (globalThis as any).window.fetch;
 }
 
-beforeEach(() => { estado = { llamadas: [], redirigido: null, eventos: [] }; });
+beforeEach(() => { estado = { llamadas: [], redirigido: null, eventos: [], volverA: null }; });
 
 test("un 503 se reintenta una vez y la segunda respuesta es la que vale", async () => {
   montarVentana("/proveeduria/ordenes", [{ status: 503 }, { status: 200 }]);
@@ -73,12 +83,26 @@ test("un POST que falla NO se reintenta (reintentar crearía la orden dos veces)
   assert.equal(estado.llamadas.length, 1);
 });
 
-test("un 401 manda al login guardando a dónde volver", async () => {
+// El 401 casi siempre llega del refresco de fondo, sin que nadie haya tocado nada.
+// Si el guard navegara ahí mismo, la pantalla se iría sola en medio del trabajo: avisa
+// (lo tapa components/sesion-vencida.tsx) y el que navega es el botón de ese aviso.
+test("un 401 avisa que la sesión venció y dice a dónde volver, sin navegar solo", async () => {
   montarVentana("/facturacion/recibidas", [{ status: 401 }]);
   const fetch = await instalar();
   await fetch("/api/bootstrap");
-  assert.equal(estado.redirigido, "/?motivo=sesion&next=%2Ffacturacion%2Frecibidas");
   assert.ok(estado.eventos.includes("adelante:sesion-vencida"));
+  assert.equal(estado.volverA, "/?motivo=sesion&next=%2Ffacturacion%2Frecibidas");
+  assert.equal(estado.redirigido, null);
+});
+
+test("cinco 401 juntos son UN solo aviso, no cinco", async () => {
+  montarVentana("/proveeduria/ordenes", [{ status: 401 }]);
+  const fetch = await instalar();
+  await Promise.all([
+    fetch("/api/bootstrap"), fetch("/api/bc/items"), fetch("/api/vistas"),
+    fetch("/api/movimientos?entidad=orden&id=8"), fetch("/api/plantillas"),
+  ]);
+  assert.equal(estado.eventos.filter((e) => e === "adelante:sesion-vencida").length, 1);
 });
 
 test("un 401 del login NO es sesión vencida (es usuario o clave mala)", async () => {
@@ -89,11 +113,15 @@ test("un 401 del login NO es sesión vencida (es usuario o clave mala)", async (
   assert.equal(estado.eventos.length, 0);
 });
 
-test("estando ya en el login, un 401 no toca la URL (no borra el ?next=)", async () => {
+// En el login no hay sesión que perder ni pantalla que tapar: ni se avisa ni se toca
+// la URL. Si se tocara, se borraría el ?next= con el que el middleware trajo a la
+// persona, que es justo la pantalla a la que hay que devolverla al entrar.
+test("estando ya en el login, un 401 no avisa ni toca la URL (no borra el ?next=)", async () => {
   montarVentana("/", [{ status: 401 }]);
   const fetch = await instalar();
   await fetch("/api/bootstrap");
   assert.equal(estado.redirigido, null);
+  assert.equal(estado.eventos.length, 0);
 });
 
 test("a las llamadas de /api se les fuerza no-store (nada de datos cacheados)", async () => {

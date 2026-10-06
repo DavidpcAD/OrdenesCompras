@@ -1748,6 +1748,30 @@ td.ds-col-fija {
 .modal > p + p { margin-top: var(--ds-space-3); }
 @keyframes fade { from { opacity: 0; } to { opacity: 1; } }
 
+/* ---- Aviso de sesión terminada (components/sesion-vencida.tsx) --------------
+   Va por encima de TODO lo que pueda estar abierto: un diálogo (.modal-overlay, 80),
+   un toast (100) y hasta el skip-link (200). Si la sesión venció mientras alguien
+   tenía un diálogo abierto, el que manda es este. El desenfoque del fondo dice sin
+   palabras que lo de atrás quedó inerte. */
+.sesion-fin { z-index: 300; backdrop-filter: blur(3px); }
+.sesion-fin__card { max-width: 420px; }
+.sesion-fin__marca { display: flex; align-items: center; gap: var(--ds-space-2); margin-bottom: var(--ds-space-5); }
+.sesion-fin__marca-txt { font-weight: var(--ds-font-weight-semibold); font-size: var(--ds-font-size-body-md); }
+.sesion-fin__cuerpo { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--ds-space-4); margin-bottom: var(--ds-space-6); }
+.sesion-fin__cuerpo p { margin-top: var(--ds-space-2); line-height: var(--ds-line-height-body-md); }
+/* Candado en disco verde: el mismo tinte que usa el resto de la app para marcar
+   "esto es del sistema", no una alarma roja. Nadie hizo nada mal. */
+.sesion-fin__ic {
+  flex-shrink: 0; width: 60px; height: 60px; border-radius: 50%;
+  display: grid; place-items: center;
+  background: color-mix(in srgb, var(--ds-color-green-100) 24%, var(--ds-tint-base));
+  color: var(--ds-color-green-300);
+}
+@media (max-width: 420px) {
+  /* En pantalla angosta el disco le come el ancho al texto: se va abajo. */
+  .sesion-fin__cuerpo { flex-direction: column-reverse; align-items: flex-start; gap: var(--ds-space-3); }
+}
+
 @media (max-width: 760px) {
   .grid-2, .grid-3 { grid-template-columns: 1fr; }
   .tiles { grid-template-columns: 1fr 1fr; }

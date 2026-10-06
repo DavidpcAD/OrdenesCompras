@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 import { StoreProvider } from "@/lib/store";
 import { ToastProvider } from "@/components/ui";
+import { AvisoSesionVencida } from "@/components/sesion-vencida";
 
 // Renderizar en CADA request (no hornear en build): así el layout lee `USE_API`
 // en vivo del App Service y entra en modo base (SQL). Sin esto, el build congela
@@ -36,7 +37,12 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       </head>
       <body>
         <StoreProvider useApi={useApi}>
-          <ToastProvider>{children}</ToastProvider>
+          <ToastProvider>
+            {children}
+            {/* Vive en el layout (no en el shell) para que tape también lo que se
+                abre fuera de él: impresión de una orden, un diálogo, el PDF. */}
+            <AvisoSesionVencida />
+          </ToastProvider>
         </StoreProvider>
       </body>
     </html>
