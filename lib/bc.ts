@@ -1319,6 +1319,19 @@ export function tipoLineaBc(t: unknown, typeNo?: unknown): "articulo" | "recurso
   return "otro";
 }
 
+// El IVA% de una línea de BC, cuando el camino de lectura lo trae. Devuelve
+// `undefined` —no 0— si el campo no vino: 0 es "exento" y eso es una afirmación.
+// La diferencia importa porque con este número se FRENA un registro (ver
+// lib/freno-precio.ts), y frenar por un dato que nadie leyó sería lo peor de todo.
+function ivaBcDeLinea(...candidatos: unknown[]): number | undefined {
+  for (const c of candidatos) {
+    if (c === undefined || c === null || c === "") continue;
+    const n = Number(c);
+    if (Number.isFinite(n) && n >= 0) return n;
+  }
+  return undefined;
+}
+
 export async function bcLineasPedido(orderNo: string): Promise<BcLineasPedido | null> {
   const no = (orderNo ?? "").trim();
   if (!no) return null;
@@ -1361,6 +1374,7 @@ export async function bcLineasPedido(orderNo: string): Promise<BcLineasPedido | 
         facturada: Number(r.quantityInvoiced ?? 0) || 0,
         pendiente: Number(r.outstandingQuantity ?? 0) || 0,
         precioUnitario: Number(r.directUnitCost ?? 0) || 0,
+        ivaPct: ivaBcDeLinea(r.vatPercent),
       })),
     };
   } catch { /* la custom puede no estar publicada en este entorno: se sigue probando */ }
@@ -1408,6 +1422,8 @@ export async function bcLineasPedido(orderNo: string): Promise<BcLineasPedido | 
             facturada: Number(r.quantityInvoiced ?? 0) || 0,
             pendiente: Number(r.outstandingQuantity ?? Math.max(0, cantidad - recibida)) || 0,
             precioUnitario: Number(r.directUnitCost ?? 0) || 0,
+            // El codeunit no lo manda hoy; se lee igual por si algún día lo agrega.
+            ivaPct: ivaBcDeLinea(r.vatPercent, r.taxPercent),
           };
         }),
       };
@@ -1455,6 +1471,7 @@ export async function bcLineasPedido(orderNo: string): Promise<BcLineasPedido | 
           pendiente: Math.max(0, cantidad - recibida),
           // El costo unitario se llama distinto según la versión de la API.
           precioUnitario: Number(l.unitCost ?? l.directUnitCost ?? 0) || 0,
+          ivaPct: ivaBcDeLinea(l.taxPercent, l.vatPercent),
         };
       }),
     };
@@ -3323,6 +3340,9 @@ export function lineasOrdenParaCotejo(lineas: OrdenLinea[]): LineaApp[] {
     // La unidad NO es opcional acá: sin ella no se detecta el caso más caro de todos
     // (la misma cantidad en otra unidad — 1 EST son 255.000 GR).
     unidad: String(l.unidad ?? ""),
+    // El IVA% que la orden decidió. No entra al cotejo de `cotejarLineas` (que mira
+    // cantidades y precios); lo usa el freno de precio al registrar.
+    ivaPct: Number.isFinite(Number(l.ivaPct)) ? Number(l.ivaPct) : undefined,
   }));
 }
 
@@ -3724,6 +3744,14 @@ export function frenoRegistroActivo(): boolean {
 }
 export function frenoProveedorActivo(): boolean {
   const v = (process.env.BC_FRENO_PROVEEDOR ?? "").trim().toLowerCase();
+  return !(v === "0" || v === "false" || v === "no");
+}
+//   BC_FRENO_PRECIO=0      → no se compara el precio ni el IVA de las líneas contra
+//                            BC antes de postear. Mismo criterio que los otros tres:
+//                            apagado se sigue pudiendo registrar, pero vuelve a ser
+//                            posible que BC facture a un precio que la orden no dice.
+export function frenoPrecioActivo(): boolean {
+  const v = (process.env.BC_FRENO_PRECIO ?? "").trim().toLowerCase();
   return !(v === "0" || v === "false" || v === "no");
 }
 
@@ -4131,7 +4159,13 @@ export function cotejoProveedor(orderNo: string, bc: ProveedorBc | null, proveed
 
 export type ModoRegistro = "recibir" | "facturar-recibido";
 
-export type FrenoRegistro = { ok: boolean; problemas: string[]; verificado: boolean };
+export type FrenoRegistro = {
+  ok: boolean; problemas: string[]; verificado: boolean;
+  // Las líneas del pedido tal como se leyeron acá. Viajan de vuelta para que el
+  // freno de PRECIO no tenga que volver a preguntarle a BC lo mismo: registrar ya
+  // es la pantalla más lenta de la app y una lectura de más se nota.
+  bc?: BcLineasPedido | null;
+};
 
 // El tipo con el que se indexa una línea acá. Las líneas viejas (y los llamadores
 // que todavía no lo mandan) son artículos: así era todo antes de que la orden
@@ -4151,12 +4185,12 @@ export async function verificarLineasPosteables(
   modo: ModoRegistro = "recibir",
 ): Promise<FrenoRegistro> {
   const pedidas = (lineas ?? []).filter((l) => (l.itemNo ?? "").trim() && (Number(l.qty) || 0) > 0);
-  if (!pedidas.length) return { ok: true, problemas: [], verificado: false };
+  if (!pedidas.length) return { ok: true, problemas: [], verificado: false, bc: null };
   const bc = await bcLineasPedido(orderNo);
   // Sin lectura no se frena: si BC no contesta, el registro tampoco va a entrar y
   // el error va a salir por su propio camino. Bloquear acá sería trabar a Bodega
   // por un problema de red. `verificado:false` deja constancia de que no se miró.
-  if (!bc) return { ok: true, problemas: [], verificado: false };
+  if (!bc) return { ok: true, problemas: [], verificado: false, bc: null };
 
   const problemas: string[] = [];
   // Se consume el saldo a medida que se valida, igual que hace el codeunit al
@@ -4218,7 +4252,7 @@ export async function verificarLineasPosteables(
       resta -= usa;
     }
   }
-  return { ok: problemas.length === 0, problemas, verificado: true };
+  return { ok: problemas.length === 0, problemas, verificado: true, bc };
 }
 
 // ¿Tiene sentido gritar por este chequeo, según el estado de la orden?

@@ -14,11 +14,14 @@
 // un freno. `vendorNo` del body queda solo como respaldo para los llamados viejos
 // que todavía no mandan `ordenId`.
 import { getOrden } from "./repo.ts";
+import type { Orden } from "./types.ts";
 import { frenoProveedorActivo, verificarEncabezadoDelPedido, type FrenoEncabezado, type EstadoBcPedido } from "./bc.ts";
 
 export type AccionRegistro = "recibir" | "facturar" | "registrar";
 
-const COMO_EMPIEZA: Record<AccionRegistro, string> = {
+// Cómo empieza el "no" de cada camino. Lo usa también el freno de precio
+// (lib/freno-precio.ts): los dos cortan lo mismo y tienen que sonar igual.
+export const COMO_EMPIEZA: Record<AccionRegistro, string> = {
   recibir: "NO se recibió",
   facturar: "NO se facturó",
   registrar: "NO se registró",
@@ -36,16 +39,22 @@ const QUE_SIGUE: Record<NonNullable<FrenoEncabezado["problema"]>, string> = {
     + "y volvé a intentar cuando esté Lanzado.",
 };
 
-export async function proveedorEsperadoDeOrden(ordenId: unknown, vendorNoBody: unknown): Promise<string> {
+// La orden viaja de vuelta además del proveedor: el freno de PRECIO la necesita
+// entera (líneas y moneda) y leerla otra vez sería repetir cinco consultas en la
+// pantalla más lenta de la app.
+export async function proveedorEsperadoDeOrden(
+  ordenId: unknown, vendorNoBody: unknown,
+): Promise<{ esperado: string; orden: Orden | null }> {
   const id = Number(ordenId ?? 0);
   if (id > 0) {
     try {
       const o = await getOrden(id);
-      if (o?.proveedorNo) return String(o.proveedorNo);
-      if (o?.proveedorId) return String(o.proveedorId);
+      if (o?.proveedorNo) return { esperado: String(o.proveedorNo), orden: o };
+      if (o?.proveedorId) return { esperado: String(o.proveedorId), orden: o };
+      if (o) return { esperado: String(vendorNoBody ?? ""), orden: o };
     } catch { /* si la base no contesta, queda el respaldo del body */ }
   }
-  return String(vendorNoBody ?? "");
+  return { esperado: String(vendorNoBody ?? ""), orden: null };
 }
 
 export type Freno409 = {
@@ -60,9 +69,11 @@ export async function frenarPorEncabezado(
   ordenId: unknown,
   vendorNoBody: unknown,
   accion: AccionRegistro,
-): Promise<{ freno: Freno409 | null; estadoBc?: EstadoBcPedido }> {
-  if (!frenoProveedorActivo()) return { freno: null };
-  const esperado = await proveedorEsperadoDeOrden(ordenId, vendorNoBody);
+): Promise<{ freno: Freno409 | null; estadoBc?: EstadoBcPedido; orden?: Orden | null }> {
+  // Con el freno apagado la orden igual se lee: la necesita el freno de precio, que
+  // tiene su propio interruptor y no se apaga con este.
+  const { esperado, orden } = await proveedorEsperadoDeOrden(ordenId, vendorNoBody);
+  if (!frenoProveedorActivo()) return { freno: null, orden };
   const r: FrenoEncabezado = await verificarEncabezadoDelPedido(String(orderNo ?? ""), esperado)
     // Un fallo del propio chequeo no puede trabar el registro: se comporta como
     // "no se pudo verificar", igual que cuando BC no contesta.
@@ -70,7 +81,7 @@ export async function frenarPorEncabezado(
   // El estado que se leyó acá viaja de vuelta aunque el freno deje pasar: es la
   // única constancia de cómo estaba el pedido ANTES del posteo, y con eso se puede
   // reponer el lanzamiento si el posteo lo des-lanza (ver reponerLanzamientoTrasFallo).
-  if (r.ok || !r.problema) return { freno: null, estadoBc: r.bcEstado };
+  if (r.ok || !r.problema) return { freno: null, estadoBc: r.bcEstado, orden };
   return { freno: {
     ok: false,
     error: `${COMO_EMPIEZA[accion]}: ${r.mensaje}.\n\n${QUE_SIGUE[r.problema]}`,
@@ -79,5 +90,5 @@ export async function frenarPorEncabezado(
     bcVendorNo: r.bcVendorNo,
     bcVendorName: r.bcVendorName,
     bcEstado: r.bcEstado,
-  }, estadoBc: r.bcEstado };
+  }, estadoBc: r.bcEstado, orden };
 }

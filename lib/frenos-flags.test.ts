@@ -1,19 +1,20 @@
 // LOS INTERRUPTORES DE LOS FRENOS, Y EL AVISO QUE NO HAY QUE DAR.
 //
-// Tres frenos de Business Central se pueden apagar por variable de entorno (la pared
-// de aprobación, el de registro y el de proveedor). Lo que estas pruebas cuidan es
+// Cuatro frenos de Business Central se pueden apagar por variable de entorno (la pared
+// de aprobación, el de registro, el de proveedor y el de precio). Lo que estas pruebas cuidan es
 // que estén ENCENDIDOS salvo que alguien los apague a propósito y bien escrito: un
 // freno que se apaga solo por un typo en Azure no es un freno, y estos tres existen
 // porque ya hubo plata mal puesta (CP-005183: una factura de ₡425.034,36 de EPA
 // quedó en la cuenta de otro proveedor).
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { paredAprobacionActiva, frenoRegistroActivo, frenoProveedorActivo, chequeoAplica } from "./bc.ts";
+import { paredAprobacionActiva, frenoRegistroActivo, frenoProveedorActivo, frenoPrecioActivo, chequeoAplica } from "./bc.ts";
 
 const FLAGS = [
   ["BC_PARED_APROBACION", paredAprobacionActiva],
   ["BC_FRENO_REGISTRO", frenoRegistroActivo],
   ["BC_FRENO_PROVEEDOR", frenoProveedorActivo],
+  ["BC_FRENO_PRECIO", frenoPrecioActivo],
 ] as const;
 
 const con = (clave: string, valor: string | undefined, fn: () => boolean) => {
@@ -25,7 +26,7 @@ const con = (clave: string, valor: string | undefined, fn: () => boolean) => {
   }
 };
 
-test("sin la variable puesta, los tres frenos están ENCENDIDOS", () => {
+test("sin la variable puesta, los cuatro frenos están ENCENDIDOS", () => {
   // El default seguro: una app recién desplegada frena, no pasa de largo.
   for (const [clave, fn] of FLAGS) assert.equal(con(clave, undefined, fn), true, clave);
 });

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { bcRecibir, reponerLanzamientoTrasFallo, type EstadoBcPedido, diagnosticarFalloBc, verificarLineasPosteables, frenoRegistroActivo, conflictoDeDimensiones, explicarConflictoDimensiones, faltaConfigContable, explicarFaltaConfigContable, campoVacioEnBc, explicarCampoVacioEnBc, fechaFueraDeRangoBc, explicarFechaFueraDeRangoBc } from "@/lib/bc";
 import { frenarPorEncabezado } from "@/lib/freno-encabezado";
+import { frenarPorPrecio } from "@/lib/freno-precio";
 import { actor } from "@/lib/actor";
 import type { Role } from "@/lib/types";
 import { guardarRecepcionTrasBc } from "@/lib/guardado-tras-bc";
@@ -43,7 +44,7 @@ export async function POST(req: Request) {
     // positivo, Bodega no podría recibir un camión y no se puede esperar un despliegue.
     const freno = frenoRegistroActivo()
       ? await verificarLineasPosteables(String(orderNo ?? ""), lineas ?? [], "recibir")
-      : { ok: true, problemas: [] as string[], verificado: false };
+      : { ok: true, problemas: [] as string[], verificado: false, bc: undefined };
     if (!freno.ok) {
       return NextResponse.json({
         ok: false,
@@ -54,6 +55,17 @@ export async function POST(req: Request) {
         problemas: freno.problemas,
       }, { status: 409 });
     }
+    // FRENO 3 — EL MONTO: que lo que BC va a facturar sea lo que la orden dice.
+    // La app no le manda precios al registrar (solo N.º y cantidad), así que BC
+    // factura con lo que tenga la línea del pedido: un precio, un IVA o una unidad
+    // distintos allá se convierten en plata mal puesta sin que nadie lo vea. Reusa
+    // las líneas que el freno anterior ya leyó. BC_FRENO_PRECIO=0 lo apaga desde
+    // Azure. Ver lib/freno-precio.ts.
+    const frenoMonto = await frenarPorPrecio({
+      orden: frenoProv.orden, orderNo: String(orderNo ?? ""), pedidas: lineas ?? [],
+      accion: "recibir", bcYaLeido: freno.bc,
+    }).catch(() => null);   // el freno nunca puede tumbar un registro por su cuenta
+    if (frenoMonto) return NextResponse.json(frenoMonto, { status: 409 });
     // Quién recibe, de la cookie firmada (ver lib/actor.ts): queda sellado en el
     // pedido de BC y firma el movimiento de la obra si la factura se registra después.
     quien = await actor(cuerpo);

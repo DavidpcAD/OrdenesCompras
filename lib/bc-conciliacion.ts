@@ -35,6 +35,11 @@ export type LineaBc = {
   facturada: number;
   pendiente: number;      // Outstanding Quantity: lo que todavía se puede recibir
   precioUnitario: number;
+  // El IVA% que BC le calcula HOY a la línea (cruzando el grupo del encabezado con
+  // el del artículo). Es `undefined` cuando el camino de lectura no lo trae —la
+  // página estándar y el codeunit no siempre lo dan— y "no lo sé" NUNCA es una
+  // acusación: sin el dato no se compara. Ver lib/freno-precio.ts.
+  ivaPct?: number;
   // A nombre de QUIÉN quedó el documento en BC. Solo lo traen las líneas de
   // facturas registradas (página `postedInvoiceLines`), y no se coteja acá: el
   // proveedor no es una diferencia de línea, es una diferencia de encabezado y
@@ -52,6 +57,7 @@ export type LineaApp = {
   cantidad: number;
   precioUnitario: number;
   unidad?: string;        // unidad de COMPRA: en ella están cantidad y precio
+  ivaPct?: number;        // el IVA% que la orden le puso a la línea
 };
 
 export type ClaseDiferencia =
