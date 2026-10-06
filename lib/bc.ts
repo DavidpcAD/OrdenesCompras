@@ -1946,14 +1946,19 @@ export type LineaReplaceBc = {
 //   BC_CC_POR_ALMACEN="F-MUEBLES=F-MUEBLES,VN-M.28=VN-M.28"
 //   BC_CC_POR_ALMACEN="F-MUEBLES"        ← atajo: el valor forzado es el mismo código
 //
-// OJO CON PARA QUÉ SIRVE: solo para líneas SIN centro de costo. Nació el 3 sep 2026
+// OJO CON PARA QUÉ SIRVE: manda en las líneas SIN Job No. —o sea en la compra para
+// stock, donde el material entra al inventario del almacén— y no manda en las de
+// consumo directo, donde el CC es el de la obra. Nació el 3 sep 2026
 // (CP-005293, almacén F-MUEBLES) creyendo que en un choque el CC del almacén tenía
 // que ganarle al de la obra, y eso era FALSO: la obra también amarra el suyo con
 // "Igual código", así que el parche no arregló nada, solo movió el "no" de BC del
 // almacén a la obra. Lo que sí hizo fue trabar cuatro pedidos que antes pasaban
 // (CP-005371 el 3 sep, CP-005403, CP-005492 y CP-005701), porque `ALM-GRAL=INV` y
 // `ALM-BAR=INV` le pisan a la línea el CC de la obra. Desde el 29 sep la obra manda
-// (ver dimensionDeLinea) y esto solo actúa cuando no hay obra de por medio.
+// cuando viaja como Job No. (ver dimensionDeLinea), y desde el 6 oct esto vuelve a
+// mandar en la compra PARA STOCK, que es donde la obra no es el destino y BC exige
+// el CC del almacén igual. Por eso `ALM-BAR=INV` se sacó de la env: ALM-BAR no
+// amarra nada en BC, así que ahí la obra de la solicitud sí puede quedar.
 //
 // UN CHOQUE DE VERDAD NO SE ARREGLA DESDE ACÁ. Si el almacén amarra un valor y la
 // obra amarra otro, la línea no se puede registrar con NINGÚN CC y el arreglo es en
@@ -1988,11 +1993,26 @@ export function ccForzadoDelAlmacen(locationCode?: string): string {
 // pone sola por el ítem o el almacén (mismo error que se pagó con la unidad y la
 // variante en CP-003884).
 function dimensionDeLinea(l: LineaReplaceBc): Record<string, string> {
-  // CUANDO HAY OBRA, EL CC DE LA OBRA MANDA. Medido contra BC Production el 29 sep
-  // 2026: de 6 990 líneas ya registradas con obra, 6 989 llevan CC = el código de la
-  // obra. Pisárselo con el del almacén es lo que trabó CP-005371, CP-005403,
-  // CP-005492 y CP-005701 (ver ccForzadoDelAlmacen).
-  const valor = (l.centroCosto ?? "").trim() || ccForzadoDelAlmacen(l.locationCode);
+  const deLaLinea = (l.centroCosto ?? "").trim();
+  const delAlmacen = ccForzadoDelAlmacen(l.locationCode);
+  // CONSUMO DIRECTO (la línea lleva Job No.): MANDA EL CC DE LA OBRA. Medido contra
+  // BC Production el 29 sep 2026: de 6 990 líneas ya registradas con obra, 6 989
+  // llevan CC = el código de la obra. Pisárselo con el del almacén es lo que trabó
+  // CP-005371, CP-005403, CP-005492 y CP-005701 (ver ccForzadoDelAlmacen).
+  //
+  // COMPRA PARA STOCK (sin Job No.): MANDA EL ALMACÉN. No es la regla de arriba al
+  // revés, son dos cosas distintas. Acá la obra no es el destino: el material entra
+  // al INVENTARIO del almacén y la obra solo dice para quién se pidió —
+  // `centroCostoDeLinea` la saca de la solicitud, no de la línea—. Y de ese lado BC
+  // ya tiene decidido qué CC acepta cada almacén y no negocia: ALM-GRAL amarra INV
+  // con "Igual código", así que una línea a ALM-GRAL con el CC de una obra NO SE
+  // PUEDE REGISTRAR, y el "no" le sale a Bodega semanas después, al recibir.
+  //
+  // Medido contra BC Production el 6 oct 2026: los 400 movimientos de compra a
+  // ALM-GRAL desde agosto llevan TODOS CC=INV, y había 15 líneas abiertas con el CC
+  // de una obra, las 15 sin recibir ni facturar (CP-005336 con PV-NOVARUM es la que
+  // destapó esto; CP-005878 es del día anterior, o sea que seguía pasando).
+  const valor = (l.jobNo ?? "").trim() ? (deLaLinea || delAlmacen) : (delAlmacen || deLaLinea);
   return valor ? { ccCode: codigoDimensionCC(), ccValue: valor } : {};
 }
 
@@ -2625,6 +2645,10 @@ export function lineasOrdenParaBc(
 //  · consumo directo → su propia obra (la que ya viaja como Job No.);
 //  · para stock      → la obra de la solicitud que la originó.
 // En una compra directa sin obra no hay centro de costo y no se manda ninguno.
+// OJO: en el caso de stock esto es una PREFERENCIA, no la última palabra. Si el
+// almacén de destino amarra un CC en BC, ese gana (ver dimensionDeLinea): la obra
+// de la solicitud dice para quién se pidió el material, pero el que entra al
+// inventario es el almacén y BC no acepta otro valor que el suyo.
 export function centroCostoDeLinea(l: OrdenLinea, obraDeSolicitud?: Map<string, string>): string {
   const propia = (l.proyecto ?? "").trim();
   if (propia) return propia;

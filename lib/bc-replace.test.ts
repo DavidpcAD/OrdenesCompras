@@ -509,21 +509,41 @@ test("BC_CC_POR_ALMACEN: mapea almacén → valor forzado, y el atajo repite el 
   } finally { delete process.env.BC_CC_POR_ALMACEN; }
 });
 
-// Medido contra BC Production el 29 sep 2026: de 6 990 líneas YA REGISTRADAS con
-// obra, 6 989 llevan CC = el código de la obra. Pisárselo con el del almacén es lo
-// que trabó CP-005371, CP-005403, CP-005492 y CP-005701 — y no salvaba a F-MUEBLES,
-// porque la obra VN-L.34 amarra el suyo con "Igual código" igual que el almacén.
-test("si la línea tiene obra, su CC le gana al que amarra el almacén", () => {
+// CONSUMO DIRECTO. Medido contra BC Production el 29 sep 2026: de 6 990 líneas YA
+// REGISTRADAS con obra, 6 989 llevan CC = el código de la obra. Pisárselo con el del
+// almacén es lo que trabó CP-005371, CP-005403, CP-005492 y CP-005701 — y no salvaba
+// a F-MUEBLES, porque la obra VN-L.34 amarra el suyo con "Igual código" igual que el
+// almacén. Lo que hace de una línea un consumo directo es el JOB NO., no que traiga
+// centro de costo: una compra a stock también trae uno (el de la solicitud).
+test("con Job No., el CC de la obra le gana al que amarra el almacén", () => {
   process.env.BC_CC_POR_ALMACEN = "F-MUEBLES=F-MUEBLES,ALM-GRAL=INV";
   try {
     const { lines } = payloadReplaceLines([
-      item({ locationCode: "F-MUEBLES", centroCosto: "VN-L.34" }),
-      item({ locationCode: "ALM-GRAL", centroCosto: "INF-HDAII" }),
-      item({ locationCode: "ALM-BAR", centroCosto: "GEN-BAR" }),
+      item({ locationCode: "F-MUEBLES", jobNo: "VN-L.34", taskNo: "1000", centroCosto: "VN-L.34" }),
+      item({ locationCode: "ALM-GRAL", jobNo: "INF-HDAII", taskNo: "13.2", centroCosto: "INF-HDAII" }),
+      item({ locationCode: "ALM-BAR", jobNo: "GEN-BAR", taskNo: "1000", centroCosto: "GEN-BAR" }),
     ]);
     assert.equal(lines[0].ccValue, "VN-L.34");
     assert.equal(lines[1].ccValue, "INF-HDAII");   // era el bug de CP-005492: iba "INV"
     assert.equal(lines[2].ccValue, "GEN-BAR");     // ALM-BAR no amarra nada: era daño gratis
+  } finally { delete process.env.BC_CC_POR_ALMACEN; }
+});
+
+// COMPRA PARA STOCK (CP-005336, 6 oct 2026). Sin Job No. el material entra al
+// inventario del almacén, y el CC que trae la línea es el de la obra que la PIDIÓ,
+// no el de un destino. BC no lo acepta: ALM-GRAL amarra INV con "Igual código" y la
+// línea se traba al registrar, en manos de Bodega. Gana el almacén.
+test("sin Job No., el CC del almacén le gana al de la obra que lo pidió", () => {
+  process.env.BC_CC_POR_ALMACEN = "ALM-GRAL=INV,F-MUEBLES=F-MUEBLES";
+  try {
+    const { lines } = payloadReplaceLines([
+      item({ locationCode: "ALM-GRAL", centroCosto: "PV-NOVARUM" }),
+      item({ locationCode: "F-MUEBLES", centroCosto: "VN-L.34" }),
+      item({ locationCode: "ALM-BAR", centroCosto: "GEN-BAR" }),
+    ]);
+    assert.equal(lines[0].ccValue, "INV");         // era CP-005336: iba "PV-NOVARUM" y no registraba
+    assert.equal(lines[1].ccValue, "F-MUEBLES");
+    assert.equal(lines[2].ccValue, "GEN-BAR");     // almacén que no amarra: la obra de la solicitud queda
   } finally { delete process.env.BC_CC_POR_ALMACEN; }
 });
 
@@ -536,6 +556,13 @@ test("el almacén amarrado pone el CC cuando la línea no trae obra", () => {
     assert.equal(lines[0].ccValue, "F-MUEBLES");
     assert.equal(lines[0].ccCode, "CC");
   } finally { delete process.env.BC_CC_POR_ALMACEN; }
+});
+
+// Y sin almacén amarrado tampoco se pierde nada: el CC de la solicitud viaja igual.
+test("sin almacén amarrado, la compra a stock sigue llevando la obra que la pidió", () => {
+  delete process.env.BC_CC_POR_ALMACEN;
+  const { lines } = payloadReplaceLines([item({ locationCode: "ALM-GRAL", centroCosto: "PV-NOVARUM" })]);
+  assert.equal(lines[0].ccValue, "PV-NOVARUM");
 });
 
 // ── El IVA de las líneas lo dice la orden ───────────────────────────────────
