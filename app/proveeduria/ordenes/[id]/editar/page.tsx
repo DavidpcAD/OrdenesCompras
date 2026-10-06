@@ -12,6 +12,7 @@ import { useStore } from "@/lib/store";
 import { cuenta, etiquetaTipoLinea, money, num, ordenEsDirecta, ordenEsperaCorreccion, lineasCorregidasDeOrden, ordenLineaImporte, ordenPedidos, almacenesParaRecepcion, esAlmacenFisico, repartoDeLineaSolicitud, pedidoLineaPendiente, obraDeLinea, obraParaOrden, ultimoPrecioProveedor, monedaApp, numeroOrden, MONEDAS } from "@/lib/helpers";
 import { precioEnUnidad, precioEntreUnidades, cantidadEntreUnidades, equivalencia, equivalenciaDeUnidad, mismaMoneda, codigoDeItem, opcionesDeUnidad, type UnidadDeItem, type PrecioRef } from "@/lib/unidad";
 import { useVariantes } from "@/lib/use-variantes";
+import { useSalida } from "@/lib/use-volver";
 import type { LineaDeMaquina } from "@/lib/maquinas";
 import type { OrdenLinea } from "@/lib/types";
 
@@ -67,6 +68,10 @@ export default function EditarOrdenPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
   const toast = useToast();
+  // Salir de acá NUNCA deja esta pantalla en el historial: después de guardar, la
+  // orden ya no está Abierta y volver a caer en Editar es la pantalla "No se puede
+  // editar" (lo que pasaba con el `push` que había).
+  const salirALaOrden = useSalida(`/proveeduria/ordenes/${id}`);
   const { ordenes, proveedores, almacenes, recepciones, pedidos, updateOrden, cargando } = useStore();
   const orden = ordenes.find((o) => o.id === id);
   // id del pedido (solicitud) de origen de una línea, para enlazar a su detalle.
@@ -479,13 +484,13 @@ export default function EditarOrdenPage() {
     || orden.lineas.some((l) => l.cantidadRecibida > 0 || l.cantidadFacturada > 0);
   if (tieneRecepciones) {
     return <><main className="page">
-      <button type="button" className="back-link" onClick={() => router.push(`/proveeduria/ordenes/${id}`)}>Volver a la orden</button>
+      <button type="button" className="back-link" onClick={salirALaOrden}>Volver a la orden</button>
       <EmptyState icon={<IconWarning size={24} />} title="No se puede editar" hint="Esta orden ya tiene recepciones registradas: editarla reescribiría las líneas y se perdería la trazabilidad de lo recibido y facturado." />
     </main></>;
   }
   if (orden.estado !== "abierto" && orden.estado !== "rechazado") {
     return <><main className="page">
-      <button type="button" className="back-link" onClick={() => router.push(`/proveeduria/ordenes/${id}`)}>Volver a la orden</button>
+      <button type="button" className="back-link" onClick={salirALaOrden}>Volver a la orden</button>
       <EmptyState icon={<IconWarning size={24} />} title="No se puede editar" hint="Solo se puede editar mientras la orden está Abierta o Rechazada." />
     </main></>;
   }
@@ -719,7 +724,7 @@ export default function EditarOrdenPage() {
       // Sin "Orden" delante: `numeroOrden` ya dice "CP-005353" o, si todavía no está
       // en BC, "Orden en armado" (y salía "Orden Orden en armado actualizada").
       else toast(`${numeroOrden(orden!)} actualizada`, "success");
-      router.push(`/proveeduria/ordenes/${orden!.id}`);
+      salirALaOrden();
     } catch (e: any) { toast(String(e?.message ?? e), "error"); setGuardando(false); }
   }
 
@@ -732,7 +737,7 @@ export default function EditarOrdenPage() {
   return (
     <>
       <main className="page page--wide" style={{ paddingBottom: 120 }}>
-        <button type="button" className="back-link" onClick={() => router.push(`/proveeduria/ordenes/${id}`)}>Volver a la orden</button>
+        <button type="button" className="back-link" onClick={salirALaOrden}>Volver a la orden</button>
         <div className="page__head">
           <div className="page__title">
             {/* Mientras la orden no está en BC no tiene número, así que el título
@@ -1122,7 +1127,7 @@ export default function EditarOrdenPage() {
         <div className="action-bar__inner">
           <span className="ds-muted">{cuenta(rows.length, "línea", "líneas")} · <span className="ds-strong">{money(total, currency)}</span></span>
           <div className="row gap-3 action-bar__cta">
-            <Button variant="outline" onClick={() => router.push(`/proveeduria/ordenes/${id}`)}>Cancelar</Button>
+            <Button variant="outline" onClick={salirALaOrden}>Cancelar</Button>
             <Button onClick={guardar} disabled={guardando}>{guardando ? "Guardando…" : "Guardar cambios"}</Button>
           </div>
         </div>

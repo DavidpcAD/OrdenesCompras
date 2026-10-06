@@ -7,9 +7,9 @@
 //   npm test
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { leerNav, siguienteNav, visitaTras, type RegistroNav } from "./navegacion.ts";
+import { leerNav, modoSalida, siguienteNav, visitaTras, type RegistroNav } from "./navegacion.ts";
 
-const VACIO: RegistroNav = { n: 0, ruta: null };
+const VACIO: RegistroNav = { n: 0, ruta: null, previa: null };
 
 test("una pestaña nueva arranca sin registro", () => {
   assert.deepEqual(leerNav(null), VACIO);
@@ -21,20 +21,20 @@ test("la basura guardada no tumba la lectura", () => {
   for (const raw of ["", "no es json", "null", "123", '{"n":"dos"}', '{"n":-1}', "{}"]) {
     assert.deepEqual(leerNav(raw), VACIO, `con ${JSON.stringify(raw)}`);
   }
-  assert.deepEqual(leerNav('{"n":3,"ruta":"/proveeduria/ordenes"}'), { n: 3, ruta: "/proveeduria/ordenes" });
+  assert.deepEqual(leerNav('{"n":3,"ruta":"/proveeduria/ordenes"}'), { n: 3, ruta: "/proveeduria/ordenes", previa: null });
 });
 
 // Entrar por un link directo (un correo, un WhatsApp) deja el contador en 0, y por eso
 // "Volver" cae a su ruta de siempre en vez de sacar a la persona de la app.
 test("la primera pantalla de la pestaña no cuenta como navegación", () => {
-  assert.deepEqual(siguienteNav(VACIO, "/proveeduria/ordenes"), { n: 0, ruta: "/proveeduria/ordenes" });
+  assert.deepEqual(siguienteNav(VACIO, "/proveeduria/ordenes"), { n: 0, ruta: "/proveeduria/ordenes", previa: null });
 });
 
 test("cambiar de pantalla suma uno", () => {
   const ordenes = siguienteNav(VACIO, "/proveeduria/ordenes")!;
   const detalle = siguienteNav(ordenes, "/proveeduria/ordenes/OC-1")!;
-  assert.deepEqual(detalle, { n: 1, ruta: "/proveeduria/ordenes/OC-1" });
-  assert.deepEqual(siguienteNav(detalle, "/proveeduria/ordenes"), { n: 2, ruta: "/proveeduria/ordenes" });
+  assert.deepEqual(detalle, { n: 1, ruta: "/proveeduria/ordenes/OC-1", previa: "/proveeduria/ordenes" });
+  assert.deepEqual(siguienteNav(detalle, "/proveeduria/ordenes"), { n: 2, ruta: "/proveeduria/ordenes", previa: "/proveeduria/ordenes/OC-1" });
 });
 
 // Recargar con F5 vuelve a pintar la misma ruta: el historial no cambió, así que el
@@ -81,7 +81,7 @@ test("alternar pestañas dentro de la pantalla no mueve el contador", () => {
 // visita está sin tener que esperar la anotación (y sin adelantarla, que le mentía al
 // botón Volver).
 test("la visita de una pantalla que se acaba de pintar es la que va a quedar anotada", () => {
-  const enOrdenes: RegistroNav = { n: 4, ruta: "/proveeduria/ordenes" };
+  const enOrdenes: RegistroNav = { n: 4, ruta: "/proveeduria/ordenes", previa: null };
   // Pintando el detalle, antes de que el shell anote: ya cuenta como la visita 5.
   assert.equal(visitaTras(enOrdenes, "/proveeduria/ordenes/OC-1"), 5);
   // Y después de anotar, la misma pantalla sigue dando 5: dos lecturas, la misma visita.
@@ -90,9 +90,47 @@ test("la visita de una pantalla que se acaba de pintar es la que va a quedar ano
 });
 
 test("repintar la misma ruta (F5) no cambia de visita", () => {
-  assert.equal(visitaTras({ n: 7, ruta: "/proveeduria/ordenes" }, "/proveeduria/ordenes"), 7);
+  assert.equal(visitaTras({ n: 7, ruta: "/proveeduria/ordenes", previa: null }, "/proveeduria/ordenes"), 7);
 });
 
 test("la primera pantalla de la pestaña es la visita 0", () => {
-  assert.equal(visitaTras({ n: 0, ruta: null }, "/proveeduria/ordenes"), 0);
+  assert.equal(visitaTras({ n: 0, ruta: null, previa: null }, "/proveeduria/ordenes"), 0);
+});
+
+// SALIR DE EDITAR. Con un `push` la pantalla de Editar quedaba detrás de la orden y el
+// "Volver" de la orden —que usa el historial— caía de vuelta en Editar, que para
+// entonces contesta "No se puede editar": la orden recién guardada ya no está Abierta.
+const EDITAR = "/proveeduria/ordenes/210/editar";
+const ORDEN = "/proveeduria/ordenes/210";
+
+test("se sale de Editar por el historial cuando se entró desde la orden", () => {
+  const reg: RegistroNav = { n: 5, ruta: EDITAR, previa: ORDEN };
+  assert.equal(modoSalida(reg, EDITAR, ORDEN), "back");
+});
+
+// Entrando de otro lado (desde la solicitud que originó la orden, o por un link
+// directo) no hay a dónde volver: se reemplaza la entrada, que tampoco deja Editar
+// atrás.
+test("se reemplaza la entrada cuando se entró de otro lado", () => {
+  const desdeSolicitud: RegistroNav = { n: 5, ruta: EDITAR, previa: "/proveeduria/solicitudes/ped1" };
+  assert.equal(modoSalida(desdeSolicitud, EDITAR, ORDEN), "replace");
+  // Link directo: Editar es la primera pantalla de la pestaña, no hay previa.
+  assert.equal(modoSalida({ n: 0, ruta: EDITAR, previa: null }, EDITAR, ORDEN), "replace");
+  // Otra orden, no esta: un back() ahí dejaría a la persona viendo la orden de al lado.
+  const otraOrden: RegistroNav = { n: 5, ruta: EDITAR, previa: "/proveeduria/ordenes/211" };
+  assert.equal(modoSalida(otraOrden, EDITAR, ORDEN), "replace");
+});
+
+// LA CARRERA QUE HAY QUE AGUANTAR: el AppShell anota la pantalla en un efecto, así que
+// el registro puede estar atrasado (todavía diciendo que estamos en la orden). Leído
+// así, de dónde venimos se contesta igual de bien y la salida sigue siendo un back().
+test("el registro atrasado no cambia la decisión", () => {
+  const atrasado: RegistroNav = { n: 4, ruta: ORDEN, previa: "/proveeduria/compras" };
+  assert.equal(modoSalida(atrasado, EDITAR, ORDEN), "back");
+});
+
+// El registro guarda el pathname pelado, así que el destino se compara sin su query.
+test("el query del destino no cuenta para la comparación", () => {
+  const reg: RegistroNav = { n: 3, ruta: "/proveeduria/nueva", previa: "/proveeduria/compras" };
+  assert.equal(modoSalida(reg, "/proveeduria/nueva", "/proveeduria/compras?vista=ordenes"), "back");
 });

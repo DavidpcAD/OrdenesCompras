@@ -15,9 +15,13 @@
 
 export const CLAVE_NAV = "adelante_oc_nav";
 
-export type RegistroNav = { n: number; ruta: string | null };
+// `previa` es la pantalla de la que se VIENE. Se guarda acá y no se deduce leyendo el
+// registro al montar: el AppShell lo anota en un efecto, y quien quiera saber de dónde
+// viene estaría compitiendo con ese efecto. Guardado, se puede preguntar en cualquier
+// momento (en el clic, por ejemplo), que es cuando ya no hay carrera.
+export type RegistroNav = { n: number; ruta: string | null; previa: string | null };
 
-const VACIO: RegistroNav = { n: 0, ruta: null };
+const VACIO: RegistroNav = { n: 0, ruta: null, previa: null };
 
 // Tolerante a propósito: en sessionStorage puede haber quedado basura de una versión
 // anterior de la app, y eso no puede tumbar la navegación.
@@ -25,7 +29,12 @@ export function leerNav(raw: string | null): RegistroNav {
   try {
     const r = JSON.parse(raw ?? "null");
     if (r && typeof r.n === "number" && Number.isFinite(r.n) && r.n >= 0) {
-      return { n: r.n, ruta: typeof r.ruta === "string" ? r.ruta : null };
+      return {
+        n: r.n,
+        ruta: typeof r.ruta === "string" ? r.ruta : null,
+        // Puede no venir: lo guardado por una versión anterior de la app no la traía.
+        previa: typeof r.previa === "string" ? r.previa : null,
+      };
     }
   } catch { /* no era JSON: se arranca de cero */ }
   return VACIO;
@@ -38,7 +47,7 @@ export function leerNav(raw: string | null): RegistroNav {
 // (recargar con F5) tampoco cuenta: el historial no cambió.
 export function siguienteNav(previo: RegistroNav, ruta: string): RegistroNav | null {
   if (previo.ruta === ruta) return null;
-  return { n: previo.ruta === null ? 0 : previo.n + 1, ruta };
+  return { n: previo.ruta === null ? 0 : previo.n + 1, ruta, previa: previo.ruta };
 }
 
 export function registroNav(): RegistroNav {
@@ -74,3 +83,21 @@ export function visitaTras(previo: RegistroNav, ruta: string): number {
 }
 
 export const visitaDe = (ruta: string): number => visitaTras(registroNav(), ruta);
+
+// CÓMO SALIR DE UNA PANTALLA DE PASO (editar una orden, armarla) hacia `destino`, sin
+// dejarla atrás en el historial. Si se entró DESDE el destino —lo normal: la orden →
+// Editar— salir es un `back()`: la entrada de Editar se descarta y el "Volver" de la
+// orden sigue llevando a la lista de donde se venía. Si se entró de otro lado (desde
+// la solicitud, o por un link directo) se reemplaza la entrada actual: lleva al mismo
+// destino y tampoco deja la pantalla de paso detrás.
+//
+// Lo que no puede pasar es un `push`: ahí Editar queda DETRÁS de la orden y "Volver"
+// cae de vuelta en Editar, que para entonces ya contesta "No se puede editar" (la
+// orden recién guardada ya no está Abierta).
+export function modoSalida(reg: RegistroNav, actual: string, destino: string): "back" | "replace" {
+  // De dónde venimos. Si el registro ya anotó la pantalla en la que estamos, la
+  // anterior es su `previa`; si todavía no alcanzó a anotarla (se preguntó demasiado
+  // pronto), la anterior es la que el registro trae como actual.
+  const anterior = reg.ruta === actual ? reg.previa : reg.ruta;
+  return anterior !== null && anterior === destino.split("?")[0] ? "back" : "replace";
+}
