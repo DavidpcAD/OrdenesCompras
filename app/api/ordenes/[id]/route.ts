@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getOrden, setOrdenEstado, setOrdenBcNumber, updateOrden, descartarOrden, ordenTieneRecepciones, obrasDeLineasPedido, asignarBcNumber, guardarChequeoBc, guardarVariantesResueltas, anotarEncabezadoBc, MSG_NO_REABRIR } from "@/lib/repo";
 import { bcReopenPedido, bcReplaceOrderLines, bcCrearPedidoAbierto, crearEnBcAlEnviar, lineasOrdenParaBc, obrasSinTarea, lineasSinUnidad, lineasSinAlmacen, resolverVariantesRequeridas, sanearObrasDeLineas, avisoDeSaneo, bcOrdenTotales, bcEstadoDelPedido, chequearOrdenContraBc, lineasReplaceParaCotejo, lineasOrdenParaCotejo, paredAprobacionActiva, itemsBloqueadosDeLineas, bcSincronizarEncabezado, bcBorrarPedidoAbierto, conPedidoAbierto, campoVacioEnBc, explicarCampoVacioEnBc } from "@/lib/bc";
-import { ordenTotalConIva } from "@/lib/helpers";
+import { ordenTotalConIva, lineasSinPrecio } from "@/lib/helpers";
 import { actor } from "@/lib/actor";
 import { mensajeSeguro } from "@/lib/error-sql";
 
@@ -84,6 +84,29 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
           // se enteraba). Pasa cuando la app no quedó enterada del lanzamiento.
           bcAviso = "Se reabrió acá, pero esta orden no tiene N.º de Business Central guardado, así que no se pudo des-lanzar allá. Buscá el pedido en BC por proveedor y fecha y reabrilo a mano.";
         }
+      }
+    }
+
+    // PRECIO EN CERO: no hay nada que aprobar. Nadie puede decir que sí a un monto
+    // que no existe, y si lo intenta, Business Central no deja lanzar el pedido — o
+    // sea que el "no" le cae al aprobador, que es justo quien no lo puede arreglar.
+    // Pasó el 6 oct 2026 con la orden de PED-000524 (CINTA MALLA 2" en ₡0,00).
+    //
+    // Va ACÁ, antes del bloque de BC y no adentro, por dos razones: es regla del
+    // negocio y no un capricho de BC (tiene que valer aunque BC_CREAR_AL_ENVIAR esté
+    // apagado), y es el único punto por el que pasan los TRES caminos de envío
+    // (armar orden, compra directa y el botón del detalle). Cuesta una lectura más de
+    // la orden, que al lado de los viajes a BC que vienen después no se nota.
+    if (estado === "pendiente_aprobacion") {
+      const o = await getOrden(id);
+      if (!o) return NextResponse.json({ error: "no encontrada" }, { status: 404 });
+      const sinPrecio = lineasSinPrecio(o.lineas);
+      if (sinPrecio.length) {
+        return NextResponse.json({
+          error: `La orden NO se envió a aprobación: ${sinPrecio.length} línea(s) van en ₡0,00 — ${sinPrecio.join("; ")}. `
+            + `Nadie puede aprobar un monto que no existe y Business Central no deja lanzar un pedido así, `
+            + `o sea que el problema le caería al aprobador. Editá la orden, poné el precio acordado con el proveedor y reintentá.`,
+        }, { status: 409 });
       }
     }
 

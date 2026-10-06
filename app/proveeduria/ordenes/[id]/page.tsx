@@ -8,7 +8,7 @@ import { OrdenDetalle } from "@/components/orden-detalle";
 import { ConfirmarProveedor } from "@/components/confirmar-proveedor";
 import { useStore } from "@/lib/store";
 import { useOrden } from "@/lib/use-orden";
-import { cuenta, money, num, ordenTotalConIva, proveedorLabel, ordenPendienteResumen, numeroOrden, ordenAdmiteDevolucion, puedeDevolverLineaOrden, motivoNoDevolverLineaOrden, ordenQuedaSinMaterial, ordenEsperaCorreccion, lineasCorregidasDeOrden, ordenPedidos } from "@/lib/helpers";
+import { cuenta, lineasSinPrecio, money, num, ordenTotalConIva, proveedorLabel, ordenPendienteResumen, numeroOrden, ordenAdmiteDevolucion, puedeDevolverLineaOrden, motivoNoDevolverLineaOrden, ordenQuedaSinMaterial, ordenEsperaCorreccion, lineasCorregidasDeOrden, ordenPedidos } from "@/lib/helpers";
 
 export default function ProvOrdenDetallePage() {
   const { id } = useParams<{ id: string }>();
@@ -311,7 +311,19 @@ export default function ProvOrdenDetallePage() {
         <>
           <Button variant="outline" onClick={() => router.push(`/proveeduria/ordenes/${orden.id}/editar`)}>Editar</Button>
           {!espera && (
-            <Button loading={procesando} onClick={() => setConfirmarEnvio({ msg: `${numeroOrden(orden)} enviada a aprobación`, etiqueta: "Sí, enviar a aprobación" })}>
+            <Button loading={procesando} onClick={() => {
+              // Sin precio no sale. El servidor lo frena igual, pero el viaje se
+              // ahorra y el aviso dice CUÁL línea. Este es el camino por el que se
+              // coló la orden de PED-000524: guardada como Abierta (donde el precio
+              // puede estar pendiente, y está bien) y enviada desde acá sin que nadie
+              // mirara el ₡0,00.
+              const sinPrecio = lineasSinPrecio(orden.lineas);
+              if (sinPrecio.length) {
+                toast(`${cuenta(sinPrecio.length, "línea va", "líneas van")} en ₡0,00 — ${sinPrecio.slice(0, 3).join("; ")}${sinPrecio.length > 3 ? "…" : ""}. Entrá a “Editar”, poné el precio acordado con el proveedor y volvé a enviarla.`, "error");
+                return;
+              }
+              setConfirmarEnvio({ msg: `${numeroOrden(orden)} enviada a aprobación`, etiqueta: "Sí, enviar a aprobación" });
+            }}>
               {procesando ? "Enviando…" : "Enviar a aprobación"}
             </Button>
           )}

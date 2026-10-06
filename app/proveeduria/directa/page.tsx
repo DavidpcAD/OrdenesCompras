@@ -9,7 +9,7 @@ import { ConfirmarProveedor } from "@/components/confirmar-proveedor";
 import { IconCheck, IconWarning } from "@/components/icons";
 import { useStore } from "@/lib/store";
 import { leerBorrador, guardarBorrador, borrarBorrador, hace, type BorradorOrden } from "@/lib/borrador-orden";
-import { cuenta, etiquetaTipoLinea, money, almacenesParaRecepcion, esAlmacenFisico, monedaApp, numeroOrden, MONEDAS } from "@/lib/helpers";
+import { cuenta, etiquetaTipoLinea, lineasSinPrecio, money, almacenesParaRecepcion, esAlmacenFisico, monedaApp, numeroOrden, MONEDAS } from "@/lib/helpers";
 import { CampoMaquina, RepartoMaquinasModal, buscarMaquina, etiquetaMaquina, nombreDeMaquina, useMaquinasBc, type MaquinaCat } from "@/components/maquina-linea";
 import { precioEnUnidad, precioEntreUnidades, cantidadEntreUnidades, equivalencia, equivalenciaDeUnidad, mismaMoneda, codigoDeItem, opcionesDeUnidad, type UnidadDeItem } from "@/lib/unidad";
 import type { LineType, OrdenLinea } from "@/lib/types";
@@ -511,6 +511,17 @@ export default function OrdenDirectaPage() {
     if (malaCant) { toast(`Poné una cantidad mayor que 0 en "${malaCant.descripcion}".`, "error"); return; }
     const malPrecio = rows.find((r) => !Number.isFinite(Number(r.precio)) || Number(r.precio) < 0);
     if (malPrecio) { toast(`El precio de "${malPrecio.descripcion}" no es un número válido.`, "error"); return; }
+    // Sin precio no se manda a aprobar: nadie aprueba un monto que no existe y BC no
+    // deja lanzar el pedido, así que el "no" le caería al aprobador. Guardar como
+    // ABIERTA sí se puede: ahí el precio todavía puede estar pendiente del proveedor.
+    // El servidor lo frena igual (lo único que pasa acá es que se dice antes y mejor).
+    if (aprobar) {
+      const sinPrecio = lineasSinPrecio(rows);
+      if (sinPrecio.length) {
+        toast(`${cuenta(sinPrecio.length, "línea va", "líneas van")} en ₡0,00 — ${sinPrecio.slice(0, 3).join("; ")}${sinPrecio.length > 3 ? "…" : ""}. Poné el precio acordado con el proveedor antes de enviar a aprobación.`, "error");
+        return;
+      }
+    }
     // Última red antes de guardar: si una línea quedó con obra y sin tarea (p. ej.
     // las tareas no habían cargado al agregarla), BC va a rechazarla.
     // Solo el artículo: es el único tipo cuya obra viaja como Job No., y el Job No. es

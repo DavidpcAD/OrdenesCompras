@@ -18,6 +18,39 @@ import { comentarioSinMarcasInternas, motivoDeCierre, segmentosDeNota } from "./
 // diferencia decide si una compra de un servicio traba el % recibido o si un activo
 // fijo se le pide a BC como si tuviera existencias.
 export const esLineaMaterial = (l: Pick<OrdenLinea, "tipo">) => l.tipo === "articulo";
+
+// ── LÍNEAS QUE IRÍAN EN PRECIO CERO ──────────────────────────────────────────
+// Una orden NO se manda a aprobar con material sin precio: no hay monto que
+// aprobar, y Business Central no deja lanzar el pedido — o sea que el "no" le cae
+// al aprobador, que es justo quien no lo puede arreglar. Pasó el 6 oct 2026 con la
+// orden de PED-000524 (CINTA MALLA 2" ADHESIVA P/GYPSUM en ₡0,00): Luis Roberto la
+// aprobó y no la pudo lanzar.
+//
+// Hubo un freno así desde el 13 jul 2026, pero vivía en `lib/aprobar.ts` —el
+// chokepoint de cuando el pedido en BC lo creaba la app de Producción al aprobar— y
+// se fue con ese archivo cuando se borró por código muerto (c834d62, 10 ago). Quedó
+// solo el chequeo de la pantalla "armar orden", así que todo lo que no pasa por ahí
+// (guardar como Abierta y enviar desde el detalle, o una compra directa) salía sin
+// precio. Por eso ahora es UNA función que usan el servidor y las tres pantallas.
+//
+// Aplica a cualquier tipo de línea: un cargo en cero tampoco tiene por qué viajar
+// (las pantallas ni siquiera lo agregan). Un precio que no es número cuenta como
+// cero — `Number("")` da 0 y `Number("abc")` da NaN, y ninguno es precio. Guardar la
+// orden como ABIERTA sigue permitido: ahí es un borrador y el precio puede estar
+// pendiente de que el proveedor lo confirme. (Cubierto por tests.)
+export type LineaConPrecio = {
+  precio?: number | string;          // como la escriben las pantallas y el payload a BC
+  precioUnitario?: number | string;  // como vive en la orden (OrdenLinea)
+  descripcion?: string;
+  itemNo?: string;
+  articuloId?: string;
+};
+
+export function lineasSinPrecio(lineas: readonly LineaConPrecio[] | null | undefined): string[] {
+  return (lineas ?? [])
+    .filter((l) => !(Number(l.precio ?? l.precioUnitario) > 0))
+    .map((l) => l.descripcion || l.itemNo || l.articuloId || "línea");
+}
 export const esLineaRecibible = (l: Pick<OrdenLinea, "tipo">) => l.tipo !== "cargo";
 export const esLineaCargo = (l: Pick<OrdenLinea, "tipo">) => l.tipo === "cargo";
 

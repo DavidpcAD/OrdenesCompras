@@ -23,7 +23,7 @@ import {
   esTipoDevolucion, esTipoEdicion,
   ordenDeDetalleDevolucion, ordenEsperaCorreccion, ordenDeDevolucion, lineasCorregidasDeOrden,
   esLineaMaterial, esLineaRecibible, esLineaCargo, etiquetaTipoLinea,
-  chequeoBcVencido, CHEQUEO_BC_FRESCO_MS, MONEDAS, monedaIso,
+  chequeoBcVencido, CHEQUEO_BC_FRESCO_MS, MONEDAS, monedaIso, lineasSinPrecio,
 } from "./helpers.ts";
 import type { Orden, OrdenLinea, Pedido, PedidoLinea } from "./types.ts";
 
@@ -1184,4 +1184,50 @@ test("moneda: un código que Intl no conozca muestra el número, no una pantalla
   assert.equal(sinEspacios(money(1234.5, "EUROS")), "EUROS 1 234,5");
   // Uno bien formado pero ajeno lo formatea Intl sin quejarse; tampoco se rompe.
   assert.equal(sinEspacios(money(1234.5, "XYZ")), "XYZ 1 234,50");
+});
+
+
+// ---- PRECIO EN CERO -----------------------------------------------------------
+// Una orden no se manda a aprobar con material sin precio: no hay monto que aprobar
+// y BC no deja lanzar el pedido, así que el "no" le cae al aprobador. Pasó el 6 oct
+// 2026 con la orden de PED-000524 (CINTA MALLA 2" en ₡0,00). El freno vive en UNA
+// función porque hay tres caminos de envío (armar orden, compra directa y el botón
+// del detalle) y antes solo uno de los tres lo tenía.
+test("precio: la línea en cero se nombra y la que tiene precio no", () => {
+  const ls = [
+    linea({ id: "1", descripcion: "CINTA MALLA 2\" ADHESIVA P/GYPSUM", precioUnitario: 0 }),
+    linea({ id: "2", descripcion: "PLASTICO NEGRO 4M", precioUnitario: 512 }),
+  ];
+  assert.deepEqual(lineasSinPrecio(ls), ["CINTA MALLA 2\" ADHESIVA P/GYPSUM"]);
+});
+
+test("precio: un campo vacío o con texto NO es precio (Number da 0 y NaN)", () => {
+  // Así llegan de las pantallas, donde el precio es un <input> y viaja como texto.
+  assert.deepEqual(lineasSinPrecio([{ precio: "", descripcion: "A" }]), ["A"]);
+  assert.deepEqual(lineasSinPrecio([{ precio: "abc", descripcion: "B" }]), ["B"]);
+  assert.deepEqual(lineasSinPrecio([{ precio: "-5", descripcion: "C" }]), ["C"]);
+  assert.deepEqual(lineasSinPrecio([{ precio: "0.01", descripcion: "D" }]), []);
+});
+
+test("precio: sirve igual con la línea de la orden y con la fila de la pantalla", () => {
+  // OrdenLinea trae `precioUnitario`; las filas de nueva/directa traen `precio`.
+  assert.deepEqual(lineasSinPrecio([{ precioUnitario: 0, descripcion: "orden" }]), ["orden"]);
+  assert.deepEqual(lineasSinPrecio([{ precio: 0, descripcion: "pantalla" }]), ["pantalla"]);
+  assert.deepEqual(lineasSinPrecio([{ precioUnitario: 1200, descripcion: "orden" }]), []);
+});
+
+test("precio: sin descripción se nombra con el código, no con 'undefined'", () => {
+  assert.deepEqual(lineasSinPrecio([{ precio: 0, itemNo: "M04-0014" }]), ["M04-0014"]);
+  assert.deepEqual(lineasSinPrecio([{ precio: 0, articuloId: "M04-0015" }]), ["M04-0015"]);
+  assert.deepEqual(lineasSinPrecio([{ precio: 0 }]), ["línea"]);
+});
+
+test("precio: sin líneas no hay nada que frenar", () => {
+  assert.deepEqual(lineasSinPrecio([]), []);
+  assert.deepEqual(lineasSinPrecio(null), []);
+  assert.deepEqual(lineasSinPrecio(undefined), []);
+});
+
+test("precio: el CARGO en cero también cuenta (un flete de ₡0 no viaja a BC)", () => {
+  assert.deepEqual(lineasSinPrecio([{ precio: 0, descripcion: "FLETE / TRANSPORTE" }]), ["FLETE / TRANSPORTE"]);
 });

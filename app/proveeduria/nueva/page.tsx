@@ -10,7 +10,7 @@ import { ConfirmarProveedor } from "@/components/confirmar-proveedor";
 import { IconCheck, IconWarning } from "@/components/icons";
 import { useStore } from "@/lib/store";
 import { leerBorrador, guardarBorrador, borrarBorrador, hace, type BorradorOrden } from "@/lib/borrador-orden";
-import { cuenta, money, num, ultimoPrecioProveedor, almacenesParaRecepcion, esAlmacenFisico, pedidoLineaPendiente, repartoDeLineaSolicitud, obraDeLinea, obraParaOrden, monedaApp, numeroOrden, MONEDAS } from "@/lib/helpers";
+import { cuenta, lineasSinPrecio, money, num, ultimoPrecioProveedor, almacenesParaRecepcion, esAlmacenFisico, pedidoLineaPendiente, repartoDeLineaSolicitud, obraDeLinea, obraParaOrden, monedaApp, numeroOrden, MONEDAS } from "@/lib/helpers";
 import { precioEnUnidad, precioEntreUnidades, cantidadEntreUnidades, equivalencia, equivalenciaDeUnidad, mismaMoneda, codigoDeItem, opcionesDeUnidad, type PrecioRef, type UnidadDeItem } from "@/lib/unidad";
 import { useVariantes } from "@/lib/use-variantes";
 import type { OrdenLinea } from "@/lib/types";
@@ -498,8 +498,8 @@ export default function ArmarOrdenPage() {
     // (El modelo lo tolera desde siempre: el % ordenado de la solicitud topa en 100.)
     // Precio obligatorio para enviar a aprobación: ninguna línea puede ir a BC en 0.
     if (aprobar) {
-      const sinPrecio = rows.filter((r) => !(Number(r.precio) > 0)).length;
-      if (sinPrecio) { toast(`${cuenta(sinPrecio, "línea", "líneas")} sin precio. Poné el precio acordado antes de enviar a aprobación.`, "error"); return; }
+      const sinPrecio = lineasSinPrecio(rows);
+      if (sinPrecio.length) { toast(`${cuenta(sinPrecio.length, "línea va", "líneas van")} en ₡0,00 — ${sinPrecio.slice(0, 3).join("; ")}${sinPrecio.length > 3 ? "…" : ""}. Poné el precio acordado con el proveedor antes de enviar a aprobación.`, "error"); return; }
       // Obra sin tarea: BC rechaza el pedido ENTERO, y ahora el pedido se crea al
       // enviar. Solo se exige si las tareas de esa obra ya cargaron: si BC no
       // contestó, no se bloquea el envío por algo que no se pudo verificar.

@@ -104,7 +104,18 @@ export function OrderLinesTable({ orden, showRecepcion = true, solicitudHref }: 
                       : <span className="ds-muted">0</span>}
                   </td>
                 )}
-                <td className="ds-num">{money(l.precioUnitario, orden.currencyCode)}</td>
+                {/* Precio en cero: se DICE. Antes salía como un número más, en el
+                    mismo gris que todos, y una orden de 30 líneas se mandaba a aprobar
+                    sin que nadie notara la que iba en ₡0,00 — hasta que el aprobador no
+                    la pudo lanzar en BC (PED-000524, 6 oct 2026). El envío ya se frena,
+                    pero el freno llega tarde si la pantalla no lo mostró antes. */}
+                <td className="ds-num">
+                  {Number(l.precioUnitario) > 0
+                    ? money(l.precioUnitario, orden.currencyCode)
+                    : <span className="ds-pending-text" title="Esta línea no tiene precio: sin él la orden no se puede enviar a aprobación.">
+                        {money(0, orden.currencyCode)} · sin precio
+                      </span>}
+                </td>
                 <td className="ds-num ds-strong">{money(ordenLineaImporte(l), orden.currencyCode)}</td>
               </tr>
             );
