@@ -116,7 +116,15 @@ export function BuzonFacturas() {
     }
   }, [buscarCandidatos]);
 
+  // Hermano del candado que tiene la ruta: el reloj de los 3 minutos dispara sin
+  // mirar si la corrida anterior terminó, y una corrida lenta dejaba dos pidiendo a
+  // la vez contra el mismo buzón. Va en un ref y no en el estado `sincronizando`
+  // porque el intervalo se queda con el valor que había cuando se arrancó.
+  const corriendo = useRef(false);
+
   const sincronizar = useCallback(async () => {
+    if (corriendo.current) return;
+    corriendo.current = true;
     setSincronizando(true);
     setError("");
     setAvance(null);
@@ -156,6 +164,7 @@ export function BuzonFacturas() {
     } catch (e: any) {
       setError(e?.message ?? "No se pudo sincronizar.");
     } finally {
+      corriendo.current = false;
       if (vivo.current) { setSincronizando(false); setAvance(null); }
     }
   }, [cargar]);

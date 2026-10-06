@@ -38,6 +38,27 @@ export const dynamic = "force-dynamic";
 
 const TRASLAPE_MIN = 10;
 
+// ── UNA REVISIÓN A LA VEZ ───────────────────────────────────────────────────
+//
+// Microsoft no deja más de cuatro peticiones simultáneas por app y por buzón, y esta
+// ruta abre adjuntos en lote. Dos corridas encimadas se pasan del tope solas y Graph
+// contesta 429 `ApplicationThrottled` —pasó el 5 de octubre de 2026—.
+//
+// Encimarse es fácil: la pantalla revisa sola cada 3 minutos POR PESTAÑA, así que dos
+// pestañas abiertas —o dos personas en Auditoría— ya son dos corridas, y una corrida
+// lenta alcanza a la siguiente.
+//
+// La segunda no espera ni falla: se cierra limpia y la pantalla recarga la lista, que
+// es lo único que iba a conseguir de todos modos.
+//
+// OJO: el candado es de ESTE proceso. Si Azure levanta más de una instancia, cada una
+// tiene el suyo — alcanza para lo que de verdad pasa (varias pestañas contra la misma
+// instancia) y no pretende ser un candado distribuido. Y vence solo: una corrida que
+// se quede colgada en un socket no puede dejar la auditoría muerta para siempre.
+const CORRIDA_MAX_MIN = 15;
+let corriendoDesde: number | null = null;
+const hayCorrida = () => corriendoDesde !== null && Date.now() - corriendoDesde < CORRIDA_MAX_MIN * 60_000;
+
 export async function POST() {
   const buzon = estadoBuzon();
 
@@ -51,11 +72,22 @@ export async function POST() {
       const emitir = (o: unknown) => {
         try { controller.enqueue(enc.encode(JSON.stringify(o) + "\n")); } catch { /* cliente se fue */ }
       };
+      if (hayCorrida()) {
+        emitir({
+          fin: true, ok: true, buzon, yaCorriendo: true,
+          correo: { leidos: 0, nuevos: 0, error: null },
+          cotejo: { cotejados: 0, aparecieron: 0, error: null },
+        });
+        controller.close();
+        return;
+      }
+      corriendoDesde = Date.now();
       try {
         await correr(buzon, emitir);
       } catch (e: any) {
         emitir({ fin: true, ok: false, buzon, correo: { leidos: 0, nuevos: 0, error: e?.message ?? "Falló la sincronización." }, cotejo: { cotejados: 0, aparecieron: 0, error: null } });
       } finally {
+        corriendoDesde = null;
         controller.close();
       }
     },

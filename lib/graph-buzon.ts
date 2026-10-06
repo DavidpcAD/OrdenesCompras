@@ -82,39 +82,90 @@ async function token(forzar = false): Promise<string> {
   return cache.token;
 }
 
+// ---------------------------------------------------------------------------
+// EL FRENO DE MICROSOFT (429)
+// ---------------------------------------------------------------------------
+//
+// Graph no deja más de CUATRO peticiones simultáneas por app y por buzón. Pasarse no
+// da un error de permiso ni de red: contesta 429 con `ApplicationThrottled` y, en el
+// cuerpo, "Application is over its MailboxConcurrency limit".
+//
+// Pasó el 5 de octubre de 2026 y la corrida se caía entera: el 429 no se reintentaba
+// —solo el 401 y el 403— y el mensaje que llegaba a la pantalla era el JSON crudo.
+//
+// Ahora se le hace caso al `Retry-After` que Graph manda y se vuelve a pedir. Hay
+// tope de intentos y tope de espera a propósito: del otro lado hay una persona
+// mirando la barra de avance, y colgarle la pantalla cinco minutos es peor que
+// decirle que lo intente otra vez.
+const REINTENTOS_FRENO = 3;
+const ESPERA_TOPE_MS = 20_000;
+
+/**
+ * Cuánto esperar antes de reintentar cuando Microsoft frena.
+ *
+ * `Retry-After` viene en SEGUNDOS y es el dato bueno: es Microsoft diciendo cuándo
+ * va a volver a atender. Si no viene —que pasa— se sube de a poco (2 s, 4 s, 8 s)
+ * en vez de reintentar de una, que es alimentar el freno.
+ */
+export function esperaDeThrottle(retryAfter: string | null | undefined, intento: number): number {
+  const s = Number(String(retryAfter ?? "").trim());
+  const pedida = Number.isFinite(s) && s > 0 ? s * 1000 : 2000 * 2 ** Math.max(0, intento);
+  return Math.min(pedida, ESPERA_TOPE_MS);
+}
+
+const dormir = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
 async function graph(url: string): Promise<any> {
   const pedir = (bearer: string) =>
     fetch(url, { headers: { Authorization: `Bearer ${bearer}`, Accept: "application/json" }, cache: "no-store" });
 
-  let res = await pedir(await token());
+  for (let intento = 0; ; intento++) {
+    let res = await pedir(await token());
 
-  // Se reintenta con token FRESCO ante 401 y también ante 403, y el 403 es el que
-  // importa acá: los roles de aplicación viajan DENTRO del token. Si la app pidió su
-  // token antes de que un administrador consintiera Mail.Read, ese token no trae el
-  // rol y Graph contesta 403 durante la hora que dura, aunque el permiso ya esté
-  // dado. Pasó exactamente así el 22 de setiembre de 2026: el consentimiento estaba
-  // puesto, la lectura funcionaba desde afuera, y la app seguía diciendo 403 porque
-  // arrastraba el token de antes.
-  if (res.status === 401 || res.status === 403) {
-    res = await pedir(await token(true));
-  }
-  if (!res.ok) {
-    const cuerpo = (await res.text()).slice(0, 400);
-    // El error más probable en la primera puesta a punto es justo el del permiso, y
-    // el mensaje crudo de Graph no lo dice en cristiano.
-    if (res.status === 403) {
+    // Se reintenta con token FRESCO ante 401 y también ante 403, y el 403 es el que
+    // importa acá: los roles de aplicación viajan DENTRO del token. Si la app pidió su
+    // token antes de que un administrador consintiera Mail.Read, ese token no trae el
+    // rol y Graph contesta 403 durante la hora que dura, aunque el permiso ya esté
+    // dado. Pasó exactamente así el 22 de setiembre de 2026: el consentimiento estaba
+    // puesto, la lectura funcionaba desde afuera, y la app seguía diciendo 403 porque
+    // arrastraba el token de antes.
+    if (res.status === 401 || res.status === 403) {
+      res = await pedir(await token(true));
+    }
+
+    // 429 es el freno de concurrencia; 503 y 504 son el mismo Microsoft ocupado, y se
+    // tratan igual. Ninguno es culpa de los datos: lo único sensato es esperar.
+    if (res.status === 429 || res.status === 503 || res.status === 504) {
+      if (intento < REINTENTOS_FRENO) {
+        await dormir(esperaDeThrottle(res.headers.get("Retry-After"), intento));
+        continue;
+      }
+      const cuerpo = (await res.text()).slice(0, 400);
       throw new Error(
-        "Microsoft rechazó la lectura del buzón (403). Casi siempre es que al registro de app le falta el permiso " +
-        "Mail.Read de APLICACIÓN con consentimiento de administrador, o que la ApplicationAccessPolicy no incluye este buzón. " +
-        `Respuesta: ${cuerpo}`,
+        `Microsoft está frenando la lectura del buzón (${res.status}) y no cedió en ${REINTENTOS_FRENO + 1} intentos. ` +
+        "No se perdió ningún correo: el marcador no avanzó y la próxima revisión sigue donde quedó. " +
+        `Esperá unos minutos y dale “Revisar ahora”. Respuesta: ${cuerpo}`,
       );
     }
-    if (res.status === 404) {
-      throw new Error(`Microsoft no encontró el buzón ${cfg().buzon} (404). Revisá que la dirección esté bien escrita. ${cuerpo}`);
+
+    if (!res.ok) {
+      const cuerpo = (await res.text()).slice(0, 400);
+      // El error más probable en la primera puesta a punto es justo el del permiso, y
+      // el mensaje crudo de Graph no lo dice en cristiano.
+      if (res.status === 403) {
+        throw new Error(
+          "Microsoft rechazó la lectura del buzón (403). Casi siempre es que al registro de app le falta el permiso " +
+          "Mail.Read de APLICACIÓN con consentimiento de administrador, o que la ApplicationAccessPolicy no incluye este buzón. " +
+          `Respuesta: ${cuerpo}`,
+        );
+      }
+      if (res.status === 404) {
+        throw new Error(`Microsoft no encontró el buzón ${cfg().buzon} (404). Revisá que la dirección esté bien escrita. ${cuerpo}`);
+      }
+      throw new Error(`Graph ${res.status}: ${cuerpo}`);
     }
-    throw new Error(`Graph ${res.status}: ${cuerpo}`);
+    return res.json();
   }
-  return res.json();
 }
 
 export type CorreoConComprobantes = {
@@ -128,7 +179,7 @@ export type CorreoConComprobantes = {
 
 const POR_PAGINA = 100;
 const TOPE_POR_CORRIDA = 40;    // correos CON adjunto que se abren por vuelta
-const A_LA_VEZ = 5;             // adjuntos en paralelo; más arriba Graph empieza a tirar 429
+const A_LA_VEZ = 3;             // adjuntos en paralelo; Graph solo deja 4 por app y buzón
 const DIAS_PRIMERA_CORRIDA = 30;
 
 /**
@@ -211,9 +262,12 @@ export async function leerBuzon(
     let hechos = abiertos - pendientes.length;
     onProgreso?.({ hechos, total: totalConocido });
 
-    // Los adjuntos se piden de a cinco. Eran uno por uno y una corrida de 120 correos
+    // Los adjuntos se piden de a tres. Eran uno por uno y una corrida de 120 correos
     // se pasaba del tiempo que aguanta la petición: la pantalla mostraba "Timeout" y
-    // el cotejo ni siquiera llegaba a correr.
+    // el cotejo ni siquiera llegaba a correr. Fueron cinco hasta el 5 de octubre de
+    // 2026, que es justo uno más de lo que Graph aguanta por buzón: se quedó en tres
+    // para dejarle aire a la otra llamada que compite por ese mismo tope —la del
+    // cotejo lado a lado, que baja el XML del correo que alguien esté mirando.
     for (let i = 0; i < pendientes.length; i += A_LA_VEZ) {
       const grupo = pendientes.slice(i, i + A_LA_VEZ);
       const res = await Promise.all(grupo.map(async (m) => ({ m, comprobantes: await comprobantesDe(buzon, m.id) })));

@@ -6,7 +6,7 @@
 //   npm test
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { consultaBuzon, idDeMensaje } from "./graph-buzon.ts";
+import { consultaBuzon, esperaDeThrottle, idDeMensaje } from "./graph-buzon.ts";
 
 const BUZON = "facturacion@adelantedesarrollos.com";
 
@@ -63,4 +63,40 @@ test("el ItemID viene url-encoded y se decodifica antes de convertir", () => {
 test("un webLink sin ItemID no devuelve un id inventado", () => {
   assert.equal(idDeMensaje("https://outlook.office365.com/owa/"), null);
   assert.equal(idDeMensaje(""), null);
+});
+
+// --- el freno de Microsoft (429) --------------------------------------------
+//
+// Graph no deja más de CUATRO peticiones simultáneas por app y por buzón. El 5 de
+// octubre de 2026 la sincronización se caía entera con
+// `ApplicationThrottled / Application is over its MailboxConcurrency limit`: los
+// adjuntos se pedían de a cinco y el 429 ni siquiera se reintentaba.
+//
+// Lo que se prueba acá es la decisión de cuánto esperar. Hacerle caso al `Retry-After`
+// es la diferencia entre salir del freno y alimentarlo.
+
+test("le hace caso al Retry-After de Microsoft, que viene en segundos", () => {
+  assert.equal(esperaDeThrottle("5", 0), 5000);
+  assert.equal(esperaDeThrottle("12", 2), 12_000);
+});
+
+test("sin Retry-After sube de a poco y no reintenta de una", () => {
+  assert.equal(esperaDeThrottle(null, 0), 2000);
+  assert.equal(esperaDeThrottle(null, 1), 4000);
+  assert.equal(esperaDeThrottle(undefined, 2), 8000);
+});
+
+test("una cabecera basura no deja la espera en cero ni en NaN", () => {
+  // Un `Retry-After` con fecha HTTP en vez de segundos existe en el estándar y
+  // Number() lo vuelve NaN; sin esto la espera sería 0 y el reintento inmediato.
+  for (const basura of ["", "   ", "mañana", "Wed, 21 Oct 2026 07:28:00 GMT", "-3", "0"]) {
+    assert.equal(esperaDeThrottle(basura, 0), 2000, `con ${JSON.stringify(basura)}`);
+  }
+});
+
+test("por largo que sea el Retry-After, la pantalla no se cuelga esperando", () => {
+  // Del otro lado hay alguien mirando la barra de avance: mejor decirle que lo
+  // intente otra vez que dejarlo cinco minutos con el botón en "Revisando…".
+  assert.equal(esperaDeThrottle("600", 0), 20_000);
+  assert.equal(esperaDeThrottle(null, 20), 20_000);
 });
