@@ -3614,6 +3614,79 @@ export async function bcQuienRegistro(documentos: string[]): Promise<Record<stri
   return out;
 }
 
+// ── ¿LA FACTURA AL PROVEEDOR EQUIVOCADO YA SE CORRIGIÓ? ──────────────────────
+// Una factura que quedó a nombre de otro proveedor no se deshace en el pedido —a
+// esa altura el pedido ya no existe— sino con una NOTA DE CRÉDITO contra ese
+// proveedor. El detector no sabía mirar eso: seguía gritando "FACTURA A NOMBRE DE
+// OTRO PROVEEDOR" meses después de que Contabilidad lo arreglara. CP-005289
+// (CFR-009891 a EPA en vez de Mercasa) salió en rojo hasta octubre aunque la NC
+// CNCR-000411 se posteó el 1/9/2026, el mismo día. Un aviso que acusa lo ya
+// corregido es justo el que hace que nadie mire el que sí es de verdad.
+//
+// Se da por revertida cuando contra el MISMO proveedor hay una nota de crédito por
+// el MISMO monto, posteada el día de la factura o después. Es la firma del arreglo
+// que hace Contabilidad acá (CNCR-000405 para CP-005183, CNCR-000411 para
+// CP-005289), y el documento se nombra en el mensaje para que se pueda comprobar en
+// BC en diez segundos en vez de creerle a la app.
+//
+// Si BC no contesta no se inventa nada: sin respuesta no hay reversión y el aviso
+// queda como estaba. Equivocarse hacia el lado del aviso es el lado barato.
+export type ReversionBc = { documentNo: string; fecha: string; monto: number };
+
+export async function bcReversionesDeFacturas(documentos: string[]): Promise<Record<string, ReversionBc>> {
+  const docs = [...new Set(documentos.map((d) => (d ?? "").trim()).filter(Boolean))];
+  if (!docs.length) return {};
+  const out: Record<string, ReversionBc> = {};
+  try {
+    const empresa = await getCompanyName();
+    const base = `${odataRoot()}/Company('${encodeURIComponent(empresa)}')/Facturas_Proveedores`;
+    const campos = "Document_No,Document_Type,Vendor_No,Posting_Date,Amount";
+
+    // 1) El movimiento de cada factura: de quién es, de cuándo y por cuánto.
+    const filtro = docs.map((d) => `Document_No eq '${odataStr(d)}'`).join(" or ");
+    const resF = await bcFetch(
+      `${base}?$filter=${encodeURIComponent(`(${filtro}) and Document_Type eq 'Invoice'`)}&$select=${campos}`,
+      { cache: "no-store" },
+    );
+    if (!resF.ok) return {};
+    const facturas = ((await resF.json())?.value ?? []).map((e: any) => ({
+      documentNo: String(e.Document_No ?? "").trim(),
+      vendorNo: String(e.Vendor_No ?? "").trim(),
+      fecha: String(e.Posting_Date ?? "").slice(0, 10),
+      monto: Math.abs(Number(e.Amount) || 0),
+    })).filter((f: any) => f.documentNo && f.vendorNo && f.monto > 0);
+    if (!facturas.length) return {};
+
+    // 2) Las notas de crédito de esos proveedores desde la más vieja de las
+    //    facturas. Una consulta por proveedor, no una por factura.
+    const porProveedor = new Map<string, string>();
+    for (const f of facturas) {
+      const desde = porProveedor.get(f.vendorNo);
+      if (!desde || f.fecha < desde) porProveedor.set(f.vendorNo, f.fecha);
+    }
+    for (const [vendorNo, desde] of porProveedor) {
+      const res = await bcFetch(
+        `${base}?$filter=${encodeURIComponent(
+          `Vendor_No eq '${odataStr(vendorNo)}' and Document_Type eq 'Credit Memo' and Posting_Date ge ${desde}`,
+        )}&$select=${campos}&$top=200`,
+        { cache: "no-store" },
+      );
+      if (!res.ok) continue;
+      const notas = ((await res.json())?.value ?? []).map((e: any) => ({
+        documentNo: String(e.Document_No ?? "").trim(),
+        fecha: String(e.Posting_Date ?? "").slice(0, 10),
+        monto: Math.abs(Number(e.Amount) || 0),
+      }));
+      for (const f of facturas.filter((x: any) => x.vendorNo === vendorNo)) {
+        // Un céntimo de tolerancia: el redondeo del IVA mueve la última cifra.
+        const nc = notas.find((n: any) => n.documentNo && Math.abs(n.monto - f.monto) <= 0.01 && n.fecha >= f.fecha);
+        if (nc) out[f.documentNo] = nc;
+      }
+    }
+  } catch { /* sin lectura no hay reversión: el aviso queda como estaba */ }
+  return out;
+}
+
 // ── EL FRENO ANTES DE REGISTRAR ──────────────────────────────────────────────
 // Antes de recibir o facturar, se comprueba que CADA línea que se va a postear
 // exista en el pedido de BC y tenga saldo suficiente.

@@ -376,3 +376,18 @@ export function proveedoresAjenos(lineasBc: LineaBc[], proveedorNoOrden: string)
       .filter((v) => v && v.toUpperCase() !== esperado),
   )];
 }
+
+// Los DOCUMENTOS que quedaron a nombre de otro. `proveedoresAjenos` dice a nombre
+// de quién; esto dice cuáles, que es lo que hay que ir a buscar en BC para saber si
+// ya los revirtieron. Un pedido puede tener varias facturas y no todas tienen por
+// qué estar mal: solo se nombran las que de verdad salieron a otro proveedor.
+export function documentosAjenos(lineasBc: LineaBc[], proveedorNoOrden: string): string[] {
+  const esperado = (proveedorNoOrden ?? "").trim().toUpperCase();
+  if (!esperado) return [];
+  return [...new Set(
+    (lineasBc ?? [])
+      .filter((l) => (l.vendorNo ?? "").trim() && (l.vendorNo ?? "").trim().toUpperCase() !== esperado)
+      .map((l) => (l.documentNo ?? "").trim())
+      .filter(Boolean),
+  )];
+}

@@ -7,7 +7,7 @@
 //   npm test
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { cotejarLineas, claveLinea, lineasRecibidasDeOrden, proveedoresAjenos, type LineaApp, type LineaBc } from "./bc-conciliacion.ts";
+import { cotejarLineas, claveLinea, lineasRecibidasDeOrden, proveedoresAjenos, documentosAjenos, type LineaApp, type LineaBc } from "./bc-conciliacion.ts";
 
 const app = (p: Partial<LineaApp> = {}): LineaApp => ({
   id: "1", tipo: "articulo", itemNo: "M06-0116", variantCode: "",
@@ -226,4 +226,27 @@ test("proveedoresAjenos: dos documentos de dos proveedores ajenos se listan una 
     bcFact({ documentNo: "CFR-009892", vendorNo: "PROV-000163" }),
   ];
   assert.deepEqual(proveedoresAjenos(lineas, "PROV-000800"), ["PROV-000522", "PROV-000163"]);
+});
+
+// Cuáles documentos son los malos, no solo de quién. Es lo que se va a buscar en BC
+// para saber si Contabilidad ya los revirtió con nota de crédito.
+test("documentosAjenos: nombra la factura que salió a otro proveedor", () => {
+  assert.deepEqual(documentosAjenos([bcFact({ vendorNo: "PROV-000522" })], "PROV-000800"), ["CFR-009891"]);
+});
+
+test("documentosAjenos: el documento del proveedor correcto no entra", () => {
+  const lineas = [
+    bcFact({ vendorNo: "PROV-000522" }),
+    bcFact({ documentNo: "CFR-010344", vendorNo: "PROV-000800" }),
+  ];
+  assert.deepEqual(documentosAjenos(lineas, "PROV-000800"), ["CFR-009891"]);
+});
+
+test("documentosAjenos: dos líneas del mismo documento lo nombran una sola vez", () => {
+  const lineas = [bcFact({ vendorNo: "PROV-000522" }), bcFact({ lineNo: 20000, vendorNo: "PROV-000522" })];
+  assert.deepEqual(documentosAjenos(lineas, "PROV-000800"), ["CFR-009891"]);
+});
+
+test("documentosAjenos: sin proveedor en la orden no se acusa a ningún documento", () => {
+  assert.deepEqual(documentosAjenos([bcFact({ vendorNo: "PROV-000522" })], ""), []);
 });

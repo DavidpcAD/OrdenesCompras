@@ -8,8 +8,9 @@
 // distintos: confundirlos fue lo que llenó las pantallas de avisos falsos hasta que
 // nadie miró el que era de verdad.
 import { getOrden, facturasBcDeOrden, guardarChequeoBc } from "./repo.ts";
-import { chequearOrdenContraBc, lineasOrdenParaCotejo, bcLineasFacturaRegistrada, bcLineasFacturadasDePedido } from "./bc.ts";
-import { cotejarLineas, proveedoresAjenos, type Diferencia, type LineaBc } from "./bc-conciliacion.ts";
+import { chequearOrdenContraBc, lineasOrdenParaCotejo, bcLineasFacturaRegistrada, bcLineasFacturadasDePedido, bcReversionesDeFacturas } from "./bc.ts";
+import { cotejarLineas, proveedoresAjenos, documentosAjenos, type Diferencia, type LineaBc } from "./bc-conciliacion.ts";
+import { formatDate as fechaCr } from "./helpers.ts";
 import type { Orden } from "./types.ts";
 import type { Role } from "./types.ts";
 
@@ -92,12 +93,33 @@ export async function chequearOrdenAFondo(
     // líneas cuadraban y el detector la daba por buena.
     const ajenas = proveedoresAjenos(porPedido, String(orden.proveedorNo || orden.proveedorId || ""));
     if (ajenas.length) {
+      // …pero una factura mal emitida y YA REVERTIDA con nota de crédito es historia,
+      // no un pendiente. El aviso no distinguía las dos y por eso CP-005289 siguió en
+      // rojo un mes después de que Contabilidad emitiera la NC: el que lo abría veía
+      // una alarma de plata cargada al proveedor equivocado que ya no existía.
+      const malos = documentosAjenos(porPedido, String(orden.proveedorNo || orden.proveedorId || ""));
+      const revertidas = await bcReversionesDeFacturas(malos);
+      const pendientes = malos.filter((d) => !revertidas[d]);
+      const revertido = (d: string) => `${d} → nota de crédito ${revertidas[d].documentNo} del ${fechaCr(revertidas[d].fecha)}`;
+
+      if (malos.length && !pendientes.length) {
+        const mensaje =
+          `Corregido en Business Central. ${malos.length === 1 ? "La factura" : "Las facturas"} ${malos.join(", ")} `
+          + `se registró a nombre de ${ajenas.join(", ")} y no de ${orden.proveedorNo || orden.proveedorId}`
+          + `${orden.proveedorNombre ? ` (${orden.proveedorNombre})` : ""}, pero Contabilidad ya la revirtió: `
+          + `${malos.map(revertido).join("; ")}. No queda nada cargado a la cuenta del proveedor equivocado.`;
+        await guardar("ok", mensaje);
+        return { estado: "ok", contra: "factura", facturas: docs, mensaje, diferencias: [], importeEnJuego: 0 };
+      }
+
+      const yaCorregidas = malos.filter((d) => revertidas[d]);
       const mensaje =
-        `FACTURA A NOMBRE DE OTRO PROVEEDOR — ${docs.length ? `el/los documento(s) ${docs.join(", ")}` : `lo registrado contra ${orden.bcNumber}`} `
+        `FACTURA A NOMBRE DE OTRO PROVEEDOR — ${pendientes.length ? `el/los documento(s) ${pendientes.join(", ")}` : `lo registrado contra ${orden.bcNumber}`} `
         + `en Business Central está a nombre de ${ajenas.join(", ")}, pero esta orden es de ${orden.proveedorNo || orden.proveedorId}`
         + `${orden.proveedorNombre ? ` (${orden.proveedorNombre})` : ""}. `
         + `La compra quedó cargada a la cuenta por pagar del proveedor equivocado. `
         + `Eso ya no se corrige reenviando la orden: Contabilidad tiene que emitir una nota de crédito de esa factura y volver a registrarla contra el proveedor correcto.`
+        + (yaCorregidas.length ? ` Lo que sí ya está revertido: ${yaCorregidas.map(revertido).join("; ")}.` : "")
         + (cotejo.ok ? "" : ` Además, las líneas no coinciden: ${cotejo.resumen}`);
       await guardar("desalineado", mensaje);
       return {
