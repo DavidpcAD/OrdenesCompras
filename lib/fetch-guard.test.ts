@@ -141,3 +141,28 @@ test("si una escritura no contesta, se dice que PUDO haber quedado hecha", async
   // volver a leer no le hace nada a nadie.
   await assert.rejects(() => fetch("/api/bootstrap"), /Timeout/);
 });
+
+// ---- "ALGO CAMBIÓ" ------------------------------------------------------------
+// El historial de una orden se pide por entidad al abrir la pantalla y no viene en
+// el bootstrap, así que nada lo refrescaba: se cerraba una orden con su motivo y
+// abajo seguía la foto vieja, sin el cierre, hasta recargar la página a mano.
+test("una escritura aceptada avisa que algo cambió", async () => {
+  montarVentana("/proveeduria/ordenes/8", [{ status: 200 }]);
+  const fetch = await instalar();
+  await fetch("/api/ordenes/8/cerrar", { method: "POST", body: "{}" });
+  assert.ok(estado.eventos.includes("adelante:datos-cambiados"));
+});
+
+test("leer no avisa (si no, cada lectura dispararía otra lectura)", async () => {
+  montarVentana("/proveeduria/ordenes/8", [{ status: 200 }]);
+  const fetch = await instalar();
+  await fetch("/api/movimientos?entidad=orden&id=8");
+  assert.equal(estado.eventos.length, 0);
+});
+
+test("una escritura que el servidor rechazó NO avisa (no cambió nada)", async () => {
+  montarVentana("/proveeduria/ordenes/8", [{ status: 400 }]);
+  const fetch = await instalar();
+  await fetch("/api/ordenes/8/cerrar", { method: "POST", body: "{}" });
+  assert.equal(estado.eventos.length, 0);
+});

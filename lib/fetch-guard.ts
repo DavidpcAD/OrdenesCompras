@@ -23,6 +23,10 @@ import { CLAVE_CACHE_BOOTSTRAP } from "./cache-bootstrap.ts";
 //      a dónde volver. Nunca más la app "logueada" mostrando datos que no cargan.
 
 export const EVENTO_SESION_VENCIDA = "adelante:sesion-vencida";
+// "Algo se escribió y el servidor dijo que sí". Lo escucha quien tenga en pantalla
+// datos que el bootstrap NO trae y que por eso no se refrescan solos — hoy el
+// historial de movimientos (components/timeline.tsx), que se pide por entidad.
+export const EVENTO_DATOS_CAMBIADOS = "adelante:datos-cambiados";
 
 // Cuánto se espera antes de cortar. Generoso a propósito: la base de Azure es
 // serverless y el primer request después de un rato la tiene que "despertar"
@@ -181,6 +185,15 @@ export function instalarGuardFetch() {
     // 401 = la cookie de sesión ya no vale. Único lugar donde se decide qué hacer.
     // /api/login se excluye: ahí un 401 significa "usuario o clave mala".
     if (res.status === 401 && ruta !== "/api/login") sesionVencida();
+
+    // Una ESCRITURA que salió bien: lo que esté abierto mirando la bitácora tiene
+    // que volver a pedirla. Los pedidos/órdenes/recepciones los refresca el
+    // bootstrap, pero el historial se pide por entidad al montar la pantalla y se
+    // quedaba con esa foto: se cerraba una orden, el estado pasaba a "Completado"
+    // y el motivo del cierre no aparecía hasta recargar la página a mano.
+    if (res.ok && metodo !== "GET" && metodo !== "HEAD") {
+      window.dispatchEvent(new Event(EVENTO_DATOS_CAMBIADOS));
+    }
     return res;
   };
 }

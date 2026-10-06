@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Skeleton } from "@/components/ui";
 import { useStore } from "@/lib/store";
+import { EVENTO_DATOS_CAMBIADOS } from "@/lib/fetch-guard";
 import { formatDateTime, ROL_LABEL, numeroOrden } from "@/lib/helpers";
 import type { Movimiento } from "@/lib/types";
 
@@ -165,10 +166,33 @@ export function Timeline({
   const [remotos, setRemotos] = useState<Movimiento[] | null>(null);
   const [fallo, setFallo] = useState(false);
   const clave = `${entidad}:${idEntidad}:${idsOrdenLigadas.join(",")}`;
+
+  // La bitácora se pedía UNA sola vez, al abrir la pantalla, y ahí se quedaba. Pero
+  // casi todo lo que se hace en estas dos pantallas ESCRIBE un movimiento: se cerraba
+  // una orden con su motivo, el encabezado pasaba a "Completado" (eso sí lo refresca
+  // el bootstrap) y abajo el historial seguía mostrando la última recepción, sin el
+  // cierre ni el porqué, hasta recargar la página a mano. Cada escritura que el
+  // servidor acepta avisa (lib/fetch-guard.ts) y acá se vuelve a pedir.
+  const [recargas, setRecargas] = useState(0);
+  useEffect(() => {
+    // Con un respiro: cerrar una orden y archivar sus solicitudes de origen son
+    // tres escrituras seguidas, y para el historial son un solo cambio.
+    let t: ReturnType<typeof setTimeout> | undefined;
+    const alCambiar = () => { clearTimeout(t); t = setTimeout(() => setRecargas((n) => n + 1), 400); };
+    window.addEventListener(EVENTO_DATOS_CAMBIADOS, alCambiar);
+    return () => { clearTimeout(t); window.removeEventListener(EVENTO_DATOS_CAMBIADOS, alCambiar); };
+  }, []);
+
+  // Qué entidad es la que ya está pintada abajo. Sirve para distinguir "abrí otra
+  // orden" (hay que vaciar y mostrar el esqueleto) de "se escribió algo en esta"
+  // (la lista que está en pantalla se queda hasta que llegue la nueva, si no el
+  // historial parpadea cada vez que alguien guarda).
+  const pintada = useRef<string | null>(null);
   useEffect(() => {
     if (!modoApi) return;
     let vivo = true;
-    setRemotos(null); setFallo(false);
+    const refresco = pintada.current === clave;
+    if (!refresco) { setRemotos(null); setFallo(false); }
     const pedir = async (ent: string, id: string) => {
       const r = await fetch(`/api/movimientos?entidad=${encodeURIComponent(ent)}&id=${encodeURIComponent(id)}`);
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
@@ -176,11 +200,14 @@ export function Timeline({
       return Array.isArray(d) ? (d as Movimiento[]) : [];
     };
     Promise.all([pedir(entidad, idEntidad), ...idsOrdenLigadas.map((oid) => pedir("orden", oid))])
-      .then((partes) => { if (vivo) setRemotos(partes.flat()); })
-      .catch(() => { if (vivo) { setRemotos([]); setFallo(true); } });
+      .then((partes) => { if (vivo) { setRemotos(partes.flat()); setFallo(false); pintada.current = clave; } })
+      // Que se caiga el REFRESCO no borra lo que ya se había leído: el historial de
+      // hace diez segundos sigue siendo cierto, y cambiarlo por "no se pudo cargar"
+      // sería tapar información buena con un aviso.
+      .catch(() => { if (vivo && !refresco) { setRemotos([]); setFallo(true); } });
     return () => { vivo = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [modoApi, clave]);
+  }, [modoApi, clave, recargas]);
 
   let items: Movimiento[];
   if (modoApi) {
