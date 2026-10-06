@@ -5,6 +5,7 @@ import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { Badge, Button, Card, Field, Input, Modal, Select, Textarea, useToast } from "@/components/ui";
 import { DestinoLinea } from "@/components/destino-linea";
 import { Combobox } from "@/components/combobox";
+import { ConfirmarProveedor } from "@/components/confirmar-proveedor";
 import { IconCheck, IconWarning } from "@/components/icons";
 import { useStore } from "@/lib/store";
 import { leerBorrador, guardarBorrador, borrarBorrador, hace, type BorradorOrden } from "@/lib/borrador-orden";
@@ -487,6 +488,8 @@ export default function OrdenDirectaPage() {
   const ivaTotal = useMemo(() => rows.reduce((s, r) => s + calcImporte(r) * ((Number(r.iva) || 0) / 100), 0), [rows]) + ivaCargos;
   const total = subtotal + cargosTotal + ivaTotal;
   const puedeCrear = !!proveedorId && rows.length > 0;
+  // El diálogo que enseña a nombre de quién sale la orden (ver components/confirmar-proveedor).
+  const [confirmarEnvio, setConfirmarEnvio] = useState(false);
   const [guardando, setGuardando] = useState(false);
 
   function elegirProveedor(id: string) {
@@ -495,7 +498,7 @@ export default function OrdenDirectaPage() {
     if (p) setCurrency(monedaApp(p.currencyCode));
   }
 
-  async function crear(aprobar: boolean) {
+  async function crear(aprobar: boolean, confirmado = false) {
     if (!puedeCrear) { toast("Seleccioná un proveedor y agregá al menos una línea.", "error"); return; }
     // Todo cargo con importe debe tener un TIPO válido (Item Charge de BC): sin tipo,
     // BC rechaza el cargo y la orden queda sin el flete. Se bloquea acá.
@@ -514,6 +517,10 @@ export default function OrdenDirectaPage() {
     // el que BC no acepta sin tarea. En los demás la obra es centro de costo.
     const sinTarea = rows.find((r) => r.tipo === "articulo" && r.obra && !r.tarea);
     if (sinTarea) { toast(`Falta la tarea de la obra ${sinTarea.obra} en "${sinTarea.descripcion}". Sin ella BC no acepta la línea.`, "error"); return; }
+    // Último paso y el único que no valida nada: que alguien LEA a nombre de quién
+    // sale. Va al final para que el diálogo aparezca una sola vez y sobre una orden
+    // que ya está lista — no antes de los errores que igual la iban a devolver.
+    if (aprobar && !confirmado) { setConfirmarEnvio(true); return; }
     setGuardando(true);
     try {
       // La obra va POR LÍNEA y es opcional. Sin obra la línea es lo de siempre: el
@@ -930,6 +937,16 @@ export default function OrdenDirectaPage() {
           </div>
         </div>
       </main>
+
+      {confirmarEnvio && (
+        <ConfirmarProveedor
+          nombre={provSel?.nombre ?? ""} codigo={provSel?.code}
+          resumen={`${cuenta(rows.length, "línea", "líneas")} · ${money(total, currency)}`}
+          enviando={guardando}
+          onCancelar={() => setConfirmarEnvio(false)}
+          onConfirmar={() => { setConfirmarEnvio(false); void crear(true, true); }}
+        />
+      )}
 
       {editObra && (
         <Modal title="Destino de la línea" onClose={() => setEditObra(null)}

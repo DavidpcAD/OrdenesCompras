@@ -6,6 +6,7 @@ import { Badge, Button, Card, Field, Input, Modal, Select, Textarea, useToast } 
 import { DestinoLinea } from "@/components/destino-linea";
 import { AgregarLineasSolicitud } from "@/components/agregar-lineas-solicitud";
 import { Combobox } from "@/components/combobox";
+import { ConfirmarProveedor } from "@/components/confirmar-proveedor";
 import { IconCheck, IconWarning } from "@/components/icons";
 import { useStore } from "@/lib/store";
 import { leerBorrador, guardarBorrador, borrarBorrador, hace, type BorradorOrden } from "@/lib/borrador-orden";
@@ -459,6 +460,8 @@ export default function ArmarOrdenPage() {
   const total = subtotal + cargosTotal + ivaTotal;
   const pedidosDistintos = [...new Set(rows.map((r) => r.pedidoNumero))];
   const puedeCrear = !!proveedorId && rows.length > 0;
+  // El diálogo que enseña a nombre de quién sale la orden (ver components/confirmar-proveedor).
+  const [confirmarEnvio, setConfirmarEnvio] = useState(false);
 
   function elegirProveedor(id: string) {
     setProveedorId(id);
@@ -469,7 +472,7 @@ export default function ArmarOrdenPage() {
   const [guardando, setGuardando] = useState(false);
 
   // "Guardar como abierta": solo registra la orden local como borrador/abierta.
-  async function crear(aprobar: boolean) {
+  async function crear(aprobar: boolean, confirmado = false) {
     if (!puedeCrear) { toast("Seleccioná un proveedor y agregá al menos una línea.", "error"); return; }
     // Todo cargo con importe debe tener un TIPO válido (Item Charge de BC). Sin tipo,
     // BC rechaza el cargo (404) y la orden queda lanzada SIN el flete. Se bloquea acá.
@@ -505,6 +508,10 @@ export default function ArmarOrdenPage() {
       // Variante sin elegir: mismo criterio que la tarea. BC no puede LANZAR un
       // pedido con una línea así, y el error saldría ya en manos del aprobador.
       if (sinVariante.length) { toast(`Elegí la variante de "${sinVariante[0].descripcion}": sin ella Business Central no puede lanzar el pedido.`, "error"); return; }
+      // Último paso y el único que no valida nada: que alguien LEA a nombre de quién
+      // sale. Va al final para que el diálogo aparezca una sola vez y sobre una orden
+      // que ya está lista — no antes de los errores que igual la iban a devolver.
+      if (!confirmado) { setConfirmarEnvio(true); return; }
     }
     setGuardando(true);
     try {
@@ -889,6 +896,16 @@ export default function ArmarOrdenPage() {
           </div>
         </div>
       </div>
+
+      {confirmarEnvio && (
+        <ConfirmarProveedor
+          nombre={provSel?.nombre ?? ""} codigo={provSel?.code}
+          resumen={`${cuenta(rows.length, "línea", "líneas")} · ${money(total, currency)}`}
+          enviando={guardando}
+          onCancelar={() => setConfirmarEnvio(false)}
+          onConfirmar={() => { setConfirmarEnvio(false); void crear(true, true); }}
+        />
+      )}
 
       {editObra && (
         <Modal title="Obra y tarea de la línea" onClose={() => setEditObra(null)}

@@ -5,15 +5,16 @@ import { useParams, useRouter } from "next/navigation";
 import { Button, Checkbox, EmptyState, Field, Input, Modal, Select, Skeleton, Textarea, useToast } from "@/components/ui";
 import { IconWarning } from "@/components/icons";
 import { OrdenDetalle } from "@/components/orden-detalle";
+import { ConfirmarProveedor } from "@/components/confirmar-proveedor";
 import { useStore } from "@/lib/store";
 import { useOrden } from "@/lib/use-orden";
-import { cuenta, money, num, ordenPendienteResumen, numeroOrden, ordenAdmiteDevolucion, puedeDevolverLineaOrden, motivoNoDevolverLineaOrden, ordenQuedaSinMaterial, ordenEsperaCorreccion, lineasCorregidasDeOrden, ordenPedidos } from "@/lib/helpers";
+import { cuenta, money, num, ordenTotalConIva, proveedorLabel, ordenPendienteResumen, numeroOrden, ordenAdmiteDevolucion, puedeDevolverLineaOrden, motivoNoDevolverLineaOrden, ordenQuedaSinMaterial, ordenEsperaCorreccion, lineasCorregidasDeOrden, ordenPedidos } from "@/lib/helpers";
 
 export default function ProvOrdenDetallePage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
   const toast = useToast();
-  const { pedidos, recepciones, setOrdenEstado, corregirBcNumber, cerrarOrden, cerrarSolicitud, descartarOrden, devolverLineasOrden, alinearIvaConBc, exonerarIvaEnBc, nuevaOrdenConPendiente, cargando } = useStore();
+  const { pedidos, proveedores, recepciones, setOrdenEstado, corregirBcNumber, cerrarOrden, cerrarSolicitud, descartarOrden, devolverLineasOrden, alinearIvaConBc, exonerarIvaEnBc, nuevaOrdenConPendiente, cargando } = useStore();
   const [procesando, setProcesando] = useState(false);
   // Quitarle el IVA al pedido EN BC: escribe allá, así que se confirma antes.
   const [exonerando, setExonerando] = useState(false);
@@ -30,6 +31,9 @@ export default function ProvOrdenDetallePage() {
   // Descartar el borrador: la orden desaparece y su material vuelve a quedar
   // pendiente en la solicitud (es la única forma de soltar lo que una orden armada
   // por error dejó "ordenado").
+  // Enviar a aprobación crea (o re-sincroniza) el pedido en BC a nombre del
+  // proveedor de la orden: antes de eso se enseña el nombre y se pide confirmación.
+  const [confirmarEnvio, setConfirmarEnvio] = useState<{ msg: string; etiqueta: string } | null>(null);
   const [descartando, setDescartando] = useState(false);
   const [motivoDescarte, setMotivoDescarte] = useState("");
   // Devolver material al INGENIERO desde la orden: la variante, la medida o el grado
@@ -307,7 +311,7 @@ export default function ProvOrdenDetallePage() {
         <>
           <Button variant="outline" onClick={() => router.push(`/proveeduria/ordenes/${orden.id}/editar`)}>Editar</Button>
           {!espera && (
-            <Button loading={procesando} onClick={() => act("pendiente_aprobacion", `${numeroOrden(orden)} enviada a aprobación`)}>
+            <Button loading={procesando} onClick={() => setConfirmarEnvio({ msg: `${numeroOrden(orden)} enviada a aprobación`, etiqueta: "Sí, enviar a aprobación" })}>
               {procesando ? "Enviando…" : "Enviar a aprobación"}
             </Button>
           )}
@@ -347,7 +351,7 @@ export default function ProvOrdenDetallePage() {
         <>
           <Button variant="outline" onClick={() => router.push(`/proveeduria/ordenes/${orden.id}/editar`)}>Editar</Button>
           {!espera && (
-            <Button loading={procesando} onClick={() => act("pendiente_aprobacion", `${numeroOrden(orden)} corregida y reenviada a aprobación`)}>
+            <Button loading={procesando} onClick={() => setConfirmarEnvio({ msg: `${numeroOrden(orden)} corregida y reenviada a aprobación`, etiqueta: "Sí, reenviar a aprobación" })}>
               {procesando ? "Reenviando…" : "Reenviar a aprobación"}
             </Button>
           )}
@@ -510,6 +514,16 @@ export default function ProvOrdenDetallePage() {
             </p>
           )}
         </Modal>
+      )}
+
+      {confirmarEnvio && (
+        <ConfirmarProveedor
+          nombre={proveedorLabel(orden, proveedores)} codigo={orden.proveedorNo || proveedores.find((p) => p.id === orden.proveedorId)?.code || orden.proveedorId}
+          resumen={`${cuenta(orden.lineas.length, "línea", "líneas")} · ${money(ordenTotalConIva(orden), orden.currencyCode)}`}
+          enviando={procesando} etiqueta={confirmarEnvio.etiqueta}
+          onCancelar={() => setConfirmarEnvio(null)}
+          onConfirmar={() => { const { msg } = confirmarEnvio; setConfirmarEnvio(null); void act("pendiente_aprobacion", msg); }}
+        />
       )}
 
       {descartando && (
