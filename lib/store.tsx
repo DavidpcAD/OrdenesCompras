@@ -12,7 +12,7 @@ import { devolverPendienteAPedidos, esLineaRecibible, nextNumero, nowISO, ordenE
 import { componerNotaCierre, detalleDeCierre, lineaCancelada, motivoObligatorio, quitarNotaCierre } from "./cierre-solicitud.ts";
 import { api, setEtagBootstrap, USE_API as USE_API_BUILD } from "./api";
 import { CLAVE_CACHE_BOOTSTRAP, borrarCacheBootstrap, leerCache, serializarCache } from "./cache-bootstrap";
-import { instalarGuardFetch, EVENTO_SESION_VENCIDA } from "./fetch-guard";
+import { instalarGuardFetch, EVENTO_SESION_VENCIDA, EVENTO_DATOS_CAMBIADOS } from "./fetch-guard";
 
 export interface NewPedidoInput {
   tipoSolicitud: TipoSolicitud;
@@ -453,6 +453,12 @@ export function StoreProvider({ children, useApi }: { children: React.ReactNode;
     const firma = fresco.etag ?? fresco.texto;
     if (firma !== ultimoBootstrap.current) {
       ultimoBootstrap.current = firma;
+      // El bootstrap trajo algo distinto: puede ser trabajo de OTRA persona (Bodega
+      // recibió mientras Proveeduría tenía la orden abierta). Lo que no viaja acá
+      // —el historial, que se pide por entidad— se entera por el mismo aviso que
+      // usan nuestras propias escrituras. No se dispara en el 304, que es el caso
+      // normal del poll: sin cambios, nadie vuelve a pedir nada.
+      window.dispatchEvent(new Event(EVENTO_DATOS_CAMBIADOS));
       // OJO: `movimientos` NO viene en el bootstrap (el historial se pide por entidad
       // en components/timeline.tsx). Bajar la tabla entera cada 45s era carísimo.
       setData((d) => ({ ...d, pedidos: b.pedidos, ordenes: b.ordenes, recepciones: b.recepciones }));

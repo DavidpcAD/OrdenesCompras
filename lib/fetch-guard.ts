@@ -23,9 +23,11 @@ import { CLAVE_CACHE_BOOTSTRAP } from "./cache-bootstrap.ts";
 //      a dónde volver. Nunca más la app "logueada" mostrando datos que no cargan.
 
 export const EVENTO_SESION_VENCIDA = "adelante:sesion-vencida";
-// "Algo se escribió y el servidor dijo que sí". Lo escucha quien tenga en pantalla
-// datos que el bootstrap NO trae y que por eso no se refrescan solos — hoy el
-// historial de movimientos (components/timeline.tsx), que se pide por entidad.
+// "Algo cambió de verdad": una escritura nuestra que el servidor aceptó (se avisa
+// acá abajo) o un bootstrap que trajo datos distintos a los que ya había (lo avisa
+// lib/store.tsx, y así también llega lo que hizo OTRA persona). Lo escucha quien
+// tenga en pantalla datos que el bootstrap NO trae y que por eso no se refrescan
+// solos — hoy el historial (components/timeline.tsx), que se pide por entidad.
 export const EVENTO_DATOS_CAMBIADOS = "adelante:datos-cambiados";
 
 // Cuánto se espera antes de cortar. Generoso a propósito: la base de Azure es

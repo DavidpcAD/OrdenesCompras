@@ -171,8 +171,11 @@ export function Timeline({
   // casi todo lo que se hace en estas dos pantallas ESCRIBE un movimiento: se cerraba
   // una orden con su motivo, el encabezado pasaba a "Completado" (eso sí lo refresca
   // el bootstrap) y abajo el historial seguía mostrando la última recepción, sin el
-  // cierre ni el porqué, hasta recargar la página a mano. Cada escritura que el
-  // servidor acepta avisa (lib/fetch-guard.ts) y acá se vuelve a pedir.
+  // cierre ni el porqué, hasta recargar la página a mano. Ahora se vuelve a pedir con
+  // el aviso de `adelante:datos-cambiados`, que cubre las dos puntas: lo que escribe
+  // esta pantalla (lib/fetch-guard.ts) y lo que llega de AFUERA —Bodega recibiendo
+  // mientras Proveeduría tiene la orden abierta—, que entra por el bootstrap y lo
+  // avisa lib/store.tsx cuando de verdad trajo algo distinto.
   const [recargas, setRecargas] = useState(0);
   useEffect(() => {
     // Con un respiro: cerrar una orden y archivar sus solicitudes de origen son
