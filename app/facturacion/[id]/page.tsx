@@ -8,7 +8,7 @@ import { DateField } from "@/components/date-field";
 import { useStore } from "@/lib/store";
 import { useOrden } from "@/lib/use-orden";
 import { useVolver } from "@/lib/use-volver";
-import { cuenta, esLineaCargo, esLineaRecibible, esNombreObraVacio, etiquetaTipoLinea, formatDate, money, distribuirCargo, num, ordenBadge, ordenLineaImporte, ordenLineaPendiente, ordenRecibidoPct, todayISO, numeroOrden } from "@/lib/helpers";
+import { cuenta, MOTIVOS_NC, esLineaCargo, esLineaRecibible, esNombreObraVacio, etiquetaTipoLinea, formatDate, money, distribuirCargo, num, ordenBadge, ordenLineaImporte, ordenLineaPendiente, ordenRecibidoPct, todayISO, numeroOrden } from "@/lib/helpers";
 import { codigoDeItem } from "@/lib/unidad";
 import { comprimirFoto, pesoLegible } from "@/lib/foto";
 import type { FotoComprimida } from "@/lib/foto";
@@ -37,14 +37,6 @@ type DiagBc = {
   pedido?: "existe" | "no-existe" | "sin-respuesta" | null;
   facturaBc?: { numero: string; vendorNo: string; fecha: string; total: number; estado: string } | null;
 };
-
-const MOTIVO_NC: { v: MotivoNC; label: string }[] = [
-  { v: "precio_distinto", label: "Precio distinto" },
-  { v: "menos_cantidad", label: "Menos cantidad" },
-  { v: "danado", label: "Material dañado" },
-  // Llegó OTRO artículo (no el de la orden): se recibe y se marca para NC.
-  { v: "material_distinto", label: "Material distinto" },
-];
 
 // Cuántas fotos de la factura se pueden adjuntar (igual que el límite de la API).
 const MAX_FOTOS = 4;
@@ -305,7 +297,7 @@ export default function RegistrarFacturaPage() {
       <div className="nc-mark__row">
         <span className="nc-mark__label">Nota de crédito</span>
         <Select value={marcadas[l.id].motivo} onChange={(e) => setMarca(l.id, { motivo: e.target.value as MotivoNC })} style={{ minWidth: 168 }}>
-          {MOTIVO_NC.map((mo) => <option key={mo.v} value={mo.v}>{mo.label}</option>)}
+          {MOTIVOS_NC.map((mo) => <option key={mo.v} value={mo.v}>{mo.label}</option>)}
         </Select>
         <button type="button" className="link-btn nc-mark__quitar" onClick={() => quitarMarca(l.id)}>Quitar</button>
       </div>
@@ -1046,7 +1038,7 @@ export default function RegistrarFacturaPage() {
                   {marcada && (
                     <button type="button" className="recv-nc-chip" onClick={() => abrirNc(l)}
                       title="Editar nota de crédito">
-                      Nota de crédito · {MOTIVO_NC.find((mo) => mo.v === marcadas[l.id].motivo)?.label}
+                      Nota de crédito · {MOTIVOS_NC.find((mo) => mo.v === marcadas[l.id].motivo)?.label}
                     </button>
                   )}
                   <div className="recv-card__row2">
@@ -1229,7 +1221,7 @@ export default function RegistrarFacturaPage() {
             <p className="ds-strong" style={{ margin: "0 0 16px" }}>{ncModal.descripcion}</p>
             <Field label="Tipo de nota de crédito">
               <Select value={ncModal.motivo} onChange={(e) => setNcModal((m) => m && { ...m, motivo: e.target.value as MotivoNC })}>
-                {MOTIVO_NC.map((mo) => <option key={mo.v} value={mo.v}>{mo.label}</option>)}
+                {MOTIVOS_NC.map((mo) => <option key={mo.v} value={mo.v}>{mo.label}</option>)}
               </Select>
             </Field>
             {ncModal.motivo === "precio_distinto" && (

@@ -1181,10 +1181,21 @@ td.ds-col-fija {
 /* Dos líneas, por lo mismo que .ds-clamp-2: la medida del material va al final. */
 .rec-line__name { font-size: var(--ds-font-size-label); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .rec-line__meta { font-size: 11px; color: var(--ds-text-danger); }
+/* La línea que Bodega marcó para nota de crédito. Va pegada al material y no en una
+   columna propia: lo que hay que saber de un vistazo es CUÁL de las líneas fue. */
+.rec-line__nc { font-size: 11px; font-weight: var(--ds-font-weight-semibold); color: var(--ds-text-danger); }
 .rec-line__qty { font-size: var(--ds-font-size-label); font-weight: var(--ds-font-weight-semibold); white-space: nowrap; text-align: right; }
 .rec-line__price { font-size: var(--ds-font-size-label); white-space: nowrap; text-align: right; }
 .rec-line__iva { font-size: var(--ds-font-size-body-sm); white-space: nowrap; text-align: right; }
 .rec-line__amt { font-size: var(--ds-font-size-label); font-weight: var(--ds-font-weight-semibold); white-space: nowrap; text-align: right; }
+/* El motivo de la nota de crédito, dentro del aviso de la tarjeta. Una NC por bloque:
+   qué material, qué pasó, el comentario de quien recibió y si ya se emitió. */
+.rec-nc { display: flex; flex-direction: column; gap: 1px; margin-top: var(--ds-space-2); }
+.rec-nc:first-child { margin-top: 2px; }
+.rec-nc__dato { font-size: var(--ds-font-size-body-sm); }
+.rec-nc__nota { font-size: var(--ds-font-size-body-sm); font-style: italic; }
+.rec-nc__pie { font-size: 11px; opacity: .8; }
+
 /* Pie de totales de la recepción. */
 .rec-totals { margin-top: var(--ds-space-3); margin-left: auto; width: max-content; min-width: 260px; display: flex; flex-direction: column; gap: 4px; }
 .rec-totals__row { display: flex; justify-content: space-between; gap: var(--ds-space-6); font-size: var(--ds-font-size-label); }

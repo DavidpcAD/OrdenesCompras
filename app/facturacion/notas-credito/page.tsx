@@ -5,15 +5,7 @@ import Link from "next/link";
 import { Badge, Button, Card, EmptyState, Tile, useToast } from "@/components/ui";
 import { IconEdit, IconReceipt, IconBox, IconEye } from "@/components/icons";
 import { useStore } from "@/lib/store";
-import { cuenta, money, formatDate } from "@/lib/helpers";
-import type { MotivoNC } from "@/lib/types";
-
-const MOTIVO: Record<MotivoNC, { label: string; tone: string }> = {
-  precio_distinto: { label: "Precio distinto", tone: "yellow" },
-  menos_cantidad: { label: "Menos cantidad", tone: "yellow" },
-  danado: { label: "Material dañado", tone: "red" },
-  material_distinto: { label: "Material distinto", tone: "red" },
-};
+import { cuenta, money, formatDate, motivoNC } from "@/lib/helpers";
 
 // Notas de crédito (Bodega · Kattya): líneas de facturas recibidas marcadas con
 // problema (dañado / menos cantidad / precio distinto / llegó otro material)
@@ -120,7 +112,7 @@ export default function NotasCreditoPage() {
                     <thead><tr><th>Material</th><th>Motivo</th><th className="ds-num">Cantidad</th><th className="ds-num">Precio unit.</th><th className="ds-num">Importe</th><th>Fecha</th><th></th></tr></thead>
                     <tbody>
                       {g.lineas.map((n) => {
-                        const mo = MOTIVO[n.motivo] ?? { label: n.motivo, tone: "gray" };
+                        const mo = motivoNC(n.motivo);
                         const esta = n.estado === "resuelta";
                         return (
                           <tr key={n.id}>

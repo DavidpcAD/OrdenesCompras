@@ -2,10 +2,11 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { Badge, Card, EmptyState, Input, Tile } from "@/components/ui";
-import { IconCheck, IconChevronDown } from "@/components/icons";
+import { IconCheck, IconChevronDown, IconWarning } from "@/components/icons";
 import { FotosFactura } from "@/components/fotos-factura";
 import { useStore } from "@/lib/store";
-import { money, formatDate, todayISO, numeroOrden } from "@/lib/helpers";
+import { money, formatDate, todayISO, numeroOrden, motivoNC } from "@/lib/helpers";
+import Link from "next/link";
 
 // Bodega (recibe): historial de lo que se recibió, con quién lo recibió.
 // Pensada para celular/tablet: tarjetas grandes, sin tablas anchas.
@@ -102,8 +103,16 @@ export default function RecibidasPage() {
               }, { subtotal: 0, iva: 0 });
               const total = tot.subtotal + tot.iva;
               // ¿Marcada para nota de crédito? La marca Bodega al recibir (línea a línea).
+              // Se guardan las NC ENTERAS y no un booleano: la marca sin el motivo no
+              // sirve para nada. Contabilidad llegaba hasta acá, veía la pastilla roja
+              // y tenía que preguntar por WhatsApp qué había pasado para saber qué hacer
+              // con la factura nueva de esa misma orden (Jessie, 7 oct 2026).
               const lineIds = new Set(r.lineas.map((l) => l.ordenLineaId));
-              const tieneNC = notasCredito.some((nc) => String(nc.ordenId) === String(o?.id ?? "") && (!nc.ordenLineaId || lineIds.has(nc.ordenLineaId)));
+              const ncs = notasCredito.filter((nc) => String(nc.ordenId) === String(o?.id ?? "") && (!nc.ordenLineaId || lineIds.has(nc.ordenLineaId)));
+              const tieneNC = ncs.length > 0;
+              // El tono lo manda el motivo más serio: material dañado o distinto es rojo.
+              const tonoNC = ncs.some((nc) => motivoNC(nc.motivo).tone === "red") ? "red" : "yellow";
+              const motivosNC = [...new Set(ncs.map((nc) => motivoNC(nc.motivo).label))];
               return (
                 <Card key={r.id} className="rec-card">
                   <div className="row row--between wrap gap-2" style={{ alignItems: "flex-start" }}>
@@ -163,6 +172,39 @@ export default function RecibidasPage() {
                       </span>
                     )}
                   </div>
+                  {tieneNC && (
+                    <div className={`ds-callout ds-callout--${tonoNC} mt-3`} role="note">
+                      <span className="ds-callout__icon"><IconWarning size={18} /></span>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div className="ds-callout__title">
+                          Nota de crédito · {motivosNC.join(" y ")}
+                        </div>
+                        <div className="ds-callout__body">
+                          {/* Qué pasó, en la línea de quien lo marcó: artículo, cuánto,
+                              el comentario que escribió Bodega y si la NC ya se emitió.
+                              Es exactamente lo que hay que saber para decidir qué hacer
+                              con la factura que llegó después. */}
+                          {ncs.map((nc) => {
+                            const mo = motivoNC(nc.motivo);
+                            return (
+                              <div key={nc.id} className="rec-nc">
+                                <span className="ds-strong">{nc.articuloNo ? `${nc.articuloNo} · ` : ""}{nc.descripcion}</span>
+                                <span className="rec-nc__dato">
+                                  {mo.queHacer || mo.label} {nc.cantidad > 0 ? `· ${nc.cantidad} und` : ""}
+                                  {nc.precioUnitario != null ? ` × ${money(nc.precioUnitario)}` : ""}
+                                </span>
+                                {nc.nota && <span className="rec-nc__nota">“{nc.nota}”</span>}
+                                <span className="rec-nc__pie">
+                                  {nc.estado === "resuelta" ? "NC ya emitida" : "NC pendiente de emitir"} · marcada el {formatDate(nc.fecha)}
+                                </span>
+                              </div>
+                            );
+                          })}
+                          <Link className="linklike" href="/facturacion/notas-credito">Ver en Notas de crédito</Link>
+                        </div>
+                      </div>
+                    </div>
+                  )}
                   {(() => {
                     const open = abiertas.has(r.id);
                     return (
@@ -197,12 +239,16 @@ export default function RecibidasPage() {
                                 const desc = ol?.descuentoPct ?? 0;
                                 const cant = Number(rl.cantidadRecibida) || 0;
                                 const importe = precio * cant * (1 - desc / 100); // Line Amount Excl. VAT
+                                // La NC se marca POR LÍNEA: acá se dice cuál, para no
+                                // tener que cotejar la descripción a ojo.
+                                const ncLinea = ncs.find((nc) => nc.ordenLineaId && nc.ordenLineaId === rl.ordenLineaId);
                                 return (
                                   <div key={i} className="rec-line">
                                     <span className="rec-line__desc">
                                       {(ol?.articuloId || ol?.tipo === "cargo") && <span className="rec-line__code">{ol?.articuloId || (ol?.chargeNo ?? "CARGO")}</span>}
                                       <span className="rec-line__name" title={ol?.descripcion ?? "Línea"}>{ol?.descripcion ?? "Línea"}</span>
                                       {desc > 0 && <span className="rec-line__meta">Desc. {desc}%</span>}
+                                      {ncLinea && <span className="rec-line__nc">NC · {motivoNC(ncLinea.motivo).label}</span>}
                                     </span>
                                     <span className="rec-line__qty ds-num">{cant} {ol?.unidad ?? "und"}</span>
                                     <span className="rec-line__price ds-num">{money(precio)}</span>

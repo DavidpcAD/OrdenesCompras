@@ -1,4 +1,4 @@
-import type { LineType, Orden, OrdenLinea, Pedido, PedidoLinea, Recepcion, Role, TipoSolicitud } from "./types.ts";
+import type { LineType, MotivoNC, Orden, OrdenLinea, Pedido, PedidoLinea, Recepcion, Role, TipoSolicitud } from "./types.ts";
 import { comentarioSinMarcasInternas, motivoDeCierre, segmentosDeNota } from "./cierre-solicitud.ts";
 
 // ── QUÉ ES CADA TIPO DE LÍNEA, EN UN SOLO LUGAR ──────────────────────────────
@@ -1177,6 +1177,28 @@ export function chequeoBcVencido(
 // "vez" → "veces", "artículo" → "artículos", y la concordancia arrastra al
 // participio ("1 línea recibida" / "2 líneas recibidas"). El cero va en plural, que
 // es como se dice ("0 líneas").
+// ── MOTIVOS DE NOTA DE CRÉDITO, EN UN SOLO LUGAR ─────────────────────────────
+// Por qué acá y no en cada pantalla: el motivo lo ESCRIBE Bodega al recibir y lo
+// LEEN Contabilidad (¿qué hago con la factura nueva de esta orden?) y la pantalla de
+// notas de crédito. Hasta hoy cada una tenía su propia copia de los rótulos, así que
+// la misma marca podía llamarse distinto en dos pantallas — y en la de Bodega, donde
+// se guarda, ni siquiera se veía después.
+export const MOTIVOS_NC: { v: MotivoNC; label: string; tone: "yellow" | "red"; queHacer: string }[] = [
+  { v: "precio_distinto", label: "Precio distinto", tone: "yellow",
+    queHacer: "El proveedor facturó a otro precio que el de la orden." },
+  { v: "menos_cantidad", label: "Menos cantidad", tone: "yellow",
+    queHacer: "Llegó menos de lo que dice la factura." },
+  { v: "danado", label: "Material dañado", tone: "red",
+    queHacer: "El material llegó dañado." },
+  // Llegó OTRO artículo (no el de la orden): se recibe y se marca para NC.
+  { v: "material_distinto", label: "Material distinto", tone: "red",
+    queHacer: "Llegó un material distinto al de la orden." },
+];
+
+/** El rótulo del motivo. Si llegara uno que no conocemos, se muestra crudo antes que nada. */
+export const motivoNC = (m: MotivoNC | string) =>
+  MOTIVOS_NC.find((x) => x.v === m) ?? { v: m as MotivoNC, label: String(m), tone: "yellow" as const, queHacer: "" };
+
 export function cuenta(n: number, singular: string, plural: string): string {
   return `${n} ${n === 1 ? singular : plural}`;
 }
