@@ -6,7 +6,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useStore } from "@/lib/store";
 import { Button, ConfirmDialog, Modal, Skeleton } from "@/components/ui";
 import type { Role, Notificacion } from "@/lib/types";
-import { devolucionesPendientes, formatDate } from "@/lib/helpers";
+import { devolucionesPendientes, formatDate, num } from "@/lib/helpers";
 import { helpForPath } from "@/lib/help";
 import { marcarNavegacion } from "@/lib/navegacion";
 import { borrarCacheBootstrap } from "@/lib/cache-bootstrap";
@@ -139,7 +139,7 @@ function ChasisCargando() {
 }
 
 export function AppShell({ role, children }: { role: Role; children: React.ReactNode }) {
-  const { role: current, setRole, usuario, setUsuario, pedidos, ordenes, notificaciones, marcarNotifsLeidas, marcarNotifLeida, hydrated, errorCarga, cargando, recargar, ultimaSync, datosDeCache, modoApi, sesionExpirada } = useStore();
+  const { role: current, setRole, usuario, setUsuario, pedidos, ordenes, notificaciones, marcarNotifsLeidas, marcarNotifLeida, hydrated, errorCarga, cargando, recargar, ultimaSync, datosDeCache, progresoCarga, modoApi, sesionExpirada } = useStore();
   const router = useRouter();
   const pathname = usePathname();
   const [notifOpen, setNotifOpen] = useState(false);
@@ -271,9 +271,18 @@ export function AppShell({ role, children }: { role: Role; children: React.React
   const sincronizado = ultimaSync ?? datosDeCache;
   const edadMs = sincronizado ? Math.max(0, ahora - sincronizado) : null;
   const sesionVencida = sesionExpirada;
+  // La carga inicial viene por tandas (ver `cargarPorLotes` en lib/store.tsx) y eso
+  // se DICE: lo que está en pantalla ya se puede usar, pero todavía no es toda la
+  // historia, así que decir "Al día" en ese rato sería mentira.
+  const pct = progresoCarga && progresoCarga.total > 0
+    ? Math.min(99, Math.round((progresoCarga.hechos / progresoCarga.total) * 100))
+    : null;
   const sync = errorCarga
     ? { clase: " is-error", texto: sesionVencida ? "Sesión vencida" : "Sin conexión",
         tip: sesionVencida ? "Tu sesión venció: iniciá sesión otra vez" : `No se pudo confirmar con el servidor · ${errorCarga}` }
+    : pct !== null
+      ? { clase: " is-stale", texto: `Cargando ${pct} %`,
+          tip: `Trayendo la historia por tandas: ${num.format(progresoCarga!.hechos)} de ${num.format(progresoCarga!.total)} documentos. Lo que ya está en pantalla se puede usar; lo viejo sigue entrando.` }
     : edadMs === null
       ? { clase: "", texto: "Conectando…", tip: "Trayendo los datos del servidor" }
       : edadMs < 90_000
@@ -294,7 +303,7 @@ export function AppShell({ role, children }: { role: Role; children: React.React
               onClick={() => { if (sesionVencida) window.location.assign("/?motivo=sesion"); else void recargar(); }}
               disabled={cargando} aria-label={sync.tip}>
               <span className="sync-chip__dot" aria-hidden />
-              <span className="sync-chip__txt">{cargando ? "Actualizando…" : sync.texto}</span>
+              <span className="sync-chip__txt">{cargando && !progresoCarga ? "Actualizando…" : sync.texto}</span>
             </button>
           )}
           {/* Ayuda de la pantalla (qué es / para qué sirve) */}

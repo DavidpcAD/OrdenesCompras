@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createHash } from "node:crypto";
-import { listNotasCredito, listOrdenes, listPedidos, listRecepciones } from "@/lib/repo";
+import { contarVivos, listNotasCredito, listOrdenes, listPedidos, listRecepciones } from "@/lib/repo";
+import { cursorDe, siguienteCursor, tamañoDeLote } from "@/lib/lotes";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -15,6 +16,73 @@ async function medir<T>(marcas: Record<string, number>, nombre: string, fn: () =
   try { return await fn(); } finally { marcas[nombre] = Date.now() - t0; }
 }
 
+// ── CARGA POR LOTES ──────────────────────────────────────────────────────────
+// Sin parámetros esto sigue siendo lo de siempre: la historia entera en un viaje,
+// con su ETag. Es lo que usa el refresco de 45 s, donde el 304 ahorra el viaje.
+//
+// Con `?n=` la respuesta es UN LOTE: los N más nuevos de cada cosa, más un cursor
+// por entidad para pedir el siguiente. El cliente pinta el primer lote y sigue
+// pidiendo hacia atrás (ver lib/store.tsx). Así la pantalla deja de esperar a que
+// termine de armarse toda la historia para mostrar la primera fila.
+//
+// Por qué el lote NO lleva ETag: un lote es un pedazo, y el ETag de la app es la
+// huella de TODO (es lo que le dice al refresco "nada cambió"). Mezclarlos haría que
+// un lote parezca la foto completa y el refresco siguiente se saltara datos.
+// Interruptor de emergencia: `BOOTSTRAP_LOTES=0` en el App Service y la carga vuelve
+// a ser un solo viaje, SIN redeploy (igual que BC_FRENO_PRECIO o AUTORIZACION_ROLES).
+// El cliente no se entera de nada: recibe un único lote con todo adentro y marcado
+// como completo, así que deja de pedir y sigue su vida.
+function lotesActivos(): boolean {
+  const v = (process.env.BOOTSTRAP_LOTES ?? "").trim().toLowerCase();
+  return !(v === "0" || v === "false" || v === "no");
+}
+
+async function responderLote(req: Request, nPedido: number, marcas: Record<string, number>, t0: number) {
+  const activos = lotesActivos();
+  // Apagado: se piden las listas SIN techo y todo viaja en esta misma respuesta.
+  const n = activos ? nPedido : null;
+  const url = new URL(req.url);
+  const cur = {
+    pedidos: cursorDe(url.searchParams.get("pc")),
+    ordenes: cursorDe(url.searchParams.get("oc")),
+    recepciones: cursorDe(url.searchParams.get("rc")),
+  };
+  // Primera vuelta = la que no trae ningún cursor. Solo ahí viajan las notas de
+  // crédito (son pocas y no se paginan) y los totales, que son los que dejan decir
+  // "600 de 787" en vez de un "cargando…" sin fondo.
+  const primera = cur.pedidos == null && cur.ordenes == null && cur.recepciones == null;
+  // `fin` = esta entidad ya se terminó en una vuelta anterior; no se vuelve a consultar.
+  const fin = (c: number | null) => !primera && c == null;
+
+  const [pedidos, ordenes, recepciones, notas, totales] = await Promise.all([
+    fin(cur.pedidos) ? [] : medir(marcas, "pedidos", () => listPedidos({ antesDeId: cur.pedidos, limite: n })),
+    fin(cur.ordenes) ? [] : medir(marcas, "ordenes", () => listOrdenes({ antesDeId: cur.ordenes, limite: n })),
+    fin(cur.recepciones) ? [] : medir(marcas, "recepciones", () => listRecepciones({ antesDeId: cur.recepciones, limite: n })),
+    primera ? medir(marcas, "notas", () => listNotasCredito().catch(() => [])) : [],
+    primera ? medir(marcas, "totales", () => contarVivos().catch(() => null)) : null,
+  ]);
+
+  const cursores = n == null ? { pedidos: null, ordenes: null, recepciones: null } : {
+    pedidos: fin(cur.pedidos) ? null : siguienteCursor(pedidos, n),
+    ordenes: fin(cur.ordenes) ? null : siguienteCursor(ordenes, n),
+    recepciones: fin(cur.recepciones) ? null : siguienteCursor(recepciones, n),
+  };
+  const completo = cursores.pedidos == null && cursores.ordenes == null && cursores.recepciones == null;
+  marcas.total = Date.now() - t0;
+
+  const body = JSON.stringify({ pedidos, ordenes, recepciones, notas, cursores, completo, totales });
+  const kb = Math.round(Buffer.byteLength(body) / 1024);
+  console.info(`[bootstrap:lote] ${marcas.total} ms · ${kb} kB · n=${n ?? "sin techo (BOOTSTRAP_LOTES apagado)"}${primera ? " (primero)" : ""} · ${pedidos.length} solicitudes, ${ordenes.length} órdenes, ${recepciones.length} recepciones${completo ? " · COMPLETO" : ""}`);
+  return new NextResponse(body, {
+    status: 200,
+    headers: {
+      "Content-Type": "application/json; charset=utf-8",
+      "Cache-Control": "no-store",
+      "Server-Timing": Object.entries(marcas).map(([k, v]) => `${k};dur=${v}`).join(", "),
+    },
+  });
+}
+
 // Carga inicial de la data para el front-end (modo API).
 // NO incluye el historial de movimientos: la tabla dbo.Movimiento completa viajaba
 // en cada carga Y en cada auto-refresh (45s) solo para pintar el Timeline de dos
@@ -23,6 +91,10 @@ export async function GET(req: Request) {
   const marcas: Record<string, number> = {};
   const t0 = Date.now();
   try {
+    // ¿Vienen por lotes? Entonces el camino es otro: pedazos sin ETag.
+    const n = tamañoDeLote(new URL(req.url).searchParams.get("n"));
+    if (n != null) return await responderLote(req, n, marcas, t0);
+
     const [pedidos, ordenes, recepciones, notas] = await Promise.all([
       medir(marcas, "pedidos", listPedidos),
       medir(marcas, "ordenes", listOrdenes),

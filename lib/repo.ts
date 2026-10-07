@@ -81,6 +81,74 @@ function porCabecera<T extends Record<string, any>>(filas: T[], fk: string): Map
   return m;
 }
 
+// ── CARGA POR LOTES ──────────────────────────────────────────────────────────
+// La carga inicial traía TODA la historia de un solo viaje: solicitudes, órdenes y
+// recepciones con sus líneas. Con 787 órdenes eso es ~1,2 MB y entre 1 y 3 segundos
+// de base, y la pantalla no muestra una fila hasta que llega el último byte. Crece
+// para siempre: cada mes la app arranca más lenta para todos.
+//
+// Un LOTE es "los N más nuevos por debajo de este id". El cliente pide el primero,
+// lo pinta, y sigue pidiendo hacia atrás hasta que no queda nada. Se pagina por id y
+// no por fecha porque el id ya es el orden en que las pantallas muestran todo
+// (ORDER BY id DESC) y no depende de que una fecha esté bien puesta.
+export type Lote = { antesDeId?: number | null; limite?: number | null };
+
+// El TOP y el "más viejo que el cursor" de una consulta por lotes, con sus inputs.
+// Devuelve también `atar` para que el llamador no pueda olvidarse de los parámetros:
+// un TOP (@lim) sin atar @lim no es una consulta lenta, es un error en vuelo.
+function clausulasLote(lote: Lote | undefined, columnaId: string) {
+  const limite = lote?.limite && lote.limite > 0 ? Math.floor(lote.limite) : null;
+  const antes = lote?.antesDeId && lote.antesDeId > 0 ? Math.floor(lote.antesDeId) : null;
+  return {
+    top: limite ? "TOP (@lim)" : "",
+    filtro: antes ? ` AND ${columnaId} < @antes` : "",
+    atar(req: sql.Request) {
+      if (limite) req.input("lim", sql.Int, limite);
+      if (antes) req.input("antes", sql.Int, antes);
+      return req;
+    },
+  };
+}
+
+// El rango de ids que trajo el lote. Sirve para acotar el DETALLE y las consultas
+// auxiliares sin mandarle 200 ids a SQL: como la página son los N vivos más nuevos
+// por debajo del cursor —o sea, contiguos en el orden—, TODO id vivo entre el mínimo
+// y el máximo está en la página. El BETWEEN es exacto, no una aproximación.
+// Sin lote (carga completa) el rango es la tabla entera y el BETWEEN no filtra nada.
+export type RangoIds = { min: number; max: number };
+function rangoDeIds(filas: Array<Record<string, any>>, columna: string): RangoIds | null {
+  if (!filas.length) return null;
+  let min = Infinity, max = -Infinity;
+  for (const f of filas) {
+    const v = Number(f[columna]);
+    if (v < min) min = v;
+    if (v > max) max = v;
+  }
+  return { min, max };
+}
+
+// Filtro BETWEEN para una consulta auxiliar (los movimientos, las fotos). Sin rango
+// devuelve "" y la consulta queda igual que siempre.
+function filtroRango(req: sql.Request, rango: RangoIds | undefined | null, columna: string): string {
+  if (!rango) return "";
+  req.input("rmin", sql.Int, rango.min).input("rmax", sql.Int, rango.max);
+  return ` AND ${columna} BETWEEN @rmin AND @rmax`;
+}
+
+// Cuántos hay en total, para poder decir "600 de 787" mientras se cargan los lotes.
+// Son tres COUNT con el mismo filtro que las listas: el índice los resuelve sin
+// tocar las líneas, que es donde está el peso.
+export async function contarVivos(): Promise<{ pedidos: number; ordenes: number; recepciones: number }> {
+  const pool = await getPool();
+  const r = await pool.request().query(`
+    SELECT
+      (SELECT COUNT(*) FROM dbo.PedidoCompra    WHERE esEliminada = 0) AS pedidos,
+      (SELECT COUNT(*) FROM dbo.OrdenCompra     WHERE esEliminada = 0) AS ordenes,
+      (SELECT COUNT(*) FROM dbo.RecepcionCompra WHERE esEliminada = 0) AS recepciones`);
+  const x = r.recordset[0] ?? {};
+  return { pedidos: Number(x.pedidos ?? 0), ordenes: Number(x.ordenes ?? 0), recepciones: Number(x.recepciones ?? 0) };
+}
+
 function codigoDeId(id: number | null): string | undefined {
   if (id == null || !estadoIdToNombre) return undefined;
   const nombre = estadoIdToNombre.get(id);
@@ -118,7 +186,7 @@ export async function health() {
 // las ediciones se piden SOLO de esas solicitudes.
 const isoFecha = (f: any): string => (typeof f?.toISOString === "function" ? f.toISOString() : String(f ?? ""));
 
-async function devolucionesDeSolicitudes(): Promise<Map<string, DevolucionSolicitud>> {
+async function devolucionesDeSolicitudes(rango?: RangoIds | null): Promise<Map<string, DevolucionSolicitud>> {
   const out = new Map<string, DevolucionSolicitud>();
   try {
     const pool = await getPool();
@@ -126,9 +194,11 @@ async function devolucionesDeSolicitudes(): Promise<Map<string, DevolucionSolici
     //    quién es devolución lo decide `esTipoDevolucion`: filtrar por '%devol%' no
     //    encuentra "devuelto" —el tipo que escribe esta app— y la bandeja salía
     //    vacía con la devolución sentada en la tabla.
-    const dev = await pool.request().query(
+    const devReq = pool.request();
+    const devRango = filtroRango(devReq, rango, "idEntidad");
+    const dev = await devReq.query(
       `SELECT idEntidad, tipoMovimiento, fecha, detalle, usuario FROM dbo.Movimiento
-        WHERE entidad='pedido' AND tipoMovimiento LIKE '%dev%'
+        WHERE entidad='pedido' AND tipoMovimiento LIKE '%dev%'${devRango}
         ORDER BY fecha DESC, idMovimiento DESC`
     );
     for (const m of dev.recordset) {
@@ -191,19 +261,25 @@ async function devolucionesDeSolicitudes(): Promise<Map<string, DevolucionSolici
   return out;
 }
 
-export async function listPedidos(): Promise<Pedido[]> {
+export async function listPedidos(lote?: Lote): Promise<Pedido[]> {
   await ensureEstados();
   const pool = await getPool();
-  const h = await pool.request().query("SELECT * FROM dbo.PedidoCompra WHERE esEliminada = 0 ORDER BY idPedidoCompra DESC");
-  // Solo las líneas de solicitudes VIVAS. El encabezado de arriba ya filtra las
-  // eliminadas, pero el detalle se traía entero: esas líneas viajaban desde SQL,
-  // se agrupaban en memoria y se tiraban sin que nadie las leyera nunca.
-  const d = await pool.request().query(`SELECT * FROM dbo.PedidoCompraDet det
+  const cl = clausulasLote(lote, "idPedidoCompra");
+  const h = await cl.atar(pool.request()).query(
+    `SELECT ${cl.top} * FROM dbo.PedidoCompra WHERE esEliminada = 0${cl.filtro} ORDER BY idPedidoCompra DESC`);
+  const rango = rangoDeIds(h.recordset, "idPedidoCompra");
+  if (!rango) return [];
+  // Solo las líneas de solicitudes VIVAS, y solo las de ESTE lote. El encabezado de
+  // arriba ya filtra las eliminadas, pero el detalle se traía entero: esas líneas
+  // viajaban desde SQL, se agrupaban en memoria y se tiraban sin que nadie las leyera.
+  const dReq = pool.request();
+  const dRango = filtroRango(dReq, rango, "det.idPedidoCompra");
+  const d = await dReq.query(`SELECT * FROM dbo.PedidoCompraDet det
       WHERE EXISTS (SELECT 1 FROM dbo.PedidoCompra p
-                    WHERE p.idPedidoCompra = det.idPedidoCompra AND p.esEliminada = 0)
+                    WHERE p.idPedidoCompra = det.idPedidoCompra AND p.esEliminada = 0)${dRango}
       ORDER BY idPedidoCompraDet`);
   const porPedido = porCabecera(d.recordset, "idPedidoCompra");
-  const [unidades, devoluciones] = await Promise.all([mapaUnidades(), devolucionesDeSolicitudes()]);
+  const [unidades, devoluciones] = await Promise.all([mapaUnidades(), devolucionesDeSolicitudes(rango)]);
   return h.recordset.map((p) => mapPedido(p, porPedido.get(p.idPedidoCompra) ?? [], unidades, devoluciones));
 }
 
@@ -1109,7 +1185,9 @@ interface SellosOrden { aprobacion?: Sello; envio?: Sello }
 
 // `idOrden` acota a una sola orden (detalle, PDF, PATCH): sin eso, abrir una orden
 // barría la bitácora entera para leer dos fechas.
-async function sellosDeOrdenes(idOrden?: number): Promise<Map<string, SellosOrden>> {
+// `rango` acota a las órdenes de UN lote. Importa: esto agrega sobre dbo.Movimiento,
+// que es la tabla que más crece, y sin acotar cada lote la recorrería entera.
+async function sellosDeOrdenes(idOrden?: number, rango?: RangoIds | null): Promise<Map<string, SellosOrden>> {
   const out = new Map<string, SellosOrden>();
   try {
     const pool = await getPool();
@@ -1121,6 +1199,7 @@ async function sellosDeOrdenes(idOrden?: number): Promise<Map<string, SellosOrde
       .input("deshecho", sql.NVarChar(50), MOV_DESHECHO);
     let filtroId = "";
     if (idOrden !== undefined) { req.input("idOrden", sql.Int, idOrden); filtroId = " AND idEntidad = @idOrden"; }
+    else filtroId = filtroRango(req, rango, "idEntidad");
     const r = await req
       .query(`SELECT idEntidad,
                 MAX(CASE WHEN ${SQL_ES_APROBACION} THEN ${SQL_SELLO} END) AS aprobacion,
@@ -1155,26 +1234,32 @@ const SQL_OBRA_SOLICITUD = `CASE
        AND LTRIM(RTRIM(ISNULL(pc.obra,''))) NOT IN ('','(varias)') THEN LTRIM(RTRIM(pc.obra))
     END AS obraSolicitud`;
 
-export async function listOrdenes(): Promise<Orden[]> {
+export async function listOrdenes(lote?: Lote): Promise<Orden[]> {
   await ensureEstados();
   const pool = await getPool();
-  const h = await pool.request().query("SELECT * FROM dbo.OrdenCompra WHERE esEliminada = 0 ORDER BY idOrdenCompra DESC");
+  const cl = clausulasLote(lote, "idOrdenCompra");
+  const h = await cl.atar(pool.request()).query(
+    `SELECT ${cl.top} * FROM dbo.OrdenCompra WHERE esEliminada = 0${cl.filtro} ORDER BY idOrdenCompra DESC`);
+  const rango = rangoDeIds(h.recordset, "idOrdenCompra");
+  if (!rango) return [];
   // pedidoNumero se resuelve desde el vínculo idPedidoCompraDet → PedidoCompra.pedidoNo
   // (si no, la orden se veía siempre como "Directa" aunque naciera de un pedido).
   // Ídem: solo las líneas de órdenes vivas (ver listPedidos). EXISTS y no un JOIN
   // más porque EXISTS no puede multiplicar filas si algún día hay un duplicado.
-  const d = await pool.request().query(`SELECT det.*, pc.pedidoNo AS pedidoNumero, ${SQL_OBRA_SOLICITUD}
+  const dReq = pool.request();
+  const dRango = filtroRango(dReq, rango, "det.idOrdenCompra");
+  const d = await dReq.query(`SELECT det.*, pc.pedidoNo AS pedidoNumero, ${SQL_OBRA_SOLICITUD}
       FROM dbo.OrdenCompraDet det
       LEFT JOIN dbo.PedidoCompraDet pcd ON pcd.idPedidoCompraDet = det.idPedidoCompraDet
       LEFT JOIN dbo.PedidoCompra pc ON pc.idPedidoCompra = pcd.idPedidoCompra
       WHERE EXISTS (SELECT 1 FROM dbo.OrdenCompra o
-                    WHERE o.idOrdenCompra = det.idOrdenCompra AND o.esEliminada = 0)
+                    WHERE o.idOrdenCompra = det.idOrdenCompra AND o.esEliminada = 0)${dRango}
       ORDER BY det.idOrdenCompraDet`);
   const rechazadas = h.recordset.filter((o) => codigoDeId(o.idEstado) === "rechazado").map((o) => o.idOrdenCompra as number);
   const motivos = await motivosRechazo(rechazadas);
   const porOrden = porCabecera(d.recordset, "idOrdenCompra");
   const unidades = await mapaUnidades();
-  const sellos = await sellosDeOrdenes();
+  const sellos = await sellosDeOrdenes(undefined, rango);
   return h.recordset.map((o) => mapOrden(
     o,
     porOrden.get(o.idOrdenCompra) ?? [],
@@ -2382,13 +2467,15 @@ export async function getRecepcionFoto(idRec: number, idFoto: number): Promise<{
 }
 
 // Metadatos (sin el blob) de todas las fotos, agrupados por recepción.
-async function fotosPorRecepcion(): Promise<Map<number, RecepcionFoto[]>> {
+async function fotosPorRecepcion(rango?: RangoIds | null): Promise<Map<number, RecepcionFoto[]>> {
   const mapa = new Map<number, RecepcionFoto[]>();
   if (!(await tablaFotoExiste())) return mapa;
   const pool = await getPool();
-  const r = await pool.request().query(
+  const req = pool.request();
+  const filtro = filtroRango(req, rango, "idRecepcionCompra");
+  const r = await req.query(
     `SELECT idRecepcionCompraFoto, idRecepcionCompra, mime, tamano, ancho, alto
-       FROM dbo.RecepcionCompraFoto WHERE esEliminada=0 ORDER BY idRecepcionCompraFoto`
+       FROM dbo.RecepcionCompraFoto WHERE esEliminada=0${filtro} ORDER BY idRecepcionCompraFoto`
   );
   for (const f of r.recordset) {
     const arr = mapa.get(f.idRecepcionCompra) ?? [];
@@ -2402,17 +2489,23 @@ async function fotosPorRecepcion(): Promise<Map<number, RecepcionFoto[]>> {
 }
 
 // ----------------------------------------------------------------- listas extra
-export async function listRecepciones(): Promise<Recepcion[]> {
+export async function listRecepciones(lote?: Lote): Promise<Recepcion[]> {
   const pool = await getPool();
-  const h = await pool.request().query("SELECT * FROM dbo.RecepcionCompra WHERE esEliminada = 0 ORDER BY idRecepcionCompra DESC");
+  const cl = clausulasLote(lote, "idRecepcionCompra");
+  const h = await cl.atar(pool.request()).query(
+    `SELECT ${cl.top} * FROM dbo.RecepcionCompra WHERE esEliminada = 0${cl.filtro} ORDER BY idRecepcionCompra DESC`);
+  const rango = rangoDeIds(h.recordset, "idRecepcionCompra");
+  if (!rango) return [];
   // Ídem: solo las líneas de recepciones vivas (ver listPedidos).
-  const d = await pool.request().query(`SELECT * FROM dbo.RecepcionCompraDet det
+  const dReq = pool.request();
+  const dRango = filtroRango(dReq, rango, "det.idRecepcionCompra");
+  const d = await dReq.query(`SELECT * FROM dbo.RecepcionCompraDet det
       WHERE EXISTS (SELECT 1 FROM dbo.RecepcionCompra r
-                    WHERE r.idRecepcionCompra = det.idRecepcionCompra AND r.esEliminada = 0)
+                    WHERE r.idRecepcionCompra = det.idRecepcionCompra AND r.esEliminada = 0)${dRango}
       ORDER BY idRecepcionCompraDet`);
   const porRecepcion = porCabecera(d.recordset, "idRecepcionCompra");
   // Si la migración de fotos no está corrida, esto devuelve un mapa vacío.
-  const fotos = await fotosPorRecepcion().catch(() => new Map<number, RecepcionFoto[]>());
+  const fotos = await fotosPorRecepcion(rango).catch(() => new Map<number, RecepcionFoto[]>());
   return h.recordset.map((r): Recepcion => {
     // Sin la migración corrida la columna no viene en el SELECT * y esto queda
     // en undefined: la pantalla simplemente no muestra el N.º de BC.

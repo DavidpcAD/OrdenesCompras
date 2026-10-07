@@ -10,7 +10,8 @@ import type {
 import * as seed from "./seed";
 import { devolverPendienteAPedidos, esLineaRecibible, nextNumero, nowISO, ordenEstaCompleta, PERSONA_POR_ROL, todayISO } from "./helpers";
 import { componerNotaCierre, detalleDeCierre, lineaCancelada, motivoObligatorio, quitarNotaCierre } from "./cierre-solicitud.ts";
-import { api, setEtagBootstrap, USE_API as USE_API_BUILD } from "./api";
+import { api, setEtagBootstrap, USE_API as USE_API_BUILD, type CursoresLote } from "./api";
+import { unirPorId } from "./lotes";
 import { CLAVE_CACHE_BOOTSTRAP, borrarCacheBootstrap, leerCache, serializarCache } from "./cache-bootstrap";
 import { instalarGuardFetch, EVENTO_SESION_VENCIDA, EVENTO_DATOS_CAMBIADOS } from "./fetch-guard";
 
@@ -91,6 +92,10 @@ interface StoreShape {
   // servidor todavía no contesta. Es la misma pregunta que `ultimaSync` —"¿de cuándo
   // es esto que estoy viendo?"— para el rato en que la app abre con lo último que vio.
   datosDeCache: number | null;
+  // La carga inicial viene POR LOTES y esto dice por dónde va. null = no hay nada
+  // cargándose. Mientras está, la pantalla ya es usable con lo que llegó: por eso la
+  // barra de arriba dice "Cargando 62 %" y no "Al día", que sería mentira.
+  progresoCarga: { hechos: number; total: number } | null;
   recargar: () => Promise<void>;
 
   proveedores: Proveedor[];
@@ -249,6 +254,14 @@ export function StoreProvider({ children, useApi }: { children: React.ReactNode;
   // Se muestra en la barra superior: "al día" no puede ser un acto de fe.
   const [ultimaSync, setUltimaSync] = useState<number | null>(null);
   const [datosDeCache, setDatosDeCache] = useState<number | null>(null);
+  const [progresoCarga, setProgresoCarga] = useState<{ hechos: number; total: number } | null>(null);
+  // Hay lotes en vuelo: el refresco automático se hace a un lado mientras tanto (sería
+  // traer la historia entera justo cuando se está trayendo por pedazos).
+  const lotesEnVuelo = useRef(false);
+  // ¿La hidratación alcanzó a pintar algo de la caché del navegador? El efecto de
+  // carga corre en el MISMO commit que la hidratación, así que ahí el estado todavía
+  // es el de antes: esto tiene que ser un ref o la decisión se toma con el dato viejo.
+  const pintadoDeCache = useRef(false);
   const [sesionExpirada, setSesionExpirada] = useState(false);
   // Notas de crédito (aparte del bootstrap para no romper la carga si la tabla no existe).
   const [notasCredito, setNotasCredito] = useState<NotaCreditoLinea[]>([]);
@@ -300,6 +313,7 @@ export function StoreProvider({ children, useApi }: { children: React.ReactNode;
             setNotasCredito(b.notas ?? []);
             setEtagBootstrap(c.etag);
             setDatosDeCache(c.t);
+            pintadoDeCache.current = true;
             setCargando(false);   // ya hay algo que leer; "Actualizando…" sigue arriba
           }
         } catch { /* caché ilegible: se arranca como siempre, sin ruido */ }
@@ -321,7 +335,17 @@ export function StoreProvider({ children, useApi }: { children: React.ReactNode;
   useEffect(() => {
     if (!USE_API || !hydrated || !role || ultimaSync) return;
     setCargando(true);
-    refreshFromApi()
+    // Dos situaciones distintas, dos caminos:
+    //
+    //  · Con la caché del navegador ya pintada, en pantalla HAY algo que leer y lo
+    //    único que falta es confirmarlo: un viaje con ETag, que casi siempre vuelve
+    //    304 y no baja un byte. Traerlo por tandas ahí no ganaría nada.
+    //  · Sin caché —la primera vez del día, otra máquina, sesión nueva— la pantalla
+    //    está vacía y lo que importa es que aparezca algo YA. Ahí van los lotes: la
+    //    primera tanda trae lo más nuevo (que es lo que la gente abre a ver) y el
+    //    resto de la historia entra por detrás mientras ya se puede trabajar.
+    const carga = pintadoDeCache.current ? refreshFromApi() : cargarPorLotes();
+    carga
       .catch((e) => { console.error("bootstrap", e); setErrorCarga(mensajeError(e)); })
       .finally(() => setCargando(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -356,6 +380,7 @@ export function StoreProvider({ children, useApi }: { children: React.ReactNode;
     if (!USE_API || !hydrated || !role || sesionExpirada) return;
     const refrescar = () => {
       if (document.hidden) return;
+      if (lotesEnVuelo.current) return;   // la carga inicial todavía viene por tandas
       refreshFromApi()
         .then(() => { fallosSeguidos.current = 0; })
         .catch((e) => {
@@ -472,6 +497,75 @@ export function StoreProvider({ children, useApi }: { children: React.ReactNode;
       const firmaNc = JSON.stringify(b.notas ?? []);
       if (firmaNc !== ultimaNc.current) { ultimaNc.current = firmaNc; setNotasCredito(b.notas ?? []); }
     }
+  }
+
+  // ── LA CARGA INICIAL, POR LOTES ────────────────────────────────────────────
+  // Antes la primera carga era UN viaje con toda la historia: ~1,2 MB que el
+  // servidor tarda entre 1 y 3 segundos en armar, y hasta el último byte la pantalla
+  // no mostraba una sola fila. Y crece: cada mes que pasa, arranca más lenta.
+  //
+  // Ahora llega por tandas de los más nuevos hacia atrás. La PRIMERA tanda pinta la
+  // pantalla —que es lo que la gente abre a ver: lo de esta semana— y el resto entra
+  // por detrás mientras ya se está trabajando. Los cursores van por id, así que una
+  // orden creada entre dos tandas no se duplica ni se pierde: nace con un id más
+  // alto que el cursor, y entra con el refresco.
+  //
+  // Lo que NO hace: tocar el ETag ni la caché del navegador. Un lote es un pedazo, y
+  // la huella del servidor es de la historia completa; el refresco de 45 s hace el
+  // viaje entero una vez y deja las dos cosas al día (ver refreshFromApi).
+  async function cargarPorLotes() {
+    let cursores: CursoresLote | null = null;
+    let primera = true;
+    let hechos = 0;
+    let total = 0;        // lo dice el primer lote; los demás no lo repiten
+    let completo = false;
+    lotesEnVuelo.current = true;
+    try {
+      // Tope de vueltas: una señal de "completo" que nunca llegue no puede volverse un
+      // bucle infinito pidiéndole a la base. Con lotes de 150 son 15 000 documentos.
+      for (let vuelta = 0; vuelta < 100 && !completo; vuelta++) {
+        const lote = await api.bootstrapLote(cursores);
+        setData((d) => ({
+          ...d,
+          pedidos: primera ? lote.pedidos : unirPorId(d.pedidos, lote.pedidos),
+          ordenes: primera ? lote.ordenes : unirPorId(d.ordenes, lote.ordenes),
+          recepciones: primera ? lote.recepciones : unirPorId(d.recepciones, lote.recepciones),
+        }));
+        hechos += lote.pedidos.length + lote.ordenes.length + lote.recepciones.length;
+        if (lote.totales) total = lote.totales.pedidos + lote.totales.ordenes + lote.totales.recepciones;
+        if (primera) {
+          setNotasCredito(lote.notas ?? []);
+          setErrorCarga(null);
+          setSesionExpirada(false);
+          setCargando(false);   // ya hay algo que leer: fuera el esqueleto
+        }
+        primera = false;
+        completo = !!lote.completo;
+        // El progreso solo mientras falte algo. Sin totales (la consulta de conteos
+        // falló) no se inventa un porcentaje: mejor sin número que con uno inventado.
+        setProgresoCarga(completo || !total ? null : { hechos, total });
+        cursores = lote.cursores;
+      }
+    } catch (e) {
+      // Las tandas son una optimización, no la verdad: si una se cae a la mitad, se
+      // vuelve al viaje completo de siempre. La pantalla tiene que terminar con TODA
+      // la historia o con un error — nunca con la mitad y cara de estar al día.
+      console.error("bootstrap:lotes", e);
+      lotesEnVuelo.current = false;
+      setProgresoCarga(null);
+      await refreshFromApi();
+      return;
+    } finally {
+      lotesEnVuelo.current = false;
+      setProgresoCarga(null);
+    }
+    // Se acabaron las vueltas sin que el servidor dijera "completo": lo mismo que un
+    // error. No se da por buena media historia.
+    if (!completo) { await refreshFromApi(); return; }
+    // Recién acá se puede decir "esto es lo que hay en la base": con media historia
+    // en pantalla, decirlo sería mentira.
+    setUltimaSync(Date.now());
+    ultimaSyncRef.current = Date.now();
   }
 
   // Reintento manual desde el aviso de error (no recarga la página).
@@ -1239,7 +1333,7 @@ export function StoreProvider({ children, useApi }: { children: React.ReactNode;
     const reset: StoreShape["reset"] = () => setData(freshData(USE_API));
 
     return {
-      role, setRole, usuario, setUsuario, cargando, hydrated, modoApi: USE_API, errorCarga, sesionExpirada, ultimaSync, datosDeCache, recargar,
+      role, setRole, usuario, setUsuario, cargando, hydrated, modoApi: USE_API, errorCarga, sesionExpirada, ultimaSync, datosDeCache, progresoCarga, recargar,
       proveedores: seed.proveedores, articulos: seed.articulos, obras: seed.obras,
       maquinas: seed.maquinas, almacenes: seed.almacenes,
       pedidos: data.pedidos, ordenes: data.ordenes, recepciones: data.recepciones, movimientos: data.movimientos,
@@ -1252,7 +1346,7 @@ export function StoreProvider({ children, useApi }: { children: React.ReactNode;
     // OJO: TODO estado que el store exponga debe estar en estas deps o el value
     // queda "congelado" con su valor viejo — así las notas de crédito cargadas
     // por cargarNotasCredito() nunca llegaban a Contabilidad (lista vacía).
-  }, [role, usuario, data, borrador, cargando, notasCredito, hydrated, errorCarga, sesionExpirada, ultimaSync, datosDeCache]);
+  }, [role, usuario, data, borrador, cargando, notasCredito, hydrated, errorCarga, sesionExpirada, ultimaSync, datosDeCache, progresoCarga]);
 
   return <StoreCtx.Provider value={api2}>{children}</StoreCtx.Provider>;
 }

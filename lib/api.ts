@@ -1,5 +1,6 @@
 // Cliente del front-end para las API routes (modo API).
 import type { Orden, Pedido, Recepcion, NotaCreditoLinea } from "./types.ts";
+import { LOTE_DEFECTO } from "./lotes.ts";
 
 export const USE_API = process.env.NEXT_PUBLIC_USE_API === "1";
 
@@ -44,6 +45,26 @@ let bootstrapEnVuelo: Promise<BootstrapFresco | null> | null = null;
 // tal cual vino (para guardarlo sin volver a serializar) y su ETag.
 export type BootstrapFresco = { datos: Bootstrap; texto: string; etag: string | null };
 
+// ── CARGA POR LOTES ──────────────────────────────────────────────────────────
+// Un lote es "los N más nuevos de cada cosa, por debajo de estos cursores". El
+// cliente pinta el primero y sigue pidiendo hacia atrás hasta `completo`. No lleva
+// ETag a propósito: el ETag es la huella de la historia COMPLETA y la usa el
+// refresco de 45 s; un pedazo no puede hacerse pasar por la foto entera.
+export type CursoresLote = { pedidos: number | null; ordenes: number | null; recepciones: number | null };
+export type LoteBootstrap = {
+  pedidos: Pedido[];
+  ordenes: Orden[];
+  recepciones: Recepcion[];
+  notas: NotaCreditoLinea[];
+  cursores: CursoresLote;
+  completo: boolean;
+  // Solo en el primer lote: cuántos hay en total, para poder decir "600 de 787".
+  totales: { pedidos: number; ordenes: number; recepciones: number } | null;
+};
+
+// El tamaño de la tanda sale de lib/lotes.ts, que es de donde lo lee el servidor:
+// dos constantes separadas se desincronizan el día que alguien toca una sola.
+
 export const api = {
   // null = el servidor dijo 304 (nada cambió desde la última vez).
   bootstrap: (): Promise<BootstrapFresco | null> => {
@@ -65,6 +86,18 @@ export const api = {
       return { datos, texto, etag };
     })().finally(() => { bootstrapEnVuelo = null; });
     return bootstrapEnVuelo;
+  },
+
+  // Un lote de la carga inicial. `cursores` en null = el primero (trae además las
+  // notas de crédito y los totales).
+  bootstrapLote: (cursores: CursoresLote | null): Promise<LoteBootstrap> => {
+    const q = new URLSearchParams({ n: String(LOTE_DEFECTO) });
+    if (cursores) {
+      if (cursores.pedidos != null) q.set("pc", String(cursores.pedidos));
+      if (cursores.ordenes != null) q.set("oc", String(cursores.ordenes));
+      if (cursores.recepciones != null) q.set("rc", String(cursores.recepciones));
+    }
+    return fetch(`/api/bootstrap?${q}`).then(jsonOrThrow);
   },
 
   createPedido: (body: unknown): Promise<{ idPedidoCompra: number }> =>
