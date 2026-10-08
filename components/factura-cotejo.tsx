@@ -193,7 +193,7 @@ export function FacturaCotejo({ fila, onCambio, onClose }: {
         ) : (
           <Candidatos
             cargando={cargando}
-            cerrada={actual.estado === "no_aplica" || actual.estado === "otra_empresa"}
+            cerrada={actual.estado === "no_aplica" || actual.estado === "otra_empresa" || actual.estado === "rechazada"}
             error={datos && !datos.bc.ok ? datos.bc.error : ""}
             candidatosError={datos?.candidatosError}
             lista={datos?.candidatos ?? []}
@@ -256,7 +256,14 @@ export function FacturaCotejo({ fila, onCambio, onClose }: {
 // en la tabla y viaja en la exportación. Un caso cerrado sin explicación no se puede
 // distinguir, un mes después, de uno que alguien quiso sacar de la lista.
 
-const MOTIVOS: { id: string; estado: "no_aplica" | "otra_empresa"; label: string }[] = [
+type EstadoCierre = "no_aplica" | "otra_empresa" | "rechazada";
+
+const MOTIVOS: { id: string; estado: EstadoCierre; label: string }[] = [
+  // El rechazo de Hacienda va primero porque es el único que no es una decisión
+  // nuestra: el documento no existe y no hay nada que resolver. Se puede poner a mano
+  // porque no todas las plataformas mandan el acuse como XML adjunto —algunas lo
+  // ponen solo en el cuerpo del correo— y porque los correos viejos ya se leyeron.
+  { id: "rechazada", estado: "rechazada", label: "Hacienda la rechazó: el proveedor debe reemitirla" },
   { id: "otra_empresa", estado: "otra_empresa", label: "Es de otra empresa del grupo" },
   { id: "personal", estado: "no_aplica", label: "Es una compra personal, no de la empresa" },
   { id: "duplicada", estado: "no_aplica", label: "Llegó dos veces: está duplicada" },
@@ -270,10 +277,10 @@ function Cierre({ factura, motivo, setMotivo, comentario, ocupado, onCerrar, onR
   setMotivo: (v: string) => void;
   comentario: string;
   ocupado: boolean;
-  onCerrar: (estado: "no_aplica" | "otra_empresa", nota: string) => void;
+  onCerrar: (estado: EstadoCierre, nota: string) => void;
   onReabrir: () => void;
 }) {
-  const cerrada = factura.estado === "no_aplica" || factura.estado === "otra_empresa";
+  const cerrada = factura.estado === "no_aplica" || factura.estado === "otra_empresa" || factura.estado === "rechazada";
 
   if (cerrada) {
     return (
@@ -281,7 +288,9 @@ function Cierre({ factura, motivo, setMotivo, comentario, ocupado, onCerrar, onR
         <span className="ds-callout__icon"><IconCheck size={18} /></span>
         <div style={{ flex: 1 }}>
           <div className="ds-callout__title">
-            Caso cerrado — {factura.estado === "otra_empresa" ? "es de otra empresa" : "no aplica"}
+            Caso cerrado — {factura.estado === "otra_empresa" ? "es de otra empresa"
+              : factura.estado === "rechazada" ? "Hacienda la rechazó"
+              : "no aplica"}
           </div>
           <div className="ds-callout__body">
             {factura.nota || "Sin motivo anotado."}
@@ -338,6 +347,9 @@ function EstadoBadge({ factura }: { factura: FacturaCorreo }) {
   if (factura.estado === "descuadrada") return <Badge tone="yellow">No cuadra el monto</Badge>;
   if (factura.estado === "otra_empresa") return <Badge tone="green">Cerrada · otra empresa</Badge>;
   if (factura.estado === "no_aplica") return <Badge tone="green">Cerrada · no aplica</Badge>;
+  // Rojo y no verde: cerrada sí, pero porque el documento se cayó. Si el proveedor no
+  // la reemite, esa compra se queda sin factura.
+  if (factura.estado === "rechazada") return <Badge tone="red">Rechazada en Hacienda</Badge>;
   return <Badge tone="red">Sin registrar</Badge>;
 }
 

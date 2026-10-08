@@ -24,7 +24,7 @@
 // Mientras el permiso no exista, `estadoBuzon()` dice exactamente qué falta y la
 // pantalla lo muestra en vez de fallar con un 500 que no explica nada.
 
-import { leerComprobanteXml, type Comprobante } from "./cruce-correo-bc.ts";
+import { leerAcuseXml, leerComprobanteXml, type AcuseHacienda, type Comprobante } from "./cruce-correo-bc.ts";
 
 const GRAPH = "https://graph.microsoft.com/v1.0";
 
@@ -175,6 +175,9 @@ export type CorreoConComprobantes = {
   recibido: string;
   webLink: string;
   comprobantes: Comprobante[];
+  /** Las respuestas de Hacienda que venían en el mismo correo (ver `leerAcuseXml`).
+   *  Un correo puede traer SOLO el acuse: el rechazo de una factura que llegó ayer. */
+  acuses: AcuseHacienda[];
 };
 
 const POR_PAGINA = 100;
@@ -270,11 +273,13 @@ export async function leerBuzon(
     // cotejo lado a lado, que baja el XML del correo que alguien esté mirando.
     for (let i = 0; i < pendientes.length; i += A_LA_VEZ) {
       const grupo = pendientes.slice(i, i + A_LA_VEZ);
-      const res = await Promise.all(grupo.map(async (m) => ({ m, comprobantes: await comprobantesDe(buzon, m.id) })));
+      const res = await Promise.all(grupo.map(async (m) => ({ m, ...(await adjuntosDe(buzon, m.id)) })));
       hechos += grupo.length;
       onProgreso?.({ hechos, total: totalConocido });
-      for (const { m, comprobantes } of res) {
-        if (!comprobantes.length) continue;
+      for (const { m, comprobantes, acuses } of res) {
+        // Un correo que SOLO trae el acuse también cuenta: es el rechazo de una
+        // factura que llegó en otro correo, y es justo lo que hay que anotar.
+        if (!comprobantes.length && !acuses.length) continue;
         correos.push({
           messageId: m.id,
           asunto: m.subject ?? "",
@@ -282,6 +287,7 @@ export async function leerBuzon(
           recibido: m.receivedDateTime ?? "",
           webLink: m.webLink ?? "",
           comprobantes,
+          acuses,
         });
       }
     }
@@ -294,13 +300,16 @@ export async function leerBuzon(
   return { correos, leidos, masNuevo, hayMas };
 }
 
-async function comprobantesDe(buzon: string, messageId: string): Promise<Comprobante[]> {
+async function adjuntosDe(
+  buzon: string, messageId: string,
+): Promise<{ comprobantes: Comprobante[]; acuses: AcuseHacienda[] }> {
   // `$select` no aplica a contentBytes en fileAttachment, así que se pide todo el
   // adjunto; por eso importa filtrar por nombre antes de decidir qué parsear.
   const data = await graph(
     `${GRAPH}/users/${buzon}/messages/${encodeURIComponent(messageId)}/attachments`,
   );
-  const out: Comprobante[] = [];
+  const comprobantes: Comprobante[] = [];
+  const acuses: AcuseHacienda[] = [];
   for (const a of (data.value ?? [])) {
     const nombre: string = a.name ?? "";
     if (!/\.xml$/i.test(nombre)) continue;
@@ -309,10 +318,15 @@ async function comprobantesDe(buzon: string, messageId: string): Promise<Comprob
     try {
       xml = Buffer.from(a.contentBytes, "base64").toString("utf8");
     } catch { continue; }
-    const c = leerComprobanteXml(xml, nombre);        // descarta solo los acuses de Hacienda
-    if (c) out.push(c);
+    const c = leerComprobanteXml(xml, nombre);        // deja afuera los acuses
+    if (c) { comprobantes.push(c); continue; }
+    // Y el acuse, que hasta el 8 de octubre de 2026 se tiraba: es el que dice si
+    // Hacienda ACEPTÓ o RECHAZÓ esa factura. Una rechazada no se va a registrar
+    // nunca, y sin esto se quedaba en la auditoría contando días de espera.
+    const r = leerAcuseXml(xml);
+    if (r) acuses.push(r);
   }
-  return out;
+  return { comprobantes, acuses };
 }
 
 // ---------------------------------------------------------------------------

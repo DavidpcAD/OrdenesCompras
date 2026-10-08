@@ -15,7 +15,11 @@ import { getPool, sql } from "./db.ts";
 import { bcDeepLinkFacturaPorNo } from "./bc.ts";
 import type { Comprobante } from "./cruce-correo-bc.ts";
 
-export type EstadoFactura = "pendiente" | "registrada" | "descuadrada" | "no_aplica" | "otra_empresa";
+// "rechazada" = Hacienda (o nosotros como receptores) rechazó el comprobante. No es
+// una factura atrasada: es una factura que NO EXISTE para efectos fiscales y que
+// nadie va a registrar nunca. El proveedor tiene que corregirla y reemitirla con otra
+// clave. Antes se quedaba en "pendiente" contando días de espera contra nadie.
+export type EstadoFactura = "pendiente" | "registrada" | "descuadrada" | "no_aplica" | "otra_empresa" | "rechazada";
 
 export type FacturaCorreo = {
   clave: string;
@@ -212,6 +216,61 @@ export async function pendientesDeCotejo(): Promise<FacturaCorreo[]> {
       AND (bcCalzePor IS NULL OR bcCalzePor <> 'manual')
     ORDER BY fechaEmision ASC`);
   return r.recordset.map(fila);
+}
+
+/**
+ * Marca como RECHAZADAS las claves que vinieron en un acuse de Hacienda con mensaje 3.
+ *
+ * Solo toca las que están en "pendiente", y eso es a propósito:
+ *
+ *  · Si ya aparece REGISTRADA en BC, el rechazo no la borra — al contrario, es un
+ *    hallazgo (se digitó una factura que Hacienda no aceptó) y taparlo con otro
+ *    estado haría perder el enlace a BC, que es justo lo que hay que ir a ver.
+ *  · Si una persona ya la cerró a mano ("no aplica", "es de otra empresa"), su
+ *    decisión manda sobre un XML.
+ *
+ * El motivo se guarda en el comentario solo si está vacío: lo que escribió una
+ * persona no se pisa nunca.
+ *
+ * Devuelve cuántas filas cambiaron de verdad, que es lo que se le reporta a la
+ * pantalla ("3 rechazadas en Hacienda"), no cuántos acuses se leyeron.
+ */
+export async function marcarRechazadas(
+  acuses: Array<{ clave: string; detalle: string }>,
+): Promise<number> {
+  if (!acuses.length) return 0;
+  if (!(await tablaCorreoExiste())) return 0;
+  const pool = await getPool();
+  // Una sola entrada por clave: el mismo rechazo llega reenviado más de una vez y dos
+  // filas con la misma clave en el JOIN de VALUES no aportan nada.
+  const unicos = new Map<string, string>();
+  for (const a of acuses) if (a.clave && !unicos.has(a.clave)) unicos.set(a.clave, a.detalle ?? "");
+  const lista = [...unicos.entries()];
+  let cambiadas = 0;
+
+  for (let i = 0; i < lista.length; i += POR_TANDA_UPD) {
+    const tanda = lista.slice(i, i + POR_TANDA_UPD);
+    const req = pool.request();
+    const filas = tanda.map(([clave, detalle], j) => {
+      req.input(`c${j}`, sql.Char(50), clave)
+         .input(`d${j}`, sql.NVarChar(500), (detalle || "").slice(0, 440) || null);
+      return `(@c${j},@d${j})`;
+    }).join(",");
+    const r = await req.query(`
+      UPDATE f SET
+        estado       = 'rechazada',
+        ultimoCotejo = getdate(),
+        nota         = CASE
+                         WHEN f.nota IS NULL OR LTRIM(RTRIM(f.nota)) = ''
+                           THEN LEFT(CONCAT('Hacienda la rechazó. ', v.detalle), 500)
+                         ELSE f.nota
+                       END
+      FROM dbo.FacturaCorreo f
+      JOIN (VALUES ${filas}) AS v(clave, detalle) ON f.clave = v.clave
+      WHERE f.estado = 'pendiente';`);
+    cambiadas += r.rowsAffected?.[0] ?? 0;
+  }
+  return cambiadas;
 }
 
 /** El comprobante que ya tiene amarrado ese N.º de BC, si hay alguno. */
@@ -443,7 +502,11 @@ export async function guardarNota(clave: string, nota: string, usuario: string):
  * se pudiera marcar a dedo, la pantalla dejaría de ser una fuente de verdad —
  * quedaría "registrada" sin nada detrás.
  */
-export const CERRABLES: EstadoFactura[] = ["no_aplica", "otra_empresa", "pendiente"];
+// "rechazada" SÍ se puede poner a mano, y no es contradictorio con lo de arriba: no
+// afirma que algo esté en BC, afirma lo contrario. Hace falta porque el acuse no
+// siempre llega como XML adjunto —hay plataformas que mandan el rechazo solo en el
+// cuerpo del correo— y porque los correos viejos ya se leyeron sin mirarlo.
+export const CERRABLES: EstadoFactura[] = ["no_aplica", "otra_empresa", "rechazada", "pendiente"];
 
 /** Cierre a mano: "no aplica", "es de otra empresa". */
 export async function marcarFacturaCorreo(

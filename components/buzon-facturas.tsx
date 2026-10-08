@@ -40,7 +40,7 @@ type Datos = {
 
 const CADA_MS = 3 * 60 * 1000;   // el buzón recibe ~45 correos al día; cada 3 min sobra
 
-type Filtro = "todas" | "pendiente" | "registrada" | "descuadrada" | "porRevisar" | "conCandidato";
+type Filtro = "todas" | "pendiente" | "registrada" | "descuadrada" | "rechazada" | "porRevisar" | "conCandidato";
 
 // Qué está pasando, en palabras. Un porcentaje sin decir de qué no informa nada.
 const FASES: Record<string, string> = {
@@ -219,6 +219,7 @@ export function BuzonFacturas() {
     pendiente: filas.filter((f) => f.estado === "pendiente").length,
     registrada: filas.filter((f) => f.estado === "registrada").length,
     descuadrada: filas.filter((f) => f.estado === "descuadrada").length,
+    rechazada: filas.filter((f) => f.estado === "rechazada").length,
     porRevisar: filas.filter((f) => !f.revisada).length,
     conCandidato: filas.filter((f) => f.estado === "pendiente" && marcas[f.clave]).length,
   }), [filas, marcas]);
@@ -430,6 +431,15 @@ export function BuzonFacturas() {
             accent={conteo.conCandidato ? "var(--ds-color-yellow)" : undefined}
             active={filtro === "conCandidato"}
             onClick={() => setFiltro(filtro === "conCandidato" ? "todas" : "conCandidato")} />
+          {/* Rechazadas en Hacienda: NO son facturas atrasadas, son facturas que no
+              existen. Se muestra solo cuando hay alguna — un recuadro en cero todos
+              los días es ruido, y lo normal es que no haya ninguna. */}
+          {conteo.rechazada > 0 && (
+            <Tile label="Rechazadas en Hacienda" value={String(conteo.rechazada)}
+              accent="var(--ds-color-red-200)"
+              active={filtro === "rechazada"}
+              onClick={() => setFiltro(filtro === "rechazada" ? "todas" : "rechazada")} />
+          )}
           <Tile label="Sin revisar" value={num.format(conteo.porRevisar)}
             accent={conteo.porRevisar ? "var(--ds-color-gray-300)" : "var(--ds-color-green-200)"}
             active={filtro === "porRevisar"}
@@ -495,6 +505,7 @@ const etiquetaEstado = (f: FacturaCorreo, marca?: MarcaCandidato): string => {
   if (f.estado === "descuadrada") return `Registrada no cuadra ${f.bcNumero ?? ""}`;
   if (f.estado === "otra_empresa") return `Cerrada de otra empresa del grupo ${f.nota ?? ""}`;
   if (f.estado === "no_aplica") return `Cerrada no aplica ${f.nota ?? ""}`;
+  if (f.estado === "rechazada") return `Rechazada en Hacienda ${f.nota ?? ""}`;
   // "candidato" es buscable a propósito: escribirlo en la barra deja solo las que
   // tienen una factura de BC propuesta.
   return marca ? `Sin registrar candidato ${marca.numero} ${marca.numeroProveedor}` : "Sin registrar";
@@ -516,6 +527,20 @@ function Estado({ f, hoy, marca }: { f: FacturaCorreo; hoy: number; marca?: Marc
         {f.estado === "descuadrada" && f.bcTotal != null && (
           <div className="ds-muted">en BC: {money(f.bcTotal, f.moneda)}</div>
         )}
+      </div>
+    );
+  }
+  // RECHAZADA: no es un atraso, es un documento que no existe. Hacienda lo rechazó y
+  // el proveedor tiene que corregirlo y volver a emitirlo con otra clave — así que no
+  // hay nada que esperar ni días que contar. El motivo va en Comentario.
+  if (f.estado === "rechazada") {
+    return (
+      <div className="ds-body-sm">
+        <span className="ds-strong" style={{ color: "var(--ds-text-danger)" }}>Rechazada</span>
+        <div className="ds-muted">
+          no se va a registrar · el proveedor debe reemitirla
+          {f.revisadoPor ? ` · ${f.revisadoPor}` : ""}
+        </div>
       </div>
     );
   }

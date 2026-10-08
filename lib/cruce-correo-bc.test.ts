@@ -5,7 +5,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  partirClave, leerComprobanteXml, leerLineasXml, leerResumenXml, cruzar, colasDelConsecutivo,
+  partirClave, leerComprobanteXml, leerLineasXml, leerResumenXml, leerAcuseXml, cruzar, colasDelConsecutivo,
   CEDULA_ADELANTE, type Comprobante,
 } from "./cruce-correo-bc.ts";
 import type { FacturaBc, ProveedorBc } from "./vigilancia-facturas.ts";
@@ -373,4 +373,68 @@ test("un descuento de línea se lee y no se pierde", () => {
     "<Descuento><MontoDescuento>5.00</MontoDescuento><NaturalezaDescuento>Promoción</NaturalezaDescuento></Descuento><SubTotal>54.30</SubTotal>",
   );
   assert.equal(leerLineasXml(conDesc)[1].descuento, 5);
+});
+
+
+// ---- EL ACUSE DE HACIENDA -----------------------------------------------------
+// Al buzón llega la factura Y la respuesta de Hacienda. Si la respuesta dice
+// RECHAZADO, esa factura no existe para efectos fiscales y nadie la va a registrar
+// nunca: hasta el 8 de octubre de 2026 se quedaba en la auditoría contando días de
+// espera contra nadie. Caso real: MAZ AYS, consecutivo 00100001010000049949.
+const CLAVE_MAZ = "50630092600310167373600100001010000049949102201501";
+
+const acuse = (mensaje: string, detalle = "", raiz = "MensajeHacienda") => `<?xml version="1.0" encoding="UTF-8"?>
+<${raiz} xmlns="https://cdn.comprobanteselectronicos.go.cr/xml-schemas/v4.4/mensajeHacienda">
+  <Clave>${CLAVE_MAZ}</Clave>
+  <NumeroCedulaEmisor>3101673736</NumeroCedulaEmisor>
+  <FechaEmisionDoc>2026-09-30T12:57:00-06:00</FechaEmisionDoc>
+  <Mensaje>${mensaje}</Mensaje>
+  <DetalleMensaje>${detalle}</DetalleMensaje>
+  <TotalFactura>226000.00</TotalFactura>
+</${raiz}>`;
+
+test("acuse: el rechazado se reconoce y trae la clave del comprobante y el motivo", () => {
+  const a = leerAcuseXml(acuse("3", "La cédula del receptor no corresponde"));
+  assert.deepEqual(a, {
+    clave: CLAVE_MAZ,
+    estado: "rechazado",
+    detalle: "La cédula del receptor no corresponde",
+    origen: "hacienda",
+  });
+});
+
+test("acuse: aceptado y aceptado parcial NO son rechazo", () => {
+  assert.equal(leerAcuseXml(acuse("1"))?.estado, "aceptado");
+  assert.equal(leerAcuseXml(acuse("2"))?.estado, "parcial");
+});
+
+test("acuse: el que rechaza también puede ser el RECEPTOR (nosotros)", () => {
+  // Una factura que rechazamos nosotros tampoco se registra.
+  const a = leerAcuseXml(acuse("3", "No corresponde a una compra nuestra", "MensajeReceptor"));
+  assert.equal(a?.origen, "receptor");
+  assert.equal(a?.estado, "rechazado");
+});
+
+test("acuse: una factura NO es un acuse (y un acuse no es una factura)", () => {
+  // Las dos puertas tienen que cerrar: si el acuse se colara como comprobante, cada
+  // factura aparecería dos veces en la auditoría.
+  const factura = `<FacturaElectronica><Clave>${CLAVE_MAZ}</Clave><NumeroConsecutivo>00100001010000049949</NumeroConsecutivo><Emisor><Nombre>MAZ AYS</Nombre></Emisor></FacturaElectronica>`;
+  assert.equal(leerAcuseXml(factura), null);
+  assert.equal(leerComprobanteXml(acuse("3")), null);
+});
+
+test("acuse: sin clave válida o con un código raro NO cierra nada", () => {
+  // Un acuse que no se entiende no puede dar por muerta una factura.
+  assert.equal(leerAcuseXml(acuse("3").replace(CLAVE_MAZ, "123")), null);
+  assert.equal(leerAcuseXml(acuse("9")), null);
+  assert.equal(leerAcuseXml(acuse("")), null);
+  assert.equal(leerAcuseXml(""), null);
+});
+
+test("acuse: el prefijo de espacio de nombres no estorba", () => {
+  // Cada plataforma de facturación emite con su propio prefijo.
+  const conPrefijo = acuse("3", "Rechazado").replace(/<(\/?)Mensaje/g, "<$1ns:Mensaje").replace(/<(\/?)Clave>/g, "<$1ns:Clave>");
+  const a = leerAcuseXml(conPrefijo);
+  assert.equal(a?.estado, "rechazado");
+  assert.equal(a?.clave, CLAVE_MAZ);
 });

@@ -149,6 +149,60 @@ export function leerComprobanteXml(xml: string, archivo?: string): Comprobante |
 }
 
 // ---------------------------------------------------------------------------
+// EL ACUSE DE HACIENDA — la factura que nació muerta
+// ---------------------------------------------------------------------------
+//
+// Al buzón no llegan solo facturas: llega también la RESPUESTA de Hacienda a cada
+// una ("Respuesta Documento Electrónico", un XML `MensajeHacienda`). Si esa respuesta
+// dice RECHAZADO, el comprobante no existe para efectos fiscales: el proveedor tiene
+// que corregirlo y volver a emitirlo con otra clave. Nadie la va a registrar nunca
+// en Business Central.
+//
+// Hasta hoy el acuse se tiraba a la basura —`leerComprobanteXml` lo descarta para que
+// la factura no aparezca dos veces— y la factura rechazada se quedaba en la auditoría
+// como "Sin registrar · N días esperando", acumulando días contra alguien que no
+// tenía nada que hacer. Lo preguntó Jessie el 7 de octubre de 2026 con la de MAZ AYS.
+//
+// `Mensaje` es un dígito que fija Hacienda: 1 aceptado · 2 aceptado parcialmente ·
+// 3 rechazado. `MensajeReceptor` es el mismo documento cuando el que acepta o rechaza
+// es el RECEPTOR (o sea nosotros); cuenta igual, porque una factura que rechazamos
+// tampoco se registra.
+export type AcuseHacienda = {
+  /** La clave del comprobante al que responde — no una clave propia. */
+  clave: string;
+  estado: "aceptado" | "parcial" | "rechazado";
+  /** El motivo, tal cual lo escribe Hacienda. Es lo que hay que leer para saber qué hacer. */
+  detalle: string;
+  origen: "hacienda" | "receptor";
+};
+
+const ESTADO_ACUSE: Record<string, AcuseHacienda["estado"]> = {
+  "1": "aceptado",
+  "2": "parcial",
+  "3": "rechazado",
+};
+
+/**
+ * Lee el XML de respuesta (MensajeHacienda / MensajeReceptor) de un correo.
+ *
+ * Devuelve null si el XML no es un acuse, si no trae una clave de 50 dígitos o si el
+ * código de mensaje no es uno de los tres de Hacienda: un acuse que no se entiende no
+ * puede cerrarle la puerta a una factura. (Cubierto por pruebas.)
+ */
+export function leerAcuseXml(xml: string): AcuseHacienda | null {
+  if (!xml) return null;
+  const tipo = /<(?:\w+:)?MensajeHacienda[\s>]/i.test(xml) ? "hacienda"
+    : /<(?:\w+:)?MensajeReceptor[\s>]/i.test(xml) ? "receptor"
+    : null;
+  if (!tipo) return null;
+  const clave = soloDigitos(etiqueta(xml, "Clave"));
+  if (!partirClave(clave)) return null;
+  const estado = ESTADO_ACUSE[soloDigitos(etiqueta(xml, "Mensaje"))];
+  if (!estado) return null;
+  return { clave, estado, detalle: etiqueta(xml, "DetalleMensaje"), origen: tipo };
+}
+
+// ---------------------------------------------------------------------------
 // Las LÍNEAS del comprobante
 // ---------------------------------------------------------------------------
 //

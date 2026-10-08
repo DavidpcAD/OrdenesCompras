@@ -4,7 +4,7 @@ import { cruzar, type Comprobante } from "@/lib/cruce-correo-bc";
 import { estadoBuzon, leerBuzon } from "@/lib/graph-buzon";
 import {
   tablaCorreoExiste, FALTA_TABLA, guardarComprobantes, pendientesDeCotejo,
-  guardarCotejo, leerSincronizacion, guardarSincronizacion,
+  guardarCotejo, leerSincronizacion, guardarSincronizacion, marcarRechazadas,
   type ResultadoCotejo,
 } from "@/lib/repo-facturas-correo";
 
@@ -75,7 +75,7 @@ export async function POST() {
       if (hayCorrida()) {
         emitir({
           fin: true, ok: true, buzon, yaCorriendo: true,
-          correo: { leidos: 0, nuevos: 0, error: null },
+          correo: { leidos: 0, nuevos: 0, rechazadas: 0, error: null },
           cotejo: { cotejados: 0, aparecieron: 0, error: null },
         });
         controller.close();
@@ -85,7 +85,7 @@ export async function POST() {
       try {
         await correr(buzon, emitir);
       } catch (e: any) {
-        emitir({ fin: true, ok: false, buzon, correo: { leidos: 0, nuevos: 0, error: e?.message ?? "Falló la sincronización." }, cotejo: { cotejados: 0, aparecieron: 0, error: null } });
+        emitir({ fin: true, ok: false, buzon, correo: { leidos: 0, nuevos: 0, rechazadas: 0, error: e?.message ?? "Falló la sincronización." }, cotejo: { cotejados: 0, aparecieron: 0, error: null } });
       } finally {
         corriendoDesde = null;
         controller.close();
@@ -105,7 +105,7 @@ export async function POST() {
 }
 
 async function correr(buzon: ReturnType<typeof estadoBuzon>, emitir: (o: unknown) => void) {
-  let leidos = 0, nuevos = 0, errorCorreo: string | null = null;
+  let leidos = 0, nuevos = 0, rechazadas = 0, errorCorreo: string | null = null;
 
   // --- 1 y 2: el buzón --------------------------------------------------------
   if (buzon.listo) {
@@ -121,6 +121,13 @@ async function correr(buzon: ReturnType<typeof estadoBuzon>, emitir: (o: unknown
         })),
       );
       nuevos = await guardarComprobantes(entradas, (h, t) => emitir({ fase: "guardando", hechos: h, total: t }));
+      // Y DESPUÉS de guardar, los rechazos: el acuse suele venir en el mismo correo
+      // que la factura, así que la fila tiene que existir para poder marcarla. Las
+      // que no estén todavía no pasa nada — se marcan cuando el acuse se relea, y si
+      // no, la factura rechazada igual nunca aparece en BC y queda a la vista.
+      const rechazos = r.correos.flatMap((c) =>
+        c.acuses.filter((a) => a.estado === "rechazado").map((a) => ({ clave: a.clave, detalle: a.detalle })));
+      rechazadas = await marcarRechazadas(rechazos);
       await guardarSincronizacion({ marcador: r.masNuevo, error: null, leidos, nuevos });
     } catch (e: any) {
       errorCorreo = e?.message ?? "No se pudo leer el buzón.";
@@ -178,7 +185,7 @@ async function correr(buzon: ReturnType<typeof estadoBuzon>, emitir: (o: unknown
     fin: true,
     ok: !errorCorreo && !errorBc,
     buzon,
-    correo: { leidos, nuevos, error: errorCorreo },
+    correo: { leidos, nuevos, rechazadas, error: errorCorreo },
     cotejo: { cotejados, aparecieron, error: errorBc },
   });
 }
