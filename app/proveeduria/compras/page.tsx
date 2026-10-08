@@ -2,10 +2,23 @@
 
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { ComprasSolicitudes } from "@/components/compras-solicitudes";
-import { ComprasOrdenes } from "@/components/compras-ordenes";
-import { ComprasProveedores } from "@/components/compras-proveedores";
+import dynamic from "next/dynamic";
+import { Skeleton } from "@/components/ui";
 import { ComprasResumen } from "@/components/compras-resumen";
+
+// LAS OTRAS TRES PESTAÑAS SE CARGAN AL TOCARLAS.
+//
+// Esta pantalla es donde cae Proveeduría al entrar, y abre en Resumen — que son
+// paneles y gráficos hechos a mano, sin tabla. Las otras tres sí arrastran la tabla
+// grande (DataTable + TanStack) y hasta hoy viajaban en la primera carga aunque
+// nadie las tocara.
+//
+// Resumen NO se carga tarde a propósito: es la que se ve de entrada, y diferirla
+// solo cambiaría un esqueleto por otro.
+const cargando = () => <Skeleton style={{ display: "block", width: "100%", height: 320, borderRadius: 16 }} />;
+const ComprasSolicitudes = dynamic(() => import("@/components/compras-solicitudes").then((m) => m.ComprasSolicitudes), { loading: cargando });
+const ComprasOrdenes = dynamic(() => import("@/components/compras-ordenes").then((m) => m.ComprasOrdenes), { loading: cargando });
+const ComprasProveedores = dynamic(() => import("@/components/compras-proveedores").then((m) => m.ComprasProveedores), { loading: cargando });
 import { IconReceipt, IconList } from "@/components/icons";
 import { useStore } from "@/lib/store";
 import { resumenPorProveedor } from "@/lib/compras-proveedores";
