@@ -1,4 +1,5 @@
 import sql from "mssql";
+import { invalidarBootstrap } from "./bootstrap-cache.ts";
 
 // Conexión a SQL Server (Azure). Lee la configuración de variables de entorno.
 // Definí en .env.local:
@@ -7,6 +8,60 @@ import sql from "mssql";
 //   SQL_USER=...
 //   SQL_PASSWORD=...
 // (o, alternativamente, SQL_CONNECTION_STRING con la cadena completa)
+
+// ── TODA ESCRITURA BOTA LA FOTO DEL BOOTSTRAP ───────────────────────────────
+//
+// `/api/bootstrap` guarda unos segundos la última respuesta (lib/bootstrap-cache.ts)
+// para que dos pestañas no corran dos veces las mismas consultas. Esa foto TIENE que
+// morirse en cuanto alguien escribe: si no, quien acaba de registrar una recepción
+// puede pedir la lista un segundo después y recibirla SIN su recepción — y eso no se
+// lee como "va con retraso", se lee como "no se guardó". En esta app esa confusión
+// termina en un documento registrado dos veces.
+//
+// Por eso las consultas de lib/repo.ts no se piden con `pool.request()` sino con
+// `pedir(pool)`: el envoltorio mira la sentencia y, si escribió, bota la foto. Es
+// una línea por consulta y no hay que acordarse de nada.
+//
+// Por qué no se envuelve el POOL entero, que sería una sola línea: mssql le pasa el
+// pool a sus propios `Transaction` por dentro, y meter un Proxy en medio de las
+// tripas de la librería es justo el tipo de cosa que no se puede probar desde acá.
+
+/** ¿Esta sentencia cambia datos? (cubierto por pruebas) */
+export function esEscrituraSql(texto: unknown): boolean {
+  const t = Array.isArray(texto) ? texto.join(" ") : String(texto ?? "");
+  return /\b(INSERT|UPDATE|DELETE|MERGE|TRUNCATE)\b/i.test(t);
+}
+
+// El Request de mssql encadena (`.input(...).input(...).query(...)`) devolviéndose a
+// sí mismo, así que el envoltorio tiene que devolverse A SÍ MISMO en cada eslabón:
+// si devolviera el objeto de adentro, el `.query()` final se saltaría el aviso.
+function conAvisoDeEscritura(req: sql.Request): sql.Request {
+  const proxy: sql.Request = new Proxy(req, {
+    get(destino, prop, receptor) {
+      const valor = Reflect.get(destino, prop, destino);
+      if (typeof valor !== "function") return valor;
+      if (prop === "query" || prop === "batch") {
+        return async (...args: any[]) => {
+          const r = await (valor as any).apply(destino, args);
+          // Después de que salió bien: una escritura que falló no cambió nada.
+          if (esEscrituraSql(args[0])) invalidarBootstrap();
+          return r;
+        };
+      }
+      return (...args: any[]) => {
+        const r = (valor as any).apply(destino, args);
+        return r === destino ? receptor : r;   // mantiene el encadenado
+      };
+    },
+  });
+  return proxy;
+}
+
+/** Una consulta sobre el pool, avisando si escribe. Reemplaza a `pool.request()`. */
+export const pedir = (pool: sql.ConnectionPool): sql.Request => conAvisoDeEscritura(pool.request());
+
+/** Lo mismo dentro de una transacción. Reemplaza a `new sql.Request(tx)`. */
+export const pedirTx = (tx: sql.Transaction): sql.Request => conAvisoDeEscritura(new sql.Request(tx));
 
 let poolPromise: Promise<sql.ConnectionPool> | null = null;
 

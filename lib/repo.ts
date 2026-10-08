@@ -1,4 +1,4 @@
-import { getAuthPool, getPool, sql } from "./db.ts";
+import { getAuthPool, getPool, pedir, pedirTx, sql } from "./db.ts";
 import { bcDeepLinkPedido, bcDeepLinkFacturaRegistrada, bcDeepLinkFacturaPorNo, bcUnidadesDeCompra, sanearObrasDeLineas } from "./bc.ts";
 import { unidadCorregida, codigoDeItem } from "./unidad.ts";
 import { etiquetaInterna, esTipoDevolucion, esTipoEdicion, ordenDeDetalleDevolucion } from "./helpers.ts";
@@ -45,19 +45,19 @@ async function ensureEstados() {
   // OJO: la tabla dbo.Estado es compartida con boletas: la columna del nombre
   // se llama `estado` (no `nombre`), y `creadoPor`/`fechaCreacion` son NOT NULL.
   for (const nombre of new Set(Object.values(NOMBRE_POR_CODIGO))) {
-    await pool.request().input("n", sql.NVarChar(50), nombre).query(
+    await pedir(pool).input("n", sql.NVarChar(50), nombre).query(
       "IF NOT EXISTS (SELECT 1 FROM dbo.Estado WHERE estado=@n AND modulo='Compras') " +
       "INSERT dbo.Estado(estado,modulo,fechaCreacion,creadoPor) VALUES(@n,'Compras',SYSUTCDATETIME(),'sistema')"
     );
   }
   // ESCRITURA (nombre→id): solo módulo Compras, para no agarrar un id de boletas.
-  const rC = await pool.request().query("SELECT idEstado, estado FROM dbo.Estado WHERE modulo='Compras'");
+  const rC = await pedir(pool).query("SELECT idEstado, estado FROM dbo.Estado WHERE modulo='Compras'");
   estadoNombreToId = new Map();
   for (const row of rC.recordset) estadoNombreToId.set(row.estado, row.idEstado);
   // LECTURA (id→nombre): TODOS los módulos. Así un pedido cuyo idEstado lo escribió
   // otra app (p. ej. Producción, aunque el estado viva en otro módulo) igual resuelve
   // su nombre real y NO cae por defecto a "borrador" (que lo escondería).
-  const rAll = await pool.request().query("SELECT idEstado, estado FROM dbo.Estado");
+  const rAll = await pedir(pool).query("SELECT idEstado, estado FROM dbo.Estado");
   estadoIdToNombre = new Map();
   for (const row of rAll.recordset) estadoIdToNombre.set(row.idEstado, row.estado);
 }
@@ -140,7 +140,7 @@ function filtroRango(req: sql.Request, rango: RangoIds | undefined | null, colum
 // tocar las líneas, que es donde está el peso.
 export async function contarVivos(): Promise<{ pedidos: number; ordenes: number; recepciones: number }> {
   const pool = await getPool();
-  const r = await pool.request().query(`
+  const r = await pedir(pool).query(`
     SELECT
       (SELECT COUNT(*) FROM dbo.PedidoCompra    WHERE esEliminada = 0) AS pedidos,
       (SELECT COUNT(*) FROM dbo.OrdenCompra     WHERE esEliminada = 0) AS ordenes,
@@ -160,7 +160,7 @@ function codigoDeId(id: number | null): string | undefined {
 // ----------------------------------------------------------------- health
 export async function health() {
   const pool = await getPool();
-  const r = await pool.request().query(`
+  const r = await pedir(pool).query(`
     SELECT
       (SELECT COUNT(*) FROM dbo.PedidoCompra)     AS pedidos,
       (SELECT COUNT(*) FROM dbo.OrdenCompra)      AS ordenes,
@@ -194,7 +194,7 @@ async function devolucionesDeSolicitudes(rango?: RangoIds | null): Promise<Map<s
     //    quién es devolución lo decide `esTipoDevolucion`: filtrar por '%devol%' no
     //    encuentra "devuelto" —el tipo que escribe esta app— y la bandeja salía
     //    vacía con la devolución sentada en la tabla.
-    const devReq = pool.request();
+    const devReq = pedir(pool);
     const devRango = filtroRango(devReq, rango, "idEntidad");
     const dev = await devReq.query(
       `SELECT idEntidad, tipoMovimiento, fecha, detalle, usuario FROM dbo.Movimiento
@@ -227,7 +227,7 @@ async function devolucionesDeSolicitudes(rango?: RangoIds | null): Promise<Map<s
     // 2) ¿La editaron DESPUÉS? Esa es la señal de que el ingeniero ya la corrigió.
     //    Mismo criterio que arriba: SQL ancho, decisión en `esTipoEdicion`.
     const ids = [...out.keys()].map(Number).filter(Number.isFinite);
-    const req = pool.request();
+    const req = pedir(pool);
     let filtroIds = "";
     if (ids.length <= 500) {
       const params = ids.map((id, i) => { req.input(`p${i}`, sql.Int, id); return `@p${i}`; });
@@ -265,14 +265,14 @@ export async function listPedidos(lote?: Lote): Promise<Pedido[]> {
   await ensureEstados();
   const pool = await getPool();
   const cl = clausulasLote(lote, "idPedidoCompra");
-  const h = await cl.atar(pool.request()).query(
+  const h = await cl.atar(pedir(pool)).query(
     `SELECT ${cl.top} * FROM dbo.PedidoCompra WHERE esEliminada = 0${cl.filtro} ORDER BY idPedidoCompra DESC`);
   const rango = rangoDeIds(h.recordset, "idPedidoCompra");
   if (!rango) return [];
   // Solo las líneas de solicitudes VIVAS, y solo las de ESTE lote. El encabezado de
   // arriba ya filtra las eliminadas, pero el detalle se traía entero: esas líneas
   // viajaban desde SQL, se agrupaban en memoria y se tiraban sin que nadie las leyera.
-  const dReq = pool.request();
+  const dReq = pedir(pool);
   const dRango = filtroRango(dReq, rango, "det.idPedidoCompra");
   const d = await dReq.query(`SELECT * FROM dbo.PedidoCompraDet det
       WHERE EXISTS (SELECT 1 FROM dbo.PedidoCompra p
@@ -286,9 +286,9 @@ export async function listPedidos(lote?: Lote): Promise<Pedido[]> {
 export async function getPedido(id: number): Promise<Pedido | null> {
   await ensureEstados();
   const pool = await getPool();
-  const h = await pool.request().input("id", sql.Int, id).query("SELECT * FROM dbo.PedidoCompra WHERE idPedidoCompra=@id");
+  const h = await pedir(pool).input("id", sql.Int, id).query("SELECT * FROM dbo.PedidoCompra WHERE idPedidoCompra=@id");
   if (!h.recordset.length) return null;
-  const d = await pool.request().input("id", sql.Int, id).query("SELECT * FROM dbo.PedidoCompraDet WHERE idPedidoCompra=@id ORDER BY idPedidoCompraDet");
+  const d = await pedir(pool).input("id", sql.Int, id).query("SELECT * FROM dbo.PedidoCompraDet WHERE idPedidoCompra=@id ORDER BY idPedidoCompraDet");
   const [unidades, devoluciones] = await Promise.all([mapaUnidades(), devolucionesDeSolicitudes()]);
   return mapPedido(h.recordset[0], d.recordset, unidades, devoluciones);
 }
@@ -394,11 +394,11 @@ export async function createPedido(input: NewPedidoDB): Promise<number> {
   await tx.begin();
   try {
     // número correlativo PED-000xxx
-    const max = await new sql.Request(tx).query(
+    const max = await pedirTx(tx).query(
       "SELECT MAX(CAST(SUBSTRING(pedidoNo,5,20) AS INT)) AS m FROM dbo.PedidoCompra WHERE pedidoNo LIKE 'PED-%'"
     );
     const numero = "PED-" + String((max.recordset[0].m ?? 0) + 1).padStart(6, "0");
-    const ins = await new sql.Request(tx)
+    const ins = await pedirTx(tx)
       .input("idEstado", sql.Int, idBorrador)
       .input("pedidoNo", sql.NVarChar(50), numero)
       .input("tipoSolicitud", sql.NVarChar(15), input.tipoSolicitud)
@@ -417,7 +417,7 @@ export async function createPedido(input: NewPedidoDB): Promise<number> {
 
     let line = 10000;
     for (const l of input.lineas) {
-      await new sql.Request(tx)
+      await pedirTx(tx)
         .input("idPedidoCompra", sql.Int, idPedido)
         .input("lineNum", sql.Int, line)
         .input("descripcion", sql.NVarChar(250), l.descripcion)
@@ -448,7 +448,7 @@ export async function updatePedido(input: EditPedidoDB): Promise<void> {
   await tx.begin();
   try {
     // Solo se puede editar si NO tiene nada ordenado por proveeduría.
-    const chk = await new sql.Request(tx).input("id", sql.Int, input.id).query(
+    const chk = await pedirTx(tx).input("id", sql.Int, input.id).query(
       `SELECT p.pedidoNo,
               (SELECT ISNULL(SUM(quantityOrdenado),0) FROM dbo.PedidoCompraDet WHERE idPedidoCompra=p.idPedidoCompra) AS ordenado
        FROM dbo.PedidoCompra p WHERE p.idPedidoCompra=@id AND p.esEliminada=0`
@@ -457,7 +457,7 @@ export async function updatePedido(input: EditPedidoDB): Promise<void> {
     if (!row) throw new Error("Pedido no encontrado");
     if (Number(row.ordenado) > 0) throw new Error("El pedido ya tiene orden de compra; no se puede editar");
 
-    await new sql.Request(tx)
+    await pedirTx(tx)
       .input("id", sql.Int, input.id)
       .input("tipoSolicitud", sql.NVarChar(15), input.tipoSolicitud)
       .input("obra", sql.NVarChar(50), input.obra ?? null)
@@ -471,10 +471,10 @@ export async function updatePedido(input: EditPedidoDB): Promise<void> {
               fechaModificacion=getdate(), modificadoPor=@modificadoPor WHERE idPedidoCompra=@id`);
 
     // Reemplazar líneas (seguro: no hay órdenes que las referencien).
-    await new sql.Request(tx).input("id", sql.Int, input.id).query("DELETE FROM dbo.PedidoCompraDet WHERE idPedidoCompra=@id");
+    await pedirTx(tx).input("id", sql.Int, input.id).query("DELETE FROM dbo.PedidoCompraDet WHERE idPedidoCompra=@id");
     let line = 10000;
     for (const l of input.lineas) {
-      await new sql.Request(tx)
+      await pedirTx(tx)
         .input("idPedidoCompra", sql.Int, input.id)
         .input("lineNum", sql.Int, line)
         .input("descripcion", sql.NVarChar(250), l.descripcion)
@@ -505,9 +505,9 @@ export async function setPedidoEstado(id: number, estado: string, usuario: strin
     throw new Error("Para archivar una solicitud usá el cierre con motivo (POST /api/pedidos/{id}/cerrar), no un cambio de estado suelto.");
   }
   const pool = await getPool();
-  const prev = await pool.request().input("id", sql.Int, id).query("SELECT idEstado, pedidoNo, notaCreador FROM dbo.PedidoCompra WHERE idPedidoCompra=@id");
+  const prev = await pedir(pool).input("id", sql.Int, id).query("SELECT idEstado, pedidoNo, notaCreador FROM dbo.PedidoCompra WHERE idPedidoCompra=@id");
   const idEstado = await idDeEstado(estado);
-  const req = pool.request().input("id", sql.Int, id).input("e", sql.Int, idEstado).input("u", sql.NVarChar(100), usuario);
+  const req = pedir(pool).input("id", sql.Int, id).input("e", sql.Int, idEstado).input("u", sql.NVarChar(100), usuario);
   // Al DEVOLVER a Ingeniería, guardamos el motivo en la nota del pedido (mismo
   // formato que el modo local) para que la bandeja de Devoluciones lo muestre en
   // ambas apps (Proveeduría e Ingeniería/Producción, que comparten esta tabla).
@@ -532,7 +532,7 @@ async function ensureLineaEstado(): Promise<boolean> {
   if (lineaEstadoLista !== null) return lineaEstadoLista;
   try {
     const pool = await getPool();
-    const r = await pool.request().query("SELECT COL_LENGTH('dbo.PedidoCompraDet','idEstado') AS a");
+    const r = await pedir(pool).query("SELECT COL_LENGTH('dbo.PedidoCompraDet','idEstado') AS a");
     lineaEstadoLista = r.recordset[0]?.a != null;
   } catch { lineaEstadoLista = false; }
   return lineaEstadoLista;
@@ -559,12 +559,12 @@ export async function devolverLineasPedido(
   const pool = await getPool();
   const idDevuelto = await idDeEstado("devuelto");
 
-  const cab = await pool.request().input("id", sql.Int, idPedido)
+  const cab = await pedir(pool).input("id", sql.Int, idPedido)
     .query("SELECT pedidoNo, idEstado, notaCreador FROM dbo.PedidoCompra WHERE idPedidoCompra=@id AND esEliminada=0");
   if (!cab.recordset.length) throw new Error("La solicitud no existe.");
   const pedidoNo = cab.recordset[0].pedidoNo ?? "";
 
-  const det = await pool.request().input("id", sql.Int, idPedido)
+  const det = await pedir(pool).input("id", sql.Int, idPedido)
     .query("SELECT idPedidoCompraDet, descripcion, itemNo, idEstado, quantitySolicitado, quantityOrdenado FROM dbo.PedidoCompraDet WHERE idPedidoCompra=@id");
   const porId = new Map<number, any>(det.recordset.map((l: any) => [l.idPedidoCompraDet as number, l]));
 
@@ -621,7 +621,7 @@ async function marcarLineasDevueltasTx(tx: sql.Transaction, o: {
 }): Promise<void> {
   const idDevuelto = await idDeEstado("devuelto");
   for (const idLinea of o.idsLinea) {
-    await new sql.Request(tx)
+    await pedirTx(tx)
       .input("id", sql.Int, idLinea).input("e", sql.Int, idDevuelto).input("u", sql.NVarChar(100), o.usuario)
       .query("UPDATE dbo.PedidoCompraDet SET idEstado=@e, fechaModificacion=getdate(), modificadoPor=@u WHERE idPedidoCompraDet=@id");
   }
@@ -631,7 +631,7 @@ async function marcarLineasDevueltasTx(tx: sql.Transaction, o: {
   // ve nadie del otro lado hasta que esa app lea el estado por línea.
   const encabezado = o.pedidoDevuelto ? `↩ Devuelto: ${o.motivo}` : `↩ Devuelta(s): ${o.nombres.join("; ")} — ${o.motivo}`;
   const nota = `${encabezado}${o.notaPrevia ? ` · ${o.notaPrevia}` : ""}`.slice(0, 500);
-  const reqCab = new sql.Request(tx)
+  const reqCab = pedirTx(tx)
     .input("id", sql.Int, o.idPedido).input("u", sql.NVarChar(100), o.usuario)
     .input("nota", sql.NVarChar(500), nota);
   let setEstado = "";
@@ -689,7 +689,7 @@ export async function cerrarSolicitud(
   await ensureEstados();
   const pool = await getPool();
 
-  const cab = await pool.request().input("id", sql.Int, id)
+  const cab = await pedir(pool).input("id", sql.Int, id)
     .query("SELECT pedidoNo, idEstado, notaCreador FROM dbo.PedidoCompra WHERE idPedidoCompra=@id AND esEliminada=0");
   if (!cab.recordset.length) throw new Error("La solicitud no existe.");
   const estadoActual = codigoDeId(cab.recordset[0].idEstado);
@@ -700,7 +700,7 @@ export async function cerrarSolicitud(
   // estaban bloqueadas, así que no se cuentan de nuevo (contarlas haría que el
   // historial dijera que se canceló material que el ingeniero ya tenía en la mano).
   const idDevuelto = await idDeEstado("devuelto");
-  const det = await pool.request().input("id", sql.Int, id).query(
+  const det = await pedir(pool).input("id", sql.Int, id).query(
     `SELECT idPedidoCompraDet, descripcion, itemNo, idEstado,
             ISNULL(quantitySolicitado,0) AS solicitado, ISNULL(quantityOrdenado,0) AS ordenado
        FROM dbo.PedidoCompraDet WHERE idPedidoCompra=@id ORDER BY idPedidoCompraDet`);
@@ -715,7 +715,7 @@ export async function cerrarSolicitud(
 
   const tx = new sql.Transaction(pool); await tx.begin();
   try {
-    await new sql.Request(tx)
+    await pedirTx(tx)
       .input("id", sql.Int, id).input("e", sql.Int, idCerrado)
       .input("u", sql.NVarChar(100), usuario)
       // NVarChar(500), no MAX: la columna es NVARCHAR(500) y la nota CONCATENA sobre
@@ -748,13 +748,13 @@ export async function reabrirSolicitud(
 ): Promise<{ numero: string; estado: string }> {
   await ensureEstados();
   const pool = await getPool();
-  const cab = await pool.request().input("id", sql.Int, id)
+  const cab = await pedir(pool).input("id", sql.Int, id)
     .query("SELECT pedidoNo, idEstado, notaCreador FROM dbo.PedidoCompra WHERE idPedidoCompra=@id AND esEliminada=0");
   if (!cab.recordset.length) throw new Error("La solicitud no existe.");
   if (codigoDeId(cab.recordset[0].idEstado) !== "cerrado") throw new Error("Esta solicitud no está archivada.");
   const pedidoNo = cab.recordset[0].pedidoNo ?? "";
 
-  const saldo = await pool.request().input("id", sql.Int, id).query(
+  const saldo = await pedir(pool).input("id", sql.Int, id).query(
     `SELECT COUNT(*) AS pend FROM dbo.PedidoCompraDet
       WHERE idPedidoCompra=@id AND ISNULL(quantityOrdenado,0) < ISNULL(quantitySolicitado,0) - 0.0001`);
   const estado = Number(saldo.recordset[0]?.pend ?? 0) > 0 ? "aprobado" : "en_orden";
@@ -763,7 +763,7 @@ export async function reabrirSolicitud(
 
   const tx = new sql.Transaction(pool); await tx.begin();
   try {
-    await new sql.Request(tx)
+    await pedirTx(tx)
       .input("id", sql.Int, id).input("e", sql.Int, idNuevo)
       .input("u", sql.NVarChar(100), usuario).input("nota", sql.NVarChar(500), nota || null)
       .query("UPDATE dbo.PedidoCompra SET idEstado=@e, notaCreador=@nota, fechaModificacion=getdate(), modificadoPor=@u WHERE idPedidoCompra=@id");
@@ -790,7 +790,7 @@ export async function obrasDeLineasPedido(ids: number[]): Promise<Map<string, st
   const out = new Map<string, string>();
   if (!limpios.length) return out;
   const pool = await getPool();
-  const r = await pool.request().query(
+  const r = await pedir(pool).query(
     `SELECT idPedidoCompraDet, obra FROM dbo.PedidoCompraDet WHERE idPedidoCompraDet IN (${limpios.join(",")})`);
   for (const row of r.recordset) {
     const obra = String(row.obra ?? "").trim();
@@ -801,8 +801,8 @@ export async function obrasDeLineasPedido(ids: number[]): Promise<Map<string, st
 
 export async function softDeletePedido(id: number, usuario: string, rol: Role) {
   const pool = await getPool();
-  const prev = await pool.request().input("id", sql.Int, id).query("SELECT pedidoNo FROM dbo.PedidoCompra WHERE idPedidoCompra=@id");
-  await pool.request().input("id", sql.Int, id).input("u", sql.NVarChar(100), usuario)
+  const prev = await pedir(pool).input("id", sql.Int, id).query("SELECT pedidoNo FROM dbo.PedidoCompra WHERE idPedidoCompra=@id");
+  await pedir(pool).input("id", sql.Int, id).input("u", sql.NVarChar(100), usuario)
     .query("UPDATE dbo.PedidoCompra SET esEliminada=1, fechaModificacion=getdate(), modificadoPor=@u WHERE idPedidoCompra=@id");
   const tx = new sql.Transaction(pool); await tx.begin();
   await logMov(tx, { entidad: "pedido", idEntidad: id, documentoNo: prev.recordset[0]?.pedidoNo ?? "", tipoMovimiento: "eliminado", usuario, rol });
@@ -828,11 +828,11 @@ async function ensureNotaInterna(): Promise<boolean> {
   try {
     const pool = await getPool();
     if (process.env.MIGRAR_ESQUEMA === "1") {
-      await pool.request().query(`
+      await pedir(pool).query(`
         IF COL_LENGTH('dbo.OrdenCompra','notaInterna') IS NULL
           ALTER TABLE dbo.OrdenCompra ADD notaInterna NVARCHAR(500) NULL;`);
     }
-    const r = await pool.request().query("SELECT COL_LENGTH('dbo.OrdenCompra','notaInterna') AS a");
+    const r = await pedir(pool).query("SELECT COL_LENGTH('dbo.OrdenCompra','notaInterna') AS a");
     notaInternaLista = r.recordset[0]?.a != null;
   } catch {
     notaInternaLista = false;
@@ -851,13 +851,13 @@ async function ensureCargoCols(): Promise<boolean> {
     // poniendo MIGRAR_ESQUEMA=1 en el App Setting. Mientras no existan, todo sigue
     // funcionando como antes (sin guardar el tipo de cargo).
     if (process.env.MIGRAR_ESQUEMA === "1") {
-      await pool.request().query(`
+      await pedir(pool).query(`
         IF COL_LENGTH('dbo.OrdenCompraDet','chargeNo') IS NULL
           ALTER TABLE dbo.OrdenCompraDet ADD chargeNo NVARCHAR(40) NULL;
         IF COL_LENGTH('dbo.OrdenCompraDet','chargeMethod') IS NULL
           ALTER TABLE dbo.OrdenCompraDet ADD chargeMethod NVARCHAR(20) NULL;`);
     }
-    const r = await pool.request().query(
+    const r = await pedir(pool).query(
       "SELECT COL_LENGTH('dbo.OrdenCompraDet','chargeNo') AS a, COL_LENGTH('dbo.OrdenCompraDet','chargeMethod') AS b"
     );
     cargoColsListas = r.recordset[0]?.a != null && r.recordset[0]?.b != null;
@@ -891,11 +891,11 @@ async function ensureMaquinaCol(): Promise<boolean> {
   try {
     const pool = await getPool();
     if (process.env.MIGRAR_ESQUEMA === "1") {
-      await pool.request().query(`
+      await pedir(pool).query(`
         IF COL_LENGTH('dbo.OrdenCompraDet','maquinaNo') IS NULL
           ALTER TABLE dbo.OrdenCompraDet ADD maquinaNo NVARCHAR(20) NULL;`);
     }
-    const r = await pool.request().query("SELECT COL_LENGTH('dbo.OrdenCompraDet','maquinaNo') AS a");
+    const r = await pedir(pool).query("SELECT COL_LENGTH('dbo.OrdenCompraDet','maquinaNo') AS a");
     maquinaColLista = r.recordset[0]?.a != null;
   } catch {
     maquinaColLista = false;
@@ -922,7 +922,7 @@ async function ensureChequeoBcCols(): Promise<boolean> {
   try {
     const pool = await getPool();
     if (process.env.MIGRAR_ESQUEMA === "1") {
-      await pool.request().query(`
+      await pedir(pool).query(`
         IF COL_LENGTH('dbo.OrdenCompra','bcCheckEstado') IS NULL
           ALTER TABLE dbo.OrdenCompra ADD bcCheckEstado NVARCHAR(20) NULL;
         IF COL_LENGTH('dbo.OrdenCompra','bcCheckDetalle') IS NULL
@@ -930,7 +930,7 @@ async function ensureChequeoBcCols(): Promise<boolean> {
         IF COL_LENGTH('dbo.OrdenCompra','bcCheckFecha') IS NULL
           ALTER TABLE dbo.OrdenCompra ADD bcCheckFecha DATETIME2 NULL;`);
     }
-    const r = await pool.request().query(
+    const r = await pedir(pool).query(
       `SELECT COL_LENGTH('dbo.OrdenCompra','bcCheckEstado') AS a,
               COL_LENGTH('dbo.OrdenCompra','bcCheckDetalle') AS b,
               COL_LENGTH('dbo.OrdenCompra','bcCheckFecha') AS c`);
@@ -952,7 +952,7 @@ export async function facturasBcDeOrden(idOrden: number): Promise<string[]> {
   if (!(await colBcFacturaExiste())) return [];
   try {
     const pool = await getPool();
-    const r = await pool.request().input("id", sql.Int, idOrden).query(
+    const r = await pedir(pool).input("id", sql.Int, idOrden).query(
       `SELECT bcFacturaNo FROM dbo.RecepcionCompra
         WHERE idOrdenCompra=@id AND esEliminada=0 AND bcFacturaNo IS NOT NULL AND LTRIM(RTRIM(bcFacturaNo)) <> ''`);
     return [...new Set(r.recordset.map((x: any) => String(x.bcFacturaNo).trim()))];
@@ -977,7 +977,7 @@ export async function guardarVariantesResueltas(
   let n = 0;
   for (const c of utiles) {
     try {
-      const r = await pool.request()
+      const r = await pedir(pool)
         .input("id", sql.Int, c.idLinea)
         .input("oc", sql.Int, idOrden)
         .input("v", sql.NVarChar(20), c.variantCode.trim())
@@ -1004,11 +1004,11 @@ export async function asignarBcNumber(id: number, bcNo: string, usuario: string,
   const no = (bcNo ?? "").trim();
   if (!no) return;
   const pool = await getPool();
-  const prev = await pool.request().input("id", sql.Int, id)
+  const prev = await pedir(pool).input("id", sql.Int, id)
     .query("SELECT ordenNo, bcNo FROM dbo.OrdenCompra WHERE idOrdenCompra=@id");
   if (!prev.recordset.length) return;
   if (String(prev.recordset[0].bcNo ?? "").trim().toUpperCase() === no.toUpperCase()) return;
-  await pool.request().input("id", sql.Int, id).input("bcno", sql.NVarChar(20), no).input("u", sql.NVarChar(100), usuario)
+  await pedir(pool).input("id", sql.Int, id).input("bcno", sql.NVarChar(20), no).input("u", sql.NVarChar(100), usuario)
     .query("UPDATE dbo.OrdenCompra SET bcNo=@bcno, syncedToBc=1, fechaModificacion=getdate(), modificadoPor=@u WHERE idOrdenCompra=@id");
   const tx = new sql.Transaction(pool);
   await tx.begin();
@@ -1028,7 +1028,7 @@ export async function asignarBcNumber(id: number, bcNo: string, usuario: string,
 // nació a nombre de otro proveedor.
 export async function anotarEncabezadoBc(id: number, detalle: string, usuario: string, rol: Role): Promise<void> {
   const pool = await getPool();
-  const prev = await pool.request().input("id", sql.Int, id)
+  const prev = await pedir(pool).input("id", sql.Int, id)
     .query("SELECT ordenNo, bcNo FROM dbo.OrdenCompra WHERE idOrdenCompra=@id");
   const row = prev.recordset[0];
   if (!row) return;
@@ -1051,7 +1051,7 @@ export async function anotarEncabezadoBc(id: number, detalle: string, usuario: s
 // intentado. Ver lib/fallo-posteo.ts y el caso CP-005541.
 export async function anotarFalloBc(id: number, detalle: string, usuario: string, rol: Role): Promise<void> {
   const pool = await getPool();
-  const prev = await pool.request().input("id", sql.Int, id)
+  const prev = await pedir(pool).input("id", sql.Int, id)
     .query("SELECT ordenNo, bcNo FROM dbo.OrdenCompra WHERE idOrdenCompra=@id");
   const row = prev.recordset[0];
   if (!row) return;
@@ -1082,12 +1082,12 @@ export async function guardarChequeoBc(
   rol: Role,
 ): Promise<void> {
   const pool = await getPool();
-  const prevQ = await pool.request().input("id", sql.Int, id)
+  const prevQ = await pedir(pool).input("id", sql.Int, id)
     .query(`SELECT ordenNo, bcNo${await ensureChequeoBcCols() ? ", bcCheckEstado" : ""} FROM dbo.OrdenCompra WHERE idOrdenCompra=@id`);
   const prev = prevQ.recordset[0];
   if (!prev) return;
   if (await ensureChequeoBcCols()) {
-    await pool.request()
+    await pedir(pool)
       .input("id", sql.Int, id)
       .input("e", sql.NVarChar(20), estado)
       .input("d", sql.NVarChar(sql.MAX), detalle || null)
@@ -1126,7 +1126,7 @@ async function motivosRechazo(idsOrden: number[]): Promise<Map<string, string>> 
   if (!idsOrden.length) return out;
   try {
     const pool = await getPool();
-    const req = pool.request();
+    const req = pedir(pool);
     // Con muchísimas rechazadas no vale la pena (y SQL Server topa en ~2100
     // parámetros): se cae a filtrar solo por tipo de movimiento.
     let filtroIds = "";
@@ -1191,7 +1191,7 @@ async function sellosDeOrdenes(idOrden?: number, rango?: RangoIds | null): Promi
   const out = new Map<string, SellosOrden>();
   try {
     const pool = await getPool();
-    const req = pool.request()
+    const req = pedir(pool)
       .input("idLanzado", sql.Int, await idDeEstado("lanzado"))
       .input("idPendiente", sql.Int, await idDeEstado("pendiente_aprobacion"))
       .input("pdf", sql.NVarChar(50), MOV_PDF)
@@ -1238,7 +1238,7 @@ export async function listOrdenes(lote?: Lote): Promise<Orden[]> {
   await ensureEstados();
   const pool = await getPool();
   const cl = clausulasLote(lote, "idOrdenCompra");
-  const h = await cl.atar(pool.request()).query(
+  const h = await cl.atar(pedir(pool)).query(
     `SELECT ${cl.top} * FROM dbo.OrdenCompra WHERE esEliminada = 0${cl.filtro} ORDER BY idOrdenCompra DESC`);
   const rango = rangoDeIds(h.recordset, "idOrdenCompra");
   if (!rango) return [];
@@ -1246,7 +1246,7 @@ export async function listOrdenes(lote?: Lote): Promise<Orden[]> {
   // (si no, la orden se veía siempre como "Directa" aunque naciera de un pedido).
   // Ídem: solo las líneas de órdenes vivas (ver listPedidos). EXISTS y no un JOIN
   // más porque EXISTS no puede multiplicar filas si algún día hay un duplicado.
-  const dReq = pool.request();
+  const dReq = pedir(pool);
   const dRango = filtroRango(dReq, rango, "det.idOrdenCompra");
   const d = await dReq.query(`SELECT det.*, pc.pedidoNo AS pedidoNumero, ${SQL_OBRA_SOLICITUD}
       FROM dbo.OrdenCompraDet det
@@ -1272,9 +1272,9 @@ export async function listOrdenes(lote?: Lote): Promise<Orden[]> {
 export async function getOrden(id: number): Promise<Orden | null> {
   await ensureEstados();
   const pool = await getPool();
-  const h = await pool.request().input("id", sql.Int, id).query("SELECT * FROM dbo.OrdenCompra WHERE idOrdenCompra=@id");
+  const h = await pedir(pool).input("id", sql.Int, id).query("SELECT * FROM dbo.OrdenCompra WHERE idOrdenCompra=@id");
   if (!h.recordset.length) return null;
-  const d = await pool.request().input("id", sql.Int, id).query(`SELECT det.*, pc.pedidoNo AS pedidoNumero, ${SQL_OBRA_SOLICITUD}
+  const d = await pedir(pool).input("id", sql.Int, id).query(`SELECT det.*, pc.pedidoNo AS pedidoNumero, ${SQL_OBRA_SOLICITUD}
       FROM dbo.OrdenCompraDet det
       LEFT JOIN dbo.PedidoCompraDet pcd ON pcd.idPedidoCompraDet = det.idPedidoCompraDet
       LEFT JOIN dbo.PedidoCompra pc ON pc.idPedidoCompra = pcd.idPedidoCompra
@@ -1400,7 +1400,7 @@ async function cortarLineasDevueltas(lineas: { idPedidoCompraDet?: number }[]) {
   await ensureEstados();
   const idDevuelto = await idDeEstado("devuelto");
   const pool = await getPool();
-  const r = await pool.request().input("e", sql.Int, idDevuelto)
+  const r = await pedir(pool).input("e", sql.Int, idDevuelto)
     .query(`SELECT descripcion, itemNo FROM dbo.PedidoCompraDet
              WHERE idEstado=@e AND idPedidoCompraDet IN (${ids.join(",")})`);
   if (r.recordset.length) {
@@ -1444,12 +1444,12 @@ export async function createOrden(input: NewOrdenDB): Promise<number> {
     //
     // TRY_CAST y no CAST: un ordenNo migrado con otro formato hacía fallar la
     // creación de CUALQUIER orden nueva, no solo la suya.
-    await new sql.Request(tx).query(
+    await pedirTx(tx).query(
       "EXEC sp_getapplock @Resource='OrdenCompra:consecutivo', @LockMode='Exclusive', @LockOwner='Transaction', @LockTimeout=10000");
-    const max = await new sql.Request(tx).query(
+    const max = await pedirTx(tx).query(
       "SELECT MAX(TRY_CAST(SUBSTRING(ordenNo,4,20) AS INT)) AS m FROM dbo.OrdenCompra WHERE ordenNo LIKE 'CP-%'");
     const numero = "CP-" + String((max.recordset[0].m ?? 0) + 1).padStart(6, "0");
-    const ins = await new sql.Request(tx)
+    const ins = await pedirTx(tx)
       .input("idEstado", sql.Int, idAbierto)
       .input("ordenNo", sql.NVarChar(50), numero)
       .input("proveedorNo", sql.NVarChar(20), input.proveedorNo)
@@ -1465,7 +1465,7 @@ export async function createOrden(input: NewOrdenDB): Promise<number> {
 
     let line = 10000;
     for (const l of input.lineas) {
-      await new sql.Request(tx)
+      await pedirTx(tx)
         .input("idOrdenCompra", sql.Int, idOrden)
         .input("idPedidoCompraDet", sql.Int, l.idPedidoCompraDet ?? null)
         .input("lineNum", sql.Int, line)
@@ -1489,7 +1489,7 @@ export async function createOrden(input: NewOrdenDB): Promise<number> {
                 VALUES (@idOrdenCompra,@idPedidoCompraDet,@lineNum,@tipoLinea,@descripcion,@itemNo,@variantCode,@unitOfMeasureCode,@locationCode,@quantity,0,0,@directUnitCost,@vatPct,@lineDiscountPct,@jobNo,@taskNo,getdate(),@creadoPor${valsCargo}${valMaquina})`);
       // descontar saldo del pedido origen
       if (l.idPedidoCompraDet) {
-        await new sql.Request(tx).input("id", sql.Int, l.idPedidoCompraDet).input("q", sql.Decimal(18, 4), l.cantidad)
+        await pedirTx(tx).input("id", sql.Int, l.idPedidoCompraDet).input("q", sql.Decimal(18, 4), l.cantidad)
           .query("UPDATE dbo.PedidoCompraDet SET quantityOrdenado = ISNULL(quantityOrdenado,0) + @q WHERE idPedidoCompraDet=@id");
       }
       line += 10000;
@@ -1525,7 +1525,7 @@ export async function updateOrden(id: number, input: UpdateOrdenDB) {
   const colMaquina = conMaquina ? ",maquinaNo" : "";
   const valMaquina = conMaquina ? ",@maquinaNo" : "";
   const setNotaInterna = (await ensureNotaInterna()) ? ", notaInterna=@notaInterna" : "";
-  const rec = await pool.request().input("id", sql.Int, id)
+  const rec = await pedir(pool).input("id", sql.Int, id)
     .query("SELECT COUNT(*) AS n FROM dbo.RecepcionCompra WHERE idOrdenCompra=@id AND esEliminada=0");
   if ((rec.recordset[0]?.n ?? 0) > 0) throw new Error("La orden ya tiene recepciones registradas; no se puede editar.");
   // El proveedor y la moneda ANTERIORES se leen acá, antes de que el UPDATE los
@@ -1533,7 +1533,7 @@ export async function updateOrden(id: number, input: UpdateOrdenDB) {
   // (el movimiento "editado" decía solo "N línea(s)", así que de qué proveedor
   // venía la orden no quedaba en ninguna parte). `bc_encabezado` registra el cambio
   // en BC; esto registra el cambio de este lado, y también cuando BC lo rechazó.
-  const head = await pool.request().input("id", sql.Int, id)
+  const head = await pedir(pool).input("id", sql.Int, id)
     .query("SELECT ordenNo, idEstado, proveedorNo, proveedorNombre, currencyCode FROM dbo.OrdenCompra WHERE idOrdenCompra=@id AND esEliminada=0");
   if (!head.recordset.length) throw new Error("Orden no encontrada.");
   // Misma regla que la pantalla de edición, pero del lado del server: solo se
@@ -1552,7 +1552,7 @@ export async function updateOrden(id: number, input: UpdateOrdenDB) {
   // Las LÍNEAS de antes, por lo mismo que el proveedor: el movimiento "editado" decía
   // solo "N línea(s)" y con eso, mirando la orden días después, no había forma de
   // saber si le tocaron la cantidad, el precio, o si le quitaron una y pusieron otra.
-  const det = await pool.request().input("id", sql.Int, id)
+  const det = await pedir(pool).input("id", sql.Int, id)
     .query("SELECT itemNo, variantCode, descripcion, quantity, directUnitCost FROM dbo.OrdenCompraDet WHERE idOrdenCompra=@id ORDER BY lineNum");
   const antesLineas = det.recordset.map((r: any) => ({
     itemNo: r.itemNo, variantCode: r.variantCode, descripcion: r.descripcion,
@@ -1568,7 +1568,7 @@ export async function updateOrden(id: number, input: UpdateOrdenDB) {
     // si dos líneas de la orden apuntan a la misma línea de pedido, SQL Server
     // toca la fila destino UNA sola vez (con una de las dos cantidades) y el saldo
     // quedaría inflado para siempre. Con el SUM el resultado no depende de eso.
-    await new sql.Request(tx).input("id", sql.Int, id).query(`
+    await pedirTx(tx).input("id", sql.Int, id).query(`
       UPDATE pcd SET pcd.quantityOrdenado = ISNULL(pcd.quantityOrdenado,0) - x.q
       FROM dbo.PedidoCompraDet pcd
       JOIN (SELECT idPedidoCompraDet, SUM(quantity) AS q
@@ -1576,9 +1576,9 @@ export async function updateOrden(id: number, input: UpdateOrdenDB) {
              WHERE idOrdenCompra = @id AND idPedidoCompraDet IS NOT NULL
              GROUP BY idPedidoCompraDet) x ON x.idPedidoCompraDet = pcd.idPedidoCompraDet`);
     // 2) borrar líneas actuales
-    await new sql.Request(tx).input("id", sql.Int, id).query("DELETE FROM dbo.OrdenCompraDet WHERE idOrdenCompra=@id");
+    await pedirTx(tx).input("id", sql.Int, id).query("DELETE FROM dbo.OrdenCompraDet WHERE idOrdenCompra=@id");
     // 3) encabezado
-    await new sql.Request(tx).input("id", sql.Int, id)
+    await pedirTx(tx).input("id", sql.Int, id)
       .input("proveedorNo", sql.NVarChar(20), input.proveedorNo)
       .input("proveedorNombre", sql.NVarChar(150), input.proveedorNombre ?? null)
       .input("currencyCode", sql.NVarChar(10), input.currencyCode || null)
@@ -1589,7 +1589,7 @@ export async function updateOrden(id: number, input: UpdateOrdenDB) {
     // 4) reinsertar líneas + reaplicar saldo
     let line = 10000;
     for (const l of lineas) {
-      await new sql.Request(tx)
+      await pedirTx(tx)
         .input("idOrdenCompra", sql.Int, id)
         .input("idPedidoCompraDet", sql.Int, l.idPedidoCompraDet ?? null)
         .input("lineNum", sql.Int, line)
@@ -1612,7 +1612,7 @@ export async function updateOrden(id: number, input: UpdateOrdenDB) {
         .query(`INSERT dbo.OrdenCompraDet (idOrdenCompra,idPedidoCompraDet,lineNum,tipoLinea,descripcion,itemNo,variantCode,unitOfMeasureCode,locationCode,quantity,quantityRecibida,quantityFacturada,directUnitCost,vatPct,lineDiscountPct,jobNo,taskNo,fechaCreacion,creadoPor${colsCargo}${colMaquina})
                 VALUES (@idOrdenCompra,@idPedidoCompraDet,@lineNum,@tipoLinea,@descripcion,@itemNo,@variantCode,@unitOfMeasureCode,@locationCode,@quantity,0,0,@directUnitCost,@vatPct,@lineDiscountPct,@jobNo,@taskNo,getdate(),@creadoPor${valsCargo}${valMaquina})`);
       if (l.idPedidoCompraDet) {
-        await new sql.Request(tx).input("id", sql.Int, l.idPedidoCompraDet).input("q", sql.Decimal(18, 4), l.cantidad)
+        await pedirTx(tx).input("id", sql.Int, l.idPedidoCompraDet).input("q", sql.Decimal(18, 4), l.cantidad)
           .query("UPDATE dbo.PedidoCompraDet SET quantityOrdenado = ISNULL(quantityOrdenado,0) + @q WHERE idPedidoCompraDet=@id");
       }
       line += 10000;
@@ -1667,7 +1667,7 @@ export async function cerrarOrden(
   if (!String(motivo ?? "").trim()) throw new Error("Poné el motivo del cierre: queda en el historial de la orden.");
   await ensureEstados();
   const pool = await getPool();
-  const head = await pool.request().input("id", sql.Int, id)
+  const head = await pedir(pool).input("id", sql.Int, id)
     .query("SELECT ordenNo, idEstado FROM dbo.OrdenCompra WHERE idOrdenCompra=@id AND esEliminada=0");
   if (!head.recordset.length) throw new Error("Orden no encontrada.");
   const estadoActual = codigoDeId(head.recordset[0].idEstado);
@@ -1682,7 +1682,7 @@ export async function cerrarOrden(
   const tx = new sql.Transaction(pool); await tx.begin();
   try {
     // Lo que quedó sin recibir. Sin los cargos: un flete no tiene saldo que devolver.
-    const pend = await new sql.Request(tx).input("id", sql.Int, id).query(`
+    const pend = await pedirTx(tx).input("id", sql.Int, id).query(`
       SELECT ISNULL(SUM(quantity - ISNULL(quantityRecibida,0)),0) AS unidades, COUNT(*) AS lineas
         FROM dbo.OrdenCompraDet
        WHERE idOrdenCompra=@id AND ISNULL(tipoLinea,'articulo') <> 'cargo' AND quantity - ISNULL(quantityRecibida,0) > 0`);
@@ -1694,7 +1694,7 @@ export async function cerrarOrden(
       // dos líneas de la orden apuntando a la misma línea de pedido tocarían la
       // fila una sola vez y el saldo quedaría mal (mismo cuidado que updateOrden).
       // El CASE evita dejar quantityOrdenado negativo si los datos vienen sucios.
-      await new sql.Request(tx).input("id", sql.Int, id).query(`
+      await pedirTx(tx).input("id", sql.Int, id).query(`
         UPDATE pcd SET pcd.quantityOrdenado =
           CASE WHEN ISNULL(pcd.quantityOrdenado,0) - x.q < 0 THEN 0 ELSE ISNULL(pcd.quantityOrdenado,0) - x.q END
         FROM dbo.PedidoCompraDet pcd
@@ -1705,7 +1705,7 @@ export async function cerrarOrden(
                GROUP BY idPedidoCompraDet) x ON x.idPedidoCompraDet = pcd.idPedidoCompraDet`);
     }
 
-    await new sql.Request(tx).input("id", sql.Int, id).input("e", sql.Int, idCompletado).input("u", sql.NVarChar(100), usuario)
+    await pedirTx(tx).input("id", sql.Int, id).input("e", sql.Int, idCompletado).input("u", sql.NVarChar(100), usuario)
       .query("UPDATE dbo.OrdenCompra SET idEstado=@e, fechaModificacion=getdate(), modificadoPor=@u WHERE idOrdenCompra=@id");
 
     const detalle = pendienteDevuelto > 0
@@ -1733,11 +1733,11 @@ export async function nuevaOrdenDesdePendiente(
   id: number, motivo: string, usuario: string, rol: Role,
 ): Promise<{ idOrden: number; numero: string; origen: string }> {
   const pool = await getPool();
-  const head = await pool.request().input("id", sql.Int, id)
+  const head = await pedir(pool).input("id", sql.Int, id)
     .query("SELECT ordenNo, bcNo, proveedorNo, proveedorNombre, currencyCode FROM dbo.OrdenCompra WHERE idOrdenCompra=@id AND esEliminada=0");
   if (!head.recordset.length) throw new Error("Orden no encontrada.");
   const h = head.recordset[0];
-  const det = await pool.request().input("id", sql.Int, id).query(`
+  const det = await pedir(pool).input("id", sql.Int, id).query(`
     SELECT * FROM dbo.OrdenCompraDet
      WHERE idOrdenCompra=@id AND ISNULL(tipoLinea,'articulo') <> 'cargo' AND quantity - ISNULL(quantityRecibida,0) > 0
      ORDER BY lineNum`);
@@ -1775,7 +1775,7 @@ export async function nuevaOrdenDesdePendiente(
     lineas: lineasPendientes.lineas,
   });
 
-  const nueva = await pool.request().input("id", sql.Int, idOrden)
+  const nueva = await pedir(pool).input("id", sql.Int, idOrden)
     .query("SELECT ordenNo FROM dbo.OrdenCompra WHERE idOrdenCompra=@id");
   const numero = nueva.recordset[0]?.ordenNo ?? "";
   // Deja la traza en las dos puntas: sin esto, en la orden nueva no se ve de dónde
@@ -1802,7 +1802,7 @@ export async function nuevaOrdenDesdePendiente(
 // "todavía se puede corregir" de "ya entró material y hay que ir por devolución".
 export async function ordenTieneRecepciones(id: number): Promise<boolean> {
   const pool = await getPool();
-  const r = await pool.request().input("id", sql.Int, id)
+  const r = await pedir(pool).input("id", sql.Int, id)
     .query("SELECT COUNT(*) AS n FROM dbo.RecepcionCompra WHERE idOrdenCompra=@id AND esEliminada=0");
   return (r.recordset[0]?.n ?? 0) > 0;
 }
@@ -1840,7 +1840,7 @@ export async function retomarOrdenDescartada(
   const pool = await getPool();
   // La viva primero: si la orden nunca se descartó no hay nada que hacer (`yaEstaba`).
   // Y de las descartadas, la más reciente, por si el mismo N.º de BC quedó en dos.
-  const r = await pool.request().input("n", sql.NVarChar(50), n).query(
+  const r = await pedir(pool).input("n", sql.NVarChar(50), n).query(
     `SELECT TOP 1 idOrdenCompra, ordenNo, bcNo, esEliminada
        FROM dbo.OrdenCompra
       WHERE bcNo = @n OR ordenNo = @n
@@ -1859,7 +1859,7 @@ export async function retomarOrdenDescartada(
   if (await ordenTieneRecepciones(id)) {
     throw new Error(`La orden ${bcNo} tiene recepciones registradas: no se retoma (ese material ya llegó).`);
   }
-  await pool.request().input("id", sql.Int, id).input("u", sql.NVarChar(100), usuario)
+  await pedir(pool).input("id", sql.Int, id).input("u", sql.NVarChar(100), usuario)
     .query("UPDATE dbo.OrdenCompra SET esEliminada=0, fechaModificacion=getdate(), modificadoPor=@u WHERE idOrdenCompra=@id");
   const tx = new sql.Transaction(pool); await tx.begin();
   try {
@@ -1882,7 +1882,7 @@ export async function descartarOrden(
 ): Promise<{ numero: string; saldoDevuelto: number }> {
   await ensureEstados();
   const pool = await getPool();
-  const head = await pool.request().input("id", sql.Int, id)
+  const head = await pedir(pool).input("id", sql.Int, id)
     .query("SELECT ordenNo, idEstado, bcNo FROM dbo.OrdenCompra WHERE idOrdenCompra=@id AND esEliminada=0");
   if (!head.recordset.length) throw new Error("Orden no encontrada.");
   const estado = codigoDeId(head.recordset[0].idEstado);
@@ -1898,7 +1898,7 @@ export async function descartarOrden(
     // Cuánto se va a devolver (solo para el mensaje). Va en un SELECT aparte y no en
     // un OUTPUT del UPDATE: en un UPDATE...FROM, el OUTPUT no puede leer columnas de
     // la tabla derivada, y si el motor lo rechaza se cae justo la vía de escape.
-    const prev = await new sql.Request(tx).input("id", sql.Int, id).query(`
+    const prev = await pedirTx(tx).input("id", sql.Int, id).query(`
       SELECT ISNULL(SUM(od.quantity), 0) AS q
         FROM dbo.OrdenCompraDet od
         JOIN dbo.PedidoCompraDet pcd ON pcd.idPedidoCompraDet = od.idPedidoCompraDet
@@ -1907,14 +1907,14 @@ export async function descartarOrden(
     // Devolver el saldo a las líneas de solicitud. Es EXACTAMENTE el mismo UPDATE que
     // usa updateOrden (probado en producción): agrupado por línea de pedido, porque
     // dos líneas de la orden pueden colgar de la misma.
-    await new sql.Request(tx).input("id", sql.Int, id).query(`
+    await pedirTx(tx).input("id", sql.Int, id).query(`
       UPDATE pcd SET pcd.quantityOrdenado = ISNULL(pcd.quantityOrdenado,0) - x.q
       FROM dbo.PedidoCompraDet pcd
       JOIN (SELECT idPedidoCompraDet, SUM(quantity) AS q
               FROM dbo.OrdenCompraDet
              WHERE idOrdenCompra = @id AND idPedidoCompraDet IS NOT NULL
              GROUP BY idPedidoCompraDet) x ON x.idPedidoCompraDet = pcd.idPedidoCompraDet`);
-    await new sql.Request(tx).input("id", sql.Int, id).input("u", sql.NVarChar(100), usuario)
+    await pedirTx(tx).input("id", sql.Int, id).input("u", sql.NVarChar(100), usuario)
       .query("UPDATE dbo.OrdenCompra SET esEliminada=1, fechaModificacion=getdate(), modificadoPor=@u WHERE idOrdenCompra=@id");
     await logMov(tx, {
       entidad: "orden", idEntidad: id, documentoNo: head.recordset[0].ordenNo ?? "",
@@ -1952,7 +1952,7 @@ export async function devolverLineasDeOrden(
   await ensureEstados();
   const pool = await getPool();
 
-  const head = await pool.request().input("id", sql.Int, idOrden)
+  const head = await pedir(pool).input("id", sql.Int, idOrden)
     .query("SELECT ordenNo, idEstado, bcNo FROM dbo.OrdenCompra WHERE idOrdenCompra=@id AND esEliminada=0");
   if (!head.recordset.length) throw new Error("Orden no encontrada.");
   const estado = codigoDeId(head.recordset[0].idEstado);
@@ -1963,7 +1963,7 @@ export async function devolverLineasDeOrden(
   }
   if (await ordenTieneRecepciones(idOrden)) throw new Error("La orden ya tiene recepciones registradas: ese material ya llegó y no se devuelve al ingeniero.");
 
-  const det = await pool.request().input("id", sql.Int, idOrden).query(
+  const det = await pedir(pool).input("id", sql.Int, idOrden).query(
     `SELECT od.idOrdenCompraDet, od.idPedidoCompraDet, od.tipoLinea, od.descripcion, od.quantity,
             od.quantityRecibida, od.quantityFacturada, pcd.idPedidoCompra
        FROM dbo.OrdenCompraDet od
@@ -2024,7 +2024,7 @@ export async function devolverLineasDeOrden(
     // 1) devolverle el saldo a la solicitud SOLO por las líneas que se van. Mismo
     //    UPDATE agrupado de updateOrden/descartarOrden: dos líneas de la orden pueden
     //    colgar de la misma línea de solicitud y en un JOIN eso se toca una sola vez.
-    const reqSaldo = new sql.Request(tx).input("id", sql.Int, idOrden);
+    const reqSaldo = pedirTx(tx).input("id", sql.Int, idOrden);
     const paramsIds = ids.map((x, i) => { reqSaldo.input(`l${i}`, sql.Int, x); return `@l${i}`; });
     await reqSaldo.query(`
       UPDATE pcd SET pcd.quantityOrdenado =
@@ -2037,17 +2037,17 @@ export async function devolverLineasDeOrden(
              GROUP BY idPedidoCompraDet) x ON x.idPedidoCompraDet = pcd.idPedidoCompraDet`);
 
     // 2) sacarle las líneas a la orden
-    const reqDel = new sql.Request(tx).input("id", sql.Int, idOrden);
+    const reqDel = pedirTx(tx).input("id", sql.Int, idOrden);
     const paramsDel = ids.map((x, i) => { reqDel.input(`d${i}`, sql.Int, x); return `@d${i}`; });
     await reqDel.query(`DELETE FROM dbo.OrdenCompraDet WHERE idOrdenCompra=@id AND idOrdenCompraDet IN (${paramsDel.join(",")})`);
 
     // 3) marcar devueltas las líneas de cada solicitud (ya sin saldo comprometido)
     for (const [idPedido, idsLinea] of porPedido) {
-      const cab = await new sql.Request(tx).input("id", sql.Int, idPedido)
+      const cab = await pedirTx(tx).input("id", sql.Int, idPedido)
         .query("SELECT pedidoNo, idEstado, notaCreador FROM dbo.PedidoCompra WHERE idPedidoCompra=@id");
       if (!cab.recordset.length) continue;
       const idDevuelto = await idDeEstado("devuelto");
-      const lineasPedido = await new sql.Request(tx).input("id", sql.Int, idPedido)
+      const lineasPedido = await pedirTx(tx).input("id", sql.Int, idPedido)
         .query("SELECT idPedidoCompraDet, idEstado, descripcion FROM dbo.PedidoCompraDet WHERE idPedidoCompra=@id");
       const yaDevueltas = new Set<number>([
         ...lineasPedido.recordset.filter((l: any) => l.idEstado === idDevuelto).map((l: any) => Number(l.idPedidoCompraDet)),
@@ -2068,7 +2068,7 @@ export async function devolverLineasDeOrden(
     // 4) la orden: se descarta si se quedó sin material, o queda con el resto
     const detalleOrden = `${nombres.length} línea(s) devuelta(s) al ingeniero: ${nombres.join("; ")} · Motivo: ${motivo}`;
     if (ordenDescartada) {
-      await new sql.Request(tx).input("id", sql.Int, idOrden).input("u", sql.NVarChar(100), usuario)
+      await pedirTx(tx).input("id", sql.Int, idOrden).input("u", sql.NVarChar(100), usuario)
         .query("UPDATE dbo.OrdenCompra SET esEliminada=1, fechaModificacion=getdate(), modificadoPor=@u WHERE idOrdenCompra=@id");
       await logMov(tx, {
         entidad: "orden", idEntidad: idOrden, documentoNo: ordenNo, tipoMovimiento: "eliminado",
@@ -2076,7 +2076,7 @@ export async function devolverLineasDeOrden(
       });
     } else if (ordenVacia) {
       // Se queda esperando el material corregido, con su N.º de BC intacto.
-      await new sql.Request(tx).input("id", sql.Int, idOrden).input("u", sql.NVarChar(100), usuario)
+      await pedirTx(tx).input("id", sql.Int, idOrden).input("u", sql.NVarChar(100), usuario)
         .query("UPDATE dbo.OrdenCompra SET fechaModificacion=getdate(), modificadoPor=@u WHERE idOrdenCompra=@id");
       await logMov(tx, {
         entidad: "orden", idEntidad: idOrden, documentoNo: ordenNo, tipoMovimiento: "editado",
@@ -2084,7 +2084,7 @@ export async function devolverLineasDeOrden(
         usuario, rol,
       });
     } else {
-      await new sql.Request(tx).input("id", sql.Int, idOrden).input("u", sql.NVarChar(100), usuario)
+      await pedirTx(tx).input("id", sql.Int, idOrden).input("u", sql.NVarChar(100), usuario)
         .query("UPDATE dbo.OrdenCompra SET fechaModificacion=getdate(), modificadoPor=@u WHERE idOrdenCompra=@id");
       await logMov(tx, {
         entidad: "orden", idEntidad: idOrden, documentoNo: ordenNo, tipoMovimiento: "editado",
@@ -2106,11 +2106,11 @@ export async function setOrdenEstado(id: number, estado: string, usuario: string
   // tiene recepciones registradas: quedaría descuadrada y allá tampoco se puede
   // des-lanzar. Se corta acá además de en la pantalla (pestaña vieja, llamada directa).
   if (estado === "abierto" && await ordenTieneRecepciones(id)) throw new Error(MSG_NO_REABRIR);
-  const prev = await pool.request().input("id", sql.Int, id).query("SELECT idEstado, ordenNo FROM dbo.OrdenCompra WHERE idOrdenCompra=@id");
+  const prev = await pedir(pool).input("id", sql.Int, id).query("SELECT idEstado, ordenNo FROM dbo.OrdenCompra WHERE idOrdenCompra=@id");
   const idEstado = await idDeEstado(estado);
   // Si BC devolvió el Nº del pedido, lo guardamos en bcNo (una vez creado en BC,
   // el reintento solo relanza y la recepción/factura ya lo encuentran).
-  const req = pool.request().input("id", sql.Int, id).input("e", sql.Int, idEstado).input("u", sql.NVarChar(100), usuario);
+  const req = pedir(pool).input("id", sql.Int, id).input("e", sql.Int, idEstado).input("u", sql.NVarChar(100), usuario);
   let setBc = "";
   if (bcNumber) { req.input("bcno", sql.NVarChar(20), bcNumber); setBc = ", bcNo=@bcno, syncedToBc=1"; }
   await req.query(`UPDATE dbo.OrdenCompra SET idEstado=@e, fechaModificacion=getdate(), modificadoPor=@u${setBc} WHERE idOrdenCompra=@id`);
@@ -2132,11 +2132,11 @@ export async function setOrdenBcNumber(
   id: number, bcNo: string, usuario: string, rol: Role, motivo?: string, anterior?: string,
 ) {
   const pool = await getPool();
-  const prev = await pool.request().input("id", sql.Int, id)
+  const prev = await pedir(pool).input("id", sql.Int, id)
     .query("SELECT ordenNo, bcNo FROM dbo.OrdenCompra WHERE idOrdenCompra=@id AND esEliminada=0");
   if (!prev.recordset.length) throw new Error("Orden no encontrada.");
   const viejo = String(anterior ?? prev.recordset[0].bcNo ?? "").trim();
-  await pool.request()
+  await pedir(pool)
     .input("id", sql.Int, id).input("bcno", sql.NVarChar(20), bcNo).input("u", sql.NVarChar(100), usuario)
     .query("UPDATE dbo.OrdenCompra SET bcNo=@bcno, syncedToBc=1, fechaModificacion=getdate(), modificadoPor=@u WHERE idOrdenCompra=@id");
   const tx = new sql.Transaction(pool); await tx.begin();
@@ -2161,12 +2161,12 @@ export async function aplicarIvaDeBcEnOrden(
   id: number, porCodigo: Record<string, number>, usuario: string, rol: Role,
 ): Promise<{ ordenNo: string; cambiadas: number; detalle: string[] }> {
   const pool = await getPool();
-  const head = await pool.request().input("id", sql.Int, id)
+  const head = await pedir(pool).input("id", sql.Int, id)
     .query("SELECT ordenNo FROM dbo.OrdenCompra WHERE idOrdenCompra=@id AND esEliminada=0");
   if (!head.recordset.length) throw new Error("Orden no encontrada.");
   const ordenNo = String(head.recordset[0].ordenNo ?? "");
 
-  const det = await pool.request().input("id", sql.Int, id).query(
+  const det = await pedir(pool).input("id", sql.Int, id).query(
     `SELECT idOrdenCompraDet, tipoLinea, itemNo, ${await ensureCargoCols() ? "chargeNo" : "NULL AS chargeNo"}, descripcion, vatPct
        FROM dbo.OrdenCompraDet WHERE idOrdenCompra=@id`);
 
@@ -2187,7 +2187,7 @@ export async function aplicarIvaDeBcEnOrden(
   const tx = new sql.Transaction(pool); await tx.begin();
   try {
     for (const c of cambios) {
-      await new sql.Request(tx).input("id", sql.Int, c.idLinea).input("p", sql.Decimal(9, 4), c.a)
+      await pedirTx(tx).input("id", sql.Int, c.idLinea).input("p", sql.Decimal(9, 4), c.a)
         .query("UPDATE dbo.OrdenCompraDet SET vatPct=@p WHERE idOrdenCompraDet=@id");
     }
     const detalle = cambios.map((c) => `${c.nombre}: ${c.de}% → ${c.a}%`);
@@ -2209,7 +2209,7 @@ export async function anotarIvaExoneradoEnBc(
   id: number, detalle: string, usuario: string, rol: Role,
 ): Promise<string> {
   const pool = await getPool();
-  const prev = await pool.request().input("id", sql.Int, id)
+  const prev = await pedir(pool).input("id", sql.Int, id)
     .query("SELECT ordenNo FROM dbo.OrdenCompra WHERE idOrdenCompra=@id AND esEliminada=0");
   if (!prev.recordset.length) throw new Error("Orden no encontrada.");
   const ordenNo = String(prev.recordset[0].ordenNo ?? "");
@@ -2247,7 +2247,7 @@ async function colBcFacturaExiste(): Promise<boolean> {
   if (hayColBcFactura !== null) return hayColBcFactura;
   try {
     const pool = await getPool();
-    const r = await pool.request().query("SELECT COL_LENGTH('dbo.RecepcionCompra','bcFacturaNo') AS len");
+    const r = await pedir(pool).query("SELECT COL_LENGTH('dbo.RecepcionCompra','bcFacturaNo') AS len");
     hayColBcFactura = r.recordset[0]?.len != null;
   } catch {
     hayColBcFactura = false;
@@ -2263,26 +2263,26 @@ export async function createRecepcion(input: NewRecepcionDB): Promise<number> {
   // la factura después vía setRecepcionFactura.
   const enRevision = !String(input.numeroFactura ?? "").trim();
   try {
-    const ord = await new sql.Request(tx).input("id", sql.Int, input.idOrdenCompra).query("SELECT ordenNo FROM dbo.OrdenCompra WHERE idOrdenCompra=@id");
+    const ord = await pedirTx(tx).input("id", sql.Int, input.idOrdenCompra).query("SELECT ordenNo FROM dbo.OrdenCompra WHERE idOrdenCompra=@id");
     const ordenNo = ord.recordset[0]?.ordenNo ?? "";
     // Misma factura dos veces en la misma orden = registro duplicado (doble envío o
     // error de dedo). Se corta acá: en contabilidad una factura repetida se paga dos
     // veces. En revisión (sin número) no aplica.
     if (!enRevision) {
-      const dup = await new sql.Request(tx)
+      const dup = await pedirTx(tx)
         .input("id", sql.Int, input.idOrdenCompra).input("f", sql.NVarChar(40), String(input.numeroFactura).trim())
         .query("SELECT COUNT(*) AS n FROM dbo.RecepcionCompra WHERE idOrdenCompra=@id AND esEliminada=0 AND LTRIM(RTRIM(numeroFactura))=@f");
       if ((dup.recordset[0]?.n ?? 0) > 0) {
         throw new Error(`La factura ${input.numeroFactura} ya está registrada en ${ordenNo}. Revisá "Recibidas" antes de volver a registrarla.`);
       }
     }
-    const max = await new sql.Request(tx).query("SELECT MAX(CAST(SUBSTRING(recepcionNo,5,20) AS INT)) AS m FROM dbo.RecepcionCompra WHERE recepcionNo LIKE 'REC-%'");
+    const max = await pedirTx(tx).query("SELECT MAX(CAST(SUBSTRING(recepcionNo,5,20) AS INT)) AS m FROM dbo.RecepcionCompra WHERE recepcionNo LIKE 'REC-%'");
     const numero = "REC-" + String((max.recordset[0].m ?? 0) + 1).padStart(6, "0");
     // El N.º de BC entra en el mismo INSERT, pero solo si la columna ya está: se
     // pregunta antes en vez de romper el registro por una migración pendiente.
     const bcNo = String(input.bcFacturaNo ?? "").trim().slice(0, 50);
     const conBc = !!bcNo && (await colBcFacturaExiste());
-    const rq = new sql.Request(tx)
+    const rq = pedirTx(tx)
       .input("idOrdenCompra", sql.Int, input.idOrdenCompra)
       .input("recepcionNo", sql.NVarChar(50), numero)
       .input("numeroFactura", sql.NVarChar(40), input.numeroFactura)
@@ -2304,7 +2304,7 @@ export async function createRecepcion(input: NewRecepcionDB): Promise<number> {
     // Se valida DENTRO de la transacción y se aborta con un mensaje claro.
     const idsLinea = [...new Set(input.lineas.map((l) => l.idOrdenCompraDet))];
     if (idsLinea.length) {
-      const rq = new sql.Request(tx);
+      const rq = pedirTx(tx);
       const params = idsLinea.map((idl, i) => { rq.input(`l${i}`, sql.Int, idl); return `@l${i}`; });
       const act = await rq.query(
         `SELECT idOrdenCompraDet, descripcion, quantity, ISNULL(quantityRecibida,0) AS recibida
@@ -2323,7 +2323,7 @@ export async function createRecepcion(input: NewRecepcionDB): Promise<number> {
 
     let line = 10000;
     for (const l of input.lineas) {
-      await new sql.Request(tx)
+      await pedirTx(tx)
         .input("idRecepcionCompra", sql.Int, idRec)
         .input("idOrdenCompraDet", sql.Int, l.idOrdenCompraDet)
         .input("lineNum", sql.Int, line)
@@ -2333,18 +2333,18 @@ export async function createRecepcion(input: NewRecepcionDB): Promise<number> {
         .query(`INSERT dbo.RecepcionCompraDet (idRecepcionCompra,idOrdenCompraDet,lineNum,quantityRecibida,precioFactura,fechaCreacion,creadoPor)
                 VALUES (@idRecepcionCompra,@idOrdenCompraDet,@lineNum,@quantityRecibida,@precioFactura,getdate(),@creadoPor)`);
       // acumular en la orden (en revisión: solo recibida, la facturada se sube al registrar la factura)
-      await new sql.Request(tx).input("id", sql.Int, l.idOrdenCompraDet).input("q", sql.Decimal(18, 4), l.cantidadRecibida)
+      await pedirTx(tx).input("id", sql.Int, l.idOrdenCompraDet).input("q", sql.Decimal(18, 4), l.cantidadRecibida)
         .query(`UPDATE dbo.OrdenCompraDet SET quantityRecibida=ISNULL(quantityRecibida,0)+@q${enRevision ? "" : ", quantityFacturada=ISNULL(quantityFacturada,0)+@q"} WHERE idOrdenCompraDet=@id`);
       line += 10000;
     }
     // ¿orden completa?
-    const saldo = await new sql.Request(tx).input("id", sql.Int, input.idOrdenCompra)
+    const saldo = await pedirTx(tx).input("id", sql.Int, input.idOrdenCompra)
       .query("SELECT SUM(quantity - ISNULL(quantityRecibida,0)) AS pend FROM dbo.OrdenCompraDet WHERE idOrdenCompra=@id AND ISNULL(tipoLinea,'articulo') <> 'cargo'");
     // En revisión NO cierra la orden: queda pendiente de factura hasta que Kattya la registre.
     const completa = !enRevision && Number(saldo.recordset[0].pend ?? 0) <= 0;
     if (completa) {
       const idComp = await idDeEstado("completado");
-      await new sql.Request(tx).input("id", sql.Int, input.idOrdenCompra).input("e", sql.Int, idComp)
+      await pedirTx(tx).input("id", sql.Int, input.idOrdenCompra).input("e", sql.Int, idComp)
         .query("UPDATE dbo.OrdenCompra SET idEstado=@e WHERE idOrdenCompra=@id");
     }
     const nota = String(input.nota ?? "").trim();
@@ -2368,7 +2368,7 @@ export async function setRecepcionFactura(idRec: number, numeroFactura: string, 
   const pool = await getPool();
   const tx = new sql.Transaction(pool); await tx.begin();
   try {
-    const rec = await new sql.Request(tx).input("id", sql.Int, idRec)
+    const rec = await pedirTx(tx).input("id", sql.Int, idRec)
       .query("SELECT idOrdenCompra, numeroFactura FROM dbo.RecepcionCompra WHERE idRecepcionCompra=@id AND esEliminada=0");
     const row = rec.recordset[0];
     if (!row) throw new Error(`La recepción ${idRec} no existe.`);
@@ -2382,25 +2382,25 @@ export async function setRecepcionFactura(idRec: number, numeroFactura: string, 
     }
     const idOrden = row.idOrdenCompra as number;
 
-    await new sql.Request(tx).input("id", sql.Int, idRec).input("f", sql.NVarChar(40), num)
+    await pedirTx(tx).input("id", sql.Int, idRec).input("f", sql.NVarChar(40), num)
       .query("UPDATE dbo.RecepcionCompra SET numeroFactura=@f, fechaFactura=ISNULL(fechaFactura,getdate()) WHERE idRecepcionCompra=@id");
 
     // subir lo FACTURADO de cada línea de la orden por lo que se recibió en esta recepción
-    const dets = await new sql.Request(tx).input("id", sql.Int, idRec)
+    const dets = await pedirTx(tx).input("id", sql.Int, idRec)
       .query("SELECT idOrdenCompraDet, quantityRecibida FROM dbo.RecepcionCompraDet WHERE idRecepcionCompra=@id");
     for (const d of dets.recordset) {
-      await new sql.Request(tx).input("id", sql.Int, d.idOrdenCompraDet).input("q", sql.Decimal(18, 4), d.quantityRecibida)
+      await pedirTx(tx).input("id", sql.Int, d.idOrdenCompraDet).input("q", sql.Decimal(18, 4), d.quantityRecibida)
         .query("UPDATE dbo.OrdenCompraDet SET quantityFacturada=ISNULL(quantityFacturada,0)+@q WHERE idOrdenCompraDet=@id");
     }
 
-    const ord = await new sql.Request(tx).input("id", sql.Int, idOrden).query("SELECT ordenNo FROM dbo.OrdenCompra WHERE idOrdenCompra=@id");
+    const ord = await pedirTx(tx).input("id", sql.Int, idOrden).query("SELECT ordenNo FROM dbo.OrdenCompra WHERE idOrdenCompra=@id");
     const ordenNo = ord.recordset[0]?.ordenNo ?? "";
-    const saldo = await new sql.Request(tx).input("id", sql.Int, idOrden)
+    const saldo = await pedirTx(tx).input("id", sql.Int, idOrden)
       .query("SELECT SUM(quantity - ISNULL(quantityRecibida,0)) AS pend FROM dbo.OrdenCompraDet WHERE idOrdenCompra=@id AND ISNULL(tipoLinea,'articulo') <> 'cargo'");
     const completa = Number(saldo.recordset[0].pend ?? 0) <= 0;
     if (completa) {
       const idComp = await idDeEstado("completado");
-      await new sql.Request(tx).input("id", sql.Int, idOrden).input("e", sql.Int, idComp)
+      await pedirTx(tx).input("id", sql.Int, idOrden).input("e", sql.Int, idComp)
         .query("UPDATE dbo.OrdenCompra SET idEstado=@e WHERE idOrdenCompra=@id");
     }
     await logMov(tx, { entidad: "recepcion", idEntidad: idRec, documentoNo: num, tipoMovimiento: "creado", usuario, rol, detalle: `Factura ${num} registrada (venía de revisión)` });
@@ -2420,7 +2420,7 @@ let hayTablaFoto: boolean | null = null;
 async function tablaFotoExiste(): Promise<boolean> {
   if (hayTablaFoto !== null) return hayTablaFoto;
   const pool = await getPool();
-  const r = await pool.request().query("SELECT OBJECT_ID('dbo.RecepcionCompraFoto') AS id");
+  const r = await pedir(pool).query("SELECT OBJECT_ID('dbo.RecepcionCompraFoto') AS id");
   hayTablaFoto = r.recordset[0]?.id != null;
   return hayTablaFoto;
 }
@@ -2439,7 +2439,7 @@ export async function addRecepcionFotos(idRec: number, fotos: NuevaFotoDB[], usu
   for (const f of fotos) {
     const buf = Buffer.from(f.base64, "base64");
     if (!buf.length) continue;
-    await pool.request()
+    await pedir(pool)
       .input("idRec", sql.Int, idRec)
       .input("mime", sql.NVarChar(40), f.mime || "image/jpeg")
       .input("imagen", sql.VarBinary(sql.MAX), buf)
@@ -2459,7 +2459,7 @@ export async function addRecepcionFotos(idRec: number, fotos: NuevaFotoDB[], usu
 export async function getRecepcionFoto(idRec: number, idFoto: number): Promise<{ mime: string; imagen: Buffer } | null> {
   if (!(await tablaFotoExiste())) return null;
   const pool = await getPool();
-  const r = await pool.request().input("id", sql.Int, idFoto).input("rec", sql.Int, idRec)
+  const r = await pedir(pool).input("id", sql.Int, idFoto).input("rec", sql.Int, idRec)
     .query(`SELECT mime, imagen FROM dbo.RecepcionCompraFoto
              WHERE idRecepcionCompraFoto=@id AND idRecepcionCompra=@rec AND esEliminada=0`);
   const row = r.recordset[0];
@@ -2471,7 +2471,7 @@ async function fotosPorRecepcion(rango?: RangoIds | null): Promise<Map<number, R
   const mapa = new Map<number, RecepcionFoto[]>();
   if (!(await tablaFotoExiste())) return mapa;
   const pool = await getPool();
-  const req = pool.request();
+  const req = pedir(pool);
   const filtro = filtroRango(req, rango, "idRecepcionCompra");
   const r = await req.query(
     `SELECT idRecepcionCompraFoto, idRecepcionCompra, mime, tamano, ancho, alto
@@ -2492,12 +2492,12 @@ async function fotosPorRecepcion(rango?: RangoIds | null): Promise<Map<number, R
 export async function listRecepciones(lote?: Lote): Promise<Recepcion[]> {
   const pool = await getPool();
   const cl = clausulasLote(lote, "idRecepcionCompra");
-  const h = await cl.atar(pool.request()).query(
+  const h = await cl.atar(pedir(pool)).query(
     `SELECT ${cl.top} * FROM dbo.RecepcionCompra WHERE esEliminada = 0${cl.filtro} ORDER BY idRecepcionCompra DESC`);
   const rango = rangoDeIds(h.recordset, "idRecepcionCompra");
   if (!rango) return [];
   // Ídem: solo las líneas de recepciones vivas (ver listPedidos).
-  const dReq = pool.request();
+  const dReq = pedir(pool);
   const dRango = filtroRango(dReq, rango, "det.idRecepcionCompra");
   const d = await dReq.query(`SELECT * FROM dbo.RecepcionCompraDet det
       WHERE EXISTS (SELECT 1 FROM dbo.RecepcionCompra r
@@ -2540,7 +2540,7 @@ interface MovIn {
 async function logMov(tx: sql.Transaction, m: MovIn) {
   const idAnt = m.estadoAnterior ? await idDeEstado(m.estadoAnterior) : null;
   const idNue = m.estadoNuevo ? await idDeEstado(m.estadoNuevo) : null;
-  await new sql.Request(tx)
+  await pedirTx(tx)
     .input("entidad", sql.NVarChar(20), m.entidad)
     .input("idEntidad", sql.Int, m.idEntidad)
     .input("documentoNo", sql.NVarChar(50), m.documentoNo)
@@ -2564,7 +2564,7 @@ export async function marcarEnvioProveedor(
 ): Promise<{ enviada: boolean }> {
   await ensureEstados();
   const pool = await getPool();
-  const head = await pool.request().input("id", sql.Int, id)
+  const head = await pedir(pool).input("id", sql.Int, id)
     .query("SELECT ordenNo, idEstado FROM dbo.OrdenCompra WHERE idOrdenCompra=@id AND esEliminada=0");
   if (!head.recordset.length) throw new Error("Orden no encontrada.");
   const estado = codigoDeId(head.recordset[0].idEstado);
@@ -2592,7 +2592,7 @@ export async function marcarEnvioProveedor(
 export async function listMovimientos(entidad: string, idEntidad: number) {
   await ensureEstados();
   const pool = await getPool();
-  const r = await pool.request().input("e", sql.NVarChar(20), entidad).input("id", sql.Int, idEntidad)
+  const r = await pedir(pool).input("e", sql.NVarChar(20), entidad).input("id", sql.Int, idEntidad)
     .query("SELECT * FROM dbo.Movimiento WHERE entidad=@e AND idEntidad=@id ORDER BY fecha DESC, idMovimiento DESC");
   return r.recordset.map((m) => ({
     id: String(m.idMovimiento), entidad: m.entidad, idEntidad: String(m.idEntidad), documentoNo: m.documentoNo ?? "",
@@ -2621,7 +2621,7 @@ function parseLineas(json: string): PlantillaLineaDB[] {
 // Permite que el código funcione con o sin la columna, sin romper el listado.
 async function plantillaTieneTipo(pool: sql.ConnectionPool): Promise<boolean> {
   try {
-    const r = await pool.request().query("SELECT COL_LENGTH('dbo.PlantillaSolicitud','tipo') AS c");
+    const r = await pedir(pool).query("SELECT COL_LENGTH('dbo.PlantillaSolicitud','tipo') AS c");
     return r.recordset[0]?.c != null;
   } catch { return false; }
 }
@@ -2633,7 +2633,7 @@ export async function listPlantillas(): Promise<Plantilla[]> {
   const pool = await getPool();
   const hasTipo = await plantillaTieneTipo(pool);
   const cols = `idPlantillaSolicitud, nombre, creadoPor, idClasificacion, lineasJson, fechaCreacion${hasTipo ? ", tipo" : ""}`;
-  const r = await pool.request().query(
+  const r = await pedir(pool).query(
     `SELECT ${cols} FROM dbo.PlantillaSolicitud WHERE esEliminada = 0 ORDER BY nombre`
   );
   return r.recordset.map((row) => {
@@ -2657,13 +2657,13 @@ export async function createPlantilla(input: { nombre: string; creadoPor: string
   const idClas = input.idClasificacion ?? null;
   const tipo: TipoPlantilla = input.tipo === "bodega" ? "bodega" : "general";
   // upsert por (nombre, creadoPor): si el mismo usuario reusa el nombre, se actualiza.
-  const ex = await pool.request()
+  const ex = await pedir(pool)
     .input("nombre", sql.NVarChar(100), input.nombre)
     .input("creadoPor", sql.NVarChar(100), input.creadoPor)
     .query("SELECT idPlantillaSolicitud FROM dbo.PlantillaSolicitud WHERE nombre=@nombre AND creadoPor=@creadoPor AND esEliminada=0");
   if (ex.recordset.length) {
     const id = ex.recordset[0].idPlantillaSolicitud as number;
-    const req = pool.request()
+    const req = pedir(pool)
       .input("id", sql.Int, id)
       .input("idClasificacion", sql.Int, idClas)
       .input("lineasJson", sql.NVarChar(sql.MAX), lineasJson)
@@ -2672,7 +2672,7 @@ export async function createPlantilla(input: { nombre: string; creadoPor: string
     await req.query(`UPDATE dbo.PlantillaSolicitud SET idClasificacion=@idClasificacion, lineasJson=@lineasJson${hasTipo ? ", tipo=@tipo" : ""}, fechaModificacion=SYSUTCDATETIME(), modificadoPor=@modificadoPor WHERE idPlantillaSolicitud=@id`);
     return id;
   }
-  const ins = pool.request()
+  const ins = pedir(pool)
     .input("nombre", sql.NVarChar(100), input.nombre)
     .input("creadoPor", sql.NVarChar(100), input.creadoPor)
     .input("idClasificacion", sql.Int, idClas)
@@ -2686,7 +2686,7 @@ export async function updatePlantilla(id: number, input: { nombre: string; tipo?
   const pool = await getPool();
   const hasTipo = await plantillaTieneTipo(pool);
   const tipo: TipoPlantilla = input.tipo === "bodega" ? "bodega" : "general";
-  const req = pool.request()
+  const req = pedir(pool)
     .input("id", sql.Int, id)
     .input("nombre", sql.NVarChar(100), input.nombre)
     .input("idClasificacion", sql.Int, input.idClasificacion ?? null)
@@ -2698,7 +2698,7 @@ export async function updatePlantilla(id: number, input: { nombre: string; tipo?
 
 export async function deletePlantilla(id: number, usuario: string): Promise<void> {
   const pool = await getPool();
-  await pool.request()
+  await pedir(pool)
     .input("id", sql.Int, id)
     .input("modificadoPor", sql.NVarChar(100), usuario || null)
     .query("UPDATE dbo.PlantillaSolicitud SET esEliminada=1, fechaModificacion=SYSUTCDATETIME(), modificadoPor=@modificadoPor WHERE idPlantillaSolicitud=@id");
@@ -2719,9 +2719,9 @@ export async function listWbs(): Promise<{ etapas: WbsEtapa[]; partidas: WbsPart
   // esActivo) y NO existe dbo.sub_partidas. Aliaseamos las columnas de partida y las
   // clasificaciones cuelgan solo de partida (sin sub-partida).
   const [e, p, c] = await Promise.all([
-    pool.request().query("SELECT id, codigo, nombre FROM dbo.etapa WHERE activo = 1 ORDER BY codigo"),
-    pool.request().query("SELECT idPartida AS id, codigo, nombre, idEtapa AS etapa_id FROM dbo.partida WHERE esActivo = 1 ORDER BY codigo"),
-    pool.request().query("SELECT id, nombre, partida_id, sub_partida_id FROM dbo.clasificacion WHERE activo = 1 ORDER BY nombre"),
+    pedir(pool).query("SELECT id, codigo, nombre FROM dbo.etapa WHERE activo = 1 ORDER BY codigo"),
+    pedir(pool).query("SELECT idPartida AS id, codigo, nombre, idEtapa AS etapa_id FROM dbo.partida WHERE esActivo = 1 ORDER BY codigo"),
+    pedir(pool).query("SELECT id, nombre, partida_id, sub_partida_id FROM dbo.clasificacion WHERE activo = 1 ORDER BY nombre"),
   ]);
   return {
     etapas: e.recordset.map((r) => ({ id: r.id, codigo: String(r.codigo ?? ""), nombre: r.nombre ?? "" })),
@@ -2747,7 +2747,7 @@ export async function etapasDeUsuario(username: string): Promise<number[]> {
   let etapas: number[] = [];
   try {
     const pool = await getAuthPool();
-    const r = await pool.request().input("u", sql.NVarChar(256), u).query(
+    const r = await pedir(pool).input("u", sql.NVarChar(256), u).query(
       "SELECT ue.idEtapa FROM dbo.UsuarioEtapa ue " +
       "JOIN dbo.Usuario us ON us.idUsuario = ue.idUsuario " +
       "WHERE us.username = @u"
@@ -2772,7 +2772,7 @@ export async function etapasDeUsuario(username: string): Promise<number[]> {
   // entre las dos se rompería el día que se vuelvan a separar.
   try {
     const pool = await getPool();
-    const req = pool.request();
+    const req = pedir(pool);
     const params = etapas.map((e, i) => { req.input(`e${i}`, sql.Int, e); return `@e${i}`; });
     const r = await req.query(
       `SELECT DISTINCT pa.idEtapa FROM dbo.partida pa
@@ -2809,7 +2809,7 @@ export async function obrasDeUsuario(username: string): Promise<{ obras: ObraDeU
   let patrones: string[] = [];
   try {
     const pool = await getAuthPool();
-    const r = await pool.request().input("u", sql.NVarChar(256), u).query(
+    const r = await pedir(pool).input("u", sql.NVarChar(256), u).query(
       "SELECT uo.patron FROM dbo.UsuarioObra uo " +
       "JOIN dbo.Usuario us ON us.idUsuario = uo.idUsuario " +
       "WHERE us.username = @u"
@@ -2824,7 +2824,7 @@ export async function obrasDeUsuario(username: string): Promise<{ obras: ObraDeU
   if (!patrones.length) return { obras: [], patrones: [] };
   try {
     const pool = await getPool();
-    const req = pool.request();
+    const req = pedir(pool);
     const cond = patrones.map((pat, i) => { req.input(`p${i}`, sql.NVarChar(50), pat); return `numeroObra LIKE @p${i}`; });
     const r = await req.query(
       `SELECT idObra, numeroObra, nombreMostrado FROM dbo.Obra
@@ -2847,7 +2847,7 @@ export async function createClasificacion(input: { nombre: string; partidaId?: n
   const subPartidaId = input.subPartidaId ?? null;
   if (!nombre) throw new Error("Falta el nombre");
   if ((partidaId == null) === (subPartidaId == null)) throw new Error("Indicá una partida O una sub-partida (una sola)");
-  const ins = await pool.request()
+  const ins = await pedir(pool)
     .input("nombre", sql.NVarChar(160), nombre)
     .input("partidaId", sql.Int, partidaId)
     .input("subPartidaId", sql.Int, subPartidaId)
@@ -2864,7 +2864,7 @@ export async function updateClasificacion(id: number, input: { nombre: string; p
   const subPartidaId = input.subPartidaId ?? null;
   if (!nombre) throw new Error("Falta el nombre");
   if ((partidaId == null) === (subPartidaId == null)) throw new Error("Indicá una partida O una sub-partida (una sola)");
-  await pool.request()
+  await pedir(pool)
     .input("id", sql.Int, id)
     .input("nombre", sql.NVarChar(160), nombre)
     .input("partidaId", sql.Int, partidaId)
@@ -2876,14 +2876,14 @@ export async function updateClasificacion(id: number, input: { nombre: string; p
 // como <codigoPartida>.<siguiente>.
 export async function createSubPartida(input: { partidaId: number; nombre: string }): Promise<number> {
   const pool = await getPool();
-  const pr = await pool.request().input("pid", sql.Int, input.partidaId).query("SELECT codigo FROM dbo.partida WHERE id=@pid");
+  const pr = await pedir(pool).input("pid", sql.Int, input.partidaId).query("SELECT codigo FROM dbo.partida WHERE id=@pid");
   if (!pr.recordset.length) throw new Error("Partida no encontrada");
   const pcod = String(pr.recordset[0].codigo);
-  const mx = await pool.request().input("pid", sql.Int, input.partidaId)
+  const mx = await pedir(pool).input("pid", sql.Int, input.partidaId)
     .query("SELECT MAX(CAST(RIGHT(codigo, CHARINDEX('.', REVERSE(codigo)) - 1) AS INT)) AS m FROM dbo.sub_partidas WHERE partida_id=@pid AND codigo LIKE '%.%.%'");
   const next = (mx.recordset[0].m ?? 0) + 1;
   const codigo = `${pcod}.${next}`;
-  const ins = await pool.request()
+  const ins = await pedir(pool)
     .input("codigo", sql.VarChar(20), codigo)
     .input("nombre", sql.NVarChar(200), input.nombre)
     .input("pid", sql.Int, input.partidaId)
@@ -2894,7 +2894,7 @@ export async function createSubPartida(input: { partidaId: number; nombre: strin
 export type ObraLite = { idObra: number; numeroObra: string; nombreMostrado: string; areaCosteo: string; proyecto: string };
 export async function listObras(): Promise<ObraLite[]> {
   const pool = await getPool();
-  const r = await pool.request().query("SELECT idObra, numeroObra, nombreMostrado, areaCosteo, proyectoPadre FROM dbo.Obra ORDER BY numeroObra");
+  const r = await pedir(pool).query("SELECT idObra, numeroObra, nombreMostrado, areaCosteo, proyectoPadre FROM dbo.Obra ORDER BY numeroObra");
   return r.recordset.map((x) => {
     const numero = x.numeroObra ?? "";
     // Proyecto = proyectoPadre si viene, si no el prefijo del código (VN, VC, VB…).
@@ -2906,7 +2906,7 @@ export async function listObras(): Promise<ObraLite[]> {
 export type MatrizCelda = { idObra: number; idClasificacion: number; estado: string };
 export async function matrizCeldas(): Promise<MatrizCelda[]> {
   const pool = await getPool();
-  const r = await pool.request().query("SELECT idObra, idClasificacion, estado FROM dbo.vw_MatrizObraClasificacion");
+  const r = await pedir(pool).query("SELECT idObra, idClasificacion, estado FROM dbo.vw_MatrizObraClasificacion");
   return r.recordset.map((x) => ({ idObra: x.idObra, idClasificacion: x.idClasificacion, estado: x.estado ?? "" }));
 }
 
@@ -2918,7 +2918,7 @@ export type TablaVista = { id: number; nombre: string; config: any; esPredetermi
 
 export async function listVistas(usuario: string, tablaKey: string): Promise<TablaVista[]> {
   const pool = await getPool();
-  const r = await pool.request()
+  const r = await pedir(pool)
     .input("usuario", sql.NVarChar(100), usuario)
     .input("tablaKey", sql.NVarChar(60), tablaKey)
     .query("SELECT id, nombre, configJson, esPredeterminada FROM dbo.TablaVista WHERE esEliminada=0 AND usuario=@usuario AND tablaKey=@tablaKey ORDER BY nombre");
@@ -2934,19 +2934,19 @@ export async function saveVista(input: { usuario: string; tablaKey: string; nomb
   const configJson = JSON.stringify(input.config ?? {});
   const pred = input.esPredeterminada ? 1 : 0;
   if (pred) {
-    await pool.request().input("usuario", sql.NVarChar(100), input.usuario).input("tablaKey", sql.NVarChar(60), input.tablaKey)
+    await pedir(pool).input("usuario", sql.NVarChar(100), input.usuario).input("tablaKey", sql.NVarChar(60), input.tablaKey)
       .query("UPDATE dbo.TablaVista SET esPredeterminada=0 WHERE usuario=@usuario AND tablaKey=@tablaKey");
   }
-  const ex = await pool.request()
+  const ex = await pedir(pool)
     .input("usuario", sql.NVarChar(100), input.usuario).input("tablaKey", sql.NVarChar(60), input.tablaKey).input("nombre", sql.NVarChar(100), input.nombre)
     .query("SELECT id FROM dbo.TablaVista WHERE usuario=@usuario AND tablaKey=@tablaKey AND nombre=@nombre AND esEliminada=0");
   if (ex.recordset.length) {
     const id = ex.recordset[0].id as number;
-    await pool.request().input("id", sql.Int, id).input("configJson", sql.NVarChar(sql.MAX), configJson).input("pred", sql.Bit, pred)
+    await pedir(pool).input("id", sql.Int, id).input("configJson", sql.NVarChar(sql.MAX), configJson).input("pred", sql.Bit, pred)
       .query("UPDATE dbo.TablaVista SET configJson=@configJson, esPredeterminada=@pred, fechaModificacion=SYSUTCDATETIME() WHERE id=@id");
     return id;
   }
-  const ins = await pool.request()
+  const ins = await pedir(pool)
     .input("usuario", sql.NVarChar(100), input.usuario).input("tablaKey", sql.NVarChar(60), input.tablaKey).input("nombre", sql.NVarChar(100), input.nombre)
     .input("configJson", sql.NVarChar(sql.MAX), configJson).input("pred", sql.Bit, pred)
     .query("INSERT dbo.TablaVista (usuario, tablaKey, nombre, configJson, esPredeterminada, esEliminada, fechaCreacion) OUTPUT INSERTED.id VALUES (@usuario,@tablaKey,@nombre,@configJson,@pred,0,SYSUTCDATETIME())");
@@ -2955,7 +2955,7 @@ export async function saveVista(input: { usuario: string; tablaKey: string; nomb
 
 export async function deleteVista(id: number, usuario: string): Promise<void> {
   const pool = await getPool();
-  await pool.request().input("id", sql.Int, id).input("usuario", sql.NVarChar(100), usuario)
+  await pedir(pool).input("id", sql.Int, id).input("usuario", sql.NVarChar(100), usuario)
     .query("UPDATE dbo.TablaVista SET esEliminada=1, fechaModificacion=SYSUTCDATETIME() WHERE id=@id AND usuario=@usuario");
 }
 
@@ -2977,7 +2977,7 @@ let notasCreditoTableReady = false;
 async function ensureNotasCreditoTable() {
   if (notasCreditoTableReady) return;
   const pool = await getPool();
-  await pool.request().query(`
+  await pedir(pool).query(`
     IF NOT EXISTS (SELECT 1 FROM sys.tables WHERE name = 'NotaCreditoDet' AND schema_id = SCHEMA_ID('dbo'))
     BEGIN
       CREATE TABLE dbo.NotaCreditoDet (
@@ -3006,7 +3006,7 @@ export async function createNotasCredito(input: NewNotaCreditoDB): Promise<numbe
   let n = 0;
   for (const l of input.lineas) {
     if (!l.descripcion || !(l.cantidad > 0)) continue;
-    await pool.request()
+    await pedir(pool)
       .input("idOrdenCompra", sql.Int, input.idOrdenCompra)
       .input("idOrdenCompraDet", sql.Int, l.ordenLineaId ? Number(l.ordenLineaId) : null)
       .input("articuloNo", sql.NVarChar(40), l.articuloNo ?? null)
@@ -3030,13 +3030,13 @@ export async function createNotasCredito(input: NewNotaCreditoDB): Promise<numbe
 export async function setNotaCreditoEstado(id: number, estado: "pendiente" | "resuelta", usuario: string, rol: Role): Promise<void> {
   await ensureNotasCreditoTable();
   const pool = await getPool();
-  const prev = await pool.request().input("id", sql.Int, id).query(
+  const prev = await pedir(pool).input("id", sql.Int, id).query(
     `SELECT nc.idOrdenCompra, nc.descripcion, o.ordenNo
        FROM dbo.NotaCreditoDet nc
        LEFT JOIN dbo.OrdenCompra o ON o.idOrdenCompra = nc.idOrdenCompra
       WHERE nc.idNotaCreditoDet=@id`);
   if (!prev.recordset.length) throw new Error(`Nota de crédito ${id} no encontrada`);
-  await pool.request().input("id", sql.Int, id).input("e", sql.NVarChar(20), estado)
+  await pedir(pool).input("id", sql.Int, id).input("e", sql.NVarChar(20), estado)
     .query("UPDATE dbo.NotaCreditoDet SET estado=@e WHERE idNotaCreditoDet=@id");
   const row = prev.recordset[0];
   const tx = new sql.Transaction(pool); await tx.begin();
@@ -3053,7 +3053,7 @@ export async function setNotaCreditoEstado(id: number, estado: "pendiente" | "re
 export async function listNotasCredito(): Promise<NotaCreditoLinea[]> {
   await ensureNotasCreditoTable();
   const pool = await getPool();
-  const r = await pool.request().query(`
+  const r = await pedir(pool).query(`
     SELECT nc.idNotaCreditoDet, nc.idOrdenCompra, nc.idOrdenCompraDet, nc.articuloNo, nc.descripcion,
            nc.motivo, nc.cantidad, nc.precioUnitario, nc.nota, nc.estado, nc.fechaCreacion, o.ordenNo, o.bcNo
     FROM dbo.NotaCreditoDet nc

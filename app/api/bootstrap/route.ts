@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createHash } from "node:crypto";
 import { contarVivos, listNotasCredito, listOrdenes, listPedidos, listRecepciones } from "@/lib/repo";
 import { cursorDe, siguienteCursor, tamañoDeLote } from "@/lib/lotes";
+import { cacheBootstrap, type FotoBootstrap } from "@/lib/bootstrap-cache";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -95,43 +96,64 @@ export async function GET(req: Request) {
     const n = tamañoDeLote(new URL(req.url).searchParams.get("n"));
     if (n != null) return await responderLote(req, n, marcas, t0);
 
-    const [pedidos, ordenes, recepciones, notas] = await Promise.all([
-      medir(marcas, "pedidos", listPedidos),
-      medir(marcas, "ordenes", listOrdenes),
-      medir(marcas, "recepciones", listRecepciones),
-      // Las notas de crédito viajan ACÁ (antes eran un segundo request cada 45 s).
-      // Si la tabla no existe todavía, se devuelven vacías sin tumbar la carga.
-      medir(marcas, "notas", () => listNotasCredito().catch(() => [])),
-    ]);
-
-    // ETag = huella de EXACTAMENTE lo que se iba a enviar. Con la app abierta todo
-    // el día el refresco corre cada 45 s y casi siempre trae lo mismo: sin esto,
-    // cada vuelta bajaba todas las órdenes con sus líneas por datos móviles y el
-    // celular las volvía a parsear. Con el 304 el cuerpo no viaja.
+    // LA MISMA FOTO PARA LOS QUE LLEGAN JUNTOS.
     //
-    // Se calcula sobre el payload real (no sobre conteos ni fechas de la base) a
-    // propósito: cualquier atajo se arriesga a NO detectar un cambio y dejar la
-    // pantalla vieja creyendo que está al día, que es justo lo que hay que evitar.
-    const body = JSON.stringify({ pedidos, ordenes, recepciones, notas });
-    const etag = `W/"${createHash("sha1").update(body).digest("base64url")}"`;
-    marcas.total = Date.now() - t0;
+    // Esta carga la pide cada pestaña abierta cada 45 s, y son las tres consultas
+    // que traen toda la historia: medido el 5 de octubre de 2026, 793 corridas en
+    // cinco horas contra una base con techo de vCores. Dos pestañas que caían a la
+    // vez la corrían DOS veces completa.
+    //
+    // Ahora la primera que llega hace el trabajo y las demás se cuelgan de ESA
+    // (nunca de una más vieja), y lo hecho se reusa unos segundos. Lo que se guarda
+    // es la respuesta ya armada —cuerpo y ETag— porque volver a serializar 1,2 MB y
+    // sacarle el sha1 es la otra mitad del costo.
+    //
+    // Y cualquier ESCRITURA la bota al instante (ver lib/db.ts): quien acaba de
+    // guardar algo no puede pedir la lista y recibirla sin lo suyo.
+    const { valor: foto, fuente, edadMs } = await cacheBootstrap().obtener(async (): Promise<FotoBootstrap> => {
+      const [pedidos, ordenes, recepciones, notas] = await Promise.all([
+        medir(marcas, "pedidos", listPedidos),
+        medir(marcas, "ordenes", listOrdenes),
+        medir(marcas, "recepciones", listRecepciones),
+        // Las notas de crédito viajan ACÁ (antes eran un segundo request cada 45 s).
+        // Si la tabla no existe todavía, se devuelven vacías sin tumbar la carga.
+        medir(marcas, "notas", () => listNotasCredito().catch(() => [])),
+      ]);
 
-    const kb = Math.round(Buffer.byteLength(body) / 1024);
-    // Las LÍNEAS, no solo los encabezados: el peso del payload se va casi todo ahí y
-    // ninguna de las tres consultas tiene techo —traen toda la historia—, así que este
-    // número es el que dice cuándo hay que empezar a acotar por fecha. Se cuentan (O(n)
-    // y barato); medir los bytes de cada bloque obligaría a serializarlo aparte, que es
-    // justo el trabajo que acá se está tratando de no hacer de más.
-    const nLineas = (xs: Array<{ lineas?: unknown[] }>) => xs.reduce((t, x) => t + (x.lineas?.length ?? 0), 0);
-    console.info(`[bootstrap] ${marcas.total} ms · ${kb} kB · ${pedidos.length} solicitudes (${nLineas(pedidos)} líneas), ${ordenes.length} órdenes (${nLineas(ordenes)} líneas), ${recepciones.length} recepciones (${nLineas(recepciones)} líneas), ${notas.length} notas · pedidos ${marcas.pedidos} ms, ordenes ${marcas.ordenes} ms, recepciones ${marcas.recepciones} ms, notas ${marcas.notas} ms`);
+      // ETag = huella de EXACTAMENTE lo que se iba a enviar. Con la app abierta todo
+      // el día el refresco corre cada 45 s y casi siempre trae lo mismo: sin esto,
+      // cada vuelta bajaba todas las órdenes con sus líneas por datos móviles y el
+      // celular las volvía a parsear. Con el 304 el cuerpo no viaja.
+      //
+      // Se calcula sobre el payload real (no sobre conteos ni fechas de la base) a
+      // propósito: cualquier atajo se arriesga a NO detectar un cambio y dejar la
+      // pantalla vieja creyendo que está al día, que es justo lo que hay que evitar.
+      const body = JSON.stringify({ pedidos, ordenes, recepciones, notas });
+      const etag = `W/"${createHash("sha1").update(body).digest("base64url")}"`;
+      const kb = Math.round(Buffer.byteLength(body) / 1024);
+      // Las LÍNEAS, no solo los encabezados: el peso del payload se va casi todo ahí y
+      // ninguna de las tres consultas tiene techo —traen toda la historia—, así que este
+      // número es el que dice cuándo hay que empezar a acotar por fecha. Se cuentan (O(n)
+      // y barato); medir los bytes de cada bloque obligaría a serializarlo aparte, que es
+      // justo el trabajo que acá se está tratando de no hacer de más.
+      const nLineas = (xs: Array<{ lineas?: unknown[] }>) => xs.reduce((t, x) => t + (x.lineas?.length ?? 0), 0);
+      const resumen = `${kb} kB · ${pedidos.length} solicitudes (${nLineas(pedidos)} líneas), ${ordenes.length} órdenes (${nLineas(ordenes)} líneas), ${recepciones.length} recepciones (${nLineas(recepciones)} líneas), ${notas.length} notas · pedidos ${marcas.pedidos} ms, ordenes ${marcas.ordenes} ms, recepciones ${marcas.recepciones} ms, notas ${marcas.notas} ms`;
+      return { body, etag, resumen };
+    });
+
+    marcas.total = Date.now() - t0;
+    // De dónde salió va en el log: sin eso no hay forma de saber si la cache está
+    // sirviendo de algo ni de cuánto se está reusando.
+    const deDonde = fuente === "fresco" ? "" : ` · ${fuente === "cache" ? `reusada de hace ${Math.round(edadMs / 1000)} s` : "colgada de la que ya iba en vuelo"}`;
+    console.info(`[bootstrap] ${marcas.total} ms${deDonde} · ${foto.resumen}`);
     const serverTiming = Object.entries(marcas).map(([k, v]) => `${k};dur=${v}`).join(", ");
 
-    if (req.headers.get("if-none-match") === etag) {
-      return new NextResponse(null, { status: 304, headers: { ETag: etag, "Server-Timing": serverTiming } });
+    if (req.headers.get("if-none-match") === foto.etag) {
+      return new NextResponse(null, { status: 304, headers: { ETag: foto.etag, "Server-Timing": serverTiming } });
     }
-    return new NextResponse(body, {
+    return new NextResponse(foto.body, {
       status: 200,
-      headers: { "Content-Type": "application/json; charset=utf-8", ETag: etag, "Server-Timing": serverTiming },
+      headers: { "Content-Type": "application/json; charset=utf-8", ETag: foto.etag, "Server-Timing": serverTiming },
     });
   } catch (e: any) {
     // El detalle va al log del server (Azure), NO a la pantalla: el mensaje crudo
