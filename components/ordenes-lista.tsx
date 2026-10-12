@@ -146,6 +146,21 @@ export function OrdenesLista({
     }
     return m;
   }, [recepciones]);
+  // QUIÉN HIZO EL REGISTRO, por orden. El nombre de quien registró la recepción/factura
+  // (recibidoPor = creadoPor en BD), que es distinto de quien ARMÓ la orden (creadoPor de
+  // la OC). Una orden recibida por partes puede tener varias personas: se listan sin
+  // repetir, en el orden en que recibieron. Vacío = todavía sin recepción (por recibir).
+  const registradaPorOrden = useMemo(() => {
+    const m = new Map<string, string[]>();
+    for (const r of recepciones) {
+      const quien = (r.recibidoPor ?? "").trim();
+      if (!quien) continue;
+      const arr = m.get(r.ordenId) ?? [];
+      if (!arr.includes(quien)) arr.push(quien);
+      m.set(r.ordenId, arr);
+    }
+    return m;
+  }, [recepciones]);
   const prov = (id: string) => proveedores.find((p) => p.id === id);
   const nombreProv = (o: Orden) => proveedorLabel(o, proveedores);
 
@@ -283,10 +298,14 @@ export function OrdenesLista({
       accessorFn: (o: Orden) => (!vaAlProveedor(o) ? "" : ordenEnviada(o) ? "Enviada" : "Sin enviar"),
       cell: (c: any) => <CeldaEnvio orden={c.row.original} />,
     }] : []),
+    // Quién hizo el REGISTRO de la(s) recepción(es)/factura(s) — el nombre de Bodega o
+    // Contabilidad que la recibió. Distinto de "Creada por" (quien armó la OC). Si se
+    // recibió por partes, salen todas las personas. Vacío = todavía por recibir.
+    { id: "registradaPor", header: "Registrada por", accessorFn: (o) => (registradaPorOrden.get(o.id) ?? []).join(", "), meta: { label: "Registrada por" }, cell: (c) => c.getValue() || <span className="ds-muted">—</span> },
     // Quién generó la OC (creadoPor). Además de leerse, da el filtro por persona del
     // encabezado: cada quien puede quedarse con las suyas o ver las de un compañero.
     { id: "creadaPor", header: "Creada por", accessorFn: (o) => o.creadoPor ?? "", meta: { label: "Creada por" }, cell: (c) => c.getValue() || <span className="ds-muted">—</span> },
-  ], [proveedores, pedidoHref, conEnvioProveedor, facturasBcPorOrden]); // eslint-disable-line react-hooks/exhaustive-deps
+  ], [proveedores, pedidoHref, conEnvioProveedor, facturasBcPorOrden, registradaPorOrden]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const renderLineas = (o: Orden) => (
     <LineasDeOrden orden={o} href={hrefDetalle(o.id)} pedidoHref={pedidoHref} />
