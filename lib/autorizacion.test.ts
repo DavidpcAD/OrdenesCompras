@@ -21,6 +21,17 @@ test("Bodega registra la recepción (y Contabilidad también: la pantalla tiene 
   }
 });
 
+test("conciliar una orden ya facturada en BC lo pueden los tres (la pantalla es de Proveeduría)", () => {
+  const ruta = "/api/recepciones/conciliar";
+  for (const rol of ["proveeduria", "facturacion", "contabilidad"] as const) {
+    assert.equal(rolPuede(ruta, "POST", rol), true, `conciliar debería poder ${rol}`);
+  }
+  // Gana la regla específica, no la general de /api/recepciones.
+  assert.equal(reglaPara(ruta, "POST")?.nota, "conciliar orden ya facturada en BC");
+  // Y abrir conciliar NO abre el registro normal de recepciones para Proveeduría.
+  assert.equal(rolPuede("/api/recepciones", "POST", "proveeduria"), false);
+});
+
 test("marcar líneas para nota de crédito es de quien recibe, no de Angie", () => {
   assert.equal(rolPuede("/api/notas-credito", "POST", "facturacion"), true);
   assert.equal(rolPuede("/api/notas-credito", "POST", "contabilidad"), true);

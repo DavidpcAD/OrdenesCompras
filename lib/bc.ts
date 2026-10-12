@@ -3535,6 +3535,14 @@ export async function bcLineasFacturadasDePedido(orderNo: string): Promise<Linea
 export type FacturaRegistradaBc = {
   numero: string; fecha: string; vendorNo: string;
   subtotal: number; iva: number; total: number; currencyCode: string;
+  // El estado del documento en BC (Open | Paid | Canceled | Corrective | Draft).
+  // Una factura ANULADA sigue apareciendo acá: si no se mira el estado, se concilia
+  // contra algo que allá ya se deshizo (caso CP-005380 / CFR-010133, el subcontrato
+  // que se re-facturó como CP-005587).
+  status: string;
+  // El N.º que trae el papel del proveedor (vendorInvoiceNumber). Es el que Bodega
+  // escribe al recibir y el que usa el guard de factura duplicada en createRecepcion.
+  facturaProveedor: string;
 };
 
 export async function bcFacturasRegistradasDePedido(orderNo: string): Promise<FacturaRegistradaBc[] | null> {
@@ -3543,7 +3551,7 @@ export async function bcFacturasRegistradasDePedido(orderNo: string): Promise<Fa
   try {
     const cid = await getStdCompanyId();
     const filtro = `$filter=${encodeURIComponent(`orderNumber eq '${odataStr(no)}'`)}`
-      + `&$select=number,postingDate,vendorNumber,currencyCode,totalAmountExcludingTax,totalTaxAmount,totalAmountIncludingTax`;
+      + `&$select=number,postingDate,vendorNumber,vendorInvoiceNumber,status,currencyCode,totalAmountExcludingTax,totalTaxAmount,totalAmountIncludingTax`;
     const res = await bcFetch(`${stdRoot()}/companies(${cid})/purchaseInvoices?${filtro}`, { cache: "no-store" });
     if (!res.ok) return null;
     const filas: any[] = (await res.json())?.value ?? [];
@@ -3555,6 +3563,8 @@ export async function bcFacturasRegistradasDePedido(orderNo: string): Promise<Fa
       iva: Number(f.totalTaxAmount) || 0,
       total: Number(f.totalAmountIncludingTax) || 0,
       currencyCode: String(f.currencyCode ?? "").trim(),
+      status: String(f.status ?? "").trim(),
+      facturaProveedor: String(f.vendorInvoiceNumber ?? "").trim(),
     }));
   } catch { return null; }
 }

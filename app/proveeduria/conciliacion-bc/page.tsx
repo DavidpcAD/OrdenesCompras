@@ -2,7 +2,7 @@
 
 import { useRef, useState } from "react";
 import Link from "next/link";
-import { Badge, Button, Card, EmptyState, Field, Tile } from "@/components/ui";
+import { Badge, Button, Card, ConfirmDialog, EmptyState, Field, Tile, useToast } from "@/components/ui";
 import { CampoRangoFechas } from "@/components/calendario-rango";
 import type { Rango } from "@/lib/fechas";
 import { IconWarning } from "@/components/icons";
@@ -79,6 +79,34 @@ export default function ConciliacionBcPage() {
   const [barrido, setBarrido] = useState<FilaBarrido[] | null>(null);
   const [resBarrido, setResBarrido] = useState<ResumenBarrido | null>(null);
   const [errorBarrido, setErrorBarrido] = useState("");
+
+  // Conciliar de un clic: la orden que BC ya facturó y acá sigue sin recibir se pone
+  // al día sin volver a postear en BC. `confirmar` es la fila en el diálogo; el
+  // servidor verifica contra BC y sólo escribe si el caso es limpio.
+  const toast = useToast();
+  const [confirmar, setConfirmar] = useState<FilaBarrido | null>(null);
+  const [conciliando, setConciliando] = useState<string | null>(null);
+
+  async function conciliar(f: FilaBarrido) {
+    if (conciliando) return;          // sin doble envío mientras viaja
+    setConciliando(f.id);
+    try {
+      const r = await fetch("/api/recepciones/conciliar", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ordenId: Number(f.id) }),
+      });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) { toast(String(d?.error ?? `Error ${r.status}`), "error"); return; }
+      toast(`${f.bcNumber} puesta al día${d.facturas?.length ? ` · ${d.facturas.join(", ")}` : ""} — se guardó la recepción acá, no se tocó Business Central.`, "success");
+      // Deja de ser un pendiente: sale de la lista.
+      setBarrido((prev) => (prev ? prev.filter((x) => x.id !== f.id) : prev));
+      setConfirmar(null);
+    } catch (e: any) {
+      toast(String(e?.message ?? e), "error");
+    } finally {
+      setConciliando(null);
+    }
+  }
 
   async function barrer() {
     setBarriendo(true); setErrorBarrido(""); setBarrido(null); setResBarrido(null);
@@ -221,11 +249,15 @@ export default function ConciliacionBcPage() {
                     ))}
                   </ul>
                 </div>
-                <div className="col" style={{ alignItems: "flex-end", gap: 2 }}>
+                <div className="col" style={{ alignItems: "flex-end", gap: 6 }}>
                   <span className="ds-strong">{money(f.importe, f.moneda)}</span>
-                  {/* Guardarla es de Bodega o Contabilidad: la pantalla se abre para
-                      cualquiera, pero el guardado pide ese rol y lo dice al intentarlo. */}
-                  <Link href={`/facturacion/${f.id}`} className="ds-body-sm">Ponerla al día →</Link>
+                  {/* Conciliar = dar por recibida la orden acá apuntando a la factura
+                      que BC YA tiene, SIN volver a postear. El servidor verifica contra
+                      BC antes de escribir; si el caso no es limpio, se niega y lo dice.
+                      "Ponerla al día a mano" queda para esos casos (en Facturación). */}
+                  <Button size="sm" disabled={conciliando === f.id} loading={conciliando === f.id}
+                    onClick={() => setConfirmar(f)}>Conciliar</Button>
+                  <Link href={`/facturacion/${f.id}`} className="ds-body-sm">Ponerla al día a mano →</Link>
                 </div>
               </div>
             </Card>
@@ -269,6 +301,25 @@ export default function ConciliacionBcPage() {
           </div>
         </Card>
       ))}
+
+      {confirmar && (
+        <ConfirmDialog
+          title="Poner al día con Business Central"
+          tone="green"
+          confirmLabel={conciliando ? "Conciliando…" : "Sí, conciliar"}
+          cancelLabel="Cancelar"
+          onCancel={() => { if (!conciliando) setConfirmar(null); }}
+          onConfirm={() => void conciliar(confirmar)}
+          message={<>
+            Vas a dar por recibida <span className="ds-strong">{confirmar.bcNumber}</span> en la app,
+            apuntando a {confirmar.faltantes.length === 1 ? "la factura" : "las facturas"}{" "}
+            <span className="ds-strong">{confirmar.faltantes.map((x) => x.numero).join(", ")}</span>{" "}
+            que Business Central ya tiene registrada{confirmar.faltantes.length === 1 ? "" : "s"}.{" "}
+            <span className="ds-strong">No se vuelve a registrar nada en BC.</span> Si algo no cuadra
+            —otro proveedor, factura anulada, líneas distintas— la app no la concilia y te dice por qué.
+          </>}
+        />
+      )}
     </main>
   );
 }

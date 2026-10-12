@@ -38,6 +38,15 @@ const REGLAS: Regla[] = [
   // sincronización deja rastro con nombre y apellido, y ese rastro es de Kattya.
   { prefijo: "/api/vigilancia", metodos: ESCRITURA, roles: ["contabilidad"], nota: "auditoría de facturas" },
 
+  // Conciliar una orden que BC YA facturó y la app no registró (botón de un clic en
+  // Conciliación BC). Lo abren los tres roles a propósito: la pantalla es de
+  // Proveeduría (Angie), y la seguridad NO está en el rol sino en el servidor —sólo
+  // guarda la recepción cuando BC confirma la factura viva, del mismo proveedor, con
+  // las líneas cuadradas (lib/conciliar-orden.ts), y NO postea nada a BC. Si se
+  // quiere limitar a quien recibe, quitar "proveeduria" de acá. Va ANTES de la regla
+  // de /api/recepciones para que gane esta (reglaPara devuelve la primera que calza).
+  { prefijo: "/api/recepciones/conciliar", metodos: ["POST"], roles: ["proveeduria", "facturacion", "contabilidad"], nota: "conciliar orden ya facturada en BC" },
+
   // ---- Bodega (Pedro) — y Contabilidad, porque la pantalla de recibir tiene una
   // variante hecha a propósito para ella (edita las tres fechas, tabla de
   // escritorio). Desde el 2 oct 2026 Kattya además la tiene en su menú
