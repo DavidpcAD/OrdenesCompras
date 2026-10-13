@@ -11,8 +11,9 @@ import { useStore } from "@/lib/store";
 import { leerBorrador, guardarBorrador, borrarBorrador, hace, type BorradorOrden } from "@/lib/borrador-orden";
 import { cuenta, etiquetaTipoLinea, lineasSinPrecio, money, almacenesParaRecepcion, esAlmacenFisico, monedaApp, numeroOrden, MONEDAS } from "@/lib/helpers";
 import { CampoMaquina, RepartoMaquinasModal, buscarMaquina, etiquetaMaquina, nombreDeMaquina, useMaquinasBc, type MaquinaCat } from "@/components/maquina-linea";
+import { PrioridadTag } from "@/components/prioridad";
 import { precioEnUnidad, precioEntreUnidades, cantidadEntreUnidades, equivalencia, equivalenciaDeUnidad, mismaMoneda, codigoDeItem, opcionesDeUnidad, type UnidadDeItem } from "@/lib/unidad";
-import type { LineType, OrdenLinea } from "@/lib/types";
+import type { LineType, OrdenLinea, Prioridad } from "@/lib/types";
 
 // Orden DIRECTA: compra armada por Proveeduría sin partir de una solicitud de
 // Ingeniería (material que no vino en ningún pedido). Todas las líneas son
@@ -77,6 +78,8 @@ export default function OrdenDirectaPage() {
   const [observaciones, setObservaciones] = useState(rescate?.observaciones ?? "");
   // Comentario para el APROBADOR: interno, no viaja al proveedor.
   const [notaInterna, setNotaInterna] = useState(rescate?.notaInterna ?? "");
+  // Prioridad de la orden: la ve Aprobación al revisar. No viaja a BC.
+  const [prioridad, setPrioridad] = useState<Prioridad>(rescate?.prioridad ?? "normal");
   // Cargos de producto (Item Charge): igual que al armar una orden desde un pedido.
   const [cargos, setCargos] = useState<Cargo[]>((rescate?.cargos as Cargo[]) ?? []);
   const [metodoAsig, setMetodoAsig] = useState(rescate?.metodoAsig ?? "Amount"); // Amount|Weight|Volume|Equally
@@ -141,11 +144,11 @@ export default function OrdenDirectaPage() {
   useEffect(() => {
     const t = setTimeout(() => {
       guardarBorrador<Row>("directa", usuario, {
-        proveedorId, currency, almacen, observaciones, notaInterna, metodoAsig, cargos, filas: rows,
+        proveedorId, currency, almacen, observaciones, notaInterna, prioridad, metodoAsig, cargos, filas: rows,
       });
     }, 400);
     return () => clearTimeout(t);
-  }, [usuario, proveedorId, currency, almacen, observaciones, notaInterna, metodoAsig, cargos, rows]);
+  }, [usuario, proveedorId, currency, almacen, observaciones, notaInterna, prioridad, metodoAsig, cargos, rows]);
 
   function descartarRescate() {
     borrarBorrador("directa", usuario);
@@ -559,7 +562,7 @@ export default function OrdenDirectaPage() {
         ls.push({ tipo: "cargo", chargeNo: c.chargeNo || undefined, chargeMethod: metodoAsig, descripcion: c.descripcion || "CARGO",
           cantidad: Number(c.cantidad) || 1, unidad: "UND", almacen, precioUnitario: Number(c.precio) || 0, ivaPct: Number(c.iva) || 0 });
       }
-      const orden = await createOrden({ proveedorId, proveedorNo: provSel?.code, proveedorNombre: provSel?.nombre, currencyCode: currency, almacenRecepcion: almacen, observaciones: observaciones.trim() || undefined, notaInterna: notaInterna.trim() || undefined, lineas: ls });
+      const orden = await createOrden({ proveedorId, proveedorNo: provSel?.code, proveedorNombre: provSel?.nombre, currencyCode: currency, almacenRecepcion: almacen, observaciones: observaciones.trim() || undefined, notaInterna: notaInterna.trim() || undefined, prioridad, lineas: ls });
       // La orden YA está creada acá. Si el envío a aprobación falla —hoy eso incluye
       // que BC no pueda crear el pedido— igual se va al detalle con el motivo: quedarse
       // en el formulario invita a apretar el botón otra vez y crear una orden repetida.
@@ -652,6 +655,11 @@ export default function OrdenDirectaPage() {
             <Textarea rows={2} value={notaInterna} maxLength={500}
               onChange={(e) => setNotaInterna(e.target.value)}
               placeholder="Ej. Urgente para la colada del viernes. El precio subió 8% porque el proveedor cambió la presentación." />
+          </Field>
+          {/* Prioridad: la ve Aprobación al revisar, para saber qué mover primero.
+              No sale en el PDF del proveedor ni viaja a BC. */}
+          <Field label="Prioridad" help="Normal salvo que corra. La ve Aprobación al revisar." className="mt-4">
+            <PrioridadTag value={prioridad} onChange={setPrioridad} />
           </Field>
         </Card>
 

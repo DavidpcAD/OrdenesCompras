@@ -1253,6 +1253,14 @@ td.ds-col-fija {
 .segmented__btn { padding: 8px 16px; border-radius: var(--ds-radius-lg); border: 0; background: transparent; font-family: inherit; font-weight: var(--ds-font-weight-semibold); font-size: var(--ds-font-size-label); color: var(--ds-color-gray-500); cursor: pointer; transition: background-color .12s, color .12s; }
 .segmented__btn.is-active { background: var(--ds-surface); color: var(--ds-color-black); box-shadow: var(--ds-shadow-02-soft); }
 
+/* Selector de prioridad (el "tag" al armar la orden): segmentado con un puntito del
+   color de cada nivel —gris/amarillo/rojo, los mismos tonos del ds-badge— para que
+   el color que se elige sea el que después se ve en el detalle. */
+.prioridad-seg .segmented__btn { display: inline-flex; align-items: center; gap: 7px; }
+.prioridad-seg__dot { width: 7px; height: 7px; border-radius: 50%; background: var(--ds-color-gray-300); flex-shrink: 0; }
+.prioridad-seg__dot[data-tono="yellow"] { background: var(--ds-color-yellow); }
+.prioridad-seg__dot[data-tono="red"]    { background: var(--ds-text-danger); }
+
 /* Filtros de estado como "chips" (pills con contador) — lenguaje visual distinto
    del toggle de vista, para que no se vean como una barra doble amontonada. */
 .filterbar { display: flex; align-items: center; flex-wrap: wrap; gap: var(--ds-space-2); margin: var(--ds-space-2) 0 var(--ds-space-5); }

@@ -13,7 +13,8 @@ import { leerBorrador, guardarBorrador, borrarBorrador, hace, type BorradorOrden
 import { cuenta, lineasSinPrecio, money, num, ultimoPrecioProveedor, almacenesParaRecepcion, esAlmacenFisico, pedidoLineaPendiente, repartoDeLineaSolicitud, obraDeLinea, obraParaOrden, monedaApp, numeroOrden, MONEDAS } from "@/lib/helpers";
 import { precioEnUnidad, precioEntreUnidades, cantidadEntreUnidades, equivalencia, equivalenciaDeUnidad, mismaMoneda, codigoDeItem, opcionesDeUnidad, type PrecioRef, type UnidadDeItem } from "@/lib/unidad";
 import { useVariantes } from "@/lib/use-variantes";
-import type { OrdenLinea } from "@/lib/types";
+import { PrioridadTag } from "@/components/prioridad";
+import type { OrdenLinea, Prioridad } from "@/lib/types";
 
 interface Row {
   // id de la FILA. No alcanza el de la línea de solicitud: una misma línea puede
@@ -88,6 +89,8 @@ export default function ArmarOrdenPage() {
   const [observaciones, setObservaciones] = useState(rescate?.observaciones ?? "");
   // Comentario para el APROBADOR: interno, no viaja al proveedor.
   const [notaInterna, setNotaInterna] = useState(rescate?.notaInterna ?? "");
+  // Prioridad de la orden: la ve Aprobación al revisar. No viaja a BC.
+  const [prioridad, setPrioridad] = useState<Prioridad>(rescate?.prioridad ?? "normal");
 
   // Unidades de cada material tal como están en BC (GR 1, EST 255.000, LT 244,01914…).
   // Con esto Proveeduría elige con qué unidad se le pide al proveedor: la solicitud
@@ -201,11 +204,11 @@ export default function ArmarOrdenPage() {
   useEffect(() => {
     const t = setTimeout(() => {
       guardarBorrador<Row>("nueva", usuario, {
-        proveedorId, currency, almacen, observaciones, notaInterna, metodoAsig, cargos, filas: rows,
+        proveedorId, currency, almacen, observaciones, notaInterna, prioridad, metodoAsig, cargos, filas: rows,
       });
     }, 400);
     return () => clearTimeout(t);
-  }, [usuario, proveedorId, currency, almacen, observaciones, notaInterna, metodoAsig, cargos, rows]);
+  }, [usuario, proveedorId, currency, almacen, observaciones, notaInterna, prioridad, metodoAsig, cargos, rows]);
 
   // Tirar lo rescatado y empezar de cero (vuelve a Materiales por el redirect).
   function descartarRescate() {
@@ -532,7 +535,7 @@ export default function ArmarOrdenPage() {
         cantidad: Number(c.cantidad) || 1, unidad: "UND", almacen: rows[0].almacen || almacen,
         precioUnitario: Number(c.precio) || 0, ivaPct: Number(c.iva) || 0 });
     }
-    const orden = await createOrden({ proveedorId, proveedorNo: provSel?.code, proveedorNombre: provSel?.nombre, currencyCode: currency, almacenRecepcion: almacen, observaciones: observaciones.trim() || undefined, notaInterna: notaInterna.trim() || undefined, lineas: ls });
+    const orden = await createOrden({ proveedorId, proveedorNo: provSel?.code, proveedorNombre: provSel?.nombre, currencyCode: currency, almacenRecepcion: almacen, observaciones: observaciones.trim() || undefined, notaInterna: notaInterna.trim() || undefined, prioridad, lineas: ls });
     // La orden YA está creada acá (y ya consumió saldo de las solicitudes). Si el
     // envío a aprobación falla —hoy eso incluye que BC no pueda crear el pedido— no
     // se puede quedar en el formulario: volver a darle al botón crearía una orden
@@ -637,6 +640,11 @@ export default function ArmarOrdenPage() {
             <Textarea rows={2} value={notaInterna} maxLength={500}
               onChange={(e) => setNotaInterna(e.target.value)}
               placeholder="Ej. Urgente para la colada del viernes. El precio subió 8% porque el proveedor cambió la presentación." />
+          </Field>
+          {/* Prioridad: la ve Aprobación al revisar, para saber qué mover primero.
+              No sale en el PDF del proveedor ni viaja a BC. */}
+          <Field label="Prioridad" help="Normal salvo que corra. La ve Aprobación al revisar." className="mt-4">
+            <PrioridadTag value={prioridad} onChange={setPrioridad} />
           </Field>
           <div className="row gap-2 wrap mt-4">
             <span className="ds-muted ds-label">Solicitudes en esta orden:</span>

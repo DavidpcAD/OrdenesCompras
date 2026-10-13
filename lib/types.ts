@@ -146,6 +146,11 @@ export interface DevolucionSolicitud {
   corregida?: { fecha: string; usuario?: string; rol?: string };
 }
 
+// Qué tan urgente es. Lo marca quien arma (la solicitud, o la orden) y lo mira
+// quien aprueba para saber qué mover primero. "normal" es lo de siempre y no pinta
+// nada: solo "alta" y "urgente" llevan distintivo.
+export type Prioridad = "normal" | "alta" | "urgente";
+
 export interface Pedido {
   id: string;
   numero: string;            // PED-000123
@@ -158,7 +163,7 @@ export interface Pedido {
   loteRef?: string;          // lote/unidad de Planificación desde el que se armó (para enlazar)
   fecha: string;             // ISO
   estado: PedidoEstado;
-  prioridad: "normal" | "alta" | "urgente";
+  prioridad: Prioridad;
   notas?: string;
   idClasificacion?: number | null; // clasificación WBS (para ligar la celda de la Matriz al pedido)
   // Devolución que le hizo Proveeduría, si hubo (sale de la bitácora, no de la tabla).
@@ -227,6 +232,10 @@ export interface Orden {
   fechaRecepEsperada?: string;
   currencyCode: string;     // el código DE BC: "" = CRC (colones), "USD", "EURO"
   estado: OrdenEstado;
+  // Qué tan urgente es la orden. La pone Proveeduría al armarla y la ve Aprobación al
+  // revisar (distintivo junto al estado). No viaja a BC: es para ordenar el trabajo de
+  // este lado. Opcional porque las órdenes viejas —y la columna sin migrar— no la traen.
+  prioridad?: Prioridad;
   versionesArchivadas: number;
   lineas: OrdenLinea[];
   creadoPor?: string;       // quién generó la orden (para los reportes y la trazabilidad)

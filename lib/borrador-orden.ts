@@ -16,6 +16,8 @@
    ya existe "Guardar como abierta".
    ============================================================================ */
 
+import type { Prioridad } from "./types";
+
 /** Pantallas que arman una orden. Cada una guarda su propio borrador. */
 export type PantallaBorrador = "nueva" | "directa";
 
@@ -28,6 +30,7 @@ export interface BorradorOrden<F = unknown> {
   almacen: string;
   observaciones: string;
   notaInterna: string;
+  prioridad: Prioridad;
   metodoAsig: string;
   cargos: unknown[];
   filas: F[];
@@ -66,6 +69,8 @@ export function sanearBorrador<F>(crudo: unknown, usuario: string, ahora: number
     almacen: typeof b.almacen === "string" ? b.almacen : "",
     observaciones: typeof b.observaciones === "string" ? b.observaciones : "",
     notaInterna: typeof b.notaInterna === "string" ? b.notaInterna : "",
+    // Campo nuevo: un borrador viejo (sin prioridad) se rescata igual, como normal.
+    prioridad: b.prioridad === "alta" || b.prioridad === "urgente" ? b.prioridad : "normal",
     metodoAsig: typeof b.metodoAsig === "string" && b.metodoAsig ? b.metodoAsig : "Amount",
     cargos: Array.isArray(b.cargos) ? b.cargos : [],
     filas: b.filas as F[],

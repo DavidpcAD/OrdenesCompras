@@ -13,8 +13,9 @@ import { cuenta, etiquetaTipoLinea, money, num, ordenEsDirecta, ordenEsperaCorre
 import { precioEnUnidad, precioEntreUnidades, cantidadEntreUnidades, equivalencia, equivalenciaDeUnidad, mismaMoneda, codigoDeItem, opcionesDeUnidad, type UnidadDeItem, type PrecioRef } from "@/lib/unidad";
 import { useVariantes } from "@/lib/use-variantes";
 import { useSalida } from "@/lib/use-volver";
+import { PrioridadTag } from "@/components/prioridad";
 import type { LineaDeMaquina } from "@/lib/maquinas";
-import type { OrdenLinea } from "@/lib/types";
+import type { OrdenLinea, Prioridad } from "@/lib/types";
 
 // OJO con los dos campos de destino, que NO son lo mismo (y estaban pegados en uno):
 //   almacen  -> locationCode: DÓNDE entra el material en BC.
@@ -136,6 +137,7 @@ export default function EditarOrdenPage() {
   const [almacen, setAlmacen] = useState(almacenComun(orden?.lineas ?? []));
   const [observaciones, setObservaciones] = useState(orden?.observaciones ?? "");
   const [notaInterna, setNotaInterna] = useState(orden?.notaInterna ?? "");
+  const [prioridad, setPrioridad] = useState<Prioridad>(orden?.prioridad ?? "normal");
   const [rows, setRows] = useState<Row[]>(filasDeOrden(orden?.lineas ?? []));
 
   // Si la orden llega DESPUÉS del primer render (modo API: el bootstrap tarda, o se
@@ -152,6 +154,7 @@ export default function EditarOrdenPage() {
     setAlmacen(almacenComun(orden.lineas));
     setObservaciones(orden.observaciones ?? "");
     setNotaInterna(orden.notaInterna ?? "");
+    setPrioridad(orden.prioridad ?? "normal");
     const cg = orden.lineas.find((l) => l.tipo === "cargo");
     setFlete(cg ? String(ordenLineaImporte(cg)) : "");
     setCargoNo(cg?.chargeNo ?? "");
@@ -717,7 +720,7 @@ export default function EditarOrdenPage() {
           precioUnitario: c.precioUnitario, ivaPct: c.ivaPct ?? 13,
         });
       }
-      const r = await updateOrden(orden!.id, { proveedorId, proveedorNo: provSel?.code, proveedorNombre: provSel?.nombre, currencyCode: currency, almacenRecepcion: almacen || undefined, observaciones: observaciones.trim() || undefined, notaInterna: notaInterna.trim() || undefined, lineas: ls });
+      const r = await updateOrden(orden!.id, { proveedorId, proveedorNo: provSel?.code, proveedorNombre: provSel?.nombre, currencyCode: currency, almacenRecepcion: almacen || undefined, observaciones: observaciones.trim() || undefined, notaInterna: notaInterna.trim() || undefined, prioridad, lineas: ls });
       // Si BC no quedó sincronizado, ese aviso manda: el pedido allá tendría las
       // líneas viejas y Bodega recibiría contra ellas.
       if (r?.bcAviso) toast(r.bcAviso, "info");
@@ -827,6 +830,11 @@ export default function EditarOrdenPage() {
             <Textarea rows={2} value={notaInterna} maxLength={500}
               onChange={(e) => setNotaInterna(e.target.value)}
               placeholder="Ej. Urgente para la colada del viernes. El precio subió 8% porque el proveedor cambió la presentación." />
+          </Field>
+          {/* Prioridad: la ve Aprobación al revisar, para saber qué mover primero.
+              No sale en el PDF del proveedor ni viaja a BC. */}
+          <Field label="Prioridad" help="Normal salvo que corra. La ve Aprobación al revisar." className="mt-4">
+            <PrioridadTag value={prioridad} onChange={setPrioridad} />
           </Field>
         </Card>
 

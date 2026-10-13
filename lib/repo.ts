@@ -6,7 +6,7 @@ import { resumirCambiosDeLineas } from "./cambios-orden.ts";
 import { componerNotaCierre, detalleDeCierre, lineaCancelada, motivoObligatorio, quitarNotaCierre } from "./cierre-solicitud.ts";
 import { envioDeSello, leerSello, MOV_DESHECHO, MOV_ENVIADA, MOV_PDF, SELLO_SEP, type Sello } from "./envio-proveedor.ts";
 import type { UnidadCompraItem } from "./bc.ts";
-import type { DevolucionSolicitud, Orden, OrdenLinea, Pedido, PedidoLinea, Recepcion, RecepcionFoto, RecepcionLinea, Role, NotaCreditoLinea } from "./types.ts";
+import type { DevolucionSolicitud, Orden, OrdenLinea, Pedido, PedidoLinea, Prioridad, Recepcion, RecepcionFoto, RecepcionLinea, Role, NotaCreditoLinea } from "./types.ts";
 
 /* ============================================================================
    Capa de acceso a datos (SQL Server) para Compras Adelante.
@@ -840,6 +840,30 @@ async function ensureNotaInterna(): Promise<boolean> {
   return notaInternaLista;
 }
 
+// Igual que `ensureNotaInterna`, pero para la PRIORIDAD de la orden
+// (dbo.OrdenCompra.prioridad: 'normal' | 'alta' | 'urgente'). Mientras la columna no
+// exista, la orden se crea/edita igual y la prioridad simplemente no se guarda —todas
+// se leen como 'normal'—: nombrar una columna inexistente en el INSERT rompería la
+// creación de órdenes. La migración es sql/orden_prioridad.sql (o automática con
+// MIGRAR_ESQUEMA=1).
+let prioridadLista: boolean | null = null;
+async function ensurePrioridad(): Promise<boolean> {
+  if (prioridadLista !== null) return prioridadLista;
+  try {
+    const pool = await getPool();
+    if (process.env.MIGRAR_ESQUEMA === "1") {
+      await pedir(pool).query(`
+        IF COL_LENGTH('dbo.OrdenCompra','prioridad') IS NULL
+          ALTER TABLE dbo.OrdenCompra ADD prioridad NVARCHAR(20) NULL;`);
+    }
+    const r = await pedir(pool).query("SELECT COL_LENGTH('dbo.OrdenCompra','prioridad') AS a");
+    prioridadLista = r.recordset[0]?.a != null;
+  } catch {
+    prioridadLista = false;
+  }
+  return prioridadLista;
+}
+
 let cargoColsListas: boolean | null = null;
 async function ensureCargoCols(): Promise<boolean> {
   if (cargoColsListas !== null) return cargoColsListas;
@@ -1309,6 +1333,9 @@ function mapOrden(o: any, lineas: any[], motivoRechazo?: string, unidades: Recor
     envioProveedor: envioDeSello(sellos?.envio),  // cuándo se le mandó el PDF al proveedor
     observaciones: o.notaCreador || undefined,   // se imprimen en el PDF del proveedor
     notaInterna: o.notaInterna || undefined,     // mensaje al aprobador; NUNCA sale en el PDF
+    // Prioridad (columna opcional: sql/orden_prioridad.sql). Sin la columna, o con un
+    // valor raro, se lee como 'normal' —lo de siempre—, que no pinta distintivo.
+    prioridad: (o.prioridad === "alta" || o.prioridad === "urgente" ? o.prioridad : "normal") as Prioridad,
 
     bcNumber: o.bcNo || undefined,           // Nº del Pedido en BC (para recibir/facturar)
     // Deep link al Pedido en BC. FALTABA en modo API: `bcDeepLink` solo se llenaba
@@ -1354,6 +1381,7 @@ export interface NewOrdenDB {
   proveedorNo: string; proveedorNombre?: string; currencyCode: string; usuario: string; rol: Role;
   observaciones?: string;   // -> OrdenCompra.notaCreador (sale en el PDF)
   notaInterna?: string;     // -> OrdenCompra.notaInterna (para el aprobador)
+  prioridad?: Prioridad;    // -> OrdenCompra.prioridad (columna opcional)
   lineas: {
     tipoLinea: string; itemNo?: string; variantCode?: string; idPedidoCompraDet?: number; descripcion: string; cantidad: number;
     unidad: string; almacen: string; precioUnitario: number; ivaPct: number; descuentoPct?: number; jobNo?: string; taskNo?: string;
@@ -1425,6 +1453,10 @@ export async function createOrden(input: NewOrdenDB): Promise<number> {
   const conNotaInterna = await ensureNotaInterna();
   const colNotaInterna = conNotaInterna ? ",notaInterna" : "";
   const valNotaInterna = conNotaInterna ? ",@notaInterna" : "";
+  // Igual: sin la columna la orden se crea sin prioridad (se leerá como 'normal').
+  const conPrioridad = await ensurePrioridad();
+  const colPrioridad = conPrioridad ? ",prioridad" : "";
+  const valPrioridad = conPrioridad ? ",@prioridad" : "";
   const tx = new sql.Transaction(pool); await tx.begin();
   try {
     // Consecutivo INTERNO de la app (no tiene nada que ver con la serie C PED de
@@ -1458,9 +1490,10 @@ export async function createOrden(input: NewOrdenDB): Promise<number> {
       .input("creadoPor", sql.NVarChar(100), input.usuario)
       .input("notaCreador", sql.NVarChar(500), (input.observaciones ?? "").trim() || null)
       .input("notaInterna", sql.NVarChar(500), (input.notaInterna ?? "").trim() || null)
-      .query(`INSERT dbo.OrdenCompra (idEstado,ordenNo,proveedorNo,proveedorNombre,currencyCode,fechaEmision,notaCreador${colNotaInterna},esEliminada,fechaCreacion,creadoPor)
+      .input("prioridad", sql.NVarChar(20), input.prioridad && input.prioridad !== "normal" ? input.prioridad : null)
+      .query(`INSERT dbo.OrdenCompra (idEstado,ordenNo,proveedorNo,proveedorNombre,currencyCode,fechaEmision,notaCreador${colNotaInterna}${colPrioridad},esEliminada,fechaCreacion,creadoPor)
               OUTPUT INSERTED.idOrdenCompra
-              VALUES (@idEstado,@ordenNo,@proveedorNo,@proveedorNombre,@currencyCode,CAST(getdate() AS date),@notaCreador${valNotaInterna},0,getdate(),@creadoPor)`);
+              VALUES (@idEstado,@ordenNo,@proveedorNo,@proveedorNombre,@currencyCode,CAST(getdate() AS date),@notaCreador${valNotaInterna}${valPrioridad},0,getdate(),@creadoPor)`);
     const idOrden = ins.recordset[0].idOrdenCompra as number;
 
     let line = 10000;
@@ -1507,6 +1540,7 @@ export interface UpdateOrdenDB {
   proveedorNo: string; proveedorNombre?: string; currencyCode: string; usuario: string; rol: Role;
   observaciones?: string;   // -> OrdenCompra.notaCreador (sale en el PDF)
   notaInterna?: string;     // -> OrdenCompra.notaInterna (para el aprobador)
+  prioridad?: Prioridad;    // -> OrdenCompra.prioridad (columna opcional)
   lineas: NewOrdenDB["lineas"];
 }
 
@@ -1525,6 +1559,7 @@ export async function updateOrden(id: number, input: UpdateOrdenDB) {
   const colMaquina = conMaquina ? ",maquinaNo" : "";
   const valMaquina = conMaquina ? ",@maquinaNo" : "";
   const setNotaInterna = (await ensureNotaInterna()) ? ", notaInterna=@notaInterna" : "";
+  const setPrioridad = (await ensurePrioridad()) ? ", prioridad=@prioridad" : "";
   const rec = await pedir(pool).input("id", sql.Int, id)
     .query("SELECT COUNT(*) AS n FROM dbo.RecepcionCompra WHERE idOrdenCompra=@id AND esEliminada=0");
   if ((rec.recordset[0]?.n ?? 0) > 0) throw new Error("La orden ya tiene recepciones registradas; no se puede editar.");
@@ -1585,7 +1620,8 @@ export async function updateOrden(id: number, input: UpdateOrdenDB) {
       .input("u", sql.NVarChar(100), input.usuario)
       .input("notaCreador", sql.NVarChar(500), (input.observaciones ?? "").trim() || null)
       .input("notaInterna", sql.NVarChar(500), (input.notaInterna ?? "").trim() || null)
-      .query(`UPDATE dbo.OrdenCompra SET proveedorNo=@proveedorNo, proveedorNombre=@proveedorNombre, currencyCode=@currencyCode, notaCreador=@notaCreador${setNotaInterna}, fechaModificacion=getdate(), modificadoPor=@u WHERE idOrdenCompra=@id`);
+      .input("prioridad", sql.NVarChar(20), input.prioridad && input.prioridad !== "normal" ? input.prioridad : null)
+      .query(`UPDATE dbo.OrdenCompra SET proveedorNo=@proveedorNo, proveedorNombre=@proveedorNombre, currencyCode=@currencyCode, notaCreador=@notaCreador${setNotaInterna}${setPrioridad}, fechaModificacion=getdate(), modificadoPor=@u WHERE idOrdenCompra=@id`);
     // 4) reinsertar líneas + reaplicar saldo
     let line = 10000;
     for (const l of lineas) {

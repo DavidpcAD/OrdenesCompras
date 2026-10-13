@@ -5,7 +5,7 @@ import { usePathname } from "next/navigation";
 import type {
   Almacen, Articulo, Maquina, Movimiento, Notificacion, Obra, Orden, OrdenLinea, Pedido, PedidoLinea,
   Proveedor, Recepcion, RecepcionLinea, Role, TipoSolicitud,
-  NotaCreditoLinea, MotivoNC,
+  NotaCreditoLinea, MotivoNC, Prioridad,
 } from "./types";
 import * as seed from "./seed";
 import { devolverPendienteAPedidos, esLineaRecibible, nextNumero, nowISO, ordenEstaCompleta, PERSONA_POR_ROL, todayISO } from "./helpers";
@@ -40,6 +40,7 @@ interface NewOrdenInput {
   almacenRecepcion?: string;   // almacén/ubicación de recepción en BC (default ALM-GRAL)
   observaciones?: string;      // notas para el proveedor; salen en el PDF de la orden
   notaInterna?: string;        // comentario para el APROBADOR; nunca sale en el PDF
+  prioridad?: Prioridad;       // qué tan urgente; la ve Aprobación. No viaja a BC.
   lineas: Omit<OrdenLinea, "id" | "cantidadRecibida" | "cantidadFacturada">[];
 }
 
@@ -680,7 +681,7 @@ export function StoreProvider({ children, useApi }: { children: React.ReactNode;
         const p = prov(input.proveedorId);
         const { idOrdenCompra } = await api.createOrden({
           proveedorNo: input.proveedorNo ?? p?.code ?? input.proveedorId, proveedorNombre: input.proveedorNombre ?? p?.nombre, currencyCode: input.currencyCode,
-          usuario: persona, rol: rolActual, observaciones: input.observaciones, notaInterna: input.notaInterna,
+          usuario: persona, rol: rolActual, observaciones: input.observaciones, notaInterna: input.notaInterna, prioridad: input.prioridad,
           lineas: input.lineas.map((l) => ({
             tipoLinea: l.tipo, itemNo: l.articuloId, variantCode: l.variantCode, idPedidoCompraDet: l.pedidoLineaId ? Number(l.pedidoLineaId) : undefined,
             descripcion: l.descripcion, cantidad: l.cantidad, unidad: l.unidad, almacen: l.almacen,
@@ -711,6 +712,7 @@ export function StoreProvider({ children, useApi }: { children: React.ReactNode;
           creadoPor: persona,   // en modo API lo pone el SQL (creadoPor)
           proveedorNo: input.proveedorNo, proveedorNombre: input.proveedorNombre,
           almacenRecepcion: input.almacenRecepcion, observaciones: input.observaciones, notaInterna: input.notaInterna,
+          prioridad: input.prioridad ?? "normal",
           bcNumber: input.bcNumber, bcDeepLink: input.bcDeepLink,
         };
         const pedidos = d.pedidos.map((p) => {
@@ -747,7 +749,7 @@ export function StoreProvider({ children, useApi }: { children: React.ReactNode;
         const p = prov(input.proveedorId);
         const r = await api.updateOrden(id, {
           proveedorNo: input.proveedorNo ?? p?.code ?? input.proveedorId, proveedorNombre: input.proveedorNombre ?? p?.nombre,
-          currencyCode: input.currencyCode, usuario: persona, rol: rolActual, observaciones: input.observaciones, notaInterna: input.notaInterna,
+          currencyCode: input.currencyCode, usuario: persona, rol: rolActual, observaciones: input.observaciones, notaInterna: input.notaInterna, prioridad: input.prioridad,
           lineas: input.lineas.map((l) => ({
             tipoLinea: l.tipo, itemNo: l.articuloId, variantCode: l.variantCode, idPedidoCompraDet: l.pedidoLineaId ? Number(l.pedidoLineaId) : undefined,
             descripcion: l.descripcion, cantidad: l.cantidad, unidad: l.unidad, almacen: l.almacen,
@@ -779,7 +781,8 @@ export function StoreProvider({ children, useApi }: { children: React.ReactNode;
         const ordenes = d.ordenes.map((o) => (o.id === id ? {
           ...o, proveedorId: input.proveedorId, proveedorNo: input.proveedorNo, proveedorNombre: input.proveedorNombre,
           currencyCode: input.currencyCode, almacenRecepcion: input.almacenRecepcion ?? o.almacenRecepcion,
-          observaciones: input.observaciones ?? o.observaciones, notaInterna: input.notaInterna ?? o.notaInterna, lineas,
+          observaciones: input.observaciones ?? o.observaciones, notaInterna: input.notaInterna ?? o.notaInterna,
+          prioridad: input.prioridad ?? o.prioridad, lineas,
         } : o));
         // Saldo de las solicitudes: se REVIERTE lo que consumían las líneas viejas y
         // se aplica lo de las nuevas, igual que hace el server (`updateOrden` en

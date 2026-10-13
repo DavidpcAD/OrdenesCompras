@@ -9,6 +9,7 @@ import { Timeline } from "@/components/timeline";
 import { useStore } from "@/lib/store";
 import { esLineaCargo, esLineaRecibible, money, num, formatDate, formatDateTime, ordenBadgeDe, proveedorLabel, ordenIva, ordenLineaImporte, ordenRecibidoPct, ordenPedidos, ordenEsDirecta, ordenTotalConIva, numeroOrden, tieneBc, destinoDeRecepcion, ordenEsperaCorreccion, chequeoBcVencido } from "@/lib/helpers";
 import { vaAlProveedor } from "@/lib/envio-proveedor";
+import { badgePrioridad } from "@/components/prioridad";
 import { ChipPedido } from "@/components/ordenes-lista";
 import { useVolver } from "@/lib/use-volver";
 import type { Orden } from "@/lib/types";
@@ -277,6 +278,7 @@ export function OrdenDetalle({
             <h1 className="ds-heading" title={`N.º interno de la app: ${orden.numero}`}>{numeroOrden(orden)}</h1>
             <Badge tone={b.tone}>{b.label}</Badge>
             {esDirecta && <Badge tone="yellow">Directa</Badge>}
+            {(() => { const p = badgePrioridad(orden.prioridad); return p ? <Badge tone={p.tone}>{p.label}</Badge> : null; })()}
           </div>
           <p className="ds-muted">{orden.proveedorNo ?? prov?.code} · {proveedorLabel(orden, proveedores)} · emitida {formatDate(orden.fecha)} · recibido {ordenRecibidoPct(orden)}%{tieneBc(orden) ? "" : " · todavía no está en Business Central"}</p>
           {orden.almacenRecepcion && <p className="ds-body-sm ds-muted">Recepción en almacén <span className="ds-strong">{orden.almacenRecepcion}</span></p>}
