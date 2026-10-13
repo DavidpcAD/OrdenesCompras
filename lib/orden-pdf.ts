@@ -1,6 +1,6 @@
 import type { Orden } from "./types.ts";
 import { ordenLineaImporte } from "./helpers.ts";
-import { documentoDeOrden, destinoLineaDoc, obraLineaDoc, fmtDoc, etiquetaUnidad } from "./orden-doc.ts";
+import { documentoDeOrden, destinoLineaDoc, obraLineaDoc, fmtDoc, etiquetaUnidad, NOTA_ORDEN } from "./orden-doc.ts";
 import { etiquetaVariante, nombreDeVariante, descripcionParaDocumento } from "./variantes.ts";
 import {
   nuevoDocumento, dibujante, encabezadoMarca, bloqueEmpresa, numerarPaginas, formatearFecha,
@@ -165,6 +165,26 @@ export function ordenAPdf(orden: Orden, unidades: Record<string, string> = {}, v
   const totIva = ["Total", "", fmtDoc(d.subtotal), fmtDoc(d.subtotal), fmtDoc(d.iva)];
   colsIva.forEach((c, i) => txt(totIva[i], c.x, y, { size: 8, bold: true, width: c.w, align: c.align }));
   y += 18;
+
+  // ─────────────────────────────── nota / requisito de cierre con la factura
+  // Requisito fijo de la empresa (ver NOTA_ORDEN): el proveedor tiene que facturar
+  // EXACTAMENTE lo que dice la orden. En negrita y numerada, y se mide con la misma
+  // fuente bold con la que se dibuja para no cortar el texto ni pisar lo de abajo.
+  {
+    const nota = NOTA_ORDEN.map((t, i) => `${i + 1}. ${t}`);
+    const altoLinea = (s: string) => doc.font("Helvetica-Bold").fontSize(8.5).heightOfString(s, { width: ANCHO_UTIL });
+    const altoNota = nota.reduce((h, l) => h + altoLinea(l) + 4, 0);
+    if (y + altoNota + 26 > A4.alto - MARGEN) { doc.addPage(); y = Y_CONTINUACION; }
+    regla(y, 1.2);
+    y += 8;
+    txt("Nota", MARGEN, y, { size: 9, bold: true });
+    y += 13;
+    for (const l of nota) {
+      doc.font("Helvetica-Bold").fontSize(8.5).fillColor(NEGRO).text(l, MARGEN, y, { width: ANCHO_UTIL });
+      y += altoLinea(l) + 4;
+    }
+    y += 8;
+  }
 
   // ─────────────────────────────────────────────────── observaciones
   const obs = orden.observaciones?.trim();

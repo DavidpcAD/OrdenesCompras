@@ -63,7 +63,12 @@ export function dibujante(doc: any): { txt: Txt; regla: Regla } {
 // Marca arriba a la izquierda y el título del documento a la derecha.
 export function encabezadoMarca(doc: any, txt: Txt, titulo: string): void {
   doc.save().translate(MARGEN, MARGEN).scale(84 / 163).path(MARCA_PATH).fill(VERDE, "even-odd").restore();
-  txt("ADELANTE", MARGEN + 92, MARGEN + 4, { size: 10, bold: true, color: "#6f8a1e", characterSpacing: 1 });
+  // El nombre va sobrio al lado de la marca: "ADELANTE" en el negro de marca y
+  // "DESARROLLOS" en gris. Antes "ADELANTE" iba en un olivo (#6f8a1e) que no es color de
+  // la marca —el verde del DS es #add010, el de la marca de al lado— y se veía fuera de
+  // marca en la orden al proveedor. Se usa NEGRO/GRIS (los tokens que el resto del PDF
+  // ya usa), no un literal suelto.
+  txt("ADELANTE", MARGEN + 92, MARGEN + 4, { size: 10, bold: true, color: NEGRO, characterSpacing: 1 });
   txt("DESARROLLOS", MARGEN + 92, MARGEN + 17, { size: 6, color: GRIS, characterSpacing: 2.4 });
   txt(titulo, MARGEN, MARGEN, { size: 20, bold: true, width: ANCHO_UTIL, align: "right" });
   // El número de hoja NO se dibuja acá: lo pone `numerarPaginas` al final, cuando ya
