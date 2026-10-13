@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getOrden, setOrdenEstado, setOrdenBcNumber, updateOrden, descartarOrden, ordenTieneRecepciones, obrasDeLineasPedido, asignarBcNumber, guardarChequeoBc, guardarVariantesResueltas, anotarEncabezadoBc, MSG_NO_REABRIR } from "@/lib/repo";
-import { bcReopenPedido, bcReplaceOrderLines, bcCrearPedidoAbierto, crearEnBcAlEnviar, lineasOrdenParaBc, obrasSinTarea, lineasSinUnidad, lineasSinAlmacen, resolverVariantesRequeridas, sanearObrasDeLineas, avisoDeSaneo, bcOrdenTotales, bcEstadoDelPedido, chequearOrdenContraBc, lineasReplaceParaCotejo, lineasOrdenParaCotejo, paredAprobacionActiva, itemsBloqueadosDeLineas, bcSincronizarEncabezado, bcBorrarPedidoAbierto, conPedidoAbierto, campoVacioEnBc, explicarCampoVacioEnBc } from "@/lib/bc";
+import { bcReopenPedido, bcReplaceOrderLines, bcCrearPedidoAbierto, crearEnBcAlEnviar, lineasOrdenParaBc, obrasSinTarea, lineasSinUnidad, lineasSinAlmacen, resolverVariantesRequeridas, sanearObrasDeLineas, avisoDeSaneo, bcOrdenTotales, bcEstadoDelPedido, chequearOrdenContraBc, lineasReplaceParaCotejo, lineasOrdenParaCotejo, paredAprobacionActiva, itemsBloqueadosDeLineas, bcSincronizarEncabezado, bcBorrarPedidoAbierto, conPedidoAbierto, campoVacioEnBc, explicarCampoVacioEnBc, bcSellarCreadoPor } from "@/lib/bc";
 import { ordenTotalConIva, lineasSinPrecio } from "@/lib/helpers";
 import { actor } from "@/lib/actor";
 import { mensajeSeguro } from "@/lib/error-sql";
@@ -285,6 +285,17 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
           }, { status: 502 });
         }
       }
+
+      // Quién CREÓ la orden en la app → se sella en el pedido de BC. El "Id. usuario"
+      // de BC es la cuenta de servicio y no dice quién fue; este campo (que llena la
+      // extensión) es el único rastro de la persona que la armó. Es la gemela del
+      // "Realizado por" que marca quién registra la factura. Best-effort: no frena el
+      // envío. Va acá, con el pedido ya en BC —recién creado o reusado en el reenvío— y
+      // ANTES de la pared, porque quién lo creó no cambia porque el cotejo frene el
+      // avance. `o.creadoPor` es el login de Proveeduría que armó la orden, no `a.usuario`
+      // (quien la manda a aprobación, que puede ser otra persona).
+      const numeroCreado = bcNo || o.bcNumber || "";
+      if (numeroCreado) await bcSellarCreadoPor(numeroCreado, o.creadoPor ?? "");
 
       // ── LA PARED ────────────────────────────────────────────────────────────
       // Se relee de BC el pedido que se acaba de crear/reescribir y se cotejan las

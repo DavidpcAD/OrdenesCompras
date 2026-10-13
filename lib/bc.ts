@@ -4532,6 +4532,40 @@ export async function bcSellarRealizadoPor(orderNo: string, realizadoPor: string
   }
 }
 
+// Deja escrito en el PEDIDO de BC quién CREÓ la orden en esta app — el login de
+// Proveeduría que la armó (OrdenCompra.creadoPor), no quien la manda a aprobación. El
+// "Id. usuario" de BC es siempre la cuenta de servicio S2S y no dice quién fue, así que
+// este campo (que llena la extensión vía AdelantePO_SetPedidoCreadoPor) es el único
+// rastro de la persona. Gemela de bcSellarRealizadoPor, que marca quién REGISTRA la
+// factura: se sella al crear el pedido, o sea al enviar a aprobación.
+//
+// NUNCA tumba el envío: si la extensión todavía no tiene el procedure (o el pedido no
+// se deja tocar), se pierde el nombre y se sigue. Crear el pedido en BC importa mucho
+// más que la firma de quién lo creó.
+export async function bcSellarCreadoPor(orderNo: string, creadoPor: string): Promise<boolean> {
+  const quien = nombreRealizadoPor(creadoPor); // mismo recorte Text[50] que "Realizado por"
+  // "Sistema" es el relleno de lib/actor.ts cuando no hay sesión a quién creerle: en BC
+  // sería una firma inventada, y ahí es mejor el campo vacío que un nombre de nadie.
+  if (!orderNo || !quien || quien.toLowerCase() === "sistema") return false;
+  try {
+    const cid = await getStdCompanyId();
+    const url = `${odataRoot()}/AdelantePO_SetPedidoCreadoPor?company=${encodeURIComponent(cid)}`;
+    const res = await bcFetch(url, {
+      method: "POST", cache: "no-store",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ orderNo, creadoPor: quien }),
+    });
+    if (!res.ok) {
+      console.warn(`BC "Creado por" en ${orderNo} no se pudo sellar (${res.status}): ${(await res.text()).slice(0, 200)}`);
+      return false;
+    }
+    return true;
+  } catch (e) {
+    console.warn(`BC "Creado por" en ${orderNo} no se pudo sellar:`, e);
+    return false;
+  }
+}
+
 // Las líneas que se le mandan a los procedures de registro (PostInvoice /
 // PostReceipt / PostInvoiceOfReceived). El `tipo` de la app se traduce al `type` del
 // enum de BC para que el codeunit busque la línea correcta del pedido: sin él busca
