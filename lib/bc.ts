@@ -149,21 +149,42 @@ async function getToken(force = false): Promise<string> {
     scope: "https://api.businesscentral.dynamics.com/.default",
     grant_type: "client_credentials",
   });
-  const res = await fetch(`https://login.microsoftonline.com/${tenant}/oauth2/v2.0/token`, {
+  const res = await conTiempoLimite(fetch(`https://login.microsoftonline.com/${tenant}/oauth2/v2.0/token`, {
     method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body,
-  });
+  }), bcFetchTimeoutMs(), "token de BC (login.microsoftonline.com)");
   if (!res.ok) throw new Error(`OAuth BC falló (${res.status}): ${(await res.text()).slice(0, 300)}`);
   const json = await res.json();
   tokenCache = { token: json.access_token, exp: Date.now() + (json.expires_in ?? 3600) * 1000 };
   return tokenCache.token;
 }
 
+// Tope de espera por CADA llamada a BC. Sale de BC_FETCH_TIMEOUT_MS por si hay que
+// aflojarlo desde Azure sin esperar un despliegue; default 60 s, que al lado de los
+// ~250 ms que tarda BC cuando está sano deja muchísimo aire y aun así corta años-luz
+// antes del timeout de undici (~300 s por llamada, que apiladas daban la "media hora"
+// que se congelaba "Enviar a aprobación" sin avisarle a nadie).
+export function bcFetchTimeoutMs(): number {
+  const v = Number(process.env.BC_FETCH_TIMEOUT_MS);
+  return Number.isFinite(v) && v > 0 ? v : 60_000;
+}
+
 // fetch contra BC con reintento ante 401: el Sandbox a veces resetea el binding
 // S2S y el token cacheado deja de ser aceptado. En ese caso pedimos un token
 // FRESCO y reintentamos una vez. Logueamos ms-diagnostics para ver el motivo real.
+//
+// CADA llamada lleva tope (conTiempoLimite): una sola que se cuelgue del lado de BC
+// —un lock, un pico de concurrencia— dejaba la petición entera esperando el timeout de
+// undici, y como "Enviar a aprobación" encadena ~12-18 de estas en serie, el botón se
+// quedaba en "Enviando…" por minutos SIN un aviso, aunque el pedido ya estuviera creado
+// en BC. Con el tope, una llamada trabada falla en <1 min y el llamador puede dejar la
+// orden Abierta para reintentar. OJO: conTiempoLimite corre con Promise.race, así que no
+// toca las opciones del fetch y no pisa el caché de Next de las lecturas de catálogo.
 async function bcFetch(url: string, init: RequestInit = {}): Promise<Response> {
   const baseHeaders = { ...(init.headers as Record<string, string> | undefined), Accept: "application/json" };
-  const run = (token: string) => fetch(url, { ...init, headers: { ...baseHeaders, Authorization: `Bearer ${token}` } });
+  const ms = bcFetchTimeoutMs();
+  const run = (token: string) => conTiempoLimite(
+    fetch(url, { ...init, headers: { ...baseHeaders, Authorization: `Bearer ${token}` } }),
+    ms, `BC ${init.method ?? "GET"} ${url}`);
   let res = await run(await getToken());
   if (res.status === 401) {
     console.warn(`BC 401 en ${url} — reintento con token fresco. ms-diagnostics=${res.headers.get("ms-diagnostics") ?? "n/a"}`);
@@ -556,11 +577,12 @@ export async function bcObras(): Promise<BcObra[]> {
   }));
 }
 
-// Corre `p`, pero se rinde a los `ms`. El catálogo de obras se lee ANTES de guardar
-// la orden, y bcFetch no lleva timeout: si el tenant de BC deja de contestar (sin
-// error, colgado), sin esto el guardado se quedaría esperando el timeout de undici
-// (~300 s) y la orden no se guardaría en ningún lado. Rendirse = "no pude leer el
-// catálogo", que es un estado que el saneo ya sabe manejar.
+// Corre `p`, pero se rinde a los `ms`. Es el tope que usa `bcFetch` para toda llamada
+// a BC (y el token), y el que `codigosDeObra` le pone al catálogo de obras aparte: si
+// el tenant de BC deja de contestar (sin error, colgado), sin esto la espera se iría
+// hasta el timeout de undici (~300 s por llamada) y, encadenadas, congelaban el envío a
+// aprobación por minutos. Rendirse = "BC no contestó", un estado que los llamadores ya
+// saben manejar (dejar la orden Abierta, avisar y reintentar).
 async function conTiempoLimite<T>(p: Promise<T>, ms: number, que: string): Promise<T> {
   let t: ReturnType<typeof setTimeout> | undefined;
   try {
