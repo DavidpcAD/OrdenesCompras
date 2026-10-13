@@ -6,6 +6,8 @@ import { actor } from "@/lib/actor";
 import type { Role } from "@/lib/types";
 import { marcarFacturadaTrasBc } from "@/lib/guardado-tras-bc";
 import { anotarFalloDeBc } from "@/lib/fallo-posteo";
+import { ES_ISO } from "@/lib/fechas";
+import { todayISO } from "@/lib/helpers";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -21,6 +23,13 @@ export async function POST(req: Request) {
   // decir de qué pedido habla el error (adentro quedaba fuera de alcance).
   const cuerpo = await req.json().catch(() => ({} as any));
   const { orderNo, vendorInvoiceNo, lineas, ordenId, vendorNo } = cuerpo ?? {};
+  // FECHA DE REGISTRO. A diferencia de los otros dos codeunits, el de "facturar lo
+  // recibido" (AdelantePO_PostInvoiceOfReceived) tiene el parámetro tipado como Date y
+  // OData RECHAZA el string vacío: "Cannot convert the literal '' to the expected type
+  // 'Edm.Date'" (BadRequest). La pantalla de Archivo no pedía fecha, así que le llegaba
+  // "" y ninguna factura en revisión se podía registrar (CP-006047, 13 oct 2026). Se usa
+  // la fecha que manda la pantalla (la de la recepción) si es un ISO válido, y si no, hoy.
+  const postingDate = ES_ISO(cuerpo?.postingDate) ? cuerpo.postingDate : todayISO();
   // Se declara ACÁ y no dentro del try porque el catch también lo necesita: el
   // intento fallido se anota a nombre de quien lo hizo (ver lib/fallo-posteo.ts).
   let quien: { usuario: string; rol: Role } | null = null;
@@ -65,7 +74,7 @@ export async function POST(req: Request) {
     // Quién factura, de la cookie firmada (ver lib/actor.ts): sobrescribe en el pedido
     // el nombre que dejó la recepción, porque es este registro el que crea el consumo.
     quien = await actor(cuerpo);
-    const postedNo = await bcFacturarRecibido(orderNo, vendorInvoiceNo, lineas ?? [], "", quien.usuario);
+    const postedNo = await bcFacturarRecibido(orderNo, vendorInvoiceNo, lineas ?? [], postingDate, quien.usuario);
     // La factura ya está registrada en BC: la recepción se marca facturada acá mismo.
     const guardado = await marcarFacturadaTrasBc(cuerpo?.facturar, quien);
     return NextResponse.json({ ok: true, postedNo, ...guardado });

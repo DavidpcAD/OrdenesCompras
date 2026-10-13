@@ -62,6 +62,9 @@ export default function ArchivoPage() {
             body: JSON.stringify({
               orderNo: o.bcNumber, vendorInvoiceNo: numFac.trim(), lineas: bcLineas, ordenId: o.id,
               vendorNo: o.proveedorNo || o.proveedorId,
+              // La fecha de registro en BC: la de la recepción (cuando entró el material),
+              // o la de la factura. Sin esto le llegaba "" al codeunit y BC la rechazaba.
+              postingDate: rec.fechaRecepcion || rec.fechaFactura || undefined,
               // Que la recepción quede marcada facturada en la MISMA llamada: si esto
               // viaja aparte y se pierde, en BC hay una factura registrada y acá una
               // recepción "en revisión" pidiendo que la registren otra vez.
