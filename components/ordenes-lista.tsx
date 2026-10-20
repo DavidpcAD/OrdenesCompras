@@ -293,8 +293,13 @@ export function OrdenesLista({
     },
     // ¿Ya salió hacia el proveedor? Se filtra por "Sin enviar" para quedarse con
     // justo lo que falta mandar.
+    // `enableHiding: false`: es la columna de TRABAJO de Proveeduría (bajar el PDF y
+    // marcar que ya salió). No se puede esconder —ni desde "Columnas", ni heredada de
+    // una Vista vieja, ni por el estado guardado en el navegador—. Angie la perdió una
+    // vez sin darse cuenta y no había forma obvia de traerla de vuelta; el DataTable
+    // trata esta marca como columna fija-visible.
     ...(conEnvioProveedor ? [{
-      id: "envio", header: "Al proveedor", meta: { label: "Al proveedor" }, enableSorting: false,
+      id: "envio", header: "Al proveedor", meta: { label: "Al proveedor" }, enableSorting: false, enableHiding: false,
       accessorFn: (o: Orden) => (!vaAlProveedor(o) ? "" : ordenEnviada(o) ? "Enviada" : "Sin enviar"),
       cell: (c: any) => <CeldaEnvio orden={c.row.original} />,
     }] : []),

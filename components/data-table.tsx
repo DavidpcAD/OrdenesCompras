@@ -110,6 +110,26 @@ export function DataTable<T>({
   const { usuario, cargando, errorCarga, ultimaSync, modoApi } = useStore();
   // Inyecta el filtro multi-selección a las columnas que no traigan uno propio.
   const cols = useMemo(() => columns.map((c) => (c.filterFn ? c : { ...c, filterFn: isDateCol(c) ? dateRangeFilter : multiFilter })), [columns]);
+
+  // COLUMNAS QUE NO SE PUEDEN ESCONDER. Las que su definición marca con
+  // `enableHiding: false` son columnas de ACCIÓN (p.ej. "Al proveedor" en Proveeduría:
+  // bajar el PDF y marcar que ya salió). Ni "Columnas", ni el estado guardado del
+  // navegador, ni una Vista vieja pueden dejarlas apagadas: se perdía la única forma de
+  // hacer el trabajo y no era obvio cómo recuperarla. `podarFijas` les saca su marca del
+  // mapa de visibilidad —ausente = visible—, así que cualquier `{envio:false}` heredado
+  // se ignora. Se aplica en TODO punto donde se escribe la visibilidad (arranque,
+  // toggle, aplicar/restablecer Vista), de modo que el estado nunca llega a guardar una
+  // fija en false.
+  const fijasVisibles = useMemo(
+    () => new Set(columns.filter((c) => c.enableHiding === false).map((c) => c.id).filter(Boolean) as string[]),
+    [columns],
+  );
+  const podarFijas = (v: VisibilityState): VisibilityState => {
+    if (!fijasVisibles.size) return v;
+    const out: VisibilityState = {};
+    for (const k in v) if (!fijasVisibles.has(k)) out[k] = v[k];
+    return out;
+  };
   // Estado de la tabla RECORDADO por pantalla, en sessionStorage: si filtro, entro a
   // un detalle y vuelvo, la tabla tiene que estar como la dejé. Es por pestaña y por
   // sesión a propósito: no se arrastra a mañana ni a otra pestaña. Es distinto de las
@@ -163,7 +183,7 @@ export function DataTable<T>({
   const filterBtnRef = useRef<HTMLElement | null>(null);   // disparador del popover, para devolverle el foco al cerrar
   const cerrarFiltro = () => { setFilterCol(null); filterBtnRef.current?.focus(); };
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>(siVolvemos(guardado.columnFilters) ?? []);
-  const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({ ...(columnVisibilityInicial ?? {}), ...(guardado.columnVisibility ?? {}) });
+  const [columnVisibility, setColumnVisibility] = useState<VisibilityState>(podarFijas({ ...(columnVisibilityInicial ?? {}), ...(guardado.columnVisibility ?? {}) }));
   // El orden de las columnas se recuerda como el resto de la armazón. Antes no se
   // guardaba y lo único que lo reponía era la vista predeterminada, que se aplicaba en
   // cada montaje; con el candado por visita eso ya no pasa y el orden se habría ido al
@@ -263,12 +283,16 @@ export function DataTable<T>({
   const quitarFiltros = () => { setVistaEnUso(null); setGlobalFilter(""); setColumnFilters([]); aLaPrimera(); };
   const cambiarFiltros: OnChangeFn<ColumnFiltersState> = (u) => { setColumnFilters(u); aLaPrimera(); };
   const cambiarBusqueda: OnChangeFn<any> = (u) => { setGlobalFilter(u); aLaPrimera(); };
+  // Toda escritura de visibilidad pasa por acá: una fija nunca queda en false (por si
+  // el toggle llegara igual, aunque `enableHiding:false` ya lo vuelve no-op).
+  const cambiarVisibilidad: OnChangeFn<VisibilityState> = (u) =>
+    setColumnVisibility((prev) => podarFijas(typeof u === "function" ? u(prev) : u));
 
   const table = useReactTable({
     data, columns: cols,
     state: { sorting, columnFilters, columnVisibility, columnOrder, globalFilter, pagination },
     autoResetPageIndex: false,
-    onSortingChange: setSorting, onColumnFiltersChange: cambiarFiltros, onColumnVisibilityChange: setColumnVisibility,
+    onSortingChange: setSorting, onColumnFiltersChange: cambiarFiltros, onColumnVisibilityChange: cambiarVisibilidad,
     onColumnOrderChange: setColumnOrder, onGlobalFilterChange: cambiarBusqueda, onPaginationChange: setPagination,
     globalFilterFn: "includesString",
     getRowId: getRowId ? (row) => getRowId(row) : undefined,
@@ -322,7 +346,9 @@ export function DataTable<T>({
     setVistaEnUso(v.nombre);
     const c = v.config ?? {};
     if (c.columnOrder) setColumnOrder(c.columnOrder);
-    setColumnVisibility(c.columnVisibility ?? {}); setSorting(c.sorting ?? []); setColumnFilters(c.columnFilters ?? []);
+    // Una Vista guardada antes del candado puede traer una fija en false: se poda al
+    // aplicarla, así la columna de acción no se pierde aunque la vista siga vieja en SQL.
+    setColumnVisibility(podarFijas(c.columnVisibility ?? {})); setSorting(c.sorting ?? []); setColumnFilters(c.columnFilters ?? []);
     setGlobalFilter(c.globalFilter ?? ""); setModo(c.modo ?? "tabla");
     if (c.pageSize) setPageSizeElegido(true);   // la vista guardada TAMBIÉN es una elección
     setPagination((p) => ({ ...p, pageSize: paginacion ? (c.pageSize ?? p.pageSize) : TODAS_LAS_FILAS, pageIndex: 0 })); setPanel(null);
@@ -363,7 +389,7 @@ export function DataTable<T>({
     // Vuelve a lo de FÁBRICA de esta pantalla, no a "todo visible": con `{}` aparecía
     // la columna que la pantalla esconde a propósito (el N.º interno de la app, que
     // solo sirve para soporte) y parecía que Restablecer había roto algo.
-    setColumnOrder(columns.map((c) => c.id!).filter(Boolean)); setColumnVisibility({ ...(columnVisibilityInicial ?? {}) }); setSorting([]);
+    setColumnOrder(columns.map((c) => c.id!).filter(Boolean)); setColumnVisibility(podarFijas({ ...(columnVisibilityInicial ?? {}) })); setSorting([]);
     setColumnFilters([]); setGlobalFilter(""); setPageSizeElegido(false);
     setPagination((p) => ({ ...p, pageSize: paginacion ? (pageSizeInicial ?? 50) : TODAS_LAS_FILAS, pageIndex: 0 })); setPanel(null);
   }
@@ -570,9 +596,12 @@ export function DataTable<T>({
             <div className="ds-label ds-muted" style={{ padding: "4px 8px 8px" }}>Columnas — mostrar y ordenar</div>
             {(columnOrder.length ? columnOrder : leaf.map((c) => c.id)).map((cid) => {
               const col = leaf.find((c) => c.id === cid); if (!col) return null;
+              const fija = fijasVisibles.has(cid);
               return (
                 <div key={cid} className="row row--between gap-2" style={{ alignItems: "center", padding: "5px 8px", borderRadius: 8 }}>
-                  <Checkbox className="ds-body-sm" checked={col.getIsVisible()} onChange={col.getToggleVisibilityHandler()} label={labelDe(cid)} />
+                  <Checkbox className="ds-body-sm" checked={col.getIsVisible()} disabled={fija}
+                    onChange={col.getToggleVisibilityHandler()} label={labelDe(cid)}
+                    title={fija ? "Esta columna no se puede esconder." : undefined} />
                   <span className="row gap-1">
                     <button type="button" className="icon-btn" title="Subir" aria-label="Subir columna" onClick={() => moveCol(cid, -1)}>↑</button>
                     <button type="button" className="icon-btn" title="Bajar" aria-label="Bajar columna" onClick={() => moveCol(cid, 1)}>↓</button>
