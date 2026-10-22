@@ -166,24 +166,33 @@ export function ordenAPdf(orden: Orden, unidades: Record<string, string> = {}, v
   colsIva.forEach((c, i) => txt(totIva[i], c.x, y, { size: 8, bold: true, width: c.w, align: c.align }));
   y += 18;
 
-  // ─────────────────────────────── nota / requisito de cierre con la factura
+  // ──────────────────────── requisito OBLIGATORIO de cierre con la factura
   // Requisito fijo de la empresa (ver NOTA_ORDEN): el proveedor tiene que facturar
-  // EXACTAMENTE lo que dice la orden. En negrita y numerada, y se mide con la misma
-  // fuente bold con la que se dibuja para no cortar el texto ni pisar lo de abajo.
+  // EXACTAMENTE lo que dice la orden. Va en un RECUADRO, con título y en grande, para
+  // que no se lea como una nota al pie: es obligatorio. Se mide con la misma fuente
+  // bold con la que se dibuja, para no cortar el texto ni pisar lo de abajo.
   {
+    const TITULO = "REQUISITO OBLIGATORIO";
     const nota = NOTA_ORDEN.map((t, i) => `${i + 1}. ${t}`);
-    const altoLinea = (s: string) => doc.font("Helvetica-Bold").fontSize(8.5).heightOfString(s, { width: ANCHO_UTIL });
-    const altoNota = nota.reduce((h, l) => h + altoLinea(l) + 4, 0);
-    if (y + altoNota + 26 > A4.alto - MARGEN) { doc.addPage(); y = Y_CONTINUACION; }
-    regla(y, 1.2);
-    y += 8;
-    txt("Nota", MARGEN, y, { size: 9, bold: true });
-    y += 13;
-    for (const l of nota) {
-      doc.font("Helvetica-Bold").fontSize(8.5).fillColor(NEGRO).text(l, MARGEN, y, { width: ANCHO_UTIL });
-      y += altoLinea(l) + 4;
-    }
-    y += 8;
+    const PAD = 11;                      // aire entre el borde y el texto
+    const GAP = 5;                       // aire entre un punto y el siguiente
+    const anchoTexto = ANCHO_UTIL - PAD * 2;
+    const altoLinea = (s: string) => doc.font("Helvetica-Bold").fontSize(10.5).heightOfString(s, { width: anchoTexto });
+    const altoTitulo = doc.font("Helvetica-Bold").fontSize(12).heightOfString(TITULO, { width: anchoTexto });
+    const altoCuerpo = nota.reduce((h, l) => h + altoLinea(l), 0) + GAP * (nota.length - 1);
+    const altoCaja = PAD + altoTitulo + 9 + altoCuerpo + PAD;
+    y += 4;
+    if (y + altoCaja + 10 > A4.alto - MARGEN) { doc.addPage(); y = Y_CONTINUACION; }
+    doc.save().rect(MARGEN, y, ANCHO_UTIL, altoCaja).lineWidth(1.4).strokeColor(NEGRO).stroke().restore();
+    let yc = y + PAD;
+    doc.font("Helvetica-Bold").fontSize(12).fillColor(NEGRO).text(TITULO, MARGEN + PAD, yc, { width: anchoTexto });
+    yc += altoTitulo + 9;
+    nota.forEach((l, i) => {
+      if (i) yc += GAP;
+      doc.font("Helvetica-Bold").fontSize(10.5).fillColor(NEGRO).text(l, MARGEN + PAD, yc, { width: anchoTexto });
+      yc += altoLinea(l);
+    });
+    y += altoCaja + 10;
   }
 
   // ─────────────────────────────────────────────────── observaciones

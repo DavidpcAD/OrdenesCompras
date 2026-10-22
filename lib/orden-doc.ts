@@ -19,8 +19,9 @@ export const EMPRESA_DOC = {
 
 // Nota fija al pie de la ORDEN que se le manda al proveedor (pedida por Angie, 13 oct
 // 2026). Es un REQUISITO de la empresa, no el campo libre de Observaciones: por eso va
-// siempre, en negrita, y numerada. Existe para frenar las facturas que no cierran con la
-// orden —precio o cantidad distintos a lo cotizado—, que son las que hay que devolver.
+// siempre, en un recuadro titulado «REQUISITO OBLIGATORIO», en grande y negrita, y
+// numerada. Existe para frenar las facturas que no cierran con la orden —precio o
+// cantidad distintos a lo cotizado—, que son las que hay que devolver.
 // Va solo en la orden de compra, no en la cotización (una cotización todavía no es una
 // compra que cerrar). Se numeran al imprimir (1., 2., …).
 export const NOTA_ORDEN = [
