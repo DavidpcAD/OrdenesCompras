@@ -1,12 +1,12 @@
 import { getAuthPool, getPool, pedir, pedirTx, sql } from "./db.ts";
-import { bcDeepLinkPedido, bcDeepLinkFacturaRegistrada, bcDeepLinkFacturaPorNo, bcUnidadesDeCompra, sanearObrasDeLineas } from "./bc.ts";
+import { bcDeepLinkPedido, bcDeepLinkFacturaRegistrada, bcDeepLinkFacturaPorNo, bcDeepLinkFacturaBorrador, bcDeepLinkRecepcion, bcUnidadesDeCompra, sanearObrasDeLineas } from "./bc.ts";
 import { unidadCorregida, codigoDeItem } from "./unidad.ts";
 import { etiquetaInterna, esTipoDevolucion, esTipoEdicion, ordenDeDetalleDevolucion } from "./helpers.ts";
 import { resumirCambiosDeLineas } from "./cambios-orden.ts";
 import { componerNotaCierre, detalleDeCierre, lineaCancelada, motivoObligatorio, quitarNotaCierre } from "./cierre-solicitud.ts";
 import { envioDeSello, leerSello, MOV_DESHECHO, MOV_ENVIADA, MOV_PDF, SELLO_SEP, type Sello } from "./envio-proveedor.ts";
 import type { UnidadCompraItem } from "./bc.ts";
-import type { DevolucionSolicitud, Orden, OrdenLinea, Pedido, PedidoLinea, Prioridad, Recepcion, RecepcionFoto, RecepcionLinea, Role, NotaCreditoLinea } from "./types.ts";
+import type { DevolucionSolicitud, Orden, OrdenLinea, Pedido, PedidoLinea, Prioridad, Recepcion, RecepcionFoto, RecepcionLinea, Role, NotaCreditoLinea, CargoRecibidoHist, LineaCargoHist } from "./types.ts";
 
 /* ============================================================================
    Capa de acceso a datos (SQL Server) para Compras Adelante.
@@ -3121,4 +3121,187 @@ export async function listNotasCredito(): Promise<NotaCreditoLinea[]> {
     bcFacturaUrl: (x.bcNo && bcDeepLinkFacturaRegistrada(String(x.bcNo))) || undefined,
     bcUrl: (x.bcNo && bcDeepLinkPedido(String(x.bcNo))) || undefined,
   }));
+}
+
+/* ============================================================================
+   CARGO SOBRE FACTURA (Contabilidad) — histórico de los cargos de un tercero
+   (flete, traspaso de lotes…) que se registran en BC desde /facturacion/cargo.
+   BC solo sabe que los registró la app (User_ID BUSINESSCENTRAL_API_ADELANTE) y
+   la app no guardaba nada: quién lo hizo, a qué recepciones se asignó y si había
+   un borrador de la misma factura en BC queda acá.
+   Tablas dbo.CargoRecibido + dbo.CargoRecibidoDet (ver
+   sql/cargo_recibido_historial.sql). Se crean solas, como las de notas de crédito.
+   ============================================================================ */
+export interface NewCargoRecibidoDB {
+  facturaBc: string;
+  proveedorNo: string;
+  proveedorNombre?: string;
+  facturaProveedor: string;
+  fechaFactura?: string;       // yyyy-mm-dd
+  moneda?: string;
+  tipoCargo?: string;
+  descripcionCargo?: string;
+  cantidad: number;
+  precioUnitario: number;
+  importe: number;
+  metodo?: string;
+  borradores: string[];        // CF-… de la misma factura que había en BC al registrar
+  lineas: LineaCargoHist[];
+  usuario: string;
+  rol: Role;
+}
+
+let cargosTablasListas = false;
+async function ensureCargosRecibidosTables() {
+  if (cargosTablasListas) return;
+  const pool = await getPool();
+  await pedir(pool).query(`
+    IF NOT EXISTS (SELECT 1 FROM sys.tables WHERE name = 'CargoRecibido' AND schema_id = SCHEMA_ID('dbo'))
+    BEGIN
+      CREATE TABLE dbo.CargoRecibido (
+        idCargoRecibido   INT IDENTITY(1,1) PRIMARY KEY,
+        facturaBc         NVARCHAR(30)   NULL,
+        proveedorNo       NVARCHAR(30)   NOT NULL,
+        proveedorNombre   NVARCHAR(150)  NULL,
+        facturaProveedor  NVARCHAR(50)   NOT NULL,
+        fechaFactura      DATE           NULL,
+        moneda            NVARCHAR(10)   NULL,
+        tipoCargo         NVARCHAR(30)   NULL,
+        descripcionCargo  NVARCHAR(150)  NULL,
+        cantidad          DECIMAL(18,4)  NOT NULL,
+        precioUnitario    DECIMAL(18,4)  NOT NULL,
+        importe           DECIMAL(18,4)  NOT NULL,
+        metodo            NVARCHAR(20)   NULL,
+        borradoresBc      NVARCHAR(300)  NULL,
+        esEliminada       BIT            NOT NULL CONSTRAINT DF_CargoRecibido_elim DEFAULT (0),
+        fechaCreacion     DATETIME       NOT NULL CONSTRAINT DF_CargoRecibido_fc   DEFAULT (getdate()),
+        creadoPor         NVARCHAR(100)  NULL,
+        rol               NVARCHAR(20)   NULL
+      );
+    END
+    IF NOT EXISTS (SELECT 1 FROM sys.tables WHERE name = 'CargoRecibidoDet' AND schema_id = SCHEMA_ID('dbo'))
+    BEGIN
+      CREATE TABLE dbo.CargoRecibidoDet (
+        idCargoRecibidoDet INT IDENTITY(1,1) PRIMARY KEY,
+        idCargoRecibido    INT            NOT NULL,
+        recepcionNo        NVARCHAR(30)   NOT NULL,
+        lineaNo            INT            NOT NULL,
+        articuloNo         NVARCHAR(40)   NULL,
+        descripcion        NVARCHAR(200)  NULL,
+        almacen            NVARCHAR(20)   NULL,
+        cantidad           DECIMAL(18,4)  NULL,
+        importeLinea       DECIMAL(18,4)  NULL,
+        monedaLinea        NVARCHAR(10)   NULL,
+        asignadoEstimado   DECIMAL(18,4)  NULL
+      );
+      CREATE INDEX IX_CargoRecibidoDet_cargo ON dbo.CargoRecibidoDet(idCargoRecibido);
+    END`);
+  cargosTablasListas = true;
+}
+
+export async function createCargoRecibido(input: NewCargoRecibidoDB): Promise<number> {
+  await ensureCargosRecibidosTables();
+  const pool = await getPool();
+  const fecha = /^\d{4}-\d{2}-\d{2}$/.test(input.fechaFactura ?? "") ? new Date(`${input.fechaFactura}T00:00:00Z`) : null;
+  const tx = new sql.Transaction(pool); await tx.begin();
+  try {
+    const r = await pedirTx(tx)
+      .input("facturaBc", sql.NVarChar(30), (input.facturaBc ?? "").slice(0, 30) || null)
+      .input("proveedorNo", sql.NVarChar(30), input.proveedorNo.slice(0, 30))
+      .input("proveedorNombre", sql.NVarChar(150), (input.proveedorNombre ?? "").slice(0, 150) || null)
+      .input("facturaProveedor", sql.NVarChar(50), input.facturaProveedor.slice(0, 50))
+      .input("fechaFactura", sql.Date, fecha)
+      .input("moneda", sql.NVarChar(10), (input.moneda ?? "").slice(0, 10))
+      .input("tipoCargo", sql.NVarChar(30), (input.tipoCargo ?? "").slice(0, 30) || null)
+      .input("descripcionCargo", sql.NVarChar(150), (input.descripcionCargo ?? "").slice(0, 150) || null)
+      .input("cantidad", sql.Decimal(18, 4), input.cantidad)
+      .input("precioUnitario", sql.Decimal(18, 4), input.precioUnitario)
+      .input("importe", sql.Decimal(18, 4), input.importe)
+      .input("metodo", sql.NVarChar(20), (input.metodo ?? "").slice(0, 20) || null)
+      .input("borradoresBc", sql.NVarChar(300), input.borradores.join(",").slice(0, 300) || null)
+      .input("creadoPor", sql.NVarChar(100), input.usuario)
+      .input("rol", sql.NVarChar(20), input.rol)
+      .query(`INSERT dbo.CargoRecibido (facturaBc,proveedorNo,proveedorNombre,facturaProveedor,fechaFactura,moneda,tipoCargo,descripcionCargo,cantidad,precioUnitario,importe,metodo,borradoresBc,creadoPor,rol)
+              OUTPUT INSERTED.idCargoRecibido AS id
+              VALUES (@facturaBc,@proveedorNo,@proveedorNombre,@facturaProveedor,@fechaFactura,@moneda,@tipoCargo,@descripcionCargo,@cantidad,@precioUnitario,@importe,@metodo,@borradoresBc,@creadoPor,@rol)`);
+    const id = Number(r.recordset[0].id);
+    for (const l of input.lineas) {
+      await pedirTx(tx)
+        .input("id", sql.Int, id)
+        .input("recepcionNo", sql.NVarChar(30), l.recepcionNo)
+        .input("lineaNo", sql.Int, l.lineaNo)
+        .input("articuloNo", sql.NVarChar(40), l.articuloNo || null)
+        .input("descripcion", sql.NVarChar(200), l.descripcion || null)
+        .input("almacen", sql.NVarChar(20), l.almacen || null)
+        .input("cantidad", sql.Decimal(18, 4), l.cantidad)
+        .input("importeLinea", sql.Decimal(18, 4), l.importe)
+        .input("monedaLinea", sql.NVarChar(10), l.moneda)
+        .input("asignado", sql.Decimal(18, 4), l.asignado)
+        .query(`INSERT dbo.CargoRecibidoDet (idCargoRecibido,recepcionNo,lineaNo,articuloNo,descripcion,almacen,cantidad,importeLinea,monedaLinea,asignadoEstimado)
+                VALUES (@id,@recepcionNo,@lineaNo,@articuloNo,@descripcion,@almacen,@cantidad,@importeLinea,@monedaLinea,@asignado)`);
+    }
+    await tx.commit();
+    return id;
+  } catch (e) { await tx.rollback(); throw e; }
+}
+
+const iso = (v: any) => (v instanceof Date ? v.toISOString() : String(v ?? ""));
+
+export async function listCargosRecibidos(top = 300): Promise<CargoRecibidoHist[]> {
+  await ensureCargosRecibidosTables();
+  const pool = await getPool();
+  const ultimos = `SELECT TOP (@top) idCargoRecibido FROM dbo.CargoRecibido
+                    WHERE ISNULL(esEliminada,0)=0 ORDER BY fechaCreacion DESC, idCargoRecibido DESC`;
+  const cab = await pedir(pool).input("top", sql.Int, top).query(
+    `SELECT c.* FROM dbo.CargoRecibido c WHERE c.idCargoRecibido IN (${ultimos})
+      ORDER BY c.fechaCreacion DESC, c.idCargoRecibido DESC`);
+  if (!cab.recordset.length) return [];
+  const det = await pedir(pool).input("top", sql.Int, top).query(
+    `SELECT d.* FROM dbo.CargoRecibidoDet d WHERE d.idCargoRecibido IN (${ultimos})
+      ORDER BY d.idCargoRecibido, d.idCargoRecibidoDet`);
+  const lineasDe = new Map<number, LineaCargoHist[]>();
+  for (const d of det.recordset as any[]) {
+    const recepcionNo = String(d.recepcionNo ?? "");
+    const l: LineaCargoHist = {
+      recepcionNo,
+      lineaNo: Number(d.lineaNo) || 0,
+      articuloNo: d.articuloNo ?? "",
+      descripcion: d.descripcion ?? "",
+      almacen: d.almacen ?? "",
+      cantidad: Number(d.cantidad) || 0,
+      importe: Number(d.importeLinea) || 0,
+      moneda: d.monedaLinea ?? "",
+      asignado: d.asignadoEstimado != null ? Number(d.asignadoEstimado) : null,
+      recepcionUrl: (recepcionNo && bcDeepLinkRecepcion(recepcionNo)) || undefined,
+    };
+    const k = Number(d.idCargoRecibido);
+    if (!lineasDe.has(k)) lineasDe.set(k, []);
+    lineasDe.get(k)!.push(l);
+  }
+  return (cab.recordset as any[]).map((c) => {
+    const facturaBc = String(c.facturaBc ?? "").trim();
+    return {
+      id: String(c.idCargoRecibido),
+      facturaBc,
+      // Sin un N.º de BC de verdad (el codeunit contesta "Registrado" si no lo trae) no hay link.
+      bcFacturaUrl: (/^[A-Z]+-\d+/.test(facturaBc) && bcDeepLinkFacturaPorNo(facturaBc)) || undefined,
+      proveedorNo: c.proveedorNo ?? "",
+      proveedorNombre: c.proveedorNombre ?? "",
+      facturaProveedor: c.facturaProveedor ?? "",
+      fechaFactura: c.fechaFactura ? iso(c.fechaFactura).slice(0, 10) : undefined,
+      moneda: c.moneda ?? "",
+      tipoCargo: c.tipoCargo ?? "",
+      descripcionCargo: c.descripcionCargo ?? "",
+      cantidad: Number(c.cantidad) || 0,
+      precioUnitario: Number(c.precioUnitario) || 0,
+      importe: Number(c.importe) || 0,
+      metodo: c.metodo ?? "",
+      borradores: String(c.borradoresBc ?? "").split(",").map((s) => s.trim()).filter(Boolean)
+        .map((numero) => ({ numero, url: bcDeepLinkFacturaBorrador(numero) || undefined })),
+      registradoPor: c.creadoPor ?? "",
+      rol: c.rol ?? "",
+      fecha: iso(c.fechaCreacion),
+      lineas: lineasDe.get(Number(c.idCargoRecibido)) ?? [],
+    };
+  });
 }
