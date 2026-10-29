@@ -65,6 +65,82 @@ test("el cargo viaja como Charge con su tipo y método", () => {
   });
 });
 
+// ── CENTRO DE COSTO DEL CARGO (CP-006235, 29 oct 2026) ───────────────────────
+// Impuestos de exterior de una compra para HER: las dos líneas quedaron en BC con
+// CC=HER y el cargo con la dimensión en blanco, y Contabilidad tenía que ponérsela a
+// mano. El cargo no lleva obra ni almacén en BC: el CC es su único amarre.
+const cargo = (p: Partial<LineaReplaceBc> = {}): LineaReplaceBc => ({
+  tipo: "cargo", chargeNo: "03", descripcion: "Impuestos Exterior", cantidad: 1, precio: 22.79, ...p,
+});
+
+test("cargo: el CC que se le eligió manda, aunque las líneas vayan a otro", () => {
+  const { lines } = payloadReplaceLines([
+    item({ locationCode: "HER", jobNo: "HER", taskNo: "HER-MANT", centroCosto: "HER" }),
+    cargo({ centroCosto: "MAQ", locationCode: "HER" }),
+  ]);
+  assert.equal(lines[1].ccValue, "MAQ");
+  assert.equal(lines[1].ccCode, "CC");
+});
+
+test("cargo sin CC propio: hereda el de las líneas cuando todas llevan el mismo", () => {
+  const { lines } = payloadReplaceLines([
+    item({ itemNo: "M07-0518", locationCode: "HER", jobNo: "HER", taskNo: "HER-MANT", centroCosto: "HER" }),
+    item({ itemNo: "M07-0519", locationCode: "HER", jobNo: "HER", taskNo: "HER-MANT", centroCosto: "HER" }),
+    cargo(),
+  ]);
+  assert.equal(lines[2].ccValue, "HER");                // era CP-006235: el cargo iba vacío
+});
+
+// Lo que hereda es el CC con el que la línea VIAJA, no el que trae escrito: una
+// compra para stock a ALM-GRAL va con INV aunque la haya pedido una obra.
+test("cargo sin CC propio: hereda el CC efectivo de las líneas, no el de la solicitud", () => {
+  process.env.BC_CC_POR_ALMACEN = "ALM-GRAL=INV";
+  try {
+    const { lines } = payloadReplaceLines([item({ locationCode: "ALM-GRAL", centroCosto: "PV-NOVARUM" }), cargo()]);
+    assert.equal(lines[0].ccValue, "INV");
+    assert.equal(lines[1].ccValue, "INV");
+  } finally { delete process.env.BC_CC_POR_ALMACEN; }
+});
+
+// Con varias obras no hay un CC "de las líneas": elegir una sería decidir por la
+// persona a quién se le carga el flete. Se queda con lo de antes (el del almacén, si
+// amarra uno; si no, nada y BC deja el suyo).
+test("cargo sin CC propio y líneas a varias obras: no inventa uno", () => {
+  const { lines } = payloadReplaceLines([
+    item({ jobNo: "VN-L.20", taskNo: "2.2", centroCosto: "VN-L.20" }),
+    item({ jobNo: "VB-5.01", taskNo: "1000", centroCosto: "VB-5.01" }),
+    cargo(),
+  ]);
+  assert.ok(!("ccValue" in lines[2]));
+  assert.ok(!("ccCode" in lines[2]));
+});
+
+test("cargo sin CC propio y alguna línea sin CC: tampoco hereda", () => {
+  const { lines } = payloadReplaceLines([item({ centroCosto: "VN-L.20", jobNo: "VN-L.20", taskNo: "2.2" }), item({ itemNo: "M02" }), cargo()]);
+  assert.ok(!("ccValue" in lines[2]));
+});
+
+test("cargo sin CC propio ni CC común: cae al que amarra su almacén, como antes", () => {
+  process.env.BC_CC_POR_ALMACEN = "HER";
+  try {
+    const { lines } = payloadReplaceLines([cargo({ locationCode: "HER" })]);
+    assert.equal((lines[0] as any).ccValue, "HER");
+  } finally { delete process.env.BC_CC_POR_ALMACEN; }
+});
+
+// De la orden de la app a BC: la obra que Proveeduría le pone al cargo en Editar
+// (`proyecto`) es su centro de costo. Job No. no, porque BC no lo acepta en un cargo.
+test("la obra del cargo en la orden viaja como su CC y nunca como Job No.", () => {
+  const ls = lineasOrdenParaBc([
+    lineaApp({ id: "a", proyecto: "HER", taskNo: "HER-MANT", almacen: "HER" }),
+    lineaApp({ id: "c", tipo: "cargo", articuloId: undefined, chargeNo: "03", descripcion: "Impuestos Exterior", unidad: "UND", cantidad: 1, precioUnitario: 22.79, proyecto: "MAQ", almacen: "HER" }),
+  ]);
+  assert.equal(ls[1].centroCosto, "MAQ");
+  const { lines } = payloadReplaceLines(ls);
+  assert.equal(lines[1].ccValue, "MAQ");
+  assert.ok(!("jobNo" in lines[1]));
+});
+
 test("un cargo sin método usa Amount, que es el reparto por defecto", () => {
   const { lines } = payloadReplaceLines([{ tipo: "cargo", chargeNo: "FLETE", cantidad: 1, precio: 100 }]);
   assert.equal((lines[0] as any).chargeMethod, "Amount");
