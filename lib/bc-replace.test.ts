@@ -306,6 +306,26 @@ test("la línea con obra viaja al almacén de su obra, no al de la orden", () =>
   assert.equal(cd.centroCosto, "VN-L.42");
 });
 
+// Las DOS rutas del material, como le llegan a BC. Para almacén: entra a la bodega
+// elegida y suma existencia (CR-011741: +4,32 a ALM-GRAL con CC INV, queda abierto).
+// Consumo directo: lleva obra y TAREA, BC lo mete y lo saca en el mismo movimiento y
+// lo carga a esa tarea (CR-011994: +5,76 y −5,76 en INF-HDAII, tarea 13.2). Mandarla
+// al almacén de la obra no puede costar ni la obra ni la tarea de la liquidación.
+test("almacén suma existencia en su bodega; consumo directo se liquida en la tarea", () => {
+  process.env.BC_CC_POR_ALMACEN = "ALM-GRAL=INV,F-MADERAS=F-MADERAS";
+  try {
+    const { lines } = payloadReplaceLines(lineasOrdenParaBc([
+      lineaApp({ almacen: "ALM-GRAL" }),
+      lineaApp({ almacen: "F-MADERAS" }),
+      lineaApp({ almacen: "ALM-GRAL", proyecto: "VN-L.42", taskNo: "2.7" }),
+    ]));
+    const [general, maderas, consumo] = lines;
+    assert.deepEqual([general.locationCode, general.jobNo, general.taskNo, general.ccValue], ["ALM-GRAL", "", "", "INV"]);
+    assert.deepEqual([maderas.locationCode, maderas.jobNo, maderas.taskNo, maderas.ccValue], ["F-MADERAS", "", "", "F-MADERAS"]);
+    assert.deepEqual([consumo.locationCode, consumo.jobNo, consumo.taskNo, consumo.ccValue], ["VN-L.42", "VN-L.42", "2.7", "VN-L.42"]);
+  } finally { delete process.env.BC_CC_POR_ALMACEN; }
+});
+
 test("la línea con obra y sin almacén no cae al almacén de recepción por defecto", () => {
   process.env.BC_RECEPCION_LOCATION = "ALM-GRAL";
   assert.equal(lineasOrdenParaBc([lineaApp({ proyecto: "VN-L.42", taskNo: "2.7", almacen: "" })])[0].locationCode, "VN-L.42");
