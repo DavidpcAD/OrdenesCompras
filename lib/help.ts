@@ -392,12 +392,14 @@ const CARGO: HelpEntry = {
   detalle: [
     "Se usa cuando un tercero factura aparte —por ejemplo el flete— de un material que ya se recibió.",
     "Se crea un pedido con solo la línea de cargo y se asigna a las líneas de la recepción ya registrada.",
+    "Si en BC ya hay un borrador o una factura registrada con ese mismo N.º de este proveedor, la pantalla lo avisa: si la registrás acá, borrá el borrador en BC para que no quede dos veces.",
+    "Cada cargo registrado queda en el Historial de cargos: quién lo registró, cuándo, a qué recepciones se asignó y los links a BC.",
   ],
   pasos: [
-    "Elegí la orden/recepción sobre la que se aplica el cargo.",
-    "Ingresá la descripción y el monto del cargo (p. ej. transporte).",
-    "Elegí el método de reparto entre las líneas (por importe, peso, volumen o partes iguales).",
-    "Registrá: se crea el pedido de solo cargo y se asigna en Business Central.",
+    "Elegí el proveedor del cargo (el transportista) y escribí el N.º de su factura.",
+    "Elegí el tipo de cargo y poné cantidad y precio.",
+    "Buscá y marcá las líneas de la recepción ya registrada a las que se les carga.",
+    "Elegí el método de reparto (por importe, peso, volumen o partes iguales) y registrá en Business Central.",
   ],
 };
 const TODAS: HelpEntry = {

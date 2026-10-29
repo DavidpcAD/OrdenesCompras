@@ -2375,6 +2375,9 @@ button.ana-kpi:active { transform: translateY(1px); }
 }
 .nc-grp-head:hover { background: color-mix(in srgb, var(--ds-color-green-100) 8%, var(--ds-tint-base)); }
 .nc-grp-head:focus-visible { outline: 3px solid color-mix(in srgb, var(--ds-color-green-100) 60%, transparent); outline-offset: -3px; }
+/* Mismo encabezado cuando NO es un link (Historial de cargos): sin mano ni hover. */
+.nc-grp-head--static { cursor: default; }
+.nc-grp-head--static:hover { background: none; }
 .nc-grp-head__go {
   font-size: var(--ds-font-size-body-sm); font-weight: var(--ds-font-weight-semibold);
   color: var(--ds-color-green-300); opacity: 0; transform: translateX(-4px);

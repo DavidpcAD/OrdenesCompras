@@ -344,6 +344,48 @@ export interface NotaCreditoLinea {
   bcFacturaUrl?: string;         // deep link a las Facturas de compra registradas en BC
 }
 
+// ============================ CARGO SOBRE FACTURA (Contabilidad) ============
+// Histórico de los cargos de un tercero (flete, traspaso de lotes…) registrados en
+// BC desde /facturacion/cargo. Tablas dbo.CargoRecibido + dbo.CargoRecibidoDet.
+
+/** Una línea de recepción registrada a la que se le asignó el cargo. */
+export interface LineaCargoHist {
+  recepcionNo: string;           // CR-…
+  lineaNo: number;               // Line No. de la recepción en BC
+  articuloNo: string;
+  descripcion: string;
+  almacen: string;
+  cantidad: number;
+  importe: number;               // importe de la línea, en SU moneda (no la del cargo)
+  moneda: string;                // "" = colones
+  asignado: number | null;       // reparto que calculó la app, en la moneda del cargo; null = peso/volumen (lo calcula BC)
+  recepcionUrl?: string;         // deep link a la recepción registrada en BC
+}
+
+export interface CargoRecibidoHist {
+  id: string;
+  facturaBc: string;             // CFR-… que devolvió BC al registrar
+  bcFacturaUrl?: string;         // deep link a esa factura registrada
+  proveedorNo: string;
+  proveedorNombre: string;
+  facturaProveedor: string;      // N.º de la factura del proveedor del cargo
+  fechaFactura?: string;         // yyyy-mm-dd (la que se mandó como fecha de registro)
+  moneda: string;                // del cargo; "" = colones
+  tipoCargo: string;             // Item Charge de BC (p. ej. 05)
+  descripcionCargo: string;
+  cantidad: number;
+  precioUnitario: number;
+  importe: number;
+  metodo: string;                // Amount | Equally | Weight | Volume
+  // Borradores de esa MISMA factura que ya había en BC cuando se registró: quedan
+  // dos veces si nadie los borra (CF-005837 con la 834 de Green Mountain, 29 oct 2026).
+  borradores: { numero: string; url?: string }[];
+  registradoPor: string;
+  rol: string;
+  fecha: string;                 // ISO: cuándo se registró
+  lineas: LineaCargoHist[];
+}
+
 // ============================ BITÁCORA / MOVIMIENTOS ========================
 export interface Movimiento {
   id: string;

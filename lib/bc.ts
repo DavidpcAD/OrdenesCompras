@@ -10,6 +10,7 @@ import { claveVariante } from "./variantes.ts";
 import { codigoDeItem } from "./unidad.ts";
 import { cotejarLineas, type Cotejo, type LineaApp, type LineaBc } from "./bc-conciliacion.ts";
 import type { FacturaBcPeriodo } from "./barrido-bc.ts";
+import { importeDelCargo, tipoDeFacturaBc, type FacturaMismoNumero } from "./cargo-recibido.ts";
 
 type TokenCache = { token: string; exp: number };
 let tokenCache: TokenCache | null = null;
@@ -4815,14 +4816,16 @@ export async function bcPostChargeOnReceipts(input: {
   // NOTA: currencyCode lo resuelve BC por el proveedor del cargo (no se envía).
 }): Promise<string> {
   const itemChargeNo = (input.itemChargeNo ?? input.chargeNo ?? "").trim();
-  const chargeAmount = (input.chargeAmount != null && input.chargeAmount > 0)
-    ? input.chargeAmount
-    : (input.precio ?? 0) * (input.cantidad && input.cantidad > 0 ? input.cantidad : 1);
+  const chargeAmount = importeDelCargo(input);
   if (!input.chargeVendorNo) throw new Error("Falta el proveedor del cargo.");
   if (!input.vendorInvoiceNo) throw new Error("Falta el N.º de factura del proveedor.");
   if (!itemChargeNo) throw new Error("Falta el tipo de cargo de producto.");
   if (!(chargeAmount > 0)) throw new Error("El importe del cargo debe ser mayor que 0.");
-  const lines = (input.receiptLines ?? []).filter((l) => l.documentNo && l.lineNo > 0);
+  // Solo las dos llaves que lee el codeunit: el body de la ruta también trae el
+  // detalle de cada línea para el histórico, y eso no tiene que viajar a BC.
+  const lines = (input.receiptLines ?? [])
+    .filter((l) => l.documentNo && l.lineNo > 0)
+    .map((l) => ({ documentNo: l.documentNo, lineNo: l.lineNo }));
   if (!lines.length) throw new Error("Seleccioná al menos una línea de recepción para asignar el cargo.");
   const cid = await getStdCompanyId();
   const url = `${odataRoot()}/AdelantePO_PostChargeOnReceipts?company=${encodeURIComponent(cid)}`;
@@ -4880,6 +4883,49 @@ export function bcDeepLinkFacturaRegistrada(orderNo: string): string {
 // mirando en la lista. Misma página 146: el histórico de facturas registradas.
 export function bcDeepLinkFacturaPorNo(facturaNo: string): string {
   return bcDeepLink(146, `'No.' IS '${facturaNo}'`);
+}
+
+// Deep link a una RECEPCIÓN registrada (CR-…), por su N.º (Posted Purchase Receipts,
+// page 145): la recepción a la que se le asignó un cargo de tercero.
+export function bcDeepLinkRecepcion(recepcionNo: string): string {
+  return bcDeepLink(145, `'No.' IS '${recepcionNo}'`);
+}
+
+// Deep link a una factura de compra SIN registrar (borrador CF-…), por su N.º
+// (Purchase Invoices, page 9308): para abrirla y borrarla cuando esa misma factura
+// ya se registró por otro lado.
+export function bcDeepLinkFacturaBorrador(facturaNo: string): string {
+  return bcDeepLink(9308, `'No.' IS '${facturaNo}'`);
+}
+
+// ¿BC ya tiene esta factura de este proveedor? Busca en las facturas de compra (la
+// API estándar trae juntos los borradores y las registradas) por proveedor + N.º de
+// factura del proveedor, exacto, que es como lo compara BC al registrar. El N.º va
+// en mayúscula porque BC lo guarda así (es un campo Code).
+export async function bcFacturasConNumeroProveedor(vendorNo: string, facturaNo: string): Promise<FacturaMismoNumero[]> {
+  const v = (vendorNo ?? "").trim();
+  const f = (facturaNo ?? "").trim().toUpperCase();
+  if (!v || !f) return [];
+  const q = (s: string) => s.replace(/'/g, "''");
+  const cid = await getStdCompanyId();
+  const filtro = `vendorNumber eq '${q(v)}' and vendorInvoiceNumber eq '${q(f)}'`;
+  const url = `${stdRoot()}/companies(${cid})/purchaseInvoices?$filter=${encodeURIComponent(filtro)}`
+    + `&$select=number,status,postingDate,invoiceDate,currencyCode,totalAmountIncludingTax`;
+  const res = await bcFetch(url, { cache: "no-store" });
+  if (!res.ok) throw new Error(`BC ${res.status} al buscar la factura ${f}: ${(await res.text()).slice(0, 200)}`);
+  const d: any = await res.json();
+  return (d.value ?? []).map((x: any): FacturaMismoNumero => {
+    const numero = String(x.number ?? "").trim();
+    const estado = String(x.status ?? "").trim();
+    const url = tipoDeFacturaBc(estado) === "borrador" ? bcDeepLinkFacturaBorrador(numero) : bcDeepLinkFacturaPorNo(numero);
+    return {
+      numero, estado,
+      total: Number(x.totalAmountIncludingTax) || 0,
+      moneda: String(x.currencyCode ?? "").trim(),
+      fecha: String(x.postingDate || x.invoiceDate || "").slice(0, 10),
+      url: url || undefined,
+    };
+  });
 }
 
 function decodeJwt(token: string): any {

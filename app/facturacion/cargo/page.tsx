@@ -1,14 +1,15 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { Button, Card, EmptyState, Field, Input, Select, useToast } from "@/components/ui";
 import { Combobox } from "@/components/combobox";
 import { DateField } from "@/components/date-field";
-import { IconChevronLeft } from "@/components/icons";
-import { IconWarning } from "@/components/icons";
+import { IconChevronLeft, IconList, IconWarning } from "@/components/icons";
 import { useStore } from "@/lib/store";
-import { cuenta, money, MONEDAS } from "@/lib/helpers";
+import { cuenta, formatDate, money, MONEDAS } from "@/lib/helpers";
+import type { FacturaMismoNumero } from "@/lib/cargo-recibido";
 
 // Línea de recepción registrada (albarán) tal como la devuelve
 // /api/bc/recepciones-registradas.
@@ -22,6 +23,63 @@ const lineKey = (l: { documentNo: string; lineNo: number }) => `${l.documentNo}#
 type Vendor = { id: string; code: string; nombre: string; currencyCode: string };
 
 const PASOS = ["Proveedor y factura", "Cargo de producto", "Líneas de recepción", "Reparto y registro"];
+
+type MismaFactura = { borradores: FacturaMismoNumero[]; registradas: FacturaMismoNumero[]; error?: string };
+
+const IconExterno = () => (
+  <svg className="nc-linkbtn__ext" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M7 17 17 7M9 7h8v8" /></svg>
+);
+
+// Lo que BC ya tiene con este mismo N.º de factura de este proveedor. La 834 de
+// Green Mountain estaba armada a mano en BC como borrador (CF-005837) y además se
+// registró desde acá (CFR-011966): si nadie borra el borrador, la misma factura
+// queda dos veces, y alguien le cambia el número y la paga otra vez (Holcim
+// 321207-1). Avisa; no frena, porque registrar acá y borrar el borrador es válido.
+function AvisoMismaFactura({ dup, factura }: { dup: MismaFactura | null; factura: string }) {
+  if (!dup) return null;
+  const { borradores, registradas } = dup;
+  if (!borradores.length && !registradas.length) {
+    return dup.error
+      ? <p className="ds-body-sm ds-muted mt-3" style={{ marginBottom: 0 }}>No se pudo revisar en BC si la factura {factura} ya existe. Revisalo en BC antes de registrar.</p>
+      : null;
+  }
+  const fila = (f: FacturaMismoNumero, etiqueta: string) => (
+    <li key={f.numero} className="row gap-3 wrap" style={{ alignItems: "center", marginTop: 6 }}>
+      <span><span className="ds-strong">{f.numero}</span> · {money(f.total, f.moneda)}{f.fecha ? ` · ${formatDate(f.fecha)}` : ""}</span>
+      {f.url && <a href={f.url} target="_blank" rel="noopener noreferrer" className="nc-linkbtn">{etiqueta} <IconExterno /></a>}
+    </li>
+  );
+  return (
+    <div className="col gap-3 mt-4">
+      {registradas.length > 0 && (
+        <div className="ds-callout ds-callout--red" role="alert">
+          <span className="ds-callout__icon"><IconWarning size={18} /></span>
+          <div>
+            <div className="ds-callout__title">La factura {factura} de este proveedor ya está registrada en BC</div>
+            <div className="ds-callout__body">
+              Registrarla otra vez la duplica, y BC la va a rechazar por el N.º repetido. Si es otra factura, revisá el número.
+              <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>{registradas.map((f) => fila(f, "Ver en BC"))}</ul>
+            </div>
+          </div>
+        </div>
+      )}
+      {borradores.length > 0 && (
+        <div className="ds-callout ds-callout--yellow" role="status">
+          <span className="ds-callout__icon"><IconWarning size={18} /></span>
+          <div>
+            <div className="ds-callout__title">
+              {borradores.length === 1 ? `En BC ya hay un borrador de la factura ${factura}` : `En BC ya hay ${borradores.length} borradores de la factura ${factura}`}
+            </div>
+            <div className="ds-callout__body">
+              Alguien la empezó a armar a mano en BC. Si la registrás acá, borrá {borradores.length === 1 ? "ese borrador" : "esos borradores"} en BC después: si no, la misma factura queda dos veces.
+              <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>{borradores.map((f) => fila(f, "Abrir borrador en BC"))}</ul>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 
 // Cargo de producto (flete/transporte facturado por un TERCERO) sobre líneas de
 // recepciones YA REGISTRADAS. Caso: el material lo facturó su proveedor, pero el
@@ -60,6 +118,27 @@ export default function CargoSobreFacturaPage() {
   const [vendorInvoiceNo, setVendorInvoiceNo] = useState("");
   const [documentDate, setDocumentDate] = useState("");
   const chargeVendor = catProv.find((v) => v.id === chargeVendorId);
+
+  // ¿BC ya tiene esta factura (borrador o registrada)? Se pregunta al dejar de
+  // escribir el N.º, y cada respuesta vieja se descarta si ya cambió el dato.
+  const [mismaFactura, setMismaFactura] = useState<MismaFactura | null>(null);
+  const facturaBuscada = vendorInvoiceNo.trim();
+  useEffect(() => {
+    setMismaFactura(null);
+    const vendor = chargeVendor?.code ?? "";
+    if (!vendor || !facturaBuscada) return;
+    let vigente = true;
+    const t = setTimeout(async () => {
+      try {
+        const r = await fetch(`/api/bc/facturas-proveedor?${new URLSearchParams({ vendor, factura: facturaBuscada })}`);
+        const d = await r.json();
+        if (vigente) setMismaFactura({ borradores: d.borradores ?? [], registradas: d.registradas ?? [], error: d.error });
+      } catch (e: any) {
+        if (vigente) setMismaFactura({ borradores: [], registradas: [], error: String(e?.message ?? e) });
+      }
+    }, 450);
+    return () => { vigente = false; clearTimeout(t); };
+  }, [chargeVendor?.code, facturaBuscada]);
 
   const [chargeNo, setChargeNo] = useState("");
   const [chargeDescripcion, setChargeDescripcion] = useState("");
@@ -163,6 +242,7 @@ export default function CargoSobreFacturaPage() {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           chargeVendorNo: chargeVendor?.code,
+          chargeVendorNombre: chargeVendor?.nombre,
           vendorInvoiceNo: vendorInvoiceNo.trim(),
           documentDate: documentDate || undefined,
           currencyCode: currency || undefined,
@@ -172,11 +252,22 @@ export default function CargoSobreFacturaPage() {
           precio: Number(precio) || 0,
           metodo,
           receiptLines: lineasSel.map((l) => ({ documentNo: l.documentNo, lineNo: l.lineNo })),
+          // Para el histórico (no viaja a BC): lo que se vio de cada línea y el reparto
+          // calculado acá. Por peso o volumen lo calcula BC, así que va vacío.
+          detalleLineas: lineasSel.map((l) => ({
+            documentNo: l.documentNo, lineNo: l.lineNo, itemNo: l.itemNo, descripcion: l.descripcion,
+            locationCode: l.locationCode, cantidad: l.cantidad, importe: l.importe, currencyCode: l.currencyCode,
+            asignado: previewReparto ? share(l) : null,
+          })),
         }),
       });
       const d = await r.json();
       if (!r.ok || !d.ok) throw new Error(d.error || `Error ${r.status}`);
-      toast(`Cargo registrado en BC (${d.resultado ?? "OK"}).`, "success");
+      if (d.historialError) {
+        toast(`Cargo registrado en BC (${d.resultado ?? "OK"}), pero no quedó en el historial: ${d.historialError}. Anotá el N.º de BC.`, "error");
+      } else {
+        toast(`Cargo registrado en BC (${d.resultado ?? "OK"}). Quedó en el historial de cargos.`, "success");
+      }
       // Limpiar para un nuevo registro y volver al paso 1.
       setVendorInvoiceNo(""); setPrecio(""); setChargeNo(""); setChargeDescripcion("");
       setSeleccion({}); setResultados([]); setBuscado(false); setDocNo(""); setPaso(0);
@@ -196,6 +287,7 @@ export default function CargoSobreFacturaPage() {
             <h1 className="ds-heading">Cargo sobre factura recibida</h1>
             <p className="ds-muted">Para cuando un tercero factura aparte (p. ej. el transporte de un material ya recibido). Se crea el pedido con solo la línea de cargo y se asigna a las líneas de la recepción ya registrada.</p>
           </div>
+          <Link href="/facturacion/cargo/historial" className="nc-linkbtn"><IconList size={16} /> Historial de cargos</Link>
         </div>
 
         {bcCaido && (
@@ -248,6 +340,7 @@ export default function CargoSobreFacturaPage() {
                 <DateField value={documentDate} onChange={setDocumentDate} placeholder="Fecha de la factura" />
               </Field>
             </div>
+            <AvisoMismaFactura dup={mismaFactura} factura={facturaBuscada} />
           </Card>
         )}
 
@@ -365,6 +458,7 @@ export default function CargoSobreFacturaPage() {
                 </Select>
               </div>
             </div>
+            <AvisoMismaFactura dup={mismaFactura} factura={facturaBuscada} />
             {lineasSel.length === 0 ? (
               <EmptyState title="No hay líneas seleccionadas." hint="Volvé al paso anterior para elegirlas." />
             ) : (
