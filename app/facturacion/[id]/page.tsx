@@ -54,8 +54,9 @@ export default function RegistrarFacturaPage() {
   const toast = useToast();
   const { pedidos, proveedores, recepciones, registrarRecepcion, guardarFotosRecepcion, marcarNotasCredito, role, cargando, modoApi, recargar } = useStore();
   // La vista se elige por ROL, no por ancho de pantalla: Contabilidad usa la TABLA
-  // (escritorio); Bodega (Pedro) usa siempre las TARJETAS, porque todo lo de Bodega
-  // es en tablet/celular.
+  // (escritorio) y Bodega (Pedro) usa siempre las TARJETAS. La excepción es Amazon:
+  // ahí Contabilidad también usa las tarjetas (ver vistaSimple, más abajo), para que
+  // el pago con tarjeta vaya en esa misma pantalla.
   const esContabilidad = role === "contabilidad";
 
   // La orden se pide SOLA si la carga grande todavía no llegó: abrir una orden no
@@ -206,6 +207,11 @@ export default function RegistrarFacturaPage() {
     const nom = (orden?.proveedorNombre || "").toUpperCase();
     return cod === "PROV-000121" || nom.includes("AMAZON");
   }, [orden?.proveedorNo, orden?.proveedorId, orden?.proveedorNombre]);
+  // Vista simplificada estilo Bodega (TARJETAS + una sola fecha): Bodega siempre, y
+  // Contabilidad (Kattya) también cuando la orden es de Amazon, para que el pago con
+  // tarjeta vaya en la misma pantalla. En las demás órdenes, Contabilidad sigue con la
+  // tabla de escritorio y las 3 fechas. "Ahorita solo Amazon" (decisión de David).
+  const vistaSimple = !esContabilidad || esAmazon;
   const [tarjetaOn, setTarjetaOn] = useState(false);
   const [tarjeta, setTarjeta] = useState("");
   const [dimCode, setDimCode] = useState("TM");
@@ -770,7 +776,7 @@ export default function RegistrarFacturaPage() {
 
   return (
     <>
-      <main className={esContabilidad ? "page page--wide" : "page"} style={esContabilidad ? undefined : { maxWidth: 760 }}>
+      <main className={vistaSimple ? "page" : "page page--wide"} style={vistaSimple ? { maxWidth: 760 } : undefined}>
         <button type="button" className="back-link" onClick={volver}>{volverTexto}</button>
         <div className="page__head">
           <div className="page__title">
@@ -943,14 +949,15 @@ export default function RegistrarFacturaPage() {
             <Field label="Fecha de la factura">
               <DateField value={fechaFactura} onChange={(v) => { setFechaFactura(v); setFechaRegistro(v); setFechaRecepcion(v); }} />
             </Field>
-            {/* Bodega: una sola fecha (recepción y registro se llevan por detrás
-                igual a la factura). Contabilidad: se editan las tres. */}
-            {!esContabilidad && (
+            {/* Una sola fecha (recepción y registro se llevan por detrás igual a la
+                factura) en Bodega, y también en Contabilidad cuando la orden es de
+                Amazon. En las demás órdenes de Contabilidad se editan las tres. */}
+            {vistaSimple && (
               <div className="ds-body-sm ds-muted" style={{ gridColumn: "1 / -1", marginTop: -6 }}>
                 Se usa también como fecha de recepción en bodega y de registro contable.
               </div>
             )}
-            {esContabilidad && <>
+            {!vistaSimple && <>
               <Field label="Fecha de recepción en bodega">
                 <DateField value={fechaRecepcion} onChange={setFechaRecepcion} />
               </Field>
@@ -1002,7 +1009,7 @@ export default function RegistrarFacturaPage() {
           </Card>
         )}
 
-        {esContabilidad && (
+        {!vistaSimple && (
         <Card className="mt-4" style={{ padding: 0, overflow: "hidden" }}>
           <div className="row row--between" style={{ padding: "12px 16px", borderBottom: "1.5px solid var(--ds-color-gray-100)" }}>
             <span className="ds-label ds-muted">{cuenta(recibiblesVisibles.length, "línea de artículo", "líneas de artículo")}</span>
@@ -1082,7 +1089,7 @@ export default function RegistrarFacturaPage() {
 
         {/* Vista BODEGA (Pedro): cada línea es una tarjeta con campo de cantidad.
             Es la vista por defecto salvo Contabilidad (que ve la tabla de arriba). */}
-        {!esContabilidad && (
+        {vistaSimple && (
         <Card className="mt-4">
           <div className="recv-head">
             <span className="ds-label ds-muted">{cuenta(recibiblesVisibles.length, "artículo", "artículos")} a recibir</span>
