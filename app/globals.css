@@ -1398,6 +1398,30 @@ td.ds-col-fija {
 .app-nav__switch.is-on { background: var(--ds-color-green-100); }
 .app-nav__switch.is-on i { transform: translateX(16px); }
 
+/* Lo que era la barra de arriba, ahora en el pie del riel (solo escritorio: en
+   celular la barra sigue y ya los tiene). Son `.app-nav__item` comunes; acá solo lo
+   propio de cada uno. */
+.app-nav__barra { display: flex; flex-direction: column; gap: 6px; }
+@media (max-width: 760px) { .app-nav__barra { display: none; } }
+@media (min-width: 761px) { .topbar--solo-movil { display: none; } }
+.app-nav__item:disabled { cursor: default; opacity: .7; }
+.app-nav__item:disabled:hover { background: transparent; color: color-mix(in srgb, var(--ds-color-white) 74%, transparent); }
+.app-nav__item.is-open { background: color-mix(in srgb, var(--ds-color-white) 10%, transparent); color: var(--ds-color-white); }
+/* Frescura: el ícono ES el punto, del mismo color que el chip de celular. */
+.app-nav__sync-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--ds-color-gray-300); }
+.app-nav__sync.is-ok .app-nav__sync-dot { background: var(--ds-color-green-100); }
+.app-nav__sync.is-stale .app-nav__sync-dot { background: var(--ds-color-yellow); }
+.app-nav__sync.is-error .app-nav__sync-dot { background: var(--ds-color-red-200); }
+.app-nav__sync.is-error { color: var(--ds-color-red-100); }
+/* Sin leer: el número sobre la campana, con el anillo del color del riel (el de la
+   barra de arriba lo tiene blanco). Cabe dentro del ítem, que recorta. */
+.app-nav__count {
+  position: absolute; top: -6px; right: -9px; min-width: 16px; height: 16px; padding: 0 4px; box-sizing: border-box;
+  border-radius: 9px; background: var(--ds-color-red-200); color: var(--ds-color-white);
+  font-size: 10px; font-weight: 700; line-height: 1; display: grid; place-items: center;
+  box-shadow: 0 0 0 2px var(--ds-nav-bg);
+}
+
 /* Tarjeta de usuario: avatar siempre; nombre/rol/salir solo al expandir.
    Colapsada se centra (como los ítems); al fijar/hover/móvil se alinea a la izq. */
 .app-nav__user { display: flex; align-items: center; justify-content: center; gap: 0; padding: 6px; border-radius: var(--ds-radius-lg); background: rgba(255, 255, 255, 0.06); }
@@ -1500,6 +1524,8 @@ td.ds-col-fija {
    es el ASIDE y la lista scrollea adentro, para que la pestaña del cajón —lo que
    queda cuando la lista está escondida— también viaje con la página. */
 .md-aside { position: sticky; top: 80px; max-height: calc(100dvh - 104px); display: flex; flex-direction: column; min-width: 0; }
+/* En escritorio ya no hay barra de arriba que esquivar (ver `.topbar--solo-movil`). */
+@media (min-width: 761px) { .md-aside { top: var(--ds-space-4); max-height: calc(100dvh - 40px); } }
 .md-list { display: flex; flex-direction: column; gap: var(--ds-space-2); padding-right: 4px; min-width: 0; overflow-y: auto; }
 /* Filtro pegajoso de la lista de pedidos (compacto). Foco al estilo DS. */
 .md-filtro { width: 100%; box-sizing: border-box; margin-bottom: var(--ds-space-2); border-radius: var(--ds-radius-md); padding: 7px 10px; font: inherit; font-size: 13px; border: 1px solid var(--ds-color-gray-100); background: var(--ds-surface); color: var(--ds-text); position: sticky; top: 0; z-index: 1; outline: none; transition: border-color .12s ease; }
@@ -1878,6 +1904,14 @@ td.ds-col-fija {
 .notif-panel__count { font-size: var(--ds-font-size-body-sm); font-weight: var(--ds-font-weight-semibold); color: var(--ds-color-green-200); }
 .notif-panel__mark { border: none; background: transparent; cursor: pointer; font: inherit; font-size: var(--ds-font-size-body-sm); font-weight: var(--ds-font-weight-semibold); color: var(--ds-color-green-200); padding: 4px 8px; border-radius: var(--ds-radius-md); transition: background-color .12s ease; }
 .notif-panel__mark:hover { background: color-mix(in srgb, var(--ds-color-green-100) 18%, var(--ds-tint-base)); }
+/* Abierto desde la campana del riel: sale a la par del riel, pegado abajo (la
+   campana está en el pie). `fixed` y no `absolute`: el riel recorta (overflow) y el
+   panel quedaría cortado adentro. Sigue al riel igual que la barra de acciones. */
+.notif-panel--riel {
+  position: fixed; top: auto; right: auto; bottom: var(--ds-space-4); left: calc(72px + var(--ds-space-3));
+  max-height: min(440px, calc(100dvh - 32px)); color: var(--ds-text); white-space: normal;
+}
+.app-shell.pinned .notif-panel--riel { left: calc(var(--nav-w) + var(--ds-space-3)); }
 .notif-empty { display: flex; flex-direction: column; align-items: center; gap: var(--ds-space-3); padding: var(--ds-space-10) var(--ds-space-4); color: var(--ds-color-gray-400); font-size: var(--ds-font-size-label); }
 .notif-empty__icon { width: 44px; height: 44px; border-radius: 50%; background: var(--ds-color-surface); display: grid; place-items: center; color: var(--ds-color-gray-300); }
 .notif-list { padding: var(--ds-space-2); display: flex; flex-direction: column; gap: 2px; }

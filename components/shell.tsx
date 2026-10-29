@@ -118,12 +118,13 @@ const ROLE_META: Record<Role, { label: string; persona: string; home: string; na
 //
 // Por eso no dice "Cargando…" sobre una página en blanco (David, viendo una orden que
 // tardaba: "ese cargando que aparece quítelo de todas las pantallas"). Se pinta el
-// CHASIS —el riel y la barra de arriba, en su lugar de siempre— con el contenido en
-// skeleton: la pantalla que llega no aterriza sobre el vacío, solo se rellena.
+// CHASIS —el riel y, en celular, la barra de arriba, en su lugar de siempre— con el
+// contenido en skeleton: la pantalla que llega no aterriza sobre el vacío, solo se
+// rellena.
 function ChasisCargando() {
   return (
     <div className="app-shell" aria-busy="true">
-      <header className="topbar"><div className="topbar__spacer" /></header>
+      <header className="topbar topbar--solo-movil"><div className="topbar__spacer" /></header>
       <nav className="app-nav" aria-hidden />
       <div className="app-content">
         <main className="page">
@@ -288,69 +289,82 @@ export function AppShell({ role, children }: { role: Role; children: React.React
       : edadMs < 90_000
         ? { clase: " is-ok", texto: "Al día", tip: `Confirmado con el servidor ${haceCuanto(edadMs)} · se actualiza solo` }
         : { clase: " is-stale", texto: haceCuanto(edadMs), tip: `Última confirmación con el servidor ${haceCuanto(edadMs)}` };
+  const syncTexto = cargando && !progresoCarga ? "Actualizando…" : sync.texto;
+  const onSync = () => { if (sesionVencida) window.location.assign("/?motivo=sesion"); else void recargar(); };
+  const contNoLeidas = noLeidas > 9 ? "9+" : String(noLeidas);
+  const iconoAyuda = <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><circle cx="12" cy="12" r="9" /><path d="M12 16v-4" /><path d="M12 8h.01" /></svg>;
+  // El panel de notificaciones sale de DOS lugares: en escritorio de la campana del
+  // riel (a la par del menú), en celular de la de la barra de arriba. Cada uno se
+  // esconde por CSS en la otra pantalla, así que nunca se ven los dos.
+  const panelNotif = (clase: string) => (
+    <>
+      <div className="notif-overlay" onClick={() => setNotifOpen(false)} />
+      <div className={clase}>
+        <div className="notif-panel__head">
+          <span className="notif-panel__title">Notificaciones</span>
+          {noLeidas > 0 && (
+            <button type="button" className="notif-panel__mark" onClick={() => marcarNotifsLeidas()}>
+              {noLeidas} sin leer · Marcar todas
+            </button>
+          )}
+        </div>
+        {notifsRol.length === 0 ? (
+          <div className="notif-empty">
+            <span className="notif-empty__icon"><IconBell size={22} /></span>
+            Sin notificaciones
+          </div>
+        ) : (
+          <div className="notif-list">
+            {notifsRol.slice(0, 30).map((n) => (
+              <button key={n.id} className={`notif-item ${n.leida ? "" : "is-unread"}`}
+                onClick={() => { marcarNotifLeida(n.id); setNotifOpen(false); if (n.href) router.push(n.href); }}>
+                <span className={`notif-item__icon notif-item__icon--${n.tipo}`}>{NOTIF_ICON[n.tipo]}</span>
+                <span className="notif-item__body">
+                  <span className="notif-item__msg">{n.mensaje}</span>
+                  <span className="notif-item__date">{formatDate(n.fecha)}</span>
+                </span>
+                {!n.leida && <span className="notif-item__dot" aria-hidden />}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+    </>
+  );
 
   return (
     <div className={`app-shell${pinned ? " pinned" : ""}${navOpen ? " nav-open" : ""}${ready ? " is-ready" : ""}`}>
       {/* Skip link (a11y, WCAG 2.4.1): primer foco de teclado; salta el nav. */}
       <a href="#contenido-principal" className="skip-link">Saltar al contenido</a>
-      <header className="topbar">
+      {/* La barra de arriba es SOLO de celular. En escritorio se comía 64 px de alto en
+          todas las pantallas para cuatro cosas que caben en el pie del riel —frescura,
+          ayuda, campana— y una identidad que la tarjeta del riel ya decía (David: "en
+          escritorio el espacio vertical es lo más importante, siempre"). En celular se
+          queda: el riel es un cajón cerrado y ahí la campana no se vería nunca. Sin riel
+          (un rol de una sola pantalla) tampoco hay a dónde mudarla, así que se queda. */}
+      <header className={`topbar${hasNav ? " topbar--solo-movil" : ""}`}>
         <div className="topbar__spacer" />
         <div className="topbar__user">
           {/* Frescura de los datos: verde = confirmado con el servidor hace poco.
               Clickeable para forzar la sincronización sin recargar la página. */}
           {modoApi && (
             <button type="button" className={`sync-chip ds-tip${sync.clase}`} data-tip={sync.tip} title={sync.tip}
-              onClick={() => { if (sesionVencida) window.location.assign("/?motivo=sesion"); else void recargar(); }}
-              disabled={cargando} aria-label={sync.tip}>
+              onClick={onSync} disabled={cargando} aria-label={sync.tip}>
               <span className="sync-chip__dot" aria-hidden />
-              <span className="sync-chip__txt">{cargando && !progresoCarga ? "Actualizando…" : sync.texto}</span>
+              <span className="sync-chip__txt">{syncTexto}</span>
             </button>
           )}
           {/* Ayuda de la pantalla (qué es / para qué sirve) */}
           <button type="button" className="notif-bell ds-tip" data-tip="Qué es esta pantalla" title="Qué es esta pantalla"
             onClick={() => setHelpOpen(true)} aria-label="Ayuda de esta pantalla" aria-haspopup="dialog">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><circle cx="12" cy="12" r="9" /><path d="M12 16v-4" /><path d="M12 8h.01" /></svg>
+            {iconoAyuda}
           </button>
           {/* Campanita de notificaciones */}
           <div style={{ position: "relative" }}>
             <button className="notif-bell ds-tip" data-tip="Notificaciones" title="Notificaciones" onClick={toggleNotif} aria-label="Notificaciones" aria-haspopup="menu" aria-expanded={notifOpen}>
-              <IconBell size={20} />{noLeidas > 0 && <span className="notif-bell__dot">{noLeidas > 9 ? "9+" : noLeidas}</span>}
+              <IconBell size={20} />{noLeidas > 0 && <span className="notif-bell__dot">{contNoLeidas}</span>}
             </button>
-            {notifOpen && (
-              <>
-                <div className="notif-overlay" onClick={() => setNotifOpen(false)} />
-                <div className="notif-panel">
-                  <div className="notif-panel__head">
-                    <span className="notif-panel__title">Notificaciones</span>
-                    {noLeidas > 0 && (
-                      <button type="button" className="notif-panel__mark" onClick={() => marcarNotifsLeidas()}>
-                        {noLeidas} sin leer · Marcar todas
-                      </button>
-                    )}
-                  </div>
-                  {notifsRol.length === 0 ? (
-                    <div className="notif-empty">
-                      <span className="notif-empty__icon"><IconBell size={22} /></span>
-                      Sin notificaciones
-                    </div>
-                  ) : (
-                    <div className="notif-list">
-                      {notifsRol.slice(0, 30).map((n) => (
-                        <button key={n.id} className={`notif-item ${n.leida ? "" : "is-unread"}`}
-                          onClick={() => { marcarNotifLeida(n.id); setNotifOpen(false); if (n.href) router.push(n.href); }}>
-                          <span className={`notif-item__icon notif-item__icon--${n.tipo}`}>{NOTIF_ICON[n.tipo]}</span>
-                          <span className="notif-item__body">
-                            <span className="notif-item__msg">{n.mensaje}</span>
-                            <span className="notif-item__date">{formatDate(n.fecha)}</span>
-                          </span>
-                          {!n.leida && <span className="notif-item__dot" aria-hidden />}
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </>
-            )}
+            {notifOpen && panelNotif("notif-panel")}
           </div>
           <div className="topbar__identity" style={{ background: "var(--ds-color-black)", color: "var(--ds-color-white)" }}>
             <span className="topbar__avatar">{(usuario ?? meta.persona).slice(0, 2).toUpperCase()}</span>
@@ -400,8 +414,35 @@ export function AppShell({ role, children }: { role: Role; children: React.React
               );
             })}
 
-            {/* Pie del sidebar: cambio de tema + tarjeta de usuario + salir. */}
+            {/* Pie del sidebar: lo que era la barra de arriba (solo escritorio) + cambio
+                de tema + tarjeta de usuario + salir. */}
             <div className="app-nav__foot">
+              {/* Lo que vivía en la barra de arriba. Mismo ítem que el resto del riel:
+                  colapsado es el ícono (con `title` nativo, que el riel recorta el
+                  tooltip propio) y fijado lleva el rótulo. En celular no sale: ahí la
+                  barra de arriba sigue existiendo y ya los tiene. */}
+              <div className="app-nav__barra">
+                {modoApi && (
+                  <button type="button" className={`app-nav__item app-nav__sync${sync.clase}`} title={sync.tip}
+                    onClick={onSync} disabled={cargando} aria-label={sync.tip}>
+                    <span className="app-nav__ic"><span className="app-nav__sync-dot" aria-hidden /></span>
+                    <span className="app-nav__label">{syncTexto}</span>
+                  </button>
+                )}
+                <button type="button" className="app-nav__item" title="Qué es esta pantalla"
+                  onClick={() => setHelpOpen(true)} aria-label="Ayuda de esta pantalla" aria-haspopup="dialog">
+                  <span className="app-nav__ic">{iconoAyuda}</span>
+                  <span className="app-nav__label">Ayuda de esta pantalla</span>
+                </button>
+                <button type="button" className={`app-nav__item${notifOpen ? " is-open" : ""}`}
+                  title={noLeidas > 0 ? `Notificaciones · ${noLeidas} sin leer` : "Notificaciones"}
+                  aria-label={noLeidas > 0 ? `Notificaciones · ${noLeidas} sin leer` : "Notificaciones"}
+                  onClick={toggleNotif} aria-haspopup="menu" aria-expanded={notifOpen}>
+                  <span className="app-nav__ic"><IconBell size={20} />{noLeidas > 0 && <span className="app-nav__count" aria-hidden>{contNoLeidas}</span>}</span>
+                  <span className="app-nav__label">Notificaciones</span>
+                </button>
+                {notifOpen && panelNotif("notif-panel notif-panel--riel")}
+              </div>
               <button type="button" className="app-nav__item app-nav__theme" onClick={toggleTheme}
                 title={theme === "dark" ? "Cambiar a modo claro" : "Cambiar a modo oscuro"}
                 aria-pressed={theme === "dark"}>
