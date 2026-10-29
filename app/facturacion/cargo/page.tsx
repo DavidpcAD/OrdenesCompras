@@ -15,7 +15,7 @@ import { cuenta, money, MONEDAS } from "@/lib/helpers";
 type RcptLine = {
   documentNo: string; lineNo: number; vendorNo: string; itemNo: string;
   descripcion: string; locationCode: string; cantidad: number;
-  precioUnitario: number; importe: number; pesoBruto: number; volumen: number; fecha: string;
+  precioUnitario: number; importe: number; currencyCode: string; pesoBruto: number; volumen: number; fecha: string;
 };
 const lineKey = (l: { documentNo: string; lineNo: number }) => `${l.documentNo}#${l.lineNo}`;
 
@@ -264,11 +264,11 @@ export default function CargoSobreFacturaPage() {
               </div>
               <div>
                 <span className="ds-label ds-muted" style={{ display: "block", marginBottom: 4 }}>Cantidad</span>
-                <Input type="number" min={0} value={cantidad} style={{ width: 96 }} onChange={(e) => setCantidad(e.target.value)} />
+                <Input type="number" min={0} step="any" value={cantidad} style={{ width: 96 }} onChange={(e) => setCantidad(e.target.value)} />
               </div>
               <div>
                 <span className="ds-label ds-muted" style={{ display: "block", marginBottom: 4 }}>Precio</span>
-                <Input type="number" min={0} value={precio} placeholder="0" style={{ width: 150 }} onChange={(e) => setPrecio(e.target.value)} />
+                <Input type="number" min={0} step="any" value={precio} placeholder="0" style={{ width: 150 }} onChange={(e) => setPrecio(e.target.value)} />
               </div>
               <div style={{ minWidth: 130, textAlign: "right" }}>
                 <span className="ds-label ds-muted" style={{ display: "block", marginBottom: 4 }}>Importe del cargo</span>
@@ -333,7 +333,7 @@ export default function CargoSobreFacturaPage() {
                               <td><div className="ds-clamp-2" title={l.descripcion} style={{ maxWidth: 360, minWidth: 220 }}>{l.descripcion}</div></td>
                               <td className="ds-muted ds-body-sm">{l.locationCode}</td>
                               <td className="ds-num ds-body-sm">{l.cantidad}</td>
-                              <td className="ds-num ds-strong">{money(l.importe || 0, currency)}</td>
+                              <td className="ds-num ds-strong">{money(l.importe || 0, l.currencyCode)}</td>
                             </tr>
                           );
                         })}
@@ -380,7 +380,7 @@ export default function CargoSobreFacturaPage() {
                       <tr key={lineKey(l)}>
                         <td className="ds-body-sm ds-strong">{l.documentNo}<span className="ds-muted"> · {l.lineNo}</span></td>
                         <td className="ds-body-sm"><div className="ds-clamp-2" title={`${l.itemNo} — ${l.descripcion}`} style={{ maxWidth: 360, minWidth: 220 }}>{l.itemNo} — {l.descripcion}</div></td>
-                        <td className="ds-num ds-body-sm">{money(l.importe || 0, currency)}</td>
+                        <td className="ds-num ds-body-sm">{money(l.importe || 0, l.currencyCode)}</td>
                         <td className="ds-num ds-strong">{previewReparto ? money(share(l), currency) : "—"}</td>
                         <td className="ds-num"><button type="button" className="icon-btn" title="Quitar" aria-label="Quitar línea" onClick={() => toggleLinea(l)}>×</button></td>
                       </tr>
