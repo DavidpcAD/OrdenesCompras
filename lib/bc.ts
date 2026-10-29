@@ -1037,6 +1037,7 @@ export type BcPostedReceiptLine = {
   cantidad: number;      // cantidad recibida en la recepción
   precioUnitario: number;
   importe: number;       // importe de la línea (base del reparto "Por importe")
+  currencyCode: string;  // moneda de la línea tal cual BC ("" = CRC); NO es la del cargo
   pesoBruto: number;     // Gross Weight (base del reparto "Por peso")
   volumen: number;       // Unit Volume (base del reparto "Por volumen")
   fecha: string;         // fecha de registro (posting date)
@@ -1070,6 +1071,7 @@ export async function bcPostedReceiptLines(opts: { vendorNo?: string; itemNo?: s
       cantidad: Number(r.quantity ?? r.Quantity ?? 0) || 0,
       precioUnitario: Number(r.directUnitCost ?? r.DirectUnitCost ?? 0) || 0,
       importe: Number(r.lineAmount ?? r.LineAmount ?? r.amount ?? r.Amount ?? 0) || 0,
+      currencyCode: String(r.currencyCode ?? r.CurrencyCode ?? "").trim(),
       pesoBruto: Number(r.grossWeight ?? r.GrossWeight ?? 0) || 0,
       volumen: Number(r.unitVolume ?? r.UnitVolume ?? 0) || 0,
       fecha: r.postingDate ?? r.PostingDate ?? "",
@@ -1912,6 +1914,101 @@ export async function bcReopenPedido(orderNo: string): Promise<string> {
   }
   const d: any = await res.json().catch(() => ({}));
   return d?.value ?? "Open";
+}
+
+// AMAZON PAGADO CON TARJETA. Antes de registrar la factura, al pedido hay que ponerle
+// la FORMA DE PAGO (la tarjeta que escoge el usuario) y una DIMENSIÓN en el encabezado
+// (p.ej. TM = G-GASTOS TARJETAS). Lo hace el codeunit "Adelante PO Actions"
+// (AdelantePO_SetTarjetaYDimension, desde AdelanteAPI 1.2.22.0): reabre el pedido
+// LANZADO, setea los dos campos, propaga la dimensión a las líneas (UpdateAllLineDim)
+// y lo vuelve a lanzar con SkipCheckReleaseRestrictions, sin re-disparar la aprobación.
+//
+// No va por la API estándar a propósito: purchaseOrders NO expone la forma de pago, y
+// un PATCH a la página purchaseDocuments chocaría con el bloqueo del estado Lanzado. El
+// codeunit resuelve las dos cosas (release + propagación). Devuelve el estado resultante
+// ("Released"). Si algo no calza —tarjeta o valor inexistente, valor bloqueado—, BC NO
+// postea nada y acá sube el mensaje LIMPIO del codeunit, para mostrarlo tal cual.
+export async function bcSetTarjetaYDimension(
+  orderNo: string, paymentMethodCode: string, dimCode: string, dimValueCode: string,
+): Promise<string> {
+  if (!orderNo) throw new Error("Falta el número de pedido.");
+  if (!paymentMethodCode) throw new Error("Falta la forma de pago (tarjeta).");
+  if (!dimCode || !dimValueCode) throw new Error("Falta la dimensión o el valor para el encabezado.");
+  const cid = await getStdCompanyId();
+  const url = `${odataRoot()}/AdelantePO_SetTarjetaYDimension?company=${encodeURIComponent(cid)}`;
+  const res = await bcFetch(url, {
+    method: "POST", cache: "no-store",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ orderNo, paymentMethodCode, dimCode, dimValueCode }),
+  });
+  if (!res.ok) {
+    const txt = await res.text();
+    if (res.status === 404) throw new Error("el web service AdelantePO_SetTarjetaYDimension no está publicado en Business Central");
+    // El codeunit manda su Error en error.message; se le corta la cola técnica
+    // (CorrelationId…) para que llegue el mensaje de negocio y nada más.
+    let msg = "";
+    try { msg = JSON.parse(txt)?.error?.message ?? ""; } catch { /* vino texto crudo */ }
+    msg = (msg || txt).split(/\s*CorrelationId/i)[0].trim();
+    throw new Error(msg || `BC ${res.status}`);
+  }
+  const d: any = await res.json().catch(() => ({}));
+  return d?.value ?? "Released";
+}
+
+// Una opción de BC con su código y su nombre para mostrar (forma de pago, dimensión,
+// valor de dimensión). Lo consume el flujo de "pago con tarjeta" de Amazon.
+export type OpcionBc = { code: string; name: string };
+
+// Prefijo de las formas de pago que son TARJETA de crédito en BC (TC LUIS RO, TC
+// MARIO…). Configurable por si cambia la convención de nombres. Default "TC ".
+function prefijoTarjeta(): string {
+  return (process.env.BC_TARJETA_PREFIJO ?? "TC ").trim().toUpperCase();
+}
+
+let formasTarjetaCache: OpcionBc[] | null = null;
+// Las formas de pago que son TARJETA (para el select de Amazon). Lee paymentMethods de
+// la API estándar y deja solo las del prefijo TC. Cacheadas: casi nunca cambian.
+export async function bcFormasDePagoTarjeta(): Promise<OpcionBc[]> {
+  if (formasTarjetaCache) return formasTarjetaCache;
+  const cid = await getStdCompanyId();
+  const res = await bcFetch(`${stdRoot()}/companies(${cid})/paymentMethods?$select=code,displayName`, { cache: "no-store" });
+  if (!res.ok) throw new Error(`BC ${res.status} al leer las formas de pago`);
+  const pref = prefijoTarjeta();
+  const todas: any[] = (await res.json()).value ?? [];
+  formasTarjetaCache = todas
+    .filter((p) => String(p.code ?? "").toUpperCase().startsWith(pref))
+    .map((p) => ({ code: String(p.code), name: String(p.displayName ?? p.code) }))
+    .sort((a, b) => a.name.localeCompare(b.name, "es"));
+  return formasTarjetaCache;
+}
+
+let dimensionesCache: OpcionBc[] | null = null;
+// Las dimensiones del encabezado que se pueden poner (AC, CC, TM). Las tres de BC.
+export async function bcDimensionesEncabezado(): Promise<OpcionBc[]> {
+  if (dimensionesCache) return dimensionesCache;
+  const cid = await getStdCompanyId();
+  const res = await bcFetch(`${stdRoot()}/companies(${cid})/dimensions?$select=code,displayName`, { cache: "no-store" });
+  if (!res.ok) throw new Error(`BC ${res.status} al leer las dimensiones`);
+  const dims: any[] = (await res.json()).value ?? [];
+  dimensionesCache = dims.map((d) => ({ code: String(d.code), name: String(d.displayName ?? d.code) }));
+  return dimensionesCache;
+}
+
+const valoresDimCache: Record<string, OpcionBc[]> = {};
+// Los valores de UNA dimensión (TM → G-GASTOS TARJETAS, M-CONT…; CC → las obras). Para
+// el select de valor, que depende de la dimensión escogida. Cacheado por dimensión.
+export async function bcValoresDeDimension(code: string): Promise<OpcionBc[]> {
+  const key = (code ?? "").trim().toUpperCase();
+  if (!key) return [];
+  if (valoresDimCache[key]) return valoresDimCache[key];
+  const cid = await getStdCompanyId();
+  const dimId = await getStdDimensionId(cid, key);
+  if (!dimId) throw new Error(`la dimensión ${key} no existe en Business Central`);
+  const res = await bcFetch(`${stdRoot()}/companies(${cid})/dimensions(${dimId})/dimensionValues?$select=code,displayName`, { cache: "no-store" });
+  if (!res.ok) throw new Error(`BC ${res.status} al leer los valores de ${key}`);
+  const vals: any[] = (await res.json()).value ?? [];
+  valoresDimCache[key] = vals.map((v) => ({ code: String(v.code), name: String(v.displayName ?? v.code) }));
+  return valoresDimCache[key];
 }
 
 // EL CAMBIO DE LA APP TIENE QUE LLEGAR AL PEDIDO, Y EL PEDIDO QUEDA ABIERTO.

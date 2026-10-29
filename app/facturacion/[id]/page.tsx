@@ -5,14 +5,19 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Badge, Button, Card, Checkbox, EmptyState, Field, Input, Modal, Persona, Select, Skeleton, Textarea, useToast } from "@/components/ui";
 import { IconWarning } from "@/components/icons";
 import { DateField } from "@/components/date-field";
+import { DestinoOrden } from "@/components/destino-linea";
 import { useStore } from "@/lib/store";
 import { useOrden } from "@/lib/use-orden";
 import { useVolver } from "@/lib/use-volver";
-import { cuenta, MOTIVOS_NC, esLineaCargo, esLineaRecibible, esNombreObraVacio, etiquetaTipoLinea, formatDate, money, distribuirCargo, num, ordenBadge, ordenLineaImporte, ordenLineaPendiente, ordenRecibidoPct, todayISO, numeroOrden } from "@/lib/helpers";
+import { cuenta, MOTIVOS_NC, esLineaCargo, esLineaRecibible, esNombreObraVacio, etiquetaTipoLinea, formatDate, money, distribuirCargo, num, ordenAlmacenes, ordenBadge, ordenLineaImporte, ordenLineaPendiente, ordenRecibidoPct, todayISO, numeroOrden } from "@/lib/helpers";
 import { codigoDeItem } from "@/lib/unidad";
 import { comprimirFoto, pesoLegible } from "@/lib/foto";
 import type { FotoComprimida } from "@/lib/foto";
 import type { MotivoNC, OrdenLinea } from "@/lib/types";
+
+// Una opción de BC (código + nombre) para los selects de "pago con tarjeta". Mismo
+// shape que OpcionBc de lib/bc.ts, acá local para no importar server-only al cliente.
+type OpcionBc = { code: string; name: string };
 
 // Resumen que se muestra al terminar de registrar ("cómo quedó en BC").
 // `aInventario` es lo que DEBE subir el stock; lo que va a una obra (Job No. en la
@@ -137,7 +142,7 @@ export default function RegistrarFacturaPage() {
   // muestran en el MISMO aviso que se queda en pantalla: ninguno se arregla
   // reintentando, y cada uno dice a quién avisarle. "ficha" es una ficha maestra de
   // BC a medio llenar (PROV-000477 sin grupo registro negocio).
-  const [frenoBc, setFrenoBc] = useState<null | { error: string; problemas: string[]; tipo: "lineas" | "proveedor" | "no-lanzado" | "dimensiones" | "config" | "ficha" | "fecha" | "precio" }>(null);
+  const [frenoBc, setFrenoBc] = useState<null | { error: string; problemas: string[]; tipo: "lineas" | "proveedor" | "no-lanzado" | "dimensiones" | "config" | "ficha" | "fecha" | "precio" | "tarjeta" }>(null);
   // Sonda al ABRIR: ¿está el pedido en BC? Si BC contesta que no lo tiene, registrar
   // va a fallar seguro — y es mejor decirlo antes de que Bodega cuente el camión
   // entero. "BC no contesta" NO cuenta como ausencia (eso se arregla solo), por eso
@@ -192,6 +197,52 @@ export default function RegistrarFacturaPage() {
   // guarda con la recepción. Es respaldo para Contabilidad, no bloquea nada.
   const [fotos, setFotos] = useState<FotoComprimida[]>([]);
   const [fotoOcupado, setFotoOcupado] = useState(false);
+
+  // PAGO CON TARJETA (solo Amazon). Antes de registrar, la app le pone al pedido en BC
+  // la forma de pago (la tarjeta) y una dimensión en el encabezado. Las opciones salen
+  // de /api/bc/tarjeta-opciones; el write lo hace el codeunit al registrar.
+  const esAmazon = useMemo(() => {
+    const cod = (orden?.proveedorNo || orden?.proveedorId || "").toUpperCase();
+    const nom = (orden?.proveedorNombre || "").toUpperCase();
+    return cod === "PROV-000121" || nom.includes("AMAZON");
+  }, [orden?.proveedorNo, orden?.proveedorId, orden?.proveedorNombre]);
+  const [tarjetaOn, setTarjetaOn] = useState(false);
+  const [tarjeta, setTarjeta] = useState("");
+  const [dimCode, setDimCode] = useState("TM");
+  const [dimValue, setDimValue] = useState("");
+  const [tOpc, setTOpc] = useState<null | { formas: OpcionBc[]; dimensiones: OpcionBc[] }>(null);
+  const [tValores, setTValores] = useState<Record<string, OpcionBc[]>>({});
+
+  // Carga inicial de opciones: tarjetas, las 3 dimensiones y los valores de la
+  // dimensión por defecto (TM). De una vez deja escogido el valor de gasto de tarjetas.
+  useEffect(() => {
+    if (!esAmazon) return;
+    let vivo = true;
+    fetch("/api/bc/tarjeta-opciones")
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error("opciones"))))
+      .then((d) => {
+        if (!vivo) return;
+        setTOpc({ formas: d.formas ?? [], dimensiones: d.dimensiones ?? [] });
+        const def = String(d.dimDefault ?? "TM");
+        setDimCode(def);
+        setTValores((m) => ({ ...m, [def]: d.valores ?? [] }));
+        const gasto = (d.valores ?? []).find((v: OpcionBc) => v.code === "G-GASTOS TARJETAS" || /tarjeta/i.test(v.name));
+        if (gasto) setDimValue(gasto.code);
+      })
+      .catch(() => { /* sin opciones: los selects quedan vacíos y el registro los exige */ });
+    return () => { vivo = false; };
+  }, [esAmazon]);
+
+  // Valores de la dimensión escogida (cascada): se traen cuando cambia y no están aún.
+  useEffect(() => {
+    if (!esAmazon || !tarjetaOn || !dimCode || tValores[dimCode]) return;
+    let vivo = true;
+    fetch(`/api/bc/tarjeta-opciones?dim=${encodeURIComponent(dimCode)}`)
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error("valores"))))
+      .then((d) => { if (vivo) setTValores((m) => ({ ...m, [dimCode]: d.valores ?? [] })); })
+      .catch(() => { /* queda vacío */ });
+    return () => { vivo = false; };
+  }, [esAmazon, tarjetaOn, dimCode, tValores]);
   const fileRef = useRef<HTMLInputElement>(null);
   async function elegirFotos(files: FileList | null) {
     if (!files?.length) return;
@@ -278,6 +329,10 @@ export default function RegistrarFacturaPage() {
     return <><main className="page"><EmptyState icon={<IconWarning size={24} />} title="Orden no encontrada." /></main></>;
   }
   const prov = proveedores.find((p) => p.id === orden.proveedorId);
+  // Cuando la orden reparte el material entre varios almacenes, el dato del
+  // encabezado no alcanza: cada tarjeta de línea dice el suyo. Con un solo almacén
+  // (el caso normal) el encabezado ya lo cubre y no se repite en cada línea.
+  const variosAlmacenes = ordenAlmacenes(orden).length > 1;
 
   // distribución del flete sobre lo recibido (informativo)
   const distrib = fleteAplicado
@@ -397,7 +452,13 @@ export default function RegistrarFacturaPage() {
       (r) => r.ordenId === orden!.id && (r.numeroFactura ?? "").trim().toLowerCase() === numeroFactura.trim().toLowerCase()
     );
     if (yaRegistrada) {
-      toast(`La factura ${numeroFactura.trim()} ya está registrada en esta orden. Revisá "Recibidas".`, "error");
+      toast(`La factura ${numeroFactura.trim()} ya está registrada en esta orden. Revisá "Facturas digitadas".`, "error");
+      return;
+    }
+    // Pago con tarjeta: si está marcado, los tres datos son obligatorios (van al pedido
+    // de BC antes de postear). Sin ellos no se puede, mejor avisar que mandar a medias.
+    if (tarjetaOn && (!tarjeta || !dimCode || !dimValue)) {
+      toast("Completá la tarjeta, la dimensión y el valor del pago con tarjeta (o desmarcá la casilla).", "error");
       return;
     }
     const lineas = recibibles
@@ -452,6 +513,9 @@ export default function RegistrarFacturaPage() {
           // Y la recepción, para que el servidor la guarde apenas BC confirme, sin
           // depender de que este navegador llegue a hacer un segundo viaje.
           recepcion: recepcionParaServidor(lineas, { numeroFactura: numeroFactura.trim(), total: totalFactura }),
+          // Amazon con tarjeta: forma de pago + dimensión que el servidor le pone al
+          // pedido ANTES de postear (ver /api/bc/registrar). Solo si está marcado.
+          tarjeta: tarjetaOn && esAmazon ? { paymentMethodCode: tarjeta, dimCode, dimValueCode: dimValue } : undefined,
         }),
       });
       const d = await r.json().catch(() => ({} as any));
@@ -465,7 +529,7 @@ export default function RegistrarFacturaPage() {
         if (d.recepcionId) recepcionYa = String(d.recepcionId);
         errorLocal = String(d.errorLocal ?? "");
       }
-      else if (d?.frenoLineas || d?.frenoEncabezado || d?.frenoDimensiones || d?.frenoConfigBc || d?.frenoFichaBc || d?.frenoFechaBc || d?.frenoPrecio) {
+      else if (d?.frenoLineas || d?.frenoEncabezado || d?.frenoDimensiones || d?.frenoConfigBc || d?.frenoFichaBc || d?.frenoFechaBc || d?.frenoPrecio || d?.frenoTarjeta) {
         // El servidor comprobó contra BC que esto NO se puede registrar: las líneas
         // no están en el pedido / no queda saldo, el pedido de allá es de OTRO
         // proveedor, o todavía no está lanzado en BC. Ninguno se concilia ni se
@@ -473,7 +537,7 @@ export default function RegistrarFacturaPage() {
         // exactamente el error que se perdía en un toast de 3 segundos.
         setFrenoBc({
           error: String(d.error ?? ""), problemas: (d.problemas ?? []) as string[],
-          tipo: d?.frenoPrecio ? "precio" : d?.frenoFechaBc ? "fecha" : d?.frenoFichaBc ? "ficha" : d?.frenoConfigBc ? "config" : d?.frenoDimensiones ? "dimensiones" : d?.frenoNoLanzado ? "no-lanzado" : d?.frenoProveedor ? "proveedor" : "lineas",
+          tipo: d?.frenoTarjeta ? "tarjeta" : d?.frenoPrecio ? "precio" : d?.frenoFechaBc ? "fecha" : d?.frenoFichaBc ? "ficha" : d?.frenoConfigBc ? "config" : d?.frenoDimensiones ? "dimensiones" : d?.frenoNoLanzado ? "no-lanzado" : d?.frenoProveedor ? "proveedor" : "lineas",
         });
         setGuardando(false);
         return;
@@ -715,6 +779,11 @@ export default function RegistrarFacturaPage() {
               <Badge tone={ordenBadge(orden.estado).tone}>{ordenBadge(orden.estado).label}</Badge>
             </div>
             <p className="ds-muted">{orden.proveedorNombre ?? prov?.nombre} · recibido {ordenRecibidoPct(orden)}%</p>
+            {/* A qué almacén entra lo que se recibe: la razón del reclamo de Bodega —
+                el proveedor no trae la OC y el material se descarga donde no toca.
+                En la tabla de escritorio hay columna "Almacén", pero es hide-mobile y
+                Bodega recibe desde el celular, así que acá va fijo y a la vista. */}
+            <DestinoOrden orden={orden} className="mt-2" />
             {/* Quién armó la orden. Acá es donde se decide si la factura que se tiene
                 en la mano calza o hay que ir a preguntarle a alguien: antes había que
                 salirse a "Todas las órdenes" o abrir el Historial de la otra pantalla
@@ -756,6 +825,13 @@ export default function RegistrarFacturaPage() {
                     y eso después solo se deshace con una nota de crédito. Avisale a Proveeduría: hay que ver
                     si al pedido le cambiaron el proveedor en BC o si la orden quedó apuntando al pedido
                     equivocado. Nada se guardó.
+                  </>
+                ) : frenoBc.tipo === "tarjeta" ? (
+                  <>
+                    <div style={{ margin: "6px 0 8px", whiteSpace: "pre-line" }}>{frenoBc.error}</div>
+                    No se pudo preparar el <span className="ds-strong">pago con tarjeta</span> en Business Central: la
+                    forma de pago o el valor de dimensión que escogiste no calzan (o el valor está bloqueado). BC no
+                    registró nada — corregí la selección y volvé a intentar.
                   </>
                 ) : frenoBc.tipo === "dimensiones" ? (
                   <>
@@ -887,6 +963,44 @@ export default function RegistrarFacturaPage() {
           </div>
         </Card>
 
+        {/* PAGO CON TARJETA — solo Amazon. Marca la compra como pagada con tarjeta y
+            habilita los tres datos que van al pedido de BC antes de registrar: la
+            tarjeta (forma de pago) y la dimensión del encabezado con su valor. */}
+        {esAmazon && (
+          <Card className="mt-4">
+            <Checkbox checked={tarjetaOn} onChange={(e) => setTarjetaOn(e.target.checked)}
+              label={<span className="ds-strong">Pago con tarjeta de crédito</span>} />
+            <p className="ds-label ds-muted" style={{ margin: "6px 0 0" }}>
+              Para las compras de Amazon pagadas con tarjeta: antes de registrar, la app le pone al pedido en Business
+              Central la forma de pago (la tarjeta) y la dimensión del encabezado.
+            </p>
+            {tarjetaOn && (
+              <div className="grid-2 mt-3">
+                <div style={{ gridColumn: "1 / -1" }}>
+                  <Field label="Tarjeta (forma de pago)">
+                    <Select value={tarjeta} onChange={(e) => setTarjeta(e.target.value)}
+                      placeholder={tOpc ? "Elegí la tarjeta…" : "Cargando…"}>
+                      {(tOpc?.formas ?? []).map((f) => <option key={f.code} value={f.code}>{f.name}</option>)}
+                    </Select>
+                  </Field>
+                </div>
+                <Field label="Dimensión">
+                  <Select value={dimCode} onChange={(e) => { setDimCode(e.target.value); setDimValue(""); }}
+                    placeholder="Dimensión…">
+                    {(tOpc?.dimensiones ?? []).map((d) => <option key={d.code} value={d.code}>{d.code} — {d.name}</option>)}
+                  </Select>
+                </Field>
+                <Field label="Valor de la dimensión">
+                  <Select value={dimValue} onChange={(e) => setDimValue(e.target.value)}
+                    placeholder={tValores[dimCode]?.length ? "Elegí el valor…" : "Cargando…"}>
+                    {(tValores[dimCode] ?? []).map((v) => <option key={v.code} value={v.code}>{v.name}</option>)}
+                  </Select>
+                </Field>
+              </div>
+            )}
+          </Card>
+        )}
+
         {esContabilidad && (
         <Card className="mt-4" style={{ padding: 0, overflow: "hidden" }}>
           <div className="row row--between" style={{ padding: "12px 16px", borderBottom: "1.5px solid var(--ds-color-gray-100)" }}>
@@ -1009,6 +1123,13 @@ export default function RegistrarFacturaPage() {
                           (el guardado puede traer la variante pegada). */}
                       {codigoDeItem(l.articuloId ?? "") && (
                         <div className="recv-card__code">{codigoDeItem(l.articuloId ?? "")}</div>
+                      )}
+                      {/* Esta orden reparte entre varios almacenes: cada línea dice a
+                          dónde entra, para no descargarla donde no corresponde. */}
+                      {variosAlmacenes && l.almacen && (
+                        <div className="ds-body-sm ds-muted" style={{ marginTop: 2 }}>
+                          Entra en <span className="ds-strong">{l.almacen}</span>
+                        </div>
                       )}
                     </div>
                     <button type="button" className={`kebab ${marcada ? "is-marked" : ""}`}
@@ -1142,7 +1263,7 @@ export default function RegistrarFacturaPage() {
 
         {/* Foto de la factura física. Va al final, antes de registrar: Bodega
             recibe, le saca la foto a la factura y queda pegada a la recepción
-            (se ve después en "Recibidas" junto con las líneas). Sin `capture`
+            (se ve después en "Facturas digitadas" junto con las líneas). Sin `capture`
             a propósito: así el celular ofrece cámara O galería, porque muchas
             veces la foto ya se tomó antes de llegar a la pantalla. */}
         <Card className="mt-4">
@@ -1150,7 +1271,7 @@ export default function RegistrarFacturaPage() {
             <div style={{ minWidth: 0 }}>
               <div className="ds-strong">Foto de la factura <span className="ds-muted ds-body-sm">(opcional)</span></div>
               <p className="ds-label ds-muted" style={{ margin: "4px 0 0", maxWidth: 480 }}>
-                Sacale una foto a la factura del proveedor: queda guardada con esta recepción y la ves después en <strong>Recibidas</strong>.
+                Sacale una foto a la factura del proveedor: queda guardada con esta recepción y la ves después en <strong>Facturas digitadas</strong>.
                 Se comprime antes de subirla, así que no pesa.
               </p>
             </div>
@@ -1197,7 +1318,7 @@ export default function RegistrarFacturaPage() {
           <div className="row gap-3 wrap recv-actions">
             <Button variant="outline" onClick={() => setPreview(true)} disabled={!algoRecibido}>Vista previa</Button>
             <Button variant="ghost" onClick={recibirEnRevision} disabled={!algoRecibido || guardando} title="El material llegó bien pero la factura tiene problemas: recibí el material y mandá la factura a revisión.">Recibir sin factura (a revisión)</Button>
-            <Button variant="green" onClick={registrar} disabled={!algoRecibido || !numeroFactura.trim()} loading={guardando}>{guardando ? "Registrando…" : "Registrar factura"}</Button>
+            <Button variant="green" onClick={registrar} disabled={!algoRecibido || !numeroFactura.trim() || (tarjetaOn && (!tarjeta || !dimCode || !dimValue))} loading={guardando}>{guardando ? "Registrando…" : "Registrar factura"}</Button>
           </div>
           {guardando && (
             <p className="ds-body-sm ds-muted" role="status" style={{ marginTop: 10, display: "flex", alignItems: "center", gap: 8 }}>
@@ -1435,12 +1556,12 @@ export default function RegistrarFacturaPage() {
             {/* N.º de la factura REGISTRADA en BC. Va acá arriba y no en el aviso
                 de abajo porque el aviso se va solo en segundos: este cartel se
                 queda hasta que le den Listo, así se puede anotar. Y de todas
-                formas queda guardado con la recepción, visible en "Recibidas". */}
+                formas queda guardado con la recepción, visible en "Facturas digitadas". */}
             {confirmInv.bcFacturaNo && (
               <div className="bc-doc">
                 <span className="ds-label ds-muted">Factura registrada en Business Central</span>
                 <span className="bc-doc__no">{confirmInv.bcFacturaNo}</span>
-                <span className="ds-body-sm ds-muted">Con este N.º se encuentra el movimiento en BC. Queda guardado en <span className="ds-strong">Recibidas</span>.</span>
+                <span className="ds-body-sm ds-muted">Con este N.º se encuentra el movimiento en BC. Queda guardado en <span className="ds-strong">Facturas digitadas</span>.</span>
               </div>
             )}
             {porObra.length > 0 && (

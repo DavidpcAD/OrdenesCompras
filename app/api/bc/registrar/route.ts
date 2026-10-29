@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { bcRegistrarFactura, reponerLanzamientoTrasFallo, type EstadoBcPedido, diagnosticarFalloBc, verificarLineasPosteables, frenoRegistroActivo, conflictoDeDimensiones, explicarConflictoDimensiones, faltaConfigContable, explicarFaltaConfigContable, campoVacioEnBc, explicarCampoVacioEnBc, fechaFueraDeRangoBc, explicarFechaFueraDeRangoBc } from "@/lib/bc";
+import { bcRegistrarFactura, bcSetTarjetaYDimension, reponerLanzamientoTrasFallo, type EstadoBcPedido, diagnosticarFalloBc, verificarLineasPosteables, frenoRegistroActivo, conflictoDeDimensiones, explicarConflictoDimensiones, faltaConfigContable, explicarFaltaConfigContable, campoVacioEnBc, explicarCampoVacioEnBc, fechaFueraDeRangoBc, explicarFechaFueraDeRangoBc } from "@/lib/bc";
 import { frenarPorEncabezado } from "@/lib/freno-encabezado";
 import { frenarPorPrecio } from "@/lib/freno-precio";
 import { actor } from "@/lib/actor";
@@ -29,7 +29,7 @@ export const dynamic = "force-dynamic";
 // y mostrarle a Bodega cuál es.
 export async function POST(req: Request) {
   const cuerpo = await req.json().catch(() => ({} as any));
-  const { orderNo, vendorInvoiceNo, vendorNo, ordenId, lineas, postingDate, cargo } = cuerpo ?? {};
+  const { orderNo, vendorInvoiceNo, vendorNo, ordenId, lineas, postingDate, cargo, tarjeta } = cuerpo ?? {};
   // Se declara ACÁ y no dentro del try porque el catch también lo necesita: el
   // intento fallido se anota a nombre de quien lo hizo (ver lib/fallo-posteo.ts).
   let quien: { usuario: string; rol: Role } | null = null;
@@ -77,6 +77,23 @@ export async function POST(req: Request) {
     const cargoValido = cargo && cargo.itemChargeNo && Number(cargo.monto) > 0
       ? { itemChargeNo: String(cargo.itemChargeNo), descripcion: cargo.descripcion ? String(cargo.descripcion) : undefined, monto: Number(cargo.monto), metodo: cargo.metodo ? String(cargo.metodo) : undefined }
       : undefined;
+    // AMAZON CON TARJETA — antes de postear, ponerle al pedido la forma de pago (la
+    // tarjeta) y la dimensión del encabezado. Lo hace el codeunit, que reabre y relanza
+    // sin re-disparar la aprobación (AdelanteAPI 1.2.22.0). Va DESPUÉS de los frenos
+    // (que son lectura) y ANTES de postear: si la tarjeta o el valor no calzan, BC no
+    // registra nada y la orden queda por recibir con el motivo del codeunit en pantalla.
+    if (tarjeta?.paymentMethodCode) {
+      try {
+        await bcSetTarjetaYDimension(
+          String(orderNo ?? ""), String(tarjeta.paymentMethodCode),
+          String(tarjeta.dimCode ?? ""), String(tarjeta.dimValueCode ?? ""),
+        );
+      } catch (e: any) {
+        return NextResponse.json({
+          ok: false, error: `NO se registró: ${String(e?.message ?? e)}`, frenoTarjeta: true,
+        }, { status: 409 });
+      }
+    }
     // Quién registra: sale de la COOKIE FIRMADA, no del body (mismo criterio que la
     // bitácora — ver lib/actor.ts). Va a BC para que el consumo directo de la obra
     // quede firmado en los Movs. proyecto ("Realizado por"), que hasta ahora salía
