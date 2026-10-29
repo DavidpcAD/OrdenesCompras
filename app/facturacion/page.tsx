@@ -3,6 +3,7 @@
 import { useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Badge, Button, Card, EmptyState, Input, Persona, QtyRing, Tile } from "@/components/ui";
+import { DestinoOrden } from "@/components/destino-linea";
 import { IconDelivery } from "@/components/icons";
 import { useStore } from "@/lib/store";
 import { money, formatDate, ordenAvance, ordenEsParcial, ordenRecibidoPct, ordenSubtotal, ordenTotalConIva, numeroOrden } from "@/lib/helpers";
@@ -137,6 +138,9 @@ export default function FacturacionPage() {
                           : <Badge tone="green">Lanzado</Badge>}
                       </div>
                       <span className="ds-muted ds-label">{o.proveedorNombre ?? prov(o.proveedorId)?.nombre} · emitida {formatDate(o.fecha)}</span>
+                      {/* A qué almacén entra el material: el proveedor no trae la OC y
+                          si no se ve acá, se descarga donde no toca. */}
+                      <DestinoOrden orden={o} className="ds-body-sm" />
                       {/* Quién armó la orden, en la línea de AFUERA: Contabilidad lo
                           preguntaba parada en esta lista y la única respuesta estaba en
                           "Todas las órdenes" (columna "Creada por") o en el Historial del

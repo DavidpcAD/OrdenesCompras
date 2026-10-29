@@ -1,5 +1,9 @@
 "use client";
 
+import { IconTrack } from "@/components/icons";
+import { ordenAlmacenes, ordenObras } from "@/lib/helpers";
+import type { Orden } from "@/lib/types";
+
 // DESTINO de una línea de orden: UNA cosa, no dos.
 //
 // Ingeniería pide cada material de una de dos formas, y son excluyentes:
@@ -119,5 +123,43 @@ export function DestinoLinea({
       {casa && <div className="ds-muted">Para obra <span className="ds-strong" style={{ whiteSpace: "nowrap" }}>{casa}</span></div>}
       {maqBloque}
     </div>
+  );
+}
+
+// DESTINO de la ORDEN entera, para las pantallas de Bodega: "¿a qué almacén entra
+// esto?" sin abrir la orden. Los proveedores no traen la OC y el material termina
+// descargado donde no toca; con esto, quien recibe lo ve en la tarjeta y en la
+// pantalla de registrar. Es el `locationCode` de las líneas de artículo —casi
+// siempre uno— y, si la orden se carga como consumo, la obra al lado. El código va
+// crudo a propósito (ALM-GRAL): es el que está rotulado en las bodegas y el que usa
+// BC; el nombre del catálogo puede no calzar con BC, así que no se adivina.
+export function DestinoOrden({ orden, inline = false, className }: {
+  orden: Orden;
+  inline?: boolean;   // una sola línea de texto, sin ícono (espacios apretados)
+  className?: string;
+}) {
+  const alms = ordenAlmacenes(orden);
+  const obras = ordenObras(orden);
+  if (!alms.length && !obras.length) return null;
+  const masAlm = alms.length > 1 ? ` +${alms.length - 1}` : "";
+  const obraTxt = obras.length ? `obra ${obras[0]}${obras.length > 1 ? ` +${obras.length - 1}` : ""}` : "";
+  const title = [
+    alms.length ? `Recepción en ${alms.join(" · ")}` : "Consumo directo (no entra a bodega)",
+    obras.length ? `Se carga como consumo de ${obras.join(" · ")}` : "",
+  ].filter(Boolean).join(" · ");
+  const texto = (
+    <>
+      {alms.length
+        ? <>Recepción en <span className="ds-strong">{alms[0]}</span>{masAlm}</>
+        : <>Consumo directo</>}
+      {obraTxt && <span className="ds-muted"> · {obraTxt}</span>}
+    </>
+  );
+  if (inline) return <span className={className} title={title}>{texto}</span>;
+  return (
+    <span className={`row gap-2${className ? ` ${className}` : ""}`} style={{ alignItems: "center", minWidth: 0 }} title={title}>
+      <IconTrack size={14} className="ds-muted" />
+      <span>{texto}</span>
+    </span>
   );
 }

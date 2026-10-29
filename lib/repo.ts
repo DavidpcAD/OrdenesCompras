@@ -2309,7 +2309,7 @@ export async function createRecepcion(input: NewRecepcionDB): Promise<number> {
         .input("id", sql.Int, input.idOrdenCompra).input("f", sql.NVarChar(40), String(input.numeroFactura).trim())
         .query("SELECT COUNT(*) AS n FROM dbo.RecepcionCompra WHERE idOrdenCompra=@id AND esEliminada=0 AND LTRIM(RTRIM(numeroFactura))=@f");
       if ((dup.recordset[0]?.n ?? 0) > 0) {
-        throw new Error(`La factura ${input.numeroFactura} ya está registrada en ${ordenNo}. Revisá "Recibidas" antes de volver a registrarla.`);
+        throw new Error(`La factura ${input.numeroFactura} ya está registrada en ${ordenNo}. Revisá "Facturas digitadas" antes de volver a registrarla.`);
       }
     }
     const max = await pedirTx(tx).query("SELECT MAX(CAST(SUBSTRING(recepcionNo,5,20) AS INT)) AS m FROM dbo.RecepcionCompra WHERE recepcionNo LIKE 'REC-%'");

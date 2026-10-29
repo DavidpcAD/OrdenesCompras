@@ -82,7 +82,7 @@ const ROLE_META: Record<Role, { label: string; persona: string; home: string; na
     label: "Bodega", persona: "Pedro", home: "/facturacion", color: "var(--ds-color-red-100)",
     nav: [
       { href: "/facturacion", label: "Órdenes por recibir", icon: IconDelivery },
-      { href: "/facturacion/recibidas", label: "Recibidas", icon: IconCheck },
+      { href: "/facturacion/recibidas", label: "Facturas digitadas", icon: IconCheck },
     ],
   },
   contabilidad: {

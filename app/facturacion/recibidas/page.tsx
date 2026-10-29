@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Badge, Card, EmptyState, Input, Tile } from "@/components/ui";
 import { IconCheck, IconChevronDown, IconWarning } from "@/components/icons";
+import { DestinoOrden } from "@/components/destino-linea";
 import { FotosFactura } from "@/components/fotos-factura";
 import { useStore } from "@/lib/store";
 import { money, formatDate, todayISO, numeroOrden, motivoNC } from "@/lib/helpers";
@@ -60,8 +61,8 @@ export default function RecibidasPage() {
       <main className="page page--wide">
         <div className="page__head">
           <div className="page__title">
-            <h1 className="ds-heading">Recibidas</h1>
-            <p className="ds-muted">Material que ya recibiste en bodega. Queda registrado quién lo recibió.</p>
+            <h1 className="ds-heading">Facturas digitadas</h1>
+            <p className="ds-muted">Historial de las facturas que ya registraste al recibir en bodega. Queda guardado quién la recibió y a qué almacén entró.</p>
           </div>
         </div>
 
@@ -119,6 +120,8 @@ export default function RecibidasPage() {
                     <div className="col" style={{ gap: 3, minWidth: 0 }}>
                       <span className="ds-strong" style={{ fontSize: "var(--ds-font-size-subtitle)" }}>{o ? numeroOrden(o) : "—"}</span>
                       <span className="ds-body-sm ds-muted ds-truncate">{provNombre(r.ordenId)}</span>
+                      {/* A qué almacén entró el material de esta factura. */}
+                      {o && <DestinoOrden orden={o} className="ds-body-sm" />}
                     </div>
                     <div className="row gap-2 wrap" style={{ justifyContent: "flex-end" }}>
                       {r.parcial ? <Badge tone="yellow">Parcial</Badge> : <Badge tone="green">Completa</Badge>}

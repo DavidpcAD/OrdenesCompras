@@ -329,7 +329,7 @@ const RECIBIR: HelpEntry = {
     "Si una línea llegó dañada, con menos cantidad, a otro precio o llegó otro material, marcala para nota de crédito (en el celular por el menú ⋮ de la tarjeta; en la computadora por el ⚠ de la fila) y elegí el motivo: eso le queda a Contabilidad.",
     "Si la factura trae un flete o cargo extra, marcá “Esta factura trae un cargo de producto adicional” y describilo: le avisamos a Contabilidad para que lo agregue. Vos recibís y registrás igual.",
     "Revisá el Subtotal / IVA / Total de abajo. Cada línea muestra su importe según la cantidad que anotaste.",
-    "Antes de registrar, en “Foto de la factura” podés adjuntar la foto de la factura física: se guarda con la recepción y después la ves en Recibidas.",
+    "Antes de registrar, en “Foto de la factura” podés adjuntar la foto de la factura física: se guarda con la recepción y después la ves en Facturas digitadas.",
     "Si la factura está bien → “Registrar factura” y escribí el N.º de factura del proveedor.",
     "Si el material está bien pero la factura tiene un problema → “Recibir sin factura (a revisión)”: Contabilidad la registra después.",
   ],
@@ -340,14 +340,14 @@ const RECIBIR: HelpEntry = {
   ],
 };
 const RECIBIDAS: HelpEntry = {
-  titulo: "Recibidas",
-  resumen: "Historial del material que ya recibiste en bodega.",
+  titulo: "Facturas digitadas",
+  resumen: "Historial de las facturas que ya registraste al recibir en bodega.",
   detalle: [
     "Cada tarjeta es una recepción registrada; queda guardado quién la recibió.",
     "La etiqueta de la factura indica si está OK, si va a Nota de crédito o si quedó En revisión.",
   ],
   pasos: [
-    "Mirá la tarjeta: N.º de orden, proveedor, fecha, quién recibió, total y estado.",
+    "Mirá la tarjeta: N.º de orden, proveedor, almacén de recepción, fecha, quién recibió, total y estado.",
     "Tocá “Ver factura y líneas” para el detalle tal cual viaja a BC: artículo, cantidad, precio unitario, IVA e importe.",
     "Si la recepción trae foto de la factura (etiqueta “Con foto”), tocá la miniatura para verla grande; “Abrir imagen” la deja en otra pestaña para hacer zoom.",
     "Al final de las líneas ves el Subtotal, IVA y Total de la factura.",
