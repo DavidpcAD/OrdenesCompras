@@ -2152,9 +2152,42 @@ function dimensionDeLinea(l: LineaReplaceBc): Record<string, string> {
   return valor ? { ccCode: codigoDimensionCC(), ccValue: valor } : {};
 }
 
+// El centro de costo de un CARGO de producto (flete, impuestos de exterior…).
+//
+// En BC el cargo no lleva obra (`VerifyLineTypeForJob` no acepta Job No. en una línea
+// de cargo) ni almacén, así que el CC es lo único que lo amarra a algo. Salía SIEMPRE
+// en blanco: el codeunit lo ignoraba (arreglado en AdelanteAPI 1.2.23.0) y
+// Contabilidad lo ponía a mano. CP-006235 (29 oct 2026): impuestos de exterior de una
+// compra para HER, las dos líneas con CC=HER y el cargo vacío.
+//
+// Qué manda, en orden:
+//   1. el que Proveeduría le eligió al cargo en Editar (`centroCosto`);
+//   2. si no tiene, el de las líneas de material cuando TODAS llevan el mismo: el
+//      cargo es costo de ese material (BC se lo reparte al registrar) y es el que
+//      Contabilidad le ponía a mano. Si van a varios, no se elige uno por la persona;
+//   3. si tampoco, el que amarra el almacén, que es lo que se mandaba antes.
+// Acá el almacén NO le gana a lo elegido como en la compra para stock: el cargo no
+// entra a ningún almacén en BC, así que no hay "Igual código" con el que chocar.
+function dimensionDeCargo(l: LineaReplaceBc, ccDeLasLineas: string): Record<string, string> {
+  const valor = (l.centroCosto ?? "").trim() || ccDeLasLineas || ccForzadoDelAlmacen(l.locationCode);
+  return valor ? { ccCode: codigoDimensionCC(), ccValue: valor } : {};
+}
+
+// El CC que comparten TODAS las líneas de material que van a BC, o "" si van a varios
+// o alguna no lleva. Es el mismo que les arma `dimensionDeLinea`, no el que traen
+// escrito: una compra para stock a ALM-GRAL viaja con INV aunque la pidiera una obra.
+function ccComunDeMateriales(lineas: LineaReplaceBc[]): string {
+  const ccs = new Set((lineas ?? [])
+    .filter((l) => l.tipo !== "cargo" && (Number(l.cantidad) || 0) > 0)
+    .map((l) => (dimensionDeLinea(l).ccValue ?? "").trim()));
+  const [unico] = [...ccs];
+  return ccs.size === 1 && unico ? unico : "";
+}
+
 export function payloadReplaceLines(lineas: LineaReplaceBc[]): { lines: Record<string, unknown>[]; omitidas: string[] } {
   const lines: Record<string, unknown>[] = [];
   const omitidas: string[] = [];
+  const ccDeLasLineas = ccComunDeMateriales(lineas);
   for (const l of lineas ?? []) {
     const nombre = l.descripcion || l.itemNo || l.chargeNo || "línea sin nombre";
     const cantidad = Number(l.cantidad) || 0;
@@ -2176,7 +2209,7 @@ export function payloadReplaceLines(lineas: LineaReplaceBc[]): { lines: Record<s
       lines.push({
         type: "Charge", itemChargeNo: chargeNo, description: l.descripcion || chargeNo,
         quantity: cantidad, directUnitCost: precio, chargeMethod: l.chargeMethod || "Amount",
-        ...dimensionDeLinea(l),
+        ...dimensionDeCargo(l, ccDeLasLineas),
       });
       continue;
     }

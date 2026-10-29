@@ -33,7 +33,11 @@ interface Row { key: string; tipo: OrdenLinea["tipo"]; articuloId: string; varia
 // solicitud) es de material y no aplica; pero se MUESTRA en la misma tabla, abajo,
 // como lo muestra el detalle de la orden. `chargeMethod` y `almacen` se conservan
 // tal cual vienen: la pantalla no los edita.
-interface CargoRow { key: string; chargeNo: string; descripcion: string; cantidad: string; precio: string; iva: string; unidad: string; chargeMethod?: string; almacen?: string; }
+// `cc` es el CENTRO DE COSTO del cargo, el único destino que tiene en BC: ahí no lleva
+// obra (no acepta Job No.) ni almacén. Se guarda en la obra de la línea (`proyecto`)
+// y viaja como dimensión CC. Vacío = el de las líneas (ver `dimensionDeCargo` en
+// lib/bc.ts).
+interface CargoRow { key: string; chargeNo: string; descripcion: string; cantidad: string; precio: string; iva: string; unidad: string; chargeMethod?: string; almacen?: string; cc?: string; }
 type Obra = { codigo: string; nombre: string };
 type Tarea = { jobTaskNo: string; descripcion: string; tipo: string };
 const uid = () => Math.random().toString(36).slice(2, 9);
@@ -42,7 +46,7 @@ const filasDeCargos = (lineas: OrdenLinea[]): CargoRow[] =>
   lineas.filter((l) => l.tipo === "cargo").map((l) => ({
     key: l.id, chargeNo: l.chargeNo ?? "", descripcion: l.descripcion ?? "",
     cantidad: String(l.cantidad > 0 ? l.cantidad : 1), precio: String(l.precioUnitario), iva: String(l.ivaPct ?? 13),
-    unidad: l.unidad || "UND", chargeMethod: l.chargeMethod, almacen: l.almacen,
+    unidad: l.unidad || "UND", chargeMethod: l.chargeMethod, almacen: l.almacen, cc: l.proyecto,
   }));
 
 // Líneas de la orden -> filas editables. Se usa en el estado inicial y al hidratar.
@@ -107,6 +111,8 @@ export default function EditarOrdenPage() {
   const [tareasPorObra, setTareasPorObra] = useState<Record<string, Tarea[]>>({});
   // Línea cuyo destino (obra + tarea + máquina) se está corrigiendo (null = cerrado).
   const [editObra, setEditObra] = useState<Row | null>(null);
+  // Cargo cuyo centro de costo se está eligiendo (null = cerrado).
+  const [editCargoCC, setEditCargoCC] = useState<CargoRow | null>(null);
   // Línea que se está repartiendo entre varias máquinas (null = cerrado).
   const [reparto, setReparto] = useState<Row | null>(null);
   // Parque de maquinaria de BC. Se pide aparte de los catálogos de abajo porque la
@@ -193,6 +199,13 @@ export default function EditarOrdenPage() {
     setCargo(k, { chargeNo: no, ...(ic ? { descripcion: ic.descripcion } : {}) });
   };
   const cargoImporte = (c: CargoRow) => (Number(c.cantidad) || 0) * (Number(c.precio) || 0);
+  // Lo que se le dice del CC a un cargo que no tiene uno propio. La regla vive en el
+  // servidor (`dimensionDeCargo`): hereda el de las líneas cuando todas llevan el
+  // mismo. Acá solo se ve la obra de las filas; si van a stock, el CC lo pone el
+  // almacén y la pantalla no lo sabe, así que dice "el de las líneas" sin código.
+  const obrasDeLineas = [...new Set(rows.map((r) => (r.proyecto ?? "").trim()))];
+  const ccDeLineas = obrasDeLineas.length === 1 ? obrasDeLineas[0] : "";
+  const lineasVariasObras = obrasDeLineas.filter(Boolean).length > 1;
   // Deshacer un "Agregar" del diálogo sin salir de él. Solo puede tocar líneas
   // agregadas EN ESA PASADA: el diálogo únicamente lista líneas que al abrirlo NO
   // estaban en la orden, así que no hay forma de que se lleve una vieja.
@@ -719,12 +732,15 @@ export default function EditarOrdenPage() {
       // método de reparto, unidad). Sin `chargeNo` BC rechaza el cargo, por eso se
       // frena arriba. El almacén sigue la misma regla que las líneas: el de arriba
       // manda; si no hay, el suyo; si es nuevo, el de la primera línea.
+      // El centro de costo viaja en `proyecto`, como la obra de un recurso: en el
+      // cargo no es Job No. (BC no lo acepta), es solo la dimensión CC.
       for (const c of cargoRows) {
         ls.push({
           tipo: "cargo", chargeNo: c.chargeNo, chargeMethod: c.chargeMethod,
           descripcion: c.descripcion || c.chargeNo, cantidad: Number(c.cantidad), unidad: c.unidad || "UND",
           almacen: almacen || c.almacen || rows.find((r) => (r.almacen ?? "").trim())?.almacen || "",
           precioUnitario: Number(c.precio), ivaPct: Number(c.iva) || 0,
+          proyecto: c.cc || undefined,
         });
       }
       const r = await updateOrden(orden!.id, { proveedorId, proveedorNo: provSel?.code, proveedorNombre: provSel?.nombre, currencyCode: currency, almacenRecepcion: almacen || undefined, observaciones: observaciones.trim() || undefined, notaInterna: notaInterna.trim() || undefined, prioridad, lineas: ls });
@@ -1015,7 +1031,7 @@ export default function EditarOrdenPage() {
                 {/* Los cargos de producto, abajo de los materiales y como líneas, igual
                     que en el detalle de la orden y en el pedido de BC. */}
                 {cargoRows.map((c, i) => {
-                  const almCargo = almacen || c.almacen || rows.find((r) => (r.almacen ?? "").trim())?.almacen || "";
+                  const ccNombre = c.cc ? nombreObra(c.cc) : "";
                   return (
                     <tr key={c.key} className="fila-cargo">
                       <td>
@@ -1037,8 +1053,32 @@ export default function EditarOrdenPage() {
                         </div>
                       </td>
                       <td className="ds-body-sm ds-muted">—</td>
+                      {/* El destino de un cargo es su CENTRO DE COSTO: en BC no lleva
+                          obra ni entra a ningún almacén. Antes acá salía el almacén —que
+                          en el cargo no viaja— y no había cómo ponerle el CC, así que
+                          Contabilidad lo ponía a mano en BC (CP-006235). */}
                       <td className="ds-body-sm">
-                        <DestinoLinea almacen={almCargo} almacenNombre={nombreAlmacen(almCargo)} />
+                        {c.cc ? (
+                          <div title={`Centro de costo ${c.cc}${ccNombre ? ` — ${ccNombre}` : ""}`}>
+                            <div><span className="ds-muted">Centro de costo</span> <span className="ds-strong">{c.cc}</span></div>
+                            {ccNombre && <div className="ds-muted ds-clamp-2">{ccNombre}</div>}
+                          </div>
+                        ) : lineasVariasObras ? (
+                          <div>
+                            <div className="ds-pending-text">Sin centro de costo</div>
+                            <div className="ds-muted">Las líneas van a varias obras: elegí a cuál se carga.</div>
+                          </div>
+                        ) : (
+                          <div title="Sin elegir: lleva el mismo centro de costo que las líneas de material.">
+                            <div><span className="ds-muted">Centro de costo</span> <span className="ds-strong">{ccDeLineas || "el de las líneas"}</span></div>
+                            {ccDeLineas && <div className="ds-muted">El de las líneas</div>}
+                          </div>
+                        )}
+                        <span className="row wrap gap-3" style={{ marginTop: 2 }}>
+                          <button type="button" className="link-btn" onClick={() => setEditCargoCC(c)}>
+                            {c.cc ? "Cambiar" : lineasVariasObras ? "Asignar" : "Elegir otro"}
+                          </button>
+                        </span>
                       </td>
                       <td className="ds-num">
                         <span className="row gap-2" style={{ justifyContent: "flex-end", alignItems: "baseline" }}>
@@ -1078,6 +1118,31 @@ export default function EditarOrdenPage() {
           </div>
         </div>
       </main>
+
+      {editCargoCC && (
+        <Modal title="Centro de costo del cargo" onClose={() => setEditCargoCC(null)}
+          footer={<>
+            <Button variant="outline" onClick={() => setEditCargoCC(null)}>Cancelar</Button>
+            <Button onClick={() => { setCargo(editCargoCC.key, { cc: editCargoCC.cc || undefined }); setEditCargoCC(null); }}>Guardar</Button>
+          </>}>
+          <p className="ds-body-sm ds-muted" style={{ marginBottom: 16 }}>{[editCargoCC.chargeNo, editCargoCC.descripcion].filter(Boolean).join(" — ") || "Cargo nuevo"}</p>
+          <Field label="Centro de costo" help="El cargo va a Business Central con este centro de costo. No lleva obra ni tarea: BC no acepta N.º proyecto en una línea de cargo.">
+            {/* "El de las líneas" es la opción vacía: el Combobox no se puede vaciar
+                solo, igual que "Sin obra" en el destino de una línea. */}
+            <Combobox items={[{ codigo: "", nombre: ccDeLineas ? `El de las líneas (${ccDeLineas})` : "El de las líneas" }, ...obras]}
+              value={editCargoCC.cc ?? ""} onChange={(k) => setEditCargoCC({ ...editCargoCC, cc: k })}
+              getKey={(o) => o.codigo} getLabel={etiquetaObra} getSearch={(o) => `${o.codigo} ${o.nombre}`} placeholder="El de las líneas…" />
+          </Field>
+          {/* Mismo aviso que en el destino de una línea: un código que no es obra en BC
+              no aparece en el buscador, y al guardar la orden se descarta. */}
+          {!!editCargoCC.cc && obras.length > 0 && !obras.some((o) => o.codigo === editCargoCC.cc) && (
+            <p className="ds-body-sm" style={{ color: "var(--ds-text-danger)", margin: "8px 0 0" }}>
+              El cargo trae <span className="ds-strong">{editCargoCC.cc}</span>, que no está en el catálogo de obras de
+              Business Central. Elegí uno de la lista: al guardar la orden, un código que no es obra se descarta.
+            </p>
+          )}
+        </Modal>
+      )}
 
       {editObra && (
         <Modal title="Destino de la línea" onClose={() => setEditObra(null)}
@@ -1158,7 +1223,7 @@ export default function EditarOrdenPage() {
 
       <div className="action-bar">
         <div className="action-bar__inner">
-          <span className="ds-muted">{cuenta(rows.length + cargoRows.length, "línea", "líneas")} ·<span className="ds-strong">{money(total, currency)}</span></span>
+          <span className="ds-muted">{cuenta(rows.length + cargoRows.length, "línea", "líneas")} · <span className="ds-strong">{money(total, currency)}</span></span>
           <div className="row gap-3 action-bar__cta">
             <Button variant="outline" onClick={salirALaOrden}>Cancelar</Button>
             <Button onClick={guardar} disabled={guardando}>{guardando ? "Guardando…" : "Guardar cambios"}</Button>
