@@ -405,6 +405,27 @@ export function obraParaOrden(l: Pick<PedidoLinea, "proyecto" | "taskNo">): stri
   return esConsumoDirecto(l) ? (l.proyecto ?? "").trim() : "";
 }
 
+// EL ALMACÉN DE UNA LÍNEA QUE VA A UNA OBRA ES EL DE SU OBRA, no el que esté elegido
+// arriba. En BC la obra y el almacén son las dos fuentes del centro de costo de la
+// línea y las dos lo amarran con "Igual código": si apuntan a CC distintos, BC crea
+// el pedido, lo deja lanzar y recién se niega AL REGISTRAR — o sea que el "no" le
+// cae a Bodega. ALM-GRAL amarra INV, así que ALM-GRAL + cualquier obra no se puede
+// registrar nunca (CP-005492, CP-006440). Y no se ve venir: en una línea de consumo
+// directo la pantalla muestra la obra y la tarea, no el almacén.
+//
+// Medido contra BC Production el 29 oct 2026: las 258 obras tienen un almacén con su
+// mismo código, y de 215 líneas abiertas con obra, 196 ya iban al almacén de la obra
+// (las que iban a ALM-GRAL estaban todas trabadas). Es la convención de la casa, no
+// un parche: el consumo directo no sube stock en ningún almacén, el almacén solo
+// decide el CC.
+//
+// Vale para el artículo con obra (consumo directo, Job No.) y para el recurso o el
+// activo fijo con obra (la obra viaja como CC). El cargo no: no lleva obra.
+export function almacenDeLinea(l: { tipo?: LineType; proyecto?: string }, elegido: string): string {
+  const obra = (l.proyecto ?? "").trim();
+  return obra && l.tipo !== "cargo" ? obra : (elegido ?? "").trim();
+}
+
 // LA CASA: la obra PARA la que se pidió la línea, entre o no al almacén.
 //
 // Es la hermana de `obraParaOrden` del otro lado: esa devuelve lo que VIAJA A BC (y

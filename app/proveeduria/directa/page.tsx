@@ -9,7 +9,7 @@ import { ConfirmarProveedor } from "@/components/confirmar-proveedor";
 import { IconCheck, IconWarning } from "@/components/icons";
 import { useStore } from "@/lib/store";
 import { leerBorrador, guardarBorrador, borrarBorrador, hace, type BorradorOrden } from "@/lib/borrador-orden";
-import { cuenta, etiquetaTipoLinea, lineasSinPrecio, money, almacenesParaRecepcion, esAlmacenFisico, monedaApp, numeroOrden, MONEDAS } from "@/lib/helpers";
+import { cuenta, etiquetaTipoLinea, lineasSinPrecio, money, almacenesParaRecepcion, almacenDeLinea, esAlmacenFisico, monedaApp, numeroOrden, MONEDAS } from "@/lib/helpers";
 import { CampoMaquina, RepartoMaquinasModal, buscarMaquina, etiquetaMaquina, nombreDeMaquina, useMaquinasBc, type MaquinaCat } from "@/components/maquina-linea";
 import { PrioridadTag } from "@/components/prioridad";
 import { precioEnUnidad, precioEntreUnidades, cantidadEntreUnidades, equivalencia, equivalenciaDeUnidad, mismaMoneda, codigoDeItem, opcionesDeUnidad, type UnidadDeItem } from "@/lib/unidad";
@@ -552,7 +552,9 @@ export default function OrdenDirectaPage() {
         // línea que no es de artículo el almacén no manda material a ninguna bodega
         // —eso vive detrás de Type::Item—, pero SÍ es de donde BC saca la dimensión
         // de centro de costo. Sin él, la compra de un activo queda sin CC.
-        almacen,
+        // La línea con obra va al almacén DE SU OBRA, no al de arriba: con ALM-GRAL
+        // BC no la deja registrar nunca (ver `almacenDeLinea`).
+        almacen: almacenDeLinea({ tipo: r.tipo, proyecto: r.obra }, almacen),
         precioUnitario: Number(r.precio), ivaPct: Number(r.iva) || 0, descuentoPct: Number(r.descuento) || 0,
         proyecto: r.obra || undefined, taskNo: r.tipo === "articulo" ? (r.tarea || undefined) : undefined,
         maquinaNo: r.maquinaNo || undefined, maquinaNombre: r.maquinaNombre || undefined,
@@ -632,7 +634,7 @@ export default function OrdenDirectaPage() {
             <Field label="Moneda">
               <Select value={currency} onChange={(e) => setCurrency(e.target.value)}>{MONEDAS.map((m) => <option key={m.value || "CRC"} value={m.value}>{m.label}</option>)}</Select>
             </Field>
-            <Field label="Almacén / centro de costo de recepción" help="Dónde entra el material en BC. Por defecto el Almacén General, pero podés elegir cualquier centro de costo.">
+            <Field label="Almacén / centro de costo de recepción" help="Dónde entra el material en BC. Por defecto el Almacén General, pero podés elegir cualquier centro de costo. Las líneas que van a una obra entran siempre al almacén de su obra.">
               <Combobox items={catAlm} value={almacen} onChange={(k) => setAlmacen(k)}
                 getKey={(a) => a.codigo} getLabel={(a) => `${a.codigo} — ${a.nombre}`}
                 getSearch={(a) => `${a.codigo} ${a.nombre}`}
@@ -838,7 +840,8 @@ export default function OrdenDirectaPage() {
                             proyecto —BC lo prohíbe— sino como centro de costo, y por eso
                             tampoco llevan tarea: no se les avisa que les falta. */}
                         <DestinoLinea
-                          almacen={almacen} almacenNombre={nombreAlmacen(almacen)}
+                          almacen={almacenDeLinea({ tipo: r.tipo, proyecto: r.obra }, almacen)}
+                          almacenNombre={nombreAlmacen(almacenDeLinea({ tipo: r.tipo, proyecto: r.obra }, almacen))}
                           obra={r.obra} obraNombre={r.obraNombre}
                           tarea={r.tarea} tareaNombre={r.tareaNombre}
                           avisarSinTarea={r.tipo === "articulo"}
