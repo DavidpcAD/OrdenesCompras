@@ -9,7 +9,7 @@ import { IconWarning } from "@/components/icons";
 import { Combobox } from "@/components/combobox";
 import { CampoMaquina, RepartoMaquinasModal, nombreDeMaquina, useMaquinasBc } from "@/components/maquina-linea";
 import { useStore } from "@/lib/store";
-import { cuenta, etiquetaTipoLinea, money, num, ordenEsDirecta, ordenEsperaCorreccion, lineasCorregidasDeOrden, ordenLineaImporte, ordenPedidos, almacenesParaRecepcion, esAlmacenFisico, repartoDeLineaSolicitud, pedidoLineaPendiente, obraDeLinea, obraParaOrden, ultimoPrecioProveedor, monedaApp, numeroOrden, MONEDAS } from "@/lib/helpers";
+import { cuenta, etiquetaTipoLinea, money, num, ordenEsDirecta, ordenEsperaCorreccion, lineasCorregidasDeOrden, ordenPedidos, almacenesParaRecepcion, esAlmacenFisico, repartoDeLineaSolicitud, pedidoLineaPendiente, obraDeLinea, obraParaOrden, ultimoPrecioProveedor, monedaApp, numeroOrden, MONEDAS } from "@/lib/helpers";
 import { precioEnUnidad, precioEntreUnidades, cantidadEntreUnidades, equivalencia, equivalenciaDeUnidad, mismaMoneda, codigoDeItem, opcionesDeUnidad, type UnidadDeItem, type PrecioRef } from "@/lib/unidad";
 import { useVariantes } from "@/lib/use-variantes";
 import { useSalida } from "@/lib/use-volver";
@@ -27,9 +27,23 @@ import type { OrdenLinea, Prioridad } from "@/lib/types";
 // máquina significa que reabrir y guardar una orden le borra la máquina a la línea
 // —en el SQL y en BC—, que es peor que no tener el campo.
 interface Row { key: string; tipo: OrdenLinea["tipo"]; articuloId: string; variantCode?: string; descripcion: string; unidad: string; unidadBase?: string; factorCompra?: number; almacen: string; cantidad: string; precio: string; iva: string; descuento: string; proyecto?: string; taskNo?: string; obraCasa?: string; maquinaNo?: string; maquinaNombre?: string; pedidoLineaId?: string; pedidoNumero?: string; }
+// Cargo de producto (Item Charge de BC) de la orden: flete, servicio de corte,
+// impuestos de exterior… Va en su propio estado y no en `rows` porque casi toda la
+// lógica de las filas (variantes, unidades, último precio, tarea, saldo de la
+// solicitud) es de material y no aplica; pero se MUESTRA en la misma tabla, abajo,
+// como lo muestra el detalle de la orden. `chargeMethod` y `almacen` se conservan
+// tal cual vienen: la pantalla no los edita.
+interface CargoRow { key: string; chargeNo: string; descripcion: string; cantidad: string; precio: string; iva: string; unidad: string; chargeMethod?: string; almacen?: string; }
 type Obra = { codigo: string; nombre: string };
 type Tarea = { jobTaskNo: string; descripcion: string; tipo: string };
 const uid = () => Math.random().toString(36).slice(2, 9);
+
+const filasDeCargos = (lineas: OrdenLinea[]): CargoRow[] =>
+  lineas.filter((l) => l.tipo === "cargo").map((l) => ({
+    key: l.id, chargeNo: l.chargeNo ?? "", descripcion: l.descripcion ?? "",
+    cantidad: String(l.cantidad > 0 ? l.cantidad : 1), precio: String(l.precioUnitario), iva: String(l.ivaPct ?? 13),
+    unidad: l.unidad || "UND", chargeMethod: l.chargeMethod, almacen: l.almacen,
+  }));
 
 // Líneas de la orden -> filas editables. Se usa en el estado inicial y al hidratar.
 //
@@ -120,20 +134,16 @@ export default function EditarOrdenPage() {
   const catProv = bcProv ?? proveedores;
   const catAlm = almacenesParaRecepcion(bcAlm ?? almacenes);
 
-  // Los cargos de producto de la orden. NO son siempre flete: pueden ser impuestos
-  // de exterior, servicio de corte, etc. — el tipo lo elige quien arma la orden y es
-  // un Item Charge real de BC. Esta pantalla edita EL PRIMERO; si hay más, se
-  // conservan tal cual al guardar (antes se perdían).
-  const cargos = (orden?.lineas ?? []).filter((l) => l.tipo === "cargo");
-  const cargo = cargos[0];
   const [proveedorId, setProveedorId] = useState(orden?.proveedorId ?? "");
   const [currency, setCurrency] = useState(monedaApp(orden?.currencyCode));
-  // Lo que se edita acá es el IMPORTE del cargo (lo que el proveedor cobra),
-  // no su precio unitario: un cargo puede venir como 17 × ₡1 121,00 y no como
-  // 1 × ₡19 057,00. Al guardar se vuelve a repartir entre la misma cantidad.
-  const [flete, setFlete] = useState(cargo ? String(ordenLineaImporte(cargo)) : "");
-  const [cargoNo, setCargoNo] = useState(cargo?.chargeNo ?? "");
-  const [cargoDesc, setCargoDesc] = useState(cargo?.descripcion ?? "");
+  // Los cargos de producto de la orden, TODOS y como líneas. NO son siempre flete:
+  // pueden ser impuestos de exterior, servicio de corte, etc. — el tipo es un Item
+  // Charge real de BC. Antes esta pantalla editaba solo el primero, desde un campo
+  // "Monto del cargo" arriba: la línea no salía en la tabla (el detalle sí la
+  // muestra), los demás cargos no se veían, y no había cómo sumarle otro a la orden.
+  // Se edita cantidad × precio, igual que en compra directa: un cargo puede venir
+  // como 17 × ₡1 121,00 y no como 1 × ₡19 057,00.
+  const [cargoRows, setCargoRows] = useState<CargoRow[]>(filasDeCargos(orden?.lineas ?? []));
   const [almacen, setAlmacen] = useState(almacenComun(orden?.lineas ?? []));
   const [observaciones, setObservaciones] = useState(orden?.observaciones ?? "");
   const [notaInterna, setNotaInterna] = useState(orden?.notaInterna ?? "");
@@ -155,10 +165,7 @@ export default function EditarOrdenPage() {
     setObservaciones(orden.observaciones ?? "");
     setNotaInterna(orden.notaInterna ?? "");
     setPrioridad(orden.prioridad ?? "normal");
-    const cg = orden.lineas.find((l) => l.tipo === "cargo");
-    setFlete(cg ? String(ordenLineaImporte(cg)) : "");
-    setCargoNo(cg?.chargeNo ?? "");
-    setCargoDesc(cg?.descripcion ?? "");
+    setCargoRows(filasDeCargos(orden.lineas));
     setRows(filasDeOrden(orden.lineas));
   }, [orden]);
   const [qaCode, setQaCode] = useState(""); const [qaQty, setQaQty] = useState(""); const [qaPrecio, setQaPrecio] = useState("");
@@ -171,6 +178,21 @@ export default function EditarOrdenPage() {
   const provSel = catProv.find((x) => x.id === proveedorId) ?? catProv.find((x) => x.code === proveedorId);
   const setRow = (k: string, patch: Partial<Row>) => setRows((rs) => rs.map((r) => (r.key === k ? { ...r, ...patch } : r)));
   const removeRow = (k: string) => setRows((rs) => rs.filter((r) => r.key !== k));
+  const setCargo = (k: string, patch: Partial<CargoRow>) => setCargoRows((cs) => cs.map((c) => (c.key === k ? { ...c, ...patch } : c)));
+  const removeCargo = (k: string) => setCargoRows((cs) => cs.filter((c) => c.key !== k));
+  // El cargo nuevo arranca SIN tipo a propósito: sin Item Charge BC no lo acepta, y
+  // uno puesto por defecto ("flete") pasaría sin que nadie lo eligiera. El método de
+  // reparto es el que ya usan los otros cargos de la orden (BC: Amount si no hay).
+  const addCargo = () => setCargoRows((cs) => [...cs, {
+    key: `c-${uid()}`, chargeNo: "", descripcion: "", cantidad: "1", precio: "", iva: "13", unidad: "UND",
+    chargeMethod: cs.find((c) => c.chargeMethod)?.chargeMethod,
+  }]);
+  // La descripción sigue al tipo: es la del Item Charge en BC.
+  const elegirTipoCargo = (k: string, no: string) => {
+    const ic = itemCharges.find((x) => x.no === no);
+    setCargo(k, { chargeNo: no, ...(ic ? { descripcion: ic.descripcion } : {}) });
+  };
+  const cargoImporte = (c: CargoRow) => (Number(c.cantidad) || 0) * (Number(c.precio) || 0);
   // Deshacer un "Agregar" del diálogo sin salir de él. Solo puede tocar líneas
   // agregadas EN ESA PASADA: el diálogo únicamente lista líneas que al abrirlo NO
   // estaban en la orden, así que no hay forma de que se lleve una vieja.
@@ -467,11 +489,11 @@ export default function EditarOrdenPage() {
   const calcImporte = (r: Row) => Number(r.cantidad) * Number(r.precio) * (1 - (Number(r.descuento) || 0) / 100);
   const subtotal = useMemo(() => rows.reduce((s, r) => s + calcImporte(r), 0), [rows]);
   const ivaLineas = useMemo(() => rows.reduce((s, r) => s + calcImporte(r) * ((Number(r.iva) || 0) / 100), 0), [rows]);
-  const fleteNum = Number(flete) || 0;
-  // El flete conserva SU IVA (el que ya traía la orden; 13% si no tenía cargo). Acá
-  // el IVA mostrado lo ignoraba y el total quedaba por debajo del de BC.
-  const ivaTotal = ivaLineas + fleteNum * ((cargo?.ivaPct ?? 13) / 100);
-  const total = subtotal + fleteNum + ivaTotal;
+  const cargosTotal = cargoRows.reduce((s, c) => s + cargoImporte(c), 0);
+  // Cada cargo con SU IVA (BC también le cobra IVA al flete, y hay cargos exentos):
+  // sin esto el total quedaba por debajo del de BC.
+  const ivaTotal = ivaLineas + cargoRows.reduce((s, c) => s + cargoImporte(c) * ((Number(c.iva) || 0) / 100), 0);
+  const total = subtotal + cargosTotal + ivaTotal;
   const [guardando, setGuardando] = useState(false);
 
   if (!orden) {
@@ -616,8 +638,15 @@ export default function EditarOrdenPage() {
     // Un cargo SIN tipo lo rechaza BC (necesita un Item Charge real): la línea se
     // cae al reescribir el pedido y el aviso llega después, con la orden ya guardada.
     // Mejor cortarlo acá — es la misma regla que ya exige compra directa.
-    if (fleteNum > 0 && !cargoNo) {
-      toast("Elegí el tipo del cargo de producto (flete, impuestos de exterior, etc.): sin tipo Business Central no lo acepta.", "error");
+    const cargoSinTipo = cargoRows.findIndex((c) => !c.chargeNo);
+    if (cargoSinTipo >= 0) {
+      toast(`Elegí el tipo del cargo ${cargoSinTipo + 1} (flete, servicio de corte, impuestos de exterior…): sin tipo Business Central no lo acepta. Si sobra, quitalo con la ×.`, "error");
+      return;
+    }
+    // Un cargo en 0 no se guarda callado: o le faltó el precio, o sobra.
+    const cargoEnCero = cargoRows.find((c) => !(Number(c.cantidad) > 0) || !(Number(c.precio) > 0));
+    if (cargoEnCero) {
+      toast(`El cargo "${cargoEnCero.descripcion || cargoEnCero.chargeNo}" va en ${money(0, currency)}: poné cantidad y precio, o quitalo con la ×.`, "error");
       return;
     }
     // Sin resolver contra el catálogo no se sabe el nombre: guardar borraría el que
@@ -686,38 +715,16 @@ export default function EditarOrdenPage() {
         maquinaNo: r.tipo === "activo_fijo" ? undefined : (r.maquinaNo || undefined),
         maquinaNombre: r.tipo === "activo_fijo" ? undefined : (r.maquinaNombre || undefined),
       }));
-      // El cargo se rearma conservando lo que ya tenía la orden (tipo de Item Charge
-      // de BC, método de reparto, descripción y cantidad). Antes se reescribía como
-      // "FLETE / TRANSPORTE" sin `chargeNo`, y sin tipo BC rechaza el cargo: editar
-      // una orden le borraba el tipo que la propia pantalla obliga a elegir.
-      if (fleteNum > 0) {
-        // `fleteNum` es el IMPORTE del cargo; a BC va cantidad × precio. Se conserva
-        // la cantidad que ya traía (17 servicios de corte siguen siendo 17) y el
-        // importe se reparte entre ellas. Antes el monto entraba como precio
-        // unitario: dejar el campo igual y guardar multiplicaba el cargo por su
-        // cantidad.
-        const cantCargo = cargo?.cantidad && cargo.cantidad > 0 ? cargo.cantidad : 1;
-        ls.push({
-          tipo: "cargo",
-          chargeNo: cargoNo || cargo?.chargeNo,
-          chargeMethod: cargo?.chargeMethod,
-          descripcion: cargoDesc || cargo?.descripcion || "CARGO",
-          cantidad: cantCargo,
-          unidad: cargo?.unidad || "UND",
-          almacen: almacen || cargo?.almacen || rows[0]?.almacen || "",
-          precioUnitario: fleteNum / cantCargo,
-          ivaPct: cargo?.ivaPct ?? 13,
-        });
-      }
-      // Cargos del 2.º en adelante: esta pantalla solo edita el primero, así que los
-      // demás se reemiten TAL CUAL. Antes se caían al guardar sin decir nada, porque
-      // el payload se armaba con un solo cargo.
-      for (const c of cargos.slice(1)) {
+      // Los cargos van TODOS, cada uno con lo que ya tenía (tipo de Item Charge de BC,
+      // método de reparto, unidad). Sin `chargeNo` BC rechaza el cargo, por eso se
+      // frena arriba. El almacén sigue la misma regla que las líneas: el de arriba
+      // manda; si no hay, el suyo; si es nuevo, el de la primera línea.
+      for (const c of cargoRows) {
         ls.push({
           tipo: "cargo", chargeNo: c.chargeNo, chargeMethod: c.chargeMethod,
-          descripcion: c.descripcion, cantidad: c.cantidad > 0 ? c.cantidad : 1,
-          unidad: c.unidad || "UND", almacen: almacen || c.almacen || "",
-          precioUnitario: c.precioUnitario, ivaPct: c.ivaPct ?? 13,
+          descripcion: c.descripcion || c.chargeNo, cantidad: Number(c.cantidad), unidad: c.unidad || "UND",
+          almacen: almacen || c.almacen || rows.find((r) => (r.almacen ?? "").trim())?.almacen || "",
+          precioUnitario: Number(c.precio), ivaPct: Number(c.iva) || 0,
         });
       }
       const r = await updateOrden(orden!.id, { proveedorId, proveedorNo: provSel?.code, proveedorNombre: provSel?.nombre, currencyCode: currency, almacenRecepcion: almacen || undefined, observaciones: observaciones.trim() || undefined, notaInterna: notaInterna.trim() || undefined, prioridad, lineas: ls });
@@ -768,42 +775,8 @@ export default function EditarOrdenPage() {
             <Field label="Moneda">
               <Select value={currency} onChange={(e) => setCurrency(e.target.value)}>{MONEDAS.map((m) => <option key={m.value || "CRC"} value={m.value}>{m.label}</option>)}</Select>
             </Field>
-            {/* NO es "el flete": es el cargo de producto que traiga la orden, que
-                puede ser impuestos de exterior, servicio de corte u otro. Antes esto
-                era un campo llamado "Flete / transporte" que mostraba el monto de
-                CUALQUIER cargo, así que una orden con Impuestos Exterior se leía como
-                si alguien le hubiera puesto un flete que nadie puso — y el tipo no se
-                veía ni se podía cambiar (Proveeduría, CP-005254). */}
-            <Field label="Cargo de producto" help={cargo ? "El que ya trae la orden. Se distribuye entre las líneas al facturar." : "Opcional (flete, impuestos de exterior, etc.). Se distribuye al facturar."}>
-              <Select value={cargoNo} onChange={(e) => {
-                const no = e.target.value;
-                const ic = itemCharges.find((x) => x.no === no);
-                setCargoNo(no);
-                // La descripción sigue al tipo, salvo que el usuario ya tenga una
-                // propia que no sea el viejo texto por defecto.
-                if (ic) setCargoDesc(ic.descripcion);
-              }}>
-                <option value="">— Sin cargo —</option>
-                {/* El tipo que ya trae la orden se ofrece aunque el catálogo de BC no
-                    haya cargado (o ya no lo tenga): si no, guardar lo borraría. */}
-                {cargo?.chargeNo && !itemCharges.some((ic) => ic.no === cargo.chargeNo) && (
-                  <option value={cargo.chargeNo}>{cargo.chargeNo} · {cargo.descripcion ?? ""}</option>
-                )}
-                {itemCharges.map((ic) => <option key={ic.no} value={ic.no}>{ic.no} · {ic.descripcion}</option>)}
-              </Select>
-            </Field>
-            <Field label={`Monto del cargo${cargoDesc ? ` · ${cargoDesc}` : ""}`}
-              help={[
-                cargo && cargo.cantidad > 1
-                  ? `Es el importe total del cargo: ${num.format(cargo.cantidad)}${cargo.unidad ? ` ${cargo.unidad}` : ""} × ${money(cargo.precioUnitario, currency)}. Si lo cambiás, se reparte entre esas ${num.format(cargo.cantidad)}.`
-                  : null,
-                cargos.length > 1
-                  ? `OJO: esta orden tiene ${cargos.length} cargos. Acá se edita el primero; los otros se conservan como están.`
-                  : null,
-              ].filter(Boolean).join(" ") || undefined}
-              warning={cargos.length > 1}>
-              <Input type="number" min={0} value={flete} onChange={(e) => setFlete(e.target.value)} placeholder="0" />
-            </Field>
+            {/* Los cargos de producto ya NO van acá: son líneas de la tabla de abajo
+                (ver `CargoRow`), donde se ven todos y se suman más. */}
             <Field label="Almacén / centro de costo de recepción"
               help={almacen
                 ? "Dónde entra el material en BC. Al guardar se aplica a TODAS las líneas de la orden."
@@ -1039,15 +1012,67 @@ export default function EditarOrdenPage() {
                     <td className="ds-num ds-col-fija"><button type="button" className="icon-btn icon-btn--quitar" title="Quitar línea" aria-label="Quitar línea" onClick={() => removeRow(r.key)}>×</button></td>
                   </tr>
                 ))}
+                {/* Los cargos de producto, abajo de los materiales y como líneas, igual
+                    que en el detalle de la orden y en el pedido de BC. */}
+                {cargoRows.map((c, i) => {
+                  const almCargo = almacen || c.almacen || rows.find((r) => (r.almacen ?? "").trim())?.almacen || "";
+                  return (
+                    <tr key={c.key} className="fila-cargo">
+                      <td>
+                        <div className="row gap-2" style={{ alignItems: "center", minWidth: 220, maxWidth: 360 }}>
+                          <Badge tone="yellow">Cargo</Badge>
+                          {/* Sin tipo, BC no acepta el cargo: se marca en rojo acá, igual
+                              que la variante que falta. */}
+                          <span style={{ flex: 1, minWidth: 0, ...(!c.chargeNo ? { outline: "1.5px solid var(--ds-color-red-100)", borderRadius: 8 } : {}) }}>
+                            <Select ariaLabel={`Tipo del cargo ${i + 1}`} className="ds-select--celda" placeholder="Elegí el tipo…"
+                              value={c.chargeNo} onChange={(e) => elegirTipoCargo(c.key, e.target.value)}>
+                              {/* El tipo que ya trae el cargo se ofrece aunque el catálogo de
+                                  BC no haya cargado (o ya no lo tenga): si no, guardar lo borraría. */}
+                              {c.chargeNo && !itemCharges.some((ic) => ic.no === c.chargeNo) && (
+                                <option value={c.chargeNo}>{c.chargeNo} · {c.descripcion}</option>
+                              )}
+                              {itemCharges.map((ic) => <option key={ic.no} value={ic.no}>{ic.no} · {ic.descripcion}</option>)}
+                            </Select>
+                          </span>
+                        </div>
+                      </td>
+                      <td className="ds-body-sm ds-muted">—</td>
+                      <td className="ds-body-sm">
+                        <DestinoLinea almacen={almCargo} almacenNombre={nombreAlmacen(almCargo)} />
+                      </td>
+                      <td className="ds-num">
+                        <span className="row gap-2" style={{ justifyContent: "flex-end", alignItems: "baseline" }}>
+                          <input className="ds-cell-input" aria-label={`Cantidad del cargo ${i + 1}`} type="number" min={0} step="any" value={c.cantidad} style={{ width: 70 }} onChange={(e) => setCargo(c.key, { cantidad: e.target.value })} />
+                          <span className="ds-body-sm ds-muted" style={{ whiteSpace: "nowrap" }}>{c.unidad}</span>
+                        </span>
+                      </td>
+                      <td className="ds-num"><input className="ds-cell-input" aria-label={`Precio del cargo ${i + 1}`} type="number" min={0} step="any" value={c.precio} placeholder="0" style={{ width: 92 }} onChange={(e) => setCargo(c.key, { precio: e.target.value })} /></td>
+                      <td className="ds-num ds-muted">—</td>
+                      {/* IVA del cargo editable: hay cargos exentos (p. ej. impuestos de
+                          exterior) y un 13% fijo inventaba un IVA que BC no cobra. */}
+                      <td className="ds-num"><input className="ds-cell-input" aria-label={`IVA % del cargo ${i + 1}`} type="number" min={0} value={c.iva} style={{ width: 56 }} onChange={(e) => setCargo(c.key, { iva: e.target.value })} /></td>
+                      <td className="ds-num ds-strong">{money(cargoImporte(c), currency)}</td>
+                      <td className="ds-num ds-col-fija"><button type="button" className="icon-btn icon-btn--quitar" title="Quitar cargo" aria-label="Quitar cargo" onClick={() => removeCargo(c.key)}>×</button></td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
+          </div>
+          {/* Fuera de la tabla a propósito: la tabla scrollea de lado y un botón en su
+              pie quedaría corrido a la derecha, fuera de vista. */}
+          <div className="row wrap gap-3" style={{ alignItems: "center", justifyContent: "space-between", padding: "12px 16px", borderTop: "1.5px solid var(--ds-color-gray-100)" }}>
+            <span className="ds-body-sm ds-muted" style={{ flex: "1 1 320px" }}>
+              Cargos de producto: flete, servicio de corte, impuestos de exterior… Business Central los reparte entre las líneas al registrar la factura.
+            </span>
+            <Button variant="outline" size="sm" onClick={addCargo}>+ Agregar cargo</Button>
           </div>
         </Card>
 
         <div className="row mt-6" style={{ justifyContent: "flex-end" }}>
           <div className="totals" style={{ minWidth: 340 }}>
             <div className="totals__row"><span>Subtotal (excl. IVA)</span><span>{money(subtotal, currency)}</span></div>
-            <div className="totals__row"><span>Flete</span><span>{money(fleteNum, currency)}</span></div>
+            <div className="totals__row"><span>Cargos</span><span>{money(cargosTotal, currency)}</span></div>
             <div className="totals__row"><span>IVA</span><span>{money(ivaTotal, currency)}</span></div>
             <div className="totals__row totals__row--grand" style={{ gridColumn: "1 / -1" }}><span>Total</span><span>{money(total, currency)}</span></div>
           </div>
@@ -1133,7 +1158,7 @@ export default function EditarOrdenPage() {
 
       <div className="action-bar">
         <div className="action-bar__inner">
-          <span className="ds-muted">{cuenta(rows.length, "línea", "líneas")} · <span className="ds-strong">{money(total, currency)}</span></span>
+          <span className="ds-muted">{cuenta(rows.length + cargoRows.length, "línea", "líneas")} ·<span className="ds-strong">{money(total, currency)}</span></span>
           <div className="row gap-3 action-bar__cta">
             <Button variant="outline" onClick={salirALaOrden}>Cancelar</Button>
             <Button onClick={guardar} disabled={guardando}>{guardando ? "Guardando…" : "Guardar cambios"}</Button>
