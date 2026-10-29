@@ -77,12 +77,19 @@ export async function POST(req: Request) {
     const cargoValido = cargo && cargo.itemChargeNo && Number(cargo.monto) > 0
       ? { itemChargeNo: String(cargo.itemChargeNo), descripcion: cargo.descripcion ? String(cargo.descripcion) : undefined, monto: Number(cargo.monto), metodo: cargo.metodo ? String(cargo.metodo) : undefined }
       : undefined;
-    // AMAZON CON TARJETA — antes de postear, ponerle al pedido la forma de pago (la
-    // tarjeta) y la dimensión del encabezado. Lo hace el codeunit, que reabre y relanza
-    // sin re-disparar la aprobación (AdelanteAPI 1.2.22.0). Va DESPUÉS de los frenos
-    // (que son lectura) y ANTES de postear: si la tarjeta o el valor no calzan, BC no
-    // registra nada y la orden queda por recibir con el motivo del codeunit en pantalla.
-    if (tarjeta?.paymentMethodCode) {
+    // Quién registra: sale de la COOKIE FIRMADA, no del body (mismo criterio que la
+    // bitácora — ver lib/actor.ts). Va a BC para que el consumo directo de la obra
+    // quede firmado en los Movs. proyecto ("Realizado por"), que hasta ahora salía
+    // en blanco porque el usuario de BC es siempre la cuenta de servicio.
+    quien = await actor(cuerpo);
+    // AMAZON CON TARJETA — SOLO CONTABILIDAD. Antes de postear, ponerle al pedido la
+    // forma de pago (la tarjeta) y la dimensión del encabezado. Lo hace el codeunit, que
+    // reabre y relanza sin re-disparar la aprobación (AdelanteAPI 1.2.22.0). Va DESPUÉS
+    // de los frenos (lectura) y ANTES de postear. El gate por rol es la pared de verdad:
+    // la UI solo le muestra el paso de tarjeta a Contabilidad, y acá se exige igual, por
+    // si llega un request armado a mano. Si no calza (tarjeta o valor), BC no registra
+    // nada y la orden queda por recibir con el motivo del codeunit en pantalla.
+    if (tarjeta?.paymentMethodCode && quien.rol === "contabilidad") {
       try {
         await bcSetTarjetaYDimension(
           String(orderNo ?? ""), String(tarjeta.paymentMethodCode),
@@ -94,11 +101,6 @@ export async function POST(req: Request) {
         }, { status: 409 });
       }
     }
-    // Quién registra: sale de la COOKIE FIRMADA, no del body (mismo criterio que la
-    // bitácora — ver lib/actor.ts). Va a BC para que el consumo directo de la obra
-    // quede firmado en los Movs. proyecto ("Realizado por"), que hasta ahora salía
-    // en blanco porque el usuario de BC es siempre la cuenta de servicio.
-    quien = await actor(cuerpo);
     const postedNo = await bcRegistrarFactura(orderNo, vendorInvoiceNo, lineas ?? [], postingDate ?? "", cargoValido, quien.usuario);
     // BC ya registró. De acá en adelante NADA puede hacer que la respuesta diga que
     // no se registró: lo único que queda por saber es si además se pudo guardar acá.
