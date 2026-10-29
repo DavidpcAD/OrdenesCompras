@@ -8,6 +8,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { payloadReplaceLines, sinObrasInexistentes, avisoDeSaneo, lineasOrdenParaBc, obrasSinTarea, lineasSinUnidad, lineasSinAlmacen, centroCostoDeOrden, centroCostoDeLinea, decidirVariantes, crearEnBcAlEnviar, bcPideAbierto, devolucionTrasFallo, hayQueReponerLanzamiento, ccForzadoDelAlmacen, type LineaReplaceBc } from "./bc.ts";
 import type { OrdenLinea } from "./types.ts";
+import { almacenDeLinea } from "./helpers.ts";
 
 const item = (p: Partial<LineaReplaceBc> = {}): LineaReplaceBc => ({
   tipo: "articulo", itemNo: "M01-0147", descripcion: "VARILLA DEFORME #3",
@@ -283,7 +284,40 @@ test("la línea de la orden llega a BC con obra, tarea, unidad y descuento", () 
   assert.equal(l.unidad, "UND");
   assert.equal(l.descuentoPct, 5);
   assert.equal(l.variantCode, "AZUL");
-  assert.equal(l.locationCode, "ALM-GRAL");
+  // Consumo directo: entra al almacén de SU OBRA aunque la línea diga ALM-GRAL.
+  assert.equal(l.locationCode, "VB-5.01");
+});
+
+// CP-006440 (29 oct 2026): tres líneas de consumo directo de VN-L.42 salieron con
+// ALM-GRAL. ALM-GRAL amarra CC=INV y la obra amarra VN-L.42, los dos con "Igual
+// código": BC creó y lanzó el pedido, y a Bodega le rebotó al registrar la factura.
+test("la línea con obra viaja al almacén de su obra, no al de la orden", () => {
+  const [cd, stock, recurso, cargo] = lineasOrdenParaBc([
+    lineaApp({ proyecto: "VN-L.42", taskNo: "2.7", almacen: "ALM-GRAL" }),
+    lineaApp({ almacen: "ALM-GRAL" }),
+    lineaApp({ tipo: "recurso", articuloId: "R-0001", proyecto: "INF-HDAII", almacen: "ALM-GRAL" }),
+    lineaApp({ tipo: "cargo", articuloId: undefined, chargeNo: "TRANSPORTE", proyecto: "VN-L.42", almacen: "ALM-GRAL" }),
+  ]);
+  assert.equal(cd.locationCode, "VN-L.42");
+  assert.equal(stock.locationCode, "ALM-GRAL");
+  assert.equal(recurso.locationCode, "INF-HDAII");
+  assert.equal(cargo.locationCode, "ALM-GRAL");
+  // Y el CC que viaja es el de la obra, que ahora sí calza con el almacén.
+  assert.equal(cd.centroCosto, "VN-L.42");
+});
+
+test("la línea con obra y sin almacén no cae al almacén de recepción por defecto", () => {
+  process.env.BC_RECEPCION_LOCATION = "ALM-GRAL";
+  assert.equal(lineasOrdenParaBc([lineaApp({ proyecto: "VN-L.42", taskNo: "2.7", almacen: "" })])[0].locationCode, "VN-L.42");
+  delete process.env.BC_RECEPCION_LOCATION;
+});
+
+test("almacenDeLinea: la obra manda; sin obra, el elegido", () => {
+  assert.equal(almacenDeLinea({ tipo: "articulo", proyecto: " VN-L.42 " }, "ALM-GRAL"), "VN-L.42");
+  assert.equal(almacenDeLinea({ proyecto: "VN-L.42" }, "ALM-GRAL"), "VN-L.42");
+  assert.equal(almacenDeLinea({ tipo: "articulo", proyecto: "" }, "ALM-GRAL"), "ALM-GRAL");
+  assert.equal(almacenDeLinea({ tipo: "activo_fijo", proyecto: "MAQ" }, "ALM-GRAL"), "MAQ");
+  assert.equal(almacenDeLinea({ tipo: "cargo", proyecto: "VN-L.42" }, "ALM-GRAL"), "ALM-GRAL");
 });
 
 // Sin locationCode el material no entra a ningún almacén y el stock no sube.

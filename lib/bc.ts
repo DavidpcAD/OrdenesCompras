@@ -8,6 +8,7 @@
 import type { OrdenLinea } from "./types.ts";
 import { claveVariante } from "./variantes.ts";
 import { codigoDeItem } from "./unidad.ts";
+import { almacenDeLinea } from "./helpers.ts";
 import { cotejarLineas, type Cotejo, type LineaApp, type LineaBc } from "./bc-conciliacion.ts";
 import type { FacturaBcPeriodo } from "./barrido-bc.ts";
 import { importeDelCargo, tipoDeFacturaBc, type FacturaMismoNumero } from "./cargo-recibido.ts";
@@ -2784,7 +2785,10 @@ export async function bcExonerarLineasPedido(orderNo: string): Promise<Resultado
 // guardar una orden cambiaría en BC algo que crearla no había puesto.
 //
 // El almacén cae al de recepción por defecto cuando la línea no trae uno: sin
-// locationCode el material no entra a ningún lado y el stock no sube.
+// locationCode el material no entra a ningún lado y el stock no sube. Y la línea que
+// va a una obra viaja SIEMPRE al almacén de su obra, diga lo que diga el SQL
+// (`almacenDeLinea`): así una orden vieja que quedó con ALM-GRAL se cura sola al
+// volver a guardarla o enviarla.
 export function lineasOrdenParaBc(
   lineas: OrdenLinea[],
   // Obra de la SOLICITUD por línea (idPedidoCompraDet → obra). Es de dónde sale el
@@ -2796,7 +2800,7 @@ export function lineasOrdenParaBc(
   return lineas.map((l) => ({
     tipo: l.tipo,
     itemNo: l.articuloId, variantCode: l.variantCode,
-    locationCode: l.almacen || process.env.BC_RECEPCION_LOCATION || "",
+    locationCode: almacenDeLinea(l, l.almacen || process.env.BC_RECEPCION_LOCATION || ""),
     unidad: l.unidad,
     cantidad: l.cantidad, precio: l.precioUnitario, descuentoPct: l.descuentoPct,
     jobNo: l.proyecto, taskNo: l.taskNo,

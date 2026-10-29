@@ -9,7 +9,7 @@ import { IconWarning } from "@/components/icons";
 import { Combobox } from "@/components/combobox";
 import { CampoMaquina, RepartoMaquinasModal, nombreDeMaquina, useMaquinasBc } from "@/components/maquina-linea";
 import { useStore } from "@/lib/store";
-import { cuenta, etiquetaTipoLinea, money, num, ordenEsDirecta, ordenEsperaCorreccion, lineasCorregidasDeOrden, ordenPedidos, almacenesParaRecepcion, esAlmacenFisico, repartoDeLineaSolicitud, pedidoLineaPendiente, obraDeLinea, obraParaOrden, ultimoPrecioProveedor, monedaApp, numeroOrden, MONEDAS } from "@/lib/helpers";
+import { cuenta, etiquetaTipoLinea, money, num, ordenEsDirecta, ordenEsperaCorreccion, lineasCorregidasDeOrden, ordenPedidos, almacenesParaRecepcion, almacenDeLinea, esAlmacenFisico, repartoDeLineaSolicitud, pedidoLineaPendiente, obraDeLinea, obraParaOrden, ultimoPrecioProveedor, monedaApp, numeroOrden, MONEDAS } from "@/lib/helpers";
 import { precioEnUnidad, precioEntreUnidades, cantidadEntreUnidades, equivalencia, equivalenciaDeUnidad, mismaMoneda, codigoDeItem, opcionesDeUnidad, type UnidadDeItem, type PrecioRef } from "@/lib/unidad";
 import { useVariantes } from "@/lib/use-variantes";
 import { useSalida } from "@/lib/use-volver";
@@ -79,7 +79,12 @@ const filasDeOrden = (lineas: OrdenLinea[]): Row[] =>
 function almacenComun(lineas: OrdenLinea[]): string {
   // Solo las de ARTÍCULO: un recurso o un activo fijo no entran a ninguna bodega y
   // van sin almacén, así que contarlas dejaría el selector vacío ("varios").
-  const codigos = [...new Set(lineas.filter((l) => l.tipo === "articulo").map((l) => (l.almacen ?? "").trim()))];
+  const articulos = lineas.filter((l) => l.tipo === "articulo");
+  // Y de esas, las que NO van a una obra: las otras entran al almacén de su obra y el
+  // selector no las mueve (ver `almacenDeLinea`), así que contarlas haría que una
+  // orden mixta saliera siempre "varios". Si todas van a obra, se muestran igual.
+  const sinObra = articulos.filter((l) => !(l.proyecto ?? "").trim());
+  const codigos = [...new Set((sinObra.length ? sinObra : articulos).map((l) => (l.almacen ?? "").trim()))];
   return codigos.length === 1 ? codigos[0] : "";
 }
 
@@ -703,7 +708,9 @@ export default function EditarOrdenPage() {
         // centro de costo. Antes se le quitaba al recurso y al activo fijo por una
         // regla que resultó falsa (ver lib/bc.ts) — y esta pantalla ya se lo mostraba
         // al usuario en la columna Destino, así que además mentía.
-        almacen: almacen || r.almacen,
+        // La línea con obra NO se mueve: entra al almacén de su obra, porque con
+        // ALM-GRAL BC no la deja registrar nunca (ver `almacenDeLinea`).
+        almacen: almacenDeLinea({ tipo: r.tipo, proyecto: r.proyecto }, almacen || r.almacen),
         precioUnitario: Number(r.precio), ivaPct: Number(r.iva) || 0, descuentoPct: Number(r.descuento) || 0,
         // La obra viaja a BC como Project No. y SOLO si la línea de verdad tiene una:
         // antes se caía al almacén, y un "ALM-GRAL" en Project No. hace que BC rechace
@@ -795,7 +802,7 @@ export default function EditarOrdenPage() {
                 (ver `CargoRow`), donde se ven todos y se suman más. */}
             <Field label="Almacén / centro de costo de recepción"
               help={almacen
-                ? "Dónde entra el material en BC. Al guardar se aplica a TODAS las líneas de la orden."
+                ? "Dónde entra el material en BC. Al guardar se aplica a todas las líneas, menos las que van a una obra: esas entran siempre al almacén de su obra."
                 : "Las líneas tienen almacenes distintos. Elegí uno solo si querés moverlas todas al mismo; si lo dejás en blanco, cada una se queda con el suyo."}>
               <Combobox items={catAlm} value={almacen} onChange={(k) => setAlmacen(k)}
                 getKey={(a) => a.codigo} getLabel={(a) => `${a.codigo} — ${a.nombre}`}
@@ -973,7 +980,7 @@ export default function EditarOrdenPage() {
                         Ver components/destino-linea.tsx. */}
                     <td className="ds-body-sm">
                       {(() => {
-                        const alm = almacen || r.almacen || "";
+                        const alm = almacenDeLinea({ tipo: r.tipo, proyecto: r.proyecto }, almacen || r.almacen || "");
                         return <DestinoLinea
                           almacen={alm} almacenNombre={nombreAlmacen(alm)}
                           obra={r.proyecto} obraNombre={nombreObra(r.proyecto ?? "")} obraInformativa={r.obraCasa}

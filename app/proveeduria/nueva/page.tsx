@@ -10,7 +10,7 @@ import { ConfirmarProveedor } from "@/components/confirmar-proveedor";
 import { IconCheck, IconWarning } from "@/components/icons";
 import { useStore } from "@/lib/store";
 import { leerBorrador, guardarBorrador, borrarBorrador, hace, type BorradorOrden } from "@/lib/borrador-orden";
-import { cuenta, lineasSinPrecio, money, num, ultimoPrecioProveedor, almacenesParaRecepcion, esAlmacenFisico, pedidoLineaPendiente, repartoDeLineaSolicitud, obraDeLinea, obraParaOrden, monedaApp, numeroOrden, MONEDAS } from "@/lib/helpers";
+import { cuenta, lineasSinPrecio, money, num, ultimoPrecioProveedor, almacenesParaRecepcion, almacenDeLinea, esAlmacenFisico, pedidoLineaPendiente, repartoDeLineaSolicitud, obraDeLinea, obraParaOrden, monedaApp, numeroOrden, MONEDAS } from "@/lib/helpers";
 import { precioEnUnidad, precioEntreUnidades, cantidadEntreUnidades, equivalencia, equivalenciaDeUnidad, mismaMoneda, codigoDeItem, opcionesDeUnidad, type PrecioRef, type UnidadDeItem } from "@/lib/unidad";
 import { useVariantes } from "@/lib/use-variantes";
 import { PrioridadTag } from "@/components/prioridad";
@@ -523,9 +523,11 @@ export default function ArmarOrdenPage() {
     // vacío: sin locationCode BC crea y lanza el pedido igual y el material no entra a
     // ningún lado — y eso termina con Proveeduría rehaciendo el pedido allá, que es
     // lo que deja la orden huérfana (CP-004719, ago 2026).
+    // La línea de consumo directo, en cambio, va al almacén de SU OBRA: con ALM-GRAL
+    // BC no la deja registrar nunca (ver `almacenDeLinea`).
     const ls: Omit<OrdenLinea, "id" | "cantidadRecibida" | "cantidadFacturada">[] = rows.map((r) => ({
       tipo: "articulo", articuloId: r.articuloId, variantCode: r.variantCode || undefined, pedidoLineaId: r.pedidoLineaId, pedidoNumero: r.pedidoNumero,
-      descripcion: r.descripcion, cantidad: Number(r.cantidad), unidad: r.unidad, almacen: r.almacen || almacen,
+      descripcion: r.descripcion, cantidad: Number(r.cantidad), unidad: r.unidad, almacen: almacenDeLinea({ proyecto: r.proyecto }, r.almacen || almacen),
       precioUnitario: Number(r.precio), ivaPct: Number(r.iva) || 0, descuentoPct: Number(r.descuento) || 0,
       proyecto: r.proyecto || undefined, taskNo: r.tarea || undefined,
     }));
@@ -617,7 +619,7 @@ export default function ArmarOrdenPage() {
                 {MONEDAS.map((m) => <option key={m.value || "CRC"} value={m.value}>{m.label}</option>)}
               </Select>
             </Field>
-            <Field label="Almacén / centro de costo de recepción" help="Dónde entra el material en BC. Por defecto el Almacén General, pero podés elegir cualquier centro de costo.">
+            <Field label="Almacén / centro de costo de recepción" help="Dónde entra el material en BC. Por defecto el Almacén General, pero podés elegir cualquier centro de costo. Las líneas de consumo directo entran siempre al almacén de su obra.">
               <Combobox items={catAlm} value={almacen} onChange={(k) => setAlmacen(k)}
                 getKey={(a) => a.codigo} getLabel={(a) => `${a.codigo} — ${a.nombre}`}
                 getSearch={(a) => `${a.codigo} ${a.nombre}`}
@@ -785,7 +787,8 @@ export default function ArmarOrdenPage() {
                         se puede corregir o asignar en un diálogo. */}
                     <td className="ds-body-sm">
                       <DestinoLinea
-                        almacen={r.almacen} almacenNombre={nombreAlmacen(r.almacen)}
+                        almacen={almacenDeLinea({ proyecto: r.proyecto }, r.almacen)}
+                        almacenNombre={nombreAlmacen(almacenDeLinea({ proyecto: r.proyecto }, r.almacen))}
                         obra={r.proyecto} obraNombre={nombreObra(r.proyecto)} obraInformativa={r.obraCasa}
                         tarea={r.tarea} tareaNombre={nombreTarea(r.proyecto, r.tarea) || r.tareaDescr} />
                       <button type="button" className="link-btn" onClick={() => { setEditObra(r); if (r.proyecto) cargarTareas(r.proyecto); }}>
