@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
-import { Button, Card, EmptyState, Field, Input, Select, useToast } from "@/components/ui";
+import { Button, Card, Checkbox, EmptyState, Field, Input, Select, useToast } from "@/components/ui";
 import { Combobox } from "@/components/combobox";
 import { DateField } from "@/components/date-field";
 import { IconChevronLeft, IconList, IconWarning } from "@/components/icons";
@@ -21,6 +21,9 @@ type RcptLine = {
 const lineKey = (l: { documentNo: string; lineNo: number }) => `${l.documentNo}#${l.lineNo}`;
 
 type Vendor = { id: string; code: string; nombre: string; currencyCode: string };
+
+// Una opción de BC (código + nombre) para los selects de "pago con tarjeta".
+type OpcionBc = { code: string; name: string };
 
 const PASOS = ["Proveedor y factura", "Cargo de producto", "Líneas de recepción", "Reparto y registro"];
 
@@ -87,7 +90,8 @@ function AvisoMismaFactura({ dup, factura }: { dup: MismaFactura | null; factura
 // línea de cargo y se asigna a las líneas de la(s) recepción(es), luego se registra.
 // Flujo tipo asistente (paso a paso) — el envío a BC solo aparece en el último paso.
 export default function CargoSobreFacturaPage() {
-  const { proveedores } = useStore();
+  const { proveedores, role } = useStore();
+  const esContabilidad = role === "contabilidad";
   const router = useRouter();
   const toast = useToast();
 
@@ -146,6 +150,43 @@ export default function CargoSobreFacturaPage() {
   const [precio, setPrecio] = useState("");
   const [exento, setExento] = useState(false); // la factura del cargo va sin IVA (0%)
   const cargoTotal = (Number(cantidad) || 0) * (Number(precio) || 0);
+
+  // PAGO CON TARJETA (SOLO Contabilidad/Kattya). Los fletes/cargos de EasyBox, DHL, UPS…
+  // también se pagan con tarjeta con el mismo TM / Gasto de Tarjeta. Antes de registrar,
+  // la app le pone al pedido del cargo la forma de pago y una dimensión del encabezado;
+  // el write lo hace el codeunit. Opciones de /api/bc/tarjeta-opciones (igual que Amazon).
+  const [tarjetaOn, setTarjetaOn] = useState(false);
+  const [tarjeta, setTarjeta] = useState("");
+  const [dimCode, setDimCode] = useState("TM");
+  const [dimValue, setDimValue] = useState("");
+  const [tOpc, setTOpc] = useState<null | { formas: OpcionBc[]; dimensiones: OpcionBc[] }>(null);
+  const [tValores, setTValores] = useState<Record<string, OpcionBc[]>>({});
+  useEffect(() => {
+    if (!esContabilidad) return;
+    let vivo = true;
+    fetch("/api/bc/tarjeta-opciones")
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error("opciones"))))
+      .then((d) => {
+        if (!vivo) return;
+        setTOpc({ formas: d.formas ?? [], dimensiones: d.dimensiones ?? [] });
+        const def = String(d.dimDefault ?? "TM");
+        setDimCode(def);
+        setTValores((m) => ({ ...m, [def]: d.valores ?? [] }));
+        const gasto = (d.valores ?? []).find((v: OpcionBc) => v.code === "G-GASTOS TARJETAS" || /tarjeta/i.test(v.name));
+        if (gasto) setDimValue(gasto.code);
+      })
+      .catch(() => { /* sin opciones: los selects quedan vacíos y el registro los exige */ });
+    return () => { vivo = false; };
+  }, [esContabilidad]);
+  useEffect(() => {
+    if (!esContabilidad || !tarjetaOn || !dimCode || tValores[dimCode]) return;
+    let vivo = true;
+    fetch(`/api/bc/tarjeta-opciones?dim=${encodeURIComponent(dimCode)}`)
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error("valores"))))
+      .then((d) => { if (vivo) setTValores((m) => ({ ...m, [dimCode]: d.valores ?? [] })); })
+      .catch(() => { /* queda vacío */ });
+    return () => { vivo = false; };
+  }, [esContabilidad, tarjetaOn, dimCode, tValores]);
   const onTipoCargo = (no: string) => {
     setChargeNo(no);
     const ic = itemCharges.find((x) => x.no === no);
@@ -213,7 +254,8 @@ export default function CargoSobreFacturaPage() {
     return 0; // Weight / Volume → lo calcula BC
   };
 
-  const puedeRegistrar = !!chargeVendorId && !!vendorInvoiceNo.trim() && !!chargeNo && cargoTotal > 0 && lineasSel.length > 0;
+  const puedeRegistrar = !!chargeVendorId && !!vendorInvoiceNo.trim() && !!chargeNo && cargoTotal > 0 && lineasSel.length > 0
+    && !(tarjetaOn && (!tarjeta || !dimCode || !dimValue));
 
   // Validación por paso (habilita avanzar / saltar de paso).
   const pasoValido = (i: number) => {
@@ -237,6 +279,9 @@ export default function CargoSobreFacturaPage() {
     if (!chargeNo) { toast("Elegí el tipo de cargo de producto.", "error"); return; }
     if (!(cargoTotal > 0)) { toast("El importe del cargo debe ser mayor que 0.", "error"); return; }
     if (!lineasSel.length) { toast("Seleccioná al menos una línea de recepción.", "error"); return; }
+    if (tarjetaOn && (!tarjeta || !dimCode || !dimValue)) {
+      toast("Completá la tarjeta, la dimensión y el valor del pago con tarjeta (o desmarcá la casilla).", "error"); return;
+    }
     setRegistrando(true);
     try {
       const r = await fetch("/api/bc/cargo-recibido", {
@@ -252,6 +297,7 @@ export default function CargoSobreFacturaPage() {
           cantidad: Number(cantidad) || 1,
           precio: Number(precio) || 0,
           exento,
+          tarjeta: tarjetaOn && esContabilidad ? { paymentMethodCode: tarjeta, dimCode, dimValueCode: dimValue } : undefined,
           metodo,
           receiptLines: lineasSel.map((l) => ({ documentNo: l.documentNo, lineNo: l.lineNo })),
           // Para el histórico (no viaja a BC): lo que se vio de cada línea y el reparto
@@ -272,6 +318,7 @@ export default function CargoSobreFacturaPage() {
       }
       // Limpiar para un nuevo registro y volver al paso 1.
       setVendorInvoiceNo(""); setPrecio(""); setChargeNo(""); setChargeDescripcion(""); setExento(false);
+      setTarjetaOn(false); setTarjeta(""); setDimValue("");
       setSeleccion({}); setResultados([]); setBuscado(false); setDocNo(""); setPaso(0);
     } catch (e: any) {
       toast(String(e?.message ?? e), "error");
@@ -347,7 +394,7 @@ export default function CargoSobreFacturaPage() {
         )}
 
         {/* PASO 2 · La línea de cargo */}
-        {paso === 1 && (
+        {paso === 1 && (<>
           <Card className="ds-reveal">
             <h3 className="ds-subtitle" style={{ marginBottom: 16 }}>Cargo de producto</h3>
             <div className="row gap-3 wrap" style={{ alignItems: "flex-end" }}>
@@ -383,7 +430,46 @@ export default function CargoSobreFacturaPage() {
               </p>
             )}
           </Card>
-        )}
+
+          {/* Pago con tarjeta — SOLO Contabilidad (Kattya). Cualquier transportista
+              (EasyBox, DHL, UPS…). Habilita la forma de pago + la dimensión que van al
+              pedido del cargo en BC antes de registrar. Convive con "Exento": un flete
+              puede ser exento Y con tarjeta a la vez. */}
+          {esContabilidad && (
+            <Card className="mt-4">
+              <Checkbox checked={tarjetaOn} onChange={(e) => setTarjetaOn(e.target.checked)}
+                label={<span className="ds-strong">Pago con tarjeta de crédito</span>} />
+              <p className="ds-label ds-muted" style={{ margin: "6px 0 0" }}>
+                Para los cargos pagados con tarjeta (p. ej. EasyBox, DHL, UPS): antes de registrar, la app le pone al
+                pedido del cargo en Business Central la forma de pago (la tarjeta) y la dimensión del encabezado.
+              </p>
+              {tarjetaOn && (
+                <div className="grid-2 mt-3">
+                  <div style={{ gridColumn: "1 / -1" }}>
+                    <Field label="Tarjeta (forma de pago)">
+                      <Select value={tarjeta} onChange={(e) => setTarjeta(e.target.value)}
+                        placeholder={tOpc ? "Elegí la tarjeta…" : "Cargando…"}>
+                        {(tOpc?.formas ?? []).map((f) => <option key={f.code} value={f.code}>{f.name}</option>)}
+                      </Select>
+                    </Field>
+                  </div>
+                  <Field label="Dimensión">
+                    <Select value={dimCode} onChange={(e) => { setDimCode(e.target.value); setDimValue(""); }}
+                      placeholder="Dimensión…">
+                      {(tOpc?.dimensiones ?? []).map((d) => <option key={d.code} value={d.code}>{d.code} — {d.name}</option>)}
+                    </Select>
+                  </Field>
+                  <Field label="Valor de la dimensión">
+                    <Select value={dimValue} onChange={(e) => setDimValue(e.target.value)}
+                      placeholder={tValores[dimCode]?.length ? "Elegí el valor…" : "Cargando…"}>
+                      {(tValores[dimCode] ?? []).map((v) => <option key={v.code} value={v.code}>{v.name}</option>)}
+                    </Select>
+                  </Field>
+                </div>
+              )}
+            </Card>
+          )}
+        </>)}
 
         {/* PASO 3 · Buscar y seleccionar líneas de recepción registradas */}
         {paso === 2 && (

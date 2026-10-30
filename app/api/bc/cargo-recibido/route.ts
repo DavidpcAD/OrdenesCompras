@@ -31,6 +31,13 @@ export async function POST(req: NextRequest) {
       .borradores.map((b) => b.numero);
   } catch { /* BC no contestó esa consulta: el registro sigue igual */ }
 
+  // Pago con tarjeta: SOLO Contabilidad. La UI solo se lo muestra a Contabilidad, pero
+  // el gate de verdad está acá, por si llega un request armado a mano.
+  if (body?.tarjeta) {
+    const quien = await actor(body).catch(() => null);
+    if (quien?.rol !== "contabilidad") body.tarjeta = undefined;
+  }
+
   let resultado: string;
   try {
     resultado = await bcPostChargeOnReceipts(body);
