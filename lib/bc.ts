@@ -4817,6 +4817,7 @@ export async function bcPostChargeOnReceipts(input: {
   metodo?: string;             // Amount | Equally | Weight | Volume
   receiptLines: ReceiptLineRef[]; // líneas de recepción destino
   documentDate?: string;       // fecha de emisión (ISO yyyy-mm-dd) → Posting/Document Date. "" = hoy
+  exento?: boolean;            // la factura del cargo va SIN IVA (0%): fija el grupo exento en la línea
   // NOTA: currencyCode lo resuelve BC por el proveedor del cargo (no se envía).
 }): Promise<string> {
   const itemChargeNo = (input.itemChargeNo ?? input.chargeNo ?? "").trim();
@@ -4832,9 +4833,14 @@ export async function bcPostChargeOnReceipts(input: {
     .map((l) => ({ documentNo: l.documentNo, lineNo: l.lineNo }));
   if (!lines.length) throw new Error("Seleccioná al menos una línea de recepción para asignar el cargo.");
   const cid = await getStdCompanyId();
-  const url = `${odataRoot()}/AdelantePO_PostChargeOnReceipts?company=${encodeURIComponent(cid)}`;
+  // El exento va por OTRA acción (AdelantePO_PostChargeOnReceiptsWithVat, AdelanteAPI
+  // 1.2.24.0): BC no tiene parámetros opcionales —rechaza la llamada si falta uno o
+  // sobra uno—, así que el no exento sigue por la de siempre y funciona con cualquier
+  // versión de la extensión; solo el exento necesita la 1.2.24.0.
+  const accion = input.exento ? "AdelantePO_PostChargeOnReceiptsWithVat" : "AdelantePO_PostChargeOnReceipts";
+  const url = `${odataRoot()}/${accion}?company=${encodeURIComponent(cid)}`;
   // El JSON mapea 1:1 a los parámetros del codeunit: NO agregar campos de más.
-  const body = {
+  const body: Record<string, unknown> = {
     chargeVendorNo: input.chargeVendorNo,
     itemChargeNo,
     chargeAmount,
@@ -4843,6 +4849,14 @@ export async function bcPostChargeOnReceipts(input: {
     receiptLinesJson: JSON.stringify(lines),
     postingDate: input.documentDate ?? "", // "" → BC usa la fecha del día (Today)
   };
+  // Cargo EXENTO (p. ej. flete internacional sin IVA, como la factura 82120 de
+  // EASYBOX → CFR-011984 del 26 oct 2026). Sin esto, BC le pone el 13% por defecto
+  // del Item Charge y la factura queda MÁS CARA que el papel (14.076 → 15.905,88).
+  // Con el VAT Prod. Posting Group exento, BC registra el cargo en 0%. Solo viaja
+  // cuando el usuario marca "Exento", y va a AdelantePO_PostChargeOnReceiptsWithVat,
+  // que lo fija en la línea de cargo antes de registrar; si BC todavía no tiene esa
+  // acción, un cargo marcado exento falla en BC (no se registra mal, en silencio).
+  if (input.exento) body.vatProdPostingGroup = grupoIvaExento();
   const res = await bcFetch(url, {
     method: "POST", cache: "no-store",
     headers: { "Content-Type": "application/json" },

@@ -144,6 +144,7 @@ export default function CargoSobreFacturaPage() {
   const [chargeDescripcion, setChargeDescripcion] = useState("");
   const [cantidad, setCantidad] = useState("1");
   const [precio, setPrecio] = useState("");
+  const [exento, setExento] = useState(false); // la factura del cargo va sin IVA (0%)
   const cargoTotal = (Number(cantidad) || 0) * (Number(precio) || 0);
   const onTipoCargo = (no: string) => {
     setChargeNo(no);
@@ -250,6 +251,7 @@ export default function CargoSobreFacturaPage() {
           chargeDescription: chargeDescripcion,
           cantidad: Number(cantidad) || 1,
           precio: Number(precio) || 0,
+          exento,
           metodo,
           receiptLines: lineasSel.map((l) => ({ documentNo: l.documentNo, lineNo: l.lineNo })),
           // Para el histórico (no viaja a BC): lo que se vio de cada línea y el reparto
@@ -269,7 +271,7 @@ export default function CargoSobreFacturaPage() {
         toast(`Cargo registrado en BC (${d.resultado ?? "OK"}). Quedó en el historial de cargos.`, "success");
       }
       // Limpiar para un nuevo registro y volver al paso 1.
-      setVendorInvoiceNo(""); setPrecio(""); setChargeNo(""); setChargeDescripcion("");
+      setVendorInvoiceNo(""); setPrecio(""); setChargeNo(""); setChargeDescripcion(""); setExento(false);
       setSeleccion({}); setResultados([]); setBuscado(false); setDocNo(""); setPaso(0);
     } catch (e: any) {
       toast(String(e?.message ?? e), "error");
@@ -363,11 +365,23 @@ export default function CargoSobreFacturaPage() {
                 <span className="ds-label ds-muted" style={{ display: "block", marginBottom: 4 }}>Precio</span>
                 <Input type="number" min={0} step="any" value={precio} placeholder="0" style={{ width: 150 }} onChange={(e) => setPrecio(e.target.value)} />
               </div>
+              <div style={{ minWidth: 170 }}>
+                <span className="ds-label ds-muted" style={{ display: "block", marginBottom: 4 }}>IVA</span>
+                <Select value={exento ? "exento" : "normal"} onChange={(e) => setExento(e.target.value === "exento")}>
+                  <option value="normal">IVA normal (lo pone BC)</option>
+                  <option value="exento">Exento (0%)</option>
+                </Select>
+              </div>
               <div style={{ minWidth: 130, textAlign: "right" }}>
                 <span className="ds-label ds-muted" style={{ display: "block", marginBottom: 4 }}>Importe del cargo</span>
                 <span className="ds-strong" style={{ fontSize: 18 }}>{money(cargoTotal || 0, currency)}</span>
               </div>
             </div>
+            {exento && (
+              <p className="ds-body-sm ds-muted" style={{ marginTop: 12, marginBottom: 0 }}>
+                La factura del cargo es exenta: BC va a registrar el cargo en 0%, sin sumarle el 13%.
+              </p>
+            )}
           </Card>
         )}
 
