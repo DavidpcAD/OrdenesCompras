@@ -199,9 +199,11 @@ export default function RegistrarFacturaPage() {
   const [fotos, setFotos] = useState<FotoComprimida[]>([]);
   const [fotoOcupado, setFotoOcupado] = useState(false);
 
-  // PAGO CON TARJETA (solo Amazon, solo Contabilidad). Antes de registrar, la app le pone al pedido en BC
+  // PAGO CON TARJETA (SOLO Contabilidad, TODAS las órdenes). Antes de registrar, la app le pone al pedido en BC
   // la forma de pago (la tarjeta) y una dimensión en el encabezado. Las opciones salen
-  // de /api/bc/tarjeta-opciones; el write lo hace el codeunit al registrar.
+  // de /api/bc/tarjeta-opciones; el write lo hace el codeunit al registrar. Antes era
+  // solo Amazon; se abrió a todas porque hay otros proveedores (p. ej. Easy Box) que
+  // también se pagan con tarjeta con el mismo TM / Gasto de Tarjeta (decisión de David).
   const esAmazon = useMemo(() => {
     const cod = (orden?.proveedorNo || orden?.proveedorId || "").toUpperCase();
     const nom = (orden?.proveedorNombre || "").toUpperCase();
@@ -222,7 +224,7 @@ export default function RegistrarFacturaPage() {
   // Carga inicial de opciones: tarjetas, las 3 dimensiones y los valores de la
   // dimensión por defecto (TM). De una vez deja escogido el valor de gasto de tarjetas.
   useEffect(() => {
-    if (!esAmazon || !esContabilidad) return;
+    if (!esContabilidad) return;
     let vivo = true;
     fetch("/api/bc/tarjeta-opciones")
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error("opciones"))))
@@ -237,18 +239,18 @@ export default function RegistrarFacturaPage() {
       })
       .catch(() => { /* sin opciones: los selects quedan vacíos y el registro los exige */ });
     return () => { vivo = false; };
-  }, [esAmazon, esContabilidad]);
+  }, [esContabilidad]);
 
   // Valores de la dimensión escogida (cascada): se traen cuando cambia y no están aún.
   useEffect(() => {
-    if (!esAmazon || !tarjetaOn || !dimCode || tValores[dimCode]) return;
+    if (!esContabilidad || !tarjetaOn || !dimCode || tValores[dimCode]) return;
     let vivo = true;
     fetch(`/api/bc/tarjeta-opciones?dim=${encodeURIComponent(dimCode)}`)
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error("valores"))))
       .then((d) => { if (vivo) setTValores((m) => ({ ...m, [dimCode]: d.valores ?? [] })); })
       .catch(() => { /* queda vacío */ });
     return () => { vivo = false; };
-  }, [esAmazon, tarjetaOn, dimCode, tValores]);
+  }, [esContabilidad, tarjetaOn, dimCode, tValores]);
   const fileRef = useRef<HTMLInputElement>(null);
   async function elegirFotos(files: FileList | null) {
     if (!files?.length) return;
@@ -519,9 +521,9 @@ export default function RegistrarFacturaPage() {
           // Y la recepción, para que el servidor la guarde apenas BC confirme, sin
           // depender de que este navegador llegue a hacer un segundo viaje.
           recepcion: recepcionParaServidor(lineas, { numeroFactura: numeroFactura.trim(), total: totalFactura }),
-          // Amazon con tarjeta: forma de pago + dimensión que el servidor le pone al
-          // pedido ANTES de postear (ver /api/bc/registrar). Solo si está marcado.
-          tarjeta: tarjetaOn && esAmazon && esContabilidad ? { paymentMethodCode: tarjeta, dimCode, dimValueCode: dimValue } : undefined,
+          // Pago con tarjeta (Contabilidad, cualquier orden): forma de pago + dimensión que
+          // el servidor le pone al pedido ANTES de postear (ver /api/bc/registrar). Solo si está marcado.
+          tarjeta: tarjetaOn && esContabilidad ? { paymentMethodCode: tarjeta, dimCode, dimValueCode: dimValue } : undefined,
         }),
       });
       const d = await r.json().catch(() => ({} as any));
@@ -970,16 +972,16 @@ export default function RegistrarFacturaPage() {
           </div>
         </Card>
 
-        {/* PAGO CON TARJETA — solo Amazon y SOLO CONTABILIDAD (Kattya). Marca la compra
-            como pagada con tarjeta y habilita los tres datos que van al pedido de BC antes
-            de registrar: la tarjeta (forma de pago) y la dimensión del encabezado con su
-            valor. Bodega no lo ve: este paso es clasificación contable. */}
-        {esAmazon && esContabilidad && (
+        {/* PAGO CON TARJETA — SOLO CONTABILIDAD (Kattya), en cualquier orden. Marca la
+            compra como pagada con tarjeta y habilita los tres datos que van al pedido de BC
+            antes de registrar: la tarjeta (forma de pago) y la dimensión del encabezado con
+            su valor. Bodega no lo ve: este paso es clasificación contable. */}
+        {esContabilidad && (
           <Card className="mt-4">
             <Checkbox checked={tarjetaOn} onChange={(e) => setTarjetaOn(e.target.checked)}
               label={<span className="ds-strong">Pago con tarjeta de crédito</span>} />
             <p className="ds-label ds-muted" style={{ margin: "6px 0 0" }}>
-              Para las compras de Amazon pagadas con tarjeta: antes de registrar, la app le pone al pedido en Business
+              Para las compras pagadas con tarjeta: antes de registrar, la app le pone al pedido en Business
               Central la forma de pago (la tarjeta) y la dimensión del encabezado.
             </p>
             {tarjetaOn && (

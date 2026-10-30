@@ -82,7 +82,7 @@ export async function POST(req: Request) {
     // quede firmado en los Movs. proyecto ("Realizado por"), que hasta ahora salía
     // en blanco porque el usuario de BC es siempre la cuenta de servicio.
     quien = await actor(cuerpo);
-    // AMAZON CON TARJETA — SOLO CONTABILIDAD. Antes de postear, ponerle al pedido la
+    // PAGO CON TARJETA — SOLO CONTABILIDAD (cualquier orden). Antes de postear, ponerle al pedido la
     // forma de pago (la tarjeta) y la dimensión del encabezado. Lo hace el codeunit, que
     // reabre y relanza sin re-disparar la aprobación (AdelanteAPI 1.2.22.0). Va DESPUÉS
     // de los frenos (lectura) y ANTES de postear. El gate por rol es la pared de verdad:
