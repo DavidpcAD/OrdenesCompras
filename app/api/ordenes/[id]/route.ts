@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getOrden, setOrdenEstado, setOrdenBcNumber, updateOrden, descartarOrden, ordenTieneRecepciones, obrasDeLineasPedido, asignarBcNumber, guardarChequeoBc, guardarVariantesResueltas, anotarEncabezadoBc, MSG_NO_REABRIR } from "@/lib/repo";
 import { aprobacionAutomatica, aprobacionAutomaticaActiva, MOV_APROBACION_AUTOMATICA, USUARIO_APROBACION_AUTOMATICA } from "@/lib/aprobacion-automatica";
-import { bcReleasePedidoVerificado, bcReopenPedido, bcReplaceOrderLines, bcCrearPedidoAbierto, crearEnBcAlEnviar, lineasOrdenParaBc, obrasSinTarea, lineasSinUnidad, lineasSinAlmacen, resolverVariantesRequeridas, sanearObrasDeLineas, avisoDeSaneo, bcOrdenTotales, bcEstadoDelPedido, chequearOrdenContraBc, lineasReplaceParaCotejo, lineasOrdenParaCotejo, paredAprobacionActiva, itemsBloqueadosDeLineas, bcSincronizarEncabezado, bcBorrarPedidoAbierto, conPedidoAbierto, campoVacioEnBc, explicarCampoVacioEnBc, bcSellarCreadoPor } from "@/lib/bc";
+import { bcReleasePedidoVerificado, bcReopenPedido, bcReplaceOrderLines, bcCrearPedidoAbierto, crearEnBcAlEnviar, lineasOrdenParaBc, obrasSinTarea, lineasSinUnidad, lineasSinAlmacen, resolverVariantesRequeridas, sanearObrasDeLineas, avisoDeSaneo, bcOrdenTotales, bcEstadoDelPedido, chequearOrdenContraBc, lineasReplaceParaCotejo, lineasOrdenParaCotejo, paredAprobacionActiva, itemsBloqueadosDeLineas, bcSincronizarEncabezado, bcBorrarPedidoAbierto, conPedidoAbierto, campoVacioEnBc, explicarCampoVacioEnBc, bcSellarCreadoPor, type LineaReplaceBc } from "@/lib/bc";
 import { ordenTotalConIva, lineasSinPrecio } from "@/lib/helpers";
 import { actor } from "@/lib/actor";
 import { mensajeSeguro } from "@/lib/error-sql";
@@ -462,6 +462,26 @@ export async function PUT(req: Request, { params }: { params: { id: string } }) 
     const saneo = Array.isArray(body?.lineas) ? await sanearObrasDeLineas(body.lineas) : null;
     if (saneo) body.lineas = saneo.lineas;
     const a = await actor(body);
+    // Artículo BLOQUEADO en BC con la orden ya viviendo allá: no se guarda NADA. El
+    // codeunit reescribe TODAS las líneas del pedido (todo-o-nada), así que un solo
+    // artículo bloqueado hace que BC rechace el edit entero, también el de las otras
+    // líneas. Antes el cambio quedaba acá y allá no, con el JSON crudo de BC en el
+    // aviso rojo, y "volvé a guardar" daba siempre lo mismo: CP-006498 (M05-0542,
+    // bloqueado el 31/10, un día después de creada la orden) se quedó con la línea
+    // quitada y el precio viejo en BC. Se pregunta con las líneas NUEVAS: quitar la
+    // línea bloqueada o cambiarla por el código vigente sí se guarda, y esa es la salida.
+    const previa = Array.isArray(body?.lineas) ? await getOrden(id) : null;
+    if (previa?.bcNumber) {
+      const bloqueados = await itemsBloqueadosDeLineas(
+        body.lineas.map((l: { tipoLinea?: LineaReplaceBc["tipo"]; itemNo?: string }) => ({ tipo: l.tipoLinea ?? "articulo", itemNo: l.itemNo })));
+      if (bloqueados.length) {
+        return NextResponse.json({
+          error: `No se guardó: ${bloqueados.length} artículo(s) están BLOQUEADOS en Business Central — ${bloqueados.join("; ")}. `
+            + `El pedido ${previa.bcNumber} ya existe allá, y BC rechaza el cambio entero mientras la orden traiga un artículo bloqueado, aunque lo que cambiaste sea otra línea. `
+            + `Sacá esa línea o cambiala por el código vigente del artículo, o pedile a quien lleva BC que lo desbloquee. La orden y el pedido quedaron como estaban.`,
+        }, { status: 409 });
+      }
+    }
     await updateOrden(id, { ...body, ...a });
 
     // El edit ya quedó en SQL. Si la orden VIVE EN BC hay que empujarle las líneas

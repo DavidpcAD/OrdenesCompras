@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { devolverLineasDeOrden, getOrden, obrasDeLineasPedido } from "@/lib/repo";
-import { bcReplaceOrderLines, lineasOrdenParaBc, bcDeepLinkPedido } from "@/lib/bc";
+import { bcReplaceOrderLines, lineasOrdenParaBc, bcDeepLinkPedido, itemsBloqueadosDeLineas } from "@/lib/bc";
 import { actor } from "@/lib/actor";
 
 export const runtime = "nodejs";
@@ -56,8 +56,18 @@ export async function POST(req: Request, { params }: { params: { id: string } })
           if (o) {
             const obras = await obrasDeLineasPedido(
               o.lineas.map((l) => Number(l.pedidoLineaId)).filter((n) => Number.isFinite(n)));
-            const rep = await bcReplaceOrderLines(r.bcNo, lineasOrdenParaBc(o.lineas, obras));
-            if (rep.omitidas.length) avisos.push(`OJO: BC no recibió ${rep.omitidas.length} línea(s) — ${rep.omitidas.join("; ")}.`);
+            const lineasBc = lineasOrdenParaBc(o.lineas, obras);
+            // La devolución NO se frena por esto (el material tiene que volver al
+            // ingeniero igual), pero con un artículo bloqueado entre las líneas que
+            // quedan BC rechaza la reescritura entera: se dice cuál y qué hacer, en vez
+            // de mandar la escritura a fallar y mostrar el JSON crudo de BC.
+            const bloqueados = await itemsBloqueadosDeLineas(lineasBc);
+            if (bloqueados.length) {
+              avisos.push(`Se devolvió acá, pero el pedido ${r.bcNo} en BC quedó con las líneas VIEJAS: ${bloqueados.length} artículo(s) de la orden están BLOQUEADOS en Business Central — ${bloqueados.join("; ")} — y BC rechaza el cambio entero. Editá la orden, sacá esa línea o cambiala por el código vigente (o pedí que lo desbloqueen) y guardá.`);
+            } else {
+              const rep = await bcReplaceOrderLines(r.bcNo, lineasBc);
+              if (rep.omitidas.length) avisos.push(`OJO: BC no recibió ${rep.omitidas.length} línea(s) — ${rep.omitidas.join("; ")}.`);
+            }
           }
         } catch (e: any) {
           avisos.push(`Se devolvió acá, pero el pedido ${r.bcNo} en BC quedó con las líneas VIEJAS: ${String(e?.message ?? e)}. Editá y guardá la orden para reintentar.`);

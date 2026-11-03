@@ -3441,11 +3441,14 @@ export async function bcEstadoDelPedido(orderNo: string): Promise<BcPedidoEstado
 // El catálogo de la app ya esconde los bloqueados (bcItemsPagina/bcItems los filtran),
 // pero eso no alcanza: la línea puede venir de una SOLICITUD de Ingeniería hecha antes
 // del bloqueo, o el artículo puede bloquearse después de armada la orden. El único
-// momento que sirve para preguntarlo es justo antes de mandar el pedido a BC.
+// momento que sirve para preguntarlo es justo antes de mandar el pedido a BC — y eso
+// es al enviar a aprobación, pero también al GUARDAR una orden que ya vive allá.
 //
 // Devuelve los artículos bloqueados que trae la orden (vacío = todo en orden). Si BC
 // no contesta devuelve vacío: no se traba una orden por una consulta que falló.
-export async function itemsBloqueadosDeLineas(lineas: LineaReplaceBc[]): Promise<string[]> {
+// Solo mira tipo y N.º, así que sirve también con las líneas tal como las manda la
+// pantalla de editar, antes de que lleguen al SQL.
+export async function itemsBloqueadosDeLineas(lineas: Pick<LineaReplaceBc, "tipo" | "itemNo">[]): Promise<string[]> {
   const codigos = [...new Set((lineas ?? [])
     // Solo artículos: el N.º de un recurso o de un activo fijo no está en el
     // catálogo de artículos y preguntarlo ahí no dice nada de si está bloqueado.
