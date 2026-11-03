@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { exigirSesion } from "@/lib/actor";
 import { bcOrdenTotales, bcCompanies, bcFacturasRegistradasDePedido, bcDeepLinkFacturaRegistrada } from "@/lib/bc";
 
 export const runtime = "nodejs";
@@ -25,6 +26,8 @@ export const dynamic = "force-dynamic";
 // más y solo se hace en el caso raro —cuando el pedido ya no está—, así que la
 // pantalla normal no paga nada por esto.
 export async function GET(req: NextRequest) {
+  const sinSesion = await exigirSesion();
+  if (sinSesion) return sinSesion;
   const orderNo = req.nextUrl.searchParams.get("orderNo") ?? "";
   try {
     const totales = await bcOrdenTotales(orderNo);

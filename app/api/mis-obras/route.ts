@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { exigirSesion } from "@/lib/actor";
 import { obrasDeUsuario } from "@/lib/repo";
 
 export const runtime = "nodejs";
@@ -12,6 +13,8 @@ export const dynamic = "force-dynamic";
 // hay mapeo, o los patrones no calzan con ninguna obra, devuelve la lista vacía y la
 // Matriz muestra todo.
 export async function GET(req: NextRequest) {
+  const sinSesion = await exigirSesion();
+  if (sinSesion) return sinSesion;
   const username = new URL(req.url).searchParams.get("username") ?? "";
   try {
     return NextResponse.json(await obrasDeUsuario(username));

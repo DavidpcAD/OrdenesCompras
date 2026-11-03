@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { exigirSesion } from "@/lib/actor";
 import { bcPostedReceiptLines } from "@/lib/bc";
 
 export const runtime = "nodejs";
@@ -10,6 +11,8 @@ export const dynamic = "force-dynamic";
 // artículo, N.º de recepción. Nunca 500: si la API custom aún no está publicada,
 // devuelve { lineas: [], error } para que la UI avise sin romperse.
 export async function GET(req: NextRequest) {
+  const sinSesion = await exigirSesion();
+  if (sinSesion) return sinSesion;
   const sp = req.nextUrl.searchParams;
   try {
     const lineas = await bcPostedReceiptLines({

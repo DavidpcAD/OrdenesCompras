@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { addRecepcionFotos, getRecepcionFoto } from "@/lib/repo";
-import { actor } from "@/lib/actor";
+import { actor, exigirSesion } from "@/lib/actor";
 import { mensajeSeguro } from "@/lib/error-sql";
 
 export const runtime = "nodejs";
@@ -15,6 +15,8 @@ const MIMES_OK = ["image/jpeg", "image/webp", "image/png"];
 
 // GET /api/recepciones/{id}/foto?foto={idFoto} → la imagen (para el <img src>).
 export async function GET(req: Request, { params }: { params: { id: string } }) {
+  const sinSesion = await exigirSesion();
+  if (sinSesion) return sinSesion;
   try {
     const idFoto = Number(new URL(req.url).searchParams.get("foto") ?? 0);
     if (!idFoto) return NextResponse.json({ error: "Falta el parámetro foto." }, { status: 400 });
@@ -36,6 +38,8 @@ export async function GET(req: Request, { params }: { params: { id: string } }) 
 
 // POST /api/recepciones/{id}/foto  { fotos: [{ mime, base64, ancho, alto }] }
 export async function POST(req: Request, { params }: { params: { id: string } }) {
+  const sinSesion = await exigirSesion();
+  if (sinSesion) return sinSesion;
   try {
     const body = await req.json();
     const a = await actor({ ...body, rol: body.rol ?? "facturacion" });

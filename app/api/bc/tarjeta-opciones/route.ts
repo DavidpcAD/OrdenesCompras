@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { exigirSesion } from "@/lib/actor";
 import { bcFormasDePagoTarjeta, bcDimensionesEncabezado, bcValoresDeDimension } from "@/lib/bc";
 
 export const runtime = "nodejs";
@@ -12,6 +13,8 @@ export const dynamic = "force-dynamic";
 // muy de vez en cuando (tarjetas y dimensiones del catálogo), así que no vale pegarle a
 // BC en cada apertura de la pantalla.
 export async function GET(req: Request) {
+  const sinSesion = await exigirSesion();
+  if (sinSesion) return sinSesion;
   const dim = new URL(req.url).searchParams.get("dim");
   try {
     if (dim) {

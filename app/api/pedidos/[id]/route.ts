@@ -1,12 +1,14 @@
 import { NextResponse } from "next/server";
 import { getPedido, setPedidoEstado, softDeletePedido, updatePedido } from "@/lib/repo";
-import { actor } from "@/lib/actor";
+import { actor, exigirSesion } from "@/lib/actor";
 import { mensajeSeguro } from "@/lib/error-sql";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET(_req: Request, { params }: { params: { id: string } }) {
+  const sinSesion = await exigirSesion();
+  if (sinSesion) return sinSesion;
   try {
     const p = await getPedido(Number(params.id));
     if (!p) return NextResponse.json({ error: "no encontrado" }, { status: 404 });
@@ -17,6 +19,8 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
 }
 
 export async function PATCH(req: Request, { params }: { params: { id: string } }) {
+  const sinSesion = await exigirSesion();
+  if (sinSesion) return sinSesion;
   try {
     const body = await req.json();
     const { estado, motivo } = body;
@@ -29,6 +33,8 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
 }
 
 export async function PUT(req: Request, { params }: { params: { id: string } }) {
+  const sinSesion = await exigirSesion();
+  if (sinSesion) return sinSesion;
   try {
     const body = await req.json();
     await updatePedido({ id: Number(params.id), ...body, ...(await actor(body)) });
@@ -39,6 +45,8 @@ export async function PUT(req: Request, { params }: { params: { id: string } }) 
 }
 
 export async function DELETE(req: Request, { params }: { params: { id: string } }) {
+  const sinSesion = await exigirSesion();
+  if (sinSesion) return sinSesion;
   try {
     const body = await req.json().catch(() => ({}));
     const a = await actor(body);

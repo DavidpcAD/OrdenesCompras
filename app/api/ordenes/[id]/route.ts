@@ -3,13 +3,15 @@ import { getOrden, setOrdenEstado, setOrdenBcNumber, updateOrden, descartarOrden
 import { aprobacionAutomatica, aprobacionAutomaticaActiva, MOV_APROBACION_AUTOMATICA, USUARIO_APROBACION_AUTOMATICA } from "@/lib/aprobacion-automatica";
 import { bcReleasePedidoVerificado, bcReopenPedido, bcReplaceOrderLines, bcCrearPedidoAbierto, crearEnBcAlEnviar, lineasOrdenParaBc, obrasSinTarea, lineasSinUnidad, lineasSinAlmacen, resolverVariantesRequeridas, sanearObrasDeLineas, avisoDeSaneo, bcOrdenTotales, bcEstadoDelPedido, chequearOrdenContraBc, lineasReplaceParaCotejo, lineasOrdenParaCotejo, paredAprobacionActiva, itemsBloqueadosDeLineas, bcSincronizarEncabezado, bcBorrarPedidoAbierto, conPedidoAbierto, campoVacioEnBc, explicarCampoVacioEnBc, bcSellarCreadoPor, type LineaReplaceBc } from "@/lib/bc";
 import { ordenTotalConIva, lineasSinPrecio } from "@/lib/helpers";
-import { actor } from "@/lib/actor";
+import { actor, exigirSesion } from "@/lib/actor";
 import { mensajeSeguro } from "@/lib/error-sql";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET(_req: Request, { params }: { params: { id: string } }) {
+  const sinSesion = await exigirSesion();
+  if (sinSesion) return sinSesion;
   try {
     const o = await getOrden(Number(params.id));
     if (!o) return NextResponse.json({ error: "no encontrada" }, { status: 404 });
@@ -20,6 +22,8 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
 }
 
 export async function PATCH(req: Request, { params }: { params: { id: string } }) {
+  const sinSesion = await exigirSesion();
+  if (sinSesion) return sinSesion;
   try {
     const body = await req.json();
     const { estado, motivo, bcNumber, reabrirBc } = body;
@@ -449,6 +453,8 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
 }
 
 export async function PUT(req: Request, { params }: { params: { id: string } }) {
+  const sinSesion = await exigirSesion();
+  if (sinSesion) return sinSesion;
   try {
     const body = await req.json();
     const id = Number(params.id);
@@ -567,6 +573,8 @@ export async function PUT(req: Request, { params }: { params: { id: string } }) 
 // ve desde la app y que Aprobación podría lanzar. Es la salida que faltaba para la
 // orden que no va a salir (CP-005295).
 export async function DELETE(req: Request, { params }: { params: { id: string } }) {
+  const sinSesion = await exigirSesion();
+  if (sinSesion) return sinSesion;
   try {
     const body = await req.json().catch(() => ({}));
     const a = await actor(body);

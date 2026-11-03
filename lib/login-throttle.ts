@@ -37,13 +37,19 @@ export function demoraPorFallos(username: string): number {
   return Math.min(e.fallos * DEMORA_POR_FALLO_MS, DEMORA_MAX_MS);
 }
 
-export function registrarFallo(username: string): void {
+/** Anota el fallo y devuelve cuántos lleva ese usuario en la ventana (para el log). */
+export function registrarFallo(username: string): number {
   const ahora = Date.now();
   const k = clave(username);
   const e = porUsuario.get(k);
-  if (!e || ahora - e.visto > VENTANA_MS) porUsuario.set(k, { fallos: 1, visto: ahora });
-  else porUsuario.set(k, { fallos: e.fallos + 1, visto: ahora });
+  const fallos = !e || ahora - e.visto > VENTANA_MS ? 1 : e.fallos + 1;
+  porUsuario.set(k, { fallos, visto: ahora });
+  return fallos;
 }
+
+// Umbral a partir del cual el log lo marca como posible fuerza bruta: equivocarse
+// dos o tres veces es normal; diez en 15 minutos ya no.
+export const FALLOS_SOSPECHOSOS = 10;
 
 export function registrarExito(username: string): void {
   porUsuario.delete(clave(username));

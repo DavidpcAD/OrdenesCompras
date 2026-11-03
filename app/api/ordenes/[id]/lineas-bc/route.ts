@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { exigirSesion } from "@/lib/actor";
 import { getOrden } from "@/lib/repo";
 import { bcLineasPedido } from "@/lib/bc";
 
@@ -18,6 +19,8 @@ export const dynamic = "force-dynamic";
 // Solo lectura y nunca 500: si BC no contesta, devuelve la lista vacía y quien llama
 // se cae al precio histórico como antes.
 export async function GET(_req: Request, { params }: { params: { id: string } }) {
+  const sinSesion = await exigirSesion();
+  if (sinSesion) return sinSesion;
   try {
     const o = await getOrden(Number(params.id));
     if (!o?.bcNumber) return NextResponse.json({ lineas: [] });

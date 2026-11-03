@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { exigirSesion } from "@/lib/actor";
 import { bcExistencias } from "@/lib/bc";
 import { mensajeSeguro } from "@/lib/error-sql";
 
@@ -8,6 +9,8 @@ export const dynamic = "force-dynamic";
 // GET /api/bc/existencias?itemNo=M01-0001  ó  ?locationCode=OR-4321  (al menos uno).
 // Devuelve el stock neto físico por ubicación/variante desde BC (inventoryByLocation).
 export async function GET(req: NextRequest) {
+  const sinSesion = await exigirSesion();
+  if (sinSesion) return sinSesion;
   const { searchParams } = new URL(req.url);
   const itemNo = searchParams.get("itemNo") ?? undefined;
   const locationCode = searchParams.get("locationCode") ?? undefined;

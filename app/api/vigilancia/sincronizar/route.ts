@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { exigirSesion } from "@/lib/actor";
 import { facturasYProveedoresDeBc } from "@/lib/bc-facturas-cache";
 import { cruzar, type Comprobante } from "@/lib/cruce-correo-bc";
 import { estadoBuzon, leerBuzon } from "@/lib/graph-buzon";
@@ -60,6 +61,8 @@ let corriendoDesde: number | null = null;
 const hayCorrida = () => corriendoDesde !== null && Date.now() - corriendoDesde < CORRIDA_MAX_MIN * 60_000;
 
 export async function POST() {
+  const sinSesion = await exigirSesion();
+  if (sinSesion) return sinSesion;
   const buzon = estadoBuzon();
 
   if (!(await tablaCorreoExiste())) {

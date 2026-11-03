@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { exigirSesion } from "@/lib/actor";
 import { listVistas, saveVista } from "@/lib/repo";
 import { mensajeParaPantalla } from "@/lib/error-sql";
 
@@ -7,6 +8,8 @@ export const dynamic = "force-dynamic";
 
 // Vistas de tabla guardadas por usuario. GET ?usuario=&tabla=
 export async function GET(req: Request) {
+  const sinSesion = await exigirSesion();
+  if (sinSesion) return sinSesion;
   try {
     const u = new URL(req.url);
     const usuario = u.searchParams.get("usuario") ?? "";
@@ -22,6 +25,8 @@ export async function GET(req: Request) {
 }
 
 export async function POST(req: Request) {
+  const sinSesion = await exigirSesion();
+  if (sinSesion) return sinSesion;
   try {
     const b = await req.json();
     if (!b?.usuario || !b?.tabla || !b?.nombre) return NextResponse.json({ error: "Faltan usuario, tabla o nombre" }, { status: 400 });

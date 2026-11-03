@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { exigirSesion } from "@/lib/actor";
 import { getPedido } from "@/lib/repo";
 import { pedidoAPdf, nombreArchivoPedido } from "@/lib/pedido-pdf";
 import { bcDescripcionUnidades, bcNombresDeVariante } from "@/lib/bc";
@@ -16,6 +17,8 @@ export const dynamic = "force-dynamic";
 //
 // `?ver=1` lo abre en el navegador en vez de descargarlo.
 export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
+  const sinSesion = await exigirSesion();
+  if (sinSesion) return sinSesion;
   const id = Number(params.id);
   if (!Number.isFinite(id)) return NextResponse.json({ error: "Id de solicitud inválido." }, { status: 400 });
   try {

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { exigirSesion } from "@/lib/actor";
 import { bcFacturasCompra, bcProveedoresConCedula } from "@/lib/bc";
 import {
   borradoresSinRegistrar, posiblesDobles, proveedoresCallados,
@@ -27,6 +28,8 @@ export const dynamic = "force-dynamic";
 const DESDE_POR_DEFECTO = "2025-11-01";   // la primera factura de compra que existe en BC
 
 export async function GET(req: NextRequest) {
+  const sinSesion = await exigirSesion();
+  if (sinSesion) return sinSesion;
   try {
     const sp = req.nextUrl.searchParams;
     const desde = /^\d{4}-\d{2}-\d{2}$/.test(sp.get("desde") ?? "")

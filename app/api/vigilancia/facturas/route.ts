@@ -4,7 +4,7 @@ import {
   tablaCorreoExiste, FALTA_TABLA, listarFacturasCorreo, leerSincronizacion, marcarFacturaCorreo,
   marcarRevisada, CERRABLES, type EstadoFactura,
 } from "@/lib/repo-facturas-correo";
-import { actor } from "@/lib/actor";
+import { actor, exigirSesion } from "@/lib/actor";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -20,6 +20,8 @@ export const dynamic = "force-dynamic";
 const DIAS_POR_DEFECTO = 60;
 
 export async function GET(req: NextRequest) {
+  const sinSesion = await exigirSesion();
+  if (sinSesion) return sinSesion;
   try {
     if (!(await tablaCorreoExiste())) {
       return NextResponse.json({
@@ -46,6 +48,8 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
+  const sinSesion = await exigirSesion();
+  if (sinSesion) return sinSesion;
   try {
     const body = await req.json().catch(() => null);
     const clave = String(body?.clave ?? "").trim();

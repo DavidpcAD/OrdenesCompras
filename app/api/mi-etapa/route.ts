@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { exigirSesion } from "@/lib/actor";
 import { etapasDeUsuario } from "@/lib/repo";
 import { mensajeSeguro } from "@/lib/error-sql";
 
@@ -9,6 +10,8 @@ export const dynamic = "force-dynamic";
 // Etapas (especialidad) del ingeniero, para que la Matriz arranque en las suyas.
 // Nunca 500: si SQL falla o no hay mapeo, devuelve lista vacía.
 export async function GET(req: NextRequest) {
+  const sinSesion = await exigirSesion();
+  if (sinSesion) return sinSesion;
   const username = new URL(req.url).searchParams.get("username") ?? "";
   try {
     return NextResponse.json({ etapaIds: await etapasDeUsuario(username) });

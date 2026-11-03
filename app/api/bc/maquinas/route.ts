@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { exigirSesion } from "@/lib/actor";
 import { bcMaquinas } from "@/lib/bc";
 
 export const runtime = "nodejs";
@@ -18,6 +19,8 @@ export const dynamic = "force-dynamic";
 //
 // Nunca 500: sin catálogo, la orden se arma igual (la máquina es opcional).
 export async function GET() {
+  const sinSesion = await exigirSesion();
+  if (sinSesion) return sinSesion;
   try {
     return NextResponse.json(await bcMaquinas());
   } catch (e: any) {

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getOrden, marcarEnvioProveedor } from "@/lib/repo";
-import { actor } from "@/lib/actor";
+import { actor, exigirSesion } from "@/lib/actor";
 import { ordenAPdf } from "@/lib/orden-pdf";
 import { bcDescripcionUnidades, bcNombresDeVariante } from "@/lib/bc";
 import { nombreArchivoOrden, ordenImprimible } from "@/lib/orden-doc";
@@ -17,6 +17,8 @@ export const dynamic = "force-dynamic";
 //
 // `?ver=1` lo muestra en el navegador en vez de descargarlo (vista previa).
 export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
+  const sinSesion = await exigirSesion();
+  if (sinSesion) return sinSesion;
   const id = Number(params.id);
   if (!Number.isFinite(id)) return NextResponse.json({ error: "Id de orden inválido." }, { status: 400 });
   try {

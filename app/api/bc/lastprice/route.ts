@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { exigirSesion } from "@/lib/actor";
 import {
   bcUltimoPrecioFacturado, bcUltimaCompraDocumento, bcItemUltimaCompra, bcItemLastCost, bcUnidadesDeCompra,
 } from "@/lib/bc";
@@ -22,6 +23,8 @@ export const dynamic = "force-dynamic";
 // `unidad` dice a qué unidad corresponde `precio`, y `factor` cuántas unidades base
 // trae la unidad de compra — con eso el llamador convierte, o decide no hacerlo.
 export async function GET(req: Request) {
+  const sinSesion = await exigirSesion();
+  if (sinSesion) return sinSesion;
   const u = new URL(req.url);
   const item = u.searchParams.get("item") ?? "";
   const vendor = u.searchParams.get("vendor") ?? "";

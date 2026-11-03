@@ -17,3 +17,8 @@ next-env.d.ts
 extensionsPermissionSet.xml
 # Playwright CLI output (may contain credentials)
 .playwright-cli/
+
+# Variables de entorno: ninguna va al repo, salvo el ejemplo sin valores reales.
+.env
+.env.*
+!.env.local.example

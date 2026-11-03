@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { exigirSesion } from "@/lib/actor";
 import { bcItemCharges } from "@/lib/bc";
 
 export const runtime = "nodejs";
@@ -8,6 +9,8 @@ export const dynamic = "force-dynamic";
 // Catálogo de Cargos de producto (Item Charge, BC 5800) para armar la orden.
 // Nunca 500: si la API custom aún no está publicada, devuelve lista vacía.
 export async function GET() {
+  const sinSesion = await exigirSesion();
+  if (sinSesion) return sinSesion;
   try {
     return NextResponse.json({ itemCharges: await bcItemCharges() });
   } catch (e: any) {

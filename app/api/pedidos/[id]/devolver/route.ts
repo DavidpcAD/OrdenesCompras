@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { devolverLineasPedido } from "@/lib/repo";
-import { actor } from "@/lib/actor";
+import { actor, exigirSesion } from "@/lib/actor";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -8,6 +8,8 @@ export const dynamic = "force-dynamic";
 // Devolver al ingeniero LÍNEAS sueltas de una solicitud (o todas). El pedido entero
 // solo se marca "Devuelto" si no le queda ninguna línea viva; ver devolverLineasPedido.
 export async function POST(req: Request, { params }: { params: { id: string } }) {
+  const sinSesion = await exigirSesion();
+  if (sinSesion) return sinSesion;
   try {
     const body = await req.json();
     const { lineaIds, motivo } = body as { lineaIds?: (string | number)[]; motivo?: string };

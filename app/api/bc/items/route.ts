@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { exigirSesion } from "@/lib/actor";
 import { bcItems, bcItemsPagina, bcUnidadesDeCompra } from "@/lib/bc";
 import { mensajeSeguro } from "@/lib/error-sql";
 
@@ -26,6 +27,8 @@ async function conUnidadDeCompra(items: any[]) {
 }
 
 export async function GET(req: NextRequest) {
+  const sinSesion = await exigirSesion();
+  if (sinSesion) return sinSesion;
   const { searchParams } = new URL(req.url);
   const top = Number(searchParams.get("top") ?? 0);
   const skip = Math.max(0, Number(searchParams.get("skip") ?? 0));

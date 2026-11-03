@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { exigirSesion } from "@/lib/actor";
 import { listMovimientos } from "@/lib/repo";
 import { mensajeSeguro } from "@/lib/error-sql";
 
@@ -6,6 +7,8 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET(req: Request) {
+  const sinSesion = await exigirSesion();
+  if (sinSesion) return sinSesion;
   try {
     const { searchParams } = new URL(req.url);
     const entidad = searchParams.get("entidad") ?? "";

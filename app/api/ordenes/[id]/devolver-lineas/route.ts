@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { devolverLineasDeOrden, getOrden, obrasDeLineasPedido } from "@/lib/repo";
 import { bcReplaceOrderLines, lineasOrdenParaBc, bcDeepLinkPedido, itemsBloqueadosDeLineas } from "@/lib/bc";
-import { actor } from "@/lib/actor";
+import { actor, exigirSesion } from "@/lib/actor";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -18,6 +18,8 @@ export const dynamic = "force-dynamic";
 // descarta acá, pero el pedido de BC no se borra desde la app: se dice con nombre y
 // link para darlo de baja allá.
 export async function POST(req: Request, { params }: { params: { id: string } }) {
+  const sinSesion = await exigirSesion();
+  if (sinSesion) return sinSesion;
   try {
     const body = await req.json();
     const { lineaIds, motivo } = body as { lineaIds?: (string | number)[]; motivo?: string };

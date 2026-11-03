@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { exigirSesion } from "@/lib/actor";
 import { createHash } from "node:crypto";
 import { contarVivos, listNotasCredito, listOrdenes, listPedidos, listRecepciones } from "@/lib/repo";
 import { cursorDe, siguienteCursor, tamañoDeLote } from "@/lib/lotes";
@@ -89,6 +90,8 @@ async function responderLote(req: Request, nPedido: number, marcas: Record<strin
 // en cada carga Y en cada auto-refresh (45s) solo para pintar el Timeline de dos
 // pantallas de detalle. Ahora el Timeline lo pide por entidad a /api/movimientos.
 export async function GET(req: Request) {
+  const sinSesion = await exigirSesion();
+  if (sinSesion) return sinSesion;
   const marcas: Record<string, number> = {};
   const t0 = Date.now();
   try {

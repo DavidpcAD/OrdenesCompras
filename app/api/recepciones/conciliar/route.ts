@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { getOrden, createRecepcion } from "@/lib/repo";
 import { bcFacturasRegistradasDePedido, bcLineasFacturadasDePedido } from "@/lib/bc";
 import { decidirConciliacion } from "@/lib/conciliar-orden";
-import { actor } from "@/lib/actor";
+import { actor, exigirSesion } from "@/lib/actor";
 import { todayISO } from "@/lib/helpers";
 import { mensajeSeguro } from "@/lib/error-sql";
 
@@ -20,6 +20,8 @@ export const dynamic = "force-dynamic";
 // facturas, el proveedor, las líneas y los montos los lee la app de BC; el navegador
 // no puede inyectar qué conciliar ni por cuánto.
 export async function POST(req: Request) {
+  const sinSesion = await exigirSesion();
+  if (sinSesion) return sinSesion;
   try {
     const body = await req.json().catch(() => ({}));
     const id = Number(body?.ordenId);

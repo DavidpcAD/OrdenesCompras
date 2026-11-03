@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { exigirSesion } from "@/lib/actor";
 import { updateClasificacion } from "@/lib/repo";
 import { mensajeSeguro } from "@/lib/error-sql";
 
@@ -7,6 +8,8 @@ export const dynamic = "force-dynamic";
 
 // Editar una clasificación existente (nombre y/o partida). Mismo XOR que crear.
 export async function PATCH(req: Request, { params }: { params: { id: string } }) {
+  const sinSesion = await exigirSesion();
+  if (sinSesion) return sinSesion;
   try {
     const id = Number(params.id);
     if (!id) return NextResponse.json({ error: "Id inválido" }, { status: 400 });

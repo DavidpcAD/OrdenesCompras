@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { exigirSesion } from "@/lib/actor";
 import { deletePlantilla, updatePlantilla } from "@/lib/repo";
 import { mensajeSeguro } from "@/lib/error-sql";
 
@@ -6,6 +7,8 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function PUT(req: Request, { params }: { params: { id: string } }) {
+  const sinSesion = await exigirSesion();
+  if (sinSesion) return sinSesion;
   try {
     const body = await req.json();
     if (!body?.nombre) return NextResponse.json({ error: "Falta nombre" }, { status: 400 });
@@ -23,6 +26,8 @@ export async function PUT(req: Request, { params }: { params: { id: string } }) 
 }
 
 export async function DELETE(req: Request, { params }: { params: { id: string } }) {
+  const sinSesion = await exigirSesion();
+  if (sinSesion) return sinSesion;
   try {
     const usuario = new URL(req.url).searchParams.get("usuario") ?? "";
     await deletePlantilla(Number(params.id), usuario);

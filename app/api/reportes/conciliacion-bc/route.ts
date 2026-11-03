@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { listOrdenes } from "@/lib/repo";
 import { chequearOrdenAFondo } from "@/lib/chequeo-orden";
-import { actor } from "@/lib/actor";
+import { actor, exigirSesion } from "@/lib/actor";
 import { mensajeSeguro } from "@/lib/error-sql";
 
 export const runtime = "nodejs";
@@ -23,6 +23,8 @@ const LIMITE_MAX = 40;
 const EN_PARALELO = 4;   // BC aguanta bien esto; más arriba empieza a tirar 429.
 
 export async function GET(req: NextRequest) {
+  const sinSesion = await exigirSesion();
+  if (sinSesion) return sinSesion;
   try {
     const sp = req.nextUrl.searchParams;
     const desde = (sp.get("desde") ?? "").trim();

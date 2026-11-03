@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { exigirSesion } from "@/lib/actor";
 import { listCargosRecibidos } from "@/lib/repo";
 import { mensajeSeguro } from "@/lib/error-sql";
 
@@ -9,6 +10,8 @@ export const dynamic = "force-dynamic";
 // lo más nuevo primero, con el detalle de líneas y los links a BC. Aislado del
 // bootstrap: si la base no contesta devuelve [] con el error.
 export async function GET() {
+  const sinSesion = await exigirSesion();
+  if (sinSesion) return sinSesion;
   try {
     return NextResponse.json({ cargos: await listCargosRecibidos() });
   } catch (e) {

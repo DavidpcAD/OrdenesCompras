@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { exigirSesion } from "@/lib/actor";
 import { deleteVista } from "@/lib/repo";
 import { mensajeParaPantalla } from "@/lib/error-sql";
 
@@ -6,6 +7,8 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function DELETE(req: Request, { params }: { params: { id: string } }) {
+  const sinSesion = await exigirSesion();
+  if (sinSesion) return sinSesion;
   try {
     const usuario = new URL(req.url).searchParams.get("usuario") ?? "";
     await deleteVista(Number(params.id), usuario);
