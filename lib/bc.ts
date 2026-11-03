@@ -1877,6 +1877,9 @@ function odataRoot(): string {
 // La API estándar v2.0 NO puede liberar un pedido; se hace por el web service
 // del codeunit custom "Adelante PO Actions" (publicado como "AdelantePO").
 // Procedimiento esperado: AdelantePO_ReleaseOrder(orderNo) -> Text (status).
+// Devuelve el texto TAL CUAL lo dijo BC, y "" si no dijo nada. Antes un 200 sin
+// cuerpo devolvía "Released" por defecto: daba por lanzado algo que nadie confirmó.
+// Quien DECIDE algo con el resultado usa bcReleasePedidoVerificado.
 export async function bcReleasePedido(orderNo: string): Promise<string> {
   if (!orderNo) throw new Error("Falta el número de pedido para lanzar.");
   const cid = await getStdCompanyId();
@@ -1888,7 +1891,27 @@ export async function bcReleasePedido(orderNo: string): Promise<string> {
   });
   if (!res.ok) throw new Error(`BC release ${res.status}: ${(await res.text()).slice(0, 250)}`);
   const d: any = await res.json().catch(() => ({}));
-  return d?.value ?? "Released";
+  return String(d?.value ?? "").trim();
+}
+
+// Cómo quedó el pedido después de lanzarlo. Manda lo que se LEYÓ en BC después
+// (GetOrderLines, el canal del estado real); lo que contestó el ReleaseOrder solo
+// decide si no se pudo releer. Si ninguno de los dos dice nada, "desconocido": NO es
+// lanzado. Mismo criterio que Producción desde el 4/9/2026 (CP-005143: "Lanzado" en
+// la app con el pedido Abierto en BC).
+export function estadoTrasLanzar(dicho: string, leido?: string): { estado: EstadoBcPedido; status: string } {
+  const estadoLeido = estadoLanzamientoBc(leido);
+  if (estadoLeido !== "desconocido") return { estado: estadoLeido, status: (leido ?? "").trim() };
+  return { estado: estadoLanzamientoBc(dicho), status: (dicho ?? "").trim() };
+}
+
+// Lanza y después PREGUNTA. Para la aprobación automática: con "lanzado" la orden se
+// marca lanzada sin que Luis la vea, así que un 200 del codeunit no alcanza.
+// Tira el mismo error que bcReleasePedido si BC no deja lanzar.
+export async function bcReleasePedidoVerificado(orderNo: string): Promise<{ estado: EstadoBcPedido; status: string }> {
+  const dicho = await bcReleasePedido(orderNo);
+  const leido = await bcEncabezadoPedido(orderNo); // null si no se pudo leer (no tira)
+  return estadoTrasLanzar(dicho, leido?.status);
 }
 
 // Reabre (Reopen) un Pedido de compra en BC -> vuelve de "Lanzado" a "Abierto".

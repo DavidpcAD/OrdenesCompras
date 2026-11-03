@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getOrden, setOrdenEstado, setOrdenBcNumber, updateOrden, descartarOrden, ordenTieneRecepciones, obrasDeLineasPedido, asignarBcNumber, guardarChequeoBc, guardarVariantesResueltas, anotarEncabezadoBc, MSG_NO_REABRIR } from "@/lib/repo";
 import { aprobacionAutomatica, aprobacionAutomaticaActiva, MOV_APROBACION_AUTOMATICA, USUARIO_APROBACION_AUTOMATICA } from "@/lib/aprobacion-automatica";
-import { bcReleasePedido, estadoLanzamientoBc, bcReopenPedido, bcReplaceOrderLines, bcCrearPedidoAbierto, crearEnBcAlEnviar, lineasOrdenParaBc, obrasSinTarea, lineasSinUnidad, lineasSinAlmacen, resolverVariantesRequeridas, sanearObrasDeLineas, avisoDeSaneo, bcOrdenTotales, bcEstadoDelPedido, chequearOrdenContraBc, lineasReplaceParaCotejo, lineasOrdenParaCotejo, paredAprobacionActiva, itemsBloqueadosDeLineas, bcSincronizarEncabezado, bcBorrarPedidoAbierto, conPedidoAbierto, campoVacioEnBc, explicarCampoVacioEnBc, bcSellarCreadoPor } from "@/lib/bc";
+import { bcReleasePedidoVerificado, bcReopenPedido, bcReplaceOrderLines, bcCrearPedidoAbierto, crearEnBcAlEnviar, lineasOrdenParaBc, obrasSinTarea, lineasSinUnidad, lineasSinAlmacen, resolverVariantesRequeridas, sanearObrasDeLineas, avisoDeSaneo, bcOrdenTotales, bcEstadoDelPedido, chequearOrdenContraBc, lineasReplaceParaCotejo, lineasOrdenParaCotejo, paredAprobacionActiva, itemsBloqueadosDeLineas, bcSincronizarEncabezado, bcBorrarPedidoAbierto, conPedidoAbierto, campoVacioEnBc, explicarCampoVacioEnBc, bcSellarCreadoPor } from "@/lib/bc";
 import { ordenTotalConIva, lineasSinPrecio } from "@/lib/helpers";
 import { actor } from "@/lib/actor";
 import { mensajeSeguro } from "@/lib/error-sql";
@@ -415,9 +415,13 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
         }
         if (decision.aplica) {
           try {
-            const status = await bcReleasePedido(numeroBc);
-            if (estadoLanzamientoBc(status) === "lanzado") sinAprobacion = { detalle: decision.detalle, aviso: decision.aviso, numeroBc };
-            else bcAviso = [bcAviso, `Esta orden no necesitaba aprobación, pero Business Central dejó el pedido ${numeroBc} en "${status}" en vez de lanzarlo. Quedó pendiente de aprobación como siempre.`].filter(Boolean).join(" · ");
+            // Verificado: se marca lanzada SOLO si BC, releído, dice que lo está. Un 200
+            // del codeunit sin estado ya no cuenta como lanzado (lib/bc.ts).
+            const { estado: quedo, status } = await bcReleasePedidoVerificado(numeroBc);
+            if (quedo === "lanzado") sinAprobacion = { detalle: decision.detalle, aviso: decision.aviso, numeroBc };
+            else bcAviso = [bcAviso, status
+              ? `Esta orden no necesitaba aprobación, pero Business Central dejó el pedido ${numeroBc} en "${status}" en vez de lanzarlo. Quedó pendiente de aprobación como siempre.`
+              : `Esta orden no necesitaba aprobación, pero Business Central no confirmó que el pedido ${numeroBc} quedara lanzado. Quedó pendiente de aprobación como siempre.`].filter(Boolean).join(" · ");
           } catch (e: any) {
             bcAviso = [bcAviso, `Esta orden no necesitaba aprobación, pero Business Central no dejó lanzar el pedido ${numeroBc}: ${String(e?.message ?? e)}. Quedó pendiente de aprobación como siempre.`].filter(Boolean).join(" · ");
           }
