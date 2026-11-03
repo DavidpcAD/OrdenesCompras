@@ -7,6 +7,7 @@ import { DestinoLinea } from "@/components/destino-linea";
 import { AgregarLineasSolicitud } from "@/components/agregar-lineas-solicitud";
 import { Combobox } from "@/components/combobox";
 import { ConfirmarProveedor } from "@/components/confirmar-proveedor";
+import { avisoAntesDeEnviar } from "@/lib/aprobacion-automatica";
 import { IconCheck, IconWarning } from "@/components/icons";
 import { useStore } from "@/lib/store";
 import { leerBorrador, guardarBorrador, borrarBorrador, hace, type BorradorOrden } from "@/lib/borrador-orden";
@@ -542,18 +543,19 @@ export default function ArmarOrdenPage() {
     // envío a aprobación falla —hoy eso incluye que BC no pueda crear el pedido— no
     // se puede quedar en el formulario: volver a darle al botón crearía una orden
     // nueva. Se va igual al detalle, con el motivo, y desde ahí se reintenta.
-    let aviso = ""; let tono: "error" | "info" = "info";
+    let aviso = ""; let tono: "error" | "info" = "info"; let lanzada = "";
     if (aprobar) {
       try {
         const r = await setOrdenEstado(orden.id, "pendiente_aprobacion");
         if (r?.bcAviso) aviso = r.bcAviso;
+        if (r?.lanzadaSinAprobacion) lanzada = `${numeroOrden(orden)} · ${r.lanzadaSinAprobacion}`;
       } catch (e: any) { aviso = `La orden quedó guardada como abierta: ${String(e?.message ?? e)}`; tono = "error"; }
     }
     navegandoRef.current = true; // evita que el redirect de borrador-vacío pise el push al detalle
     setBorrador([]);
     borrarBorrador("nueva", usuario);   // ya es una orden de verdad: no hay nada que rescatar
-    if (aviso) toast(aviso, tono);
-    else toast(aprobar ? "Orden enviada a aprobación" : `Orden guardada como abierta · ${numeroOrden(orden)}`, "success");
+    if (aviso) toast(lanzada ? `${lanzada} ${aviso}` : aviso, tono);
+    else toast(aprobar ? (lanzada || "Orden enviada a aprobación") : `Orden guardada como abierta · ${numeroOrden(orden)}`, "success");
     // REPLACE, no push: el formulario NO puede quedar en el historial. Con `push`,
     // el "Volver" del detalle (y el atrás del navegador) devolvían al formulario de
     // armado — que rebota a materiales, o peor, rescata el borrador y parece que la
@@ -912,6 +914,7 @@ export default function ArmarOrdenPage() {
         <ConfirmarProveedor
           nombre={provSel?.nombre ?? ""} codigo={provSel?.code}
           resumen={`${cuenta(rows.length, "línea", "líneas")} · ${money(total, currency)}`}
+          sinAprobacion={avisoAntesDeEnviar({ proveedorNo: provSel?.code, currencyCode: currency }, total)}
           enviando={guardando}
           onCancelar={() => setConfirmarEnvio(false)}
           onConfirmar={() => { setConfirmarEnvio(false); void crear(true, true); }}

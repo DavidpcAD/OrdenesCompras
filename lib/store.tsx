@@ -8,7 +8,8 @@ import type {
   NotaCreditoLinea, MotivoNC, Prioridad,
 } from "./types";
 import * as seed from "./seed";
-import { devolverPendienteAPedidos, esLineaRecibible, nextNumero, nowISO, ordenEstaCompleta, PERSONA_POR_ROL, todayISO } from "./helpers";
+import { devolverPendienteAPedidos, esLineaRecibible, nextNumero, nowISO, ordenEstaCompleta, ordenTotalConIva, PERSONA_POR_ROL, todayISO } from "./helpers";
+import { aprobacionAutomatica, MOV_APROBACION_AUTOMATICA, USUARIO_APROBACION_AUTOMATICA } from "./aprobacion-automatica.ts";
 import { componerNotaCierre, detalleDeCierre, lineaCancelada, motivoObligatorio, quitarNotaCierre } from "./cierre-solicitud.ts";
 import { api, setEtagBootstrap, USE_API as USE_API_BUILD, type CursoresLote } from "./api";
 import { unirPorId } from "./lotes";
@@ -123,7 +124,9 @@ interface StoreShape {
   // `reabrirBc` = este cambio viene del botón "Volver a abrir" (lanzado → abierto) y
   // debe des-lanzar el pedido en BC. "Cancelar envío" NO lo manda: ahí BC no tiene
   // nada lanzado que tocar.
-  setOrdenEstado: (id: string, estado: Orden["estado"], extra?: { bcNumber?: string; bcDeepLink?: string; reabrirBc?: boolean }) => Promise<{ bcAviso?: string }>;
+  // `lanzadaSinAprobacion`: el envío no pasó por Aprobación (lib/aprobacion-automatica.ts)
+  // y la orden ya quedó Lanzada; trae el porqué, para decirlo en vez de "enviada".
+  setOrdenEstado: (id: string, estado: Orden["estado"], extra?: { bcNumber?: string; bcDeepLink?: string; reabrirBc?: boolean }) => Promise<{ bcAviso?: string; lanzadaSinAprobacion?: string }>;
   // Apuntar la orden a OTRO pedido de Business Central. En BC un pedido no se
   // corrige: se borra y se crea otro, y la orden se queda hablando con un número que
   // ya no existe. El servidor verifica que el nuevo exista antes de guardarlo.
@@ -804,17 +807,25 @@ export function StoreProvider({ children, useApi }: { children: React.ReactNode;
 
     const setOrdenEstado: StoreShape["setOrdenEstado"] = async (id, estado, extra) => {
       if (USE_API) {
-        const r = await api.patchOrdenEstado(id, { estado, usuario: persona, rol: rolActual, bcNumber: extra?.bcNumber, reabrirBc: extra?.reabrirBc }) as { bcAviso?: string } | undefined;
+        const r = await api.patchOrdenEstado(id, { estado, usuario: persona, rol: rolActual, bcNumber: extra?.bcNumber, reabrirBc: extra?.reabrirBc }) as { bcAviso?: string; lanzadaSinAprobacion?: string } | undefined;
         await refreshFromApi();
-        return { bcAviso: r?.bcAviso };
+        return { bcAviso: r?.bcAviso, lanzadaSinAprobacion: r?.lanzadaSinAprobacion };
       }
+      let sinAprobacion: string | undefined;
       setData((d) => {
         const prevo = d.ordenes.find((o) => o.id === id);
         const tipo = estado === "pendiente_aprobacion" ? "enviado_aprobacion" : estado === "lanzado" ? "aprobado_lanzado" : estado === "abierto" ? "reabierto" : estado === "completado" ? "completado" : estado;
         const mov = mkMov({ entidad: "orden", idEntidad: id, documentoNo: prevo?.numero ?? "", tipoMovimiento: tipo, estadoAnterior: prevo?.estado, estadoNuevo: estado, detalle: extra?.bcNumber ? `BC ${extra.bcNumber}` : undefined });
+        // Misma regla que el servidor, con el estimado (en modo prueba no hay BC).
+        const auto = estado === "pendiente_aprobacion" && prevo ? aprobacionAutomatica(prevo, { app: ordenTotalConIva(prevo) }) : null;
+        if (auto?.aplica) {
+          sinAprobacion = auto.aviso;
+          const lanz = mkMov({ entidad: "orden", idEntidad: id, documentoNo: prevo?.numero ?? "", tipoMovimiento: MOV_APROBACION_AUTOMATICA, estadoAnterior: estado, estadoNuevo: "lanzado", detalle: auto.detalle });
+          return { ...d, ordenes: d.ordenes.map((o) => (o.id === id ? { ...o, estado: "lanzado" } : o)), movimientos: [{ ...lanz, usuario: USUARIO_APROBACION_AUTOMATICA }, mov, ...d.movimientos] };
+        }
         return { ...d, ordenes: d.ordenes.map((o) => (o.id === id ? { ...o, estado, bcNumber: extra?.bcNumber ?? o.bcNumber, bcDeepLink: extra?.bcDeepLink ?? o.bcDeepLink } : o)), movimientos: [mov, ...d.movimientos] };
       });
-      return {};
+      return sinAprobacion ? { lanzadaSinAprobacion: sinAprobacion } : {};
     };
 
     const corregirBcNumber: StoreShape["corregirBcNumber"] = async (id, bcNumber, motivo) => {

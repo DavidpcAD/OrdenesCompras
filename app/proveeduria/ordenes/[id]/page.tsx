@@ -6,6 +6,7 @@ import { Button, Checkbox, EmptyState, Field, Input, Modal, Select, Skeleton, Te
 import { IconWarning } from "@/components/icons";
 import { OrdenDetalle } from "@/components/orden-detalle";
 import { ConfirmarProveedor } from "@/components/confirmar-proveedor";
+import { avisoAntesDeEnviar } from "@/lib/aprobacion-automatica";
 import { useStore } from "@/lib/store";
 import { useOrden } from "@/lib/use-orden";
 import { cuenta, lineasSinPrecio, money, num, ordenTotalConIva, proveedorLabel, ordenPendienteResumen, numeroOrden, ordenAdmiteDevolucion, puedeDevolverLineaOrden, motivoNoDevolverLineaOrden, ordenQuedaSinMaterial, ordenEsperaCorreccion, lineasCorregidasDeOrden, ordenPedidos } from "@/lib/helpers";
@@ -73,6 +74,9 @@ export default function ProvOrdenDetallePage() {
     }
     return <><main className="page"><EmptyState icon={<IconWarning size={24} />} title="Orden no encontrada." /></main></>;
   }
+  // Si al enviarla no va a pasar por Aprobación (lib/aprobacion-automatica.ts), el
+  // diálogo de confirmación lo dice antes, no el toast después.
+  const sinAprobacion = avisoAntesDeEnviar(orden, ordenTotalConIva(orden));
   // Link de cada línea a su solicitud de origen (para ver quién la pidió).
   const solicitudHref = (l: NonNullable<typeof orden>["lineas"][number]) => {
     const p = (l.pedidoLineaId && pedidos.find((x) => x.lineas.some((ln) => ln.id === l.pedidoLineaId)))
@@ -92,8 +96,10 @@ export default function ProvOrdenDetallePage() {
       setRefrescoBc((n) => n + 1);
       // Si BC no pudo acompañar el cambio, ese aviso manda sobre el "listo" — y queda
       // fijo en la pantalla, no solo como toast.
-      if (r?.bcAviso) { setAvisoBc(r.bcAviso); toast(r.bcAviso, "info"); }
-      else { setAvisoBc(null); toast(msg, "success"); }
+      // Lanzada sin aprobación: lo que se dice es eso y no "enviada a aprobación".
+      const listo = r?.lanzadaSinAprobacion ? `${numeroOrden(orden!)} · ${r.lanzadaSinAprobacion}` : msg;
+      if (r?.bcAviso) { setAvisoBc(r.bcAviso); toast(r?.lanzadaSinAprobacion ? `${listo} ${r.bcAviso}` : r.bcAviso, "info"); }
+      else { setAvisoBc(null); toast(listo, "success"); }
     } catch (e: any) {
       // El error se QUEDA en pantalla, no solo como toast. El corte por "BC no tiene
       // lo mismo que la orden" trae el detalle línea por línea, y eso no se puede leer
@@ -532,7 +538,8 @@ export default function ProvOrdenDetallePage() {
         <ConfirmarProveedor
           nombre={proveedorLabel(orden, proveedores)} codigo={orden.proveedorNo || proveedores.find((p) => p.id === orden.proveedorId)?.code || orden.proveedorId}
           resumen={`${cuenta(orden.lineas.length, "línea", "líneas")} · ${money(ordenTotalConIva(orden), orden.currencyCode)}`}
-          enviando={procesando} etiqueta={confirmarEnvio.etiqueta}
+          enviando={procesando} sinAprobacion={sinAprobacion}
+          etiqueta={sinAprobacion ? confirmarEnvio.etiqueta.replace("a aprobación", "y lanzar") : confirmarEnvio.etiqueta}
           onCancelar={() => setConfirmarEnvio(null)}
           onConfirmar={() => { const { msg } = confirmarEnvio; setConfirmarEnvio(null); void act("pendiente_aprobacion", msg); }}
         />

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getOrden, setOrdenEstado, setOrdenBcNumber, updateOrden, descartarOrden, ordenTieneRecepciones, obrasDeLineasPedido, asignarBcNumber, guardarChequeoBc, guardarVariantesResueltas, anotarEncabezadoBc, MSG_NO_REABRIR } from "@/lib/repo";
-import { bcReopenPedido, bcReplaceOrderLines, bcCrearPedidoAbierto, crearEnBcAlEnviar, lineasOrdenParaBc, obrasSinTarea, lineasSinUnidad, lineasSinAlmacen, resolverVariantesRequeridas, sanearObrasDeLineas, avisoDeSaneo, bcOrdenTotales, bcEstadoDelPedido, chequearOrdenContraBc, lineasReplaceParaCotejo, lineasOrdenParaCotejo, paredAprobacionActiva, itemsBloqueadosDeLineas, bcSincronizarEncabezado, bcBorrarPedidoAbierto, conPedidoAbierto, campoVacioEnBc, explicarCampoVacioEnBc, bcSellarCreadoPor } from "@/lib/bc";
+import { aprobacionAutomatica, aprobacionAutomaticaActiva, MOV_APROBACION_AUTOMATICA, USUARIO_APROBACION_AUTOMATICA } from "@/lib/aprobacion-automatica";
+import { bcReleasePedido, estadoLanzamientoBc, bcReopenPedido, bcReplaceOrderLines, bcCrearPedidoAbierto, crearEnBcAlEnviar, lineasOrdenParaBc, obrasSinTarea, lineasSinUnidad, lineasSinAlmacen, resolverVariantesRequeridas, sanearObrasDeLineas, avisoDeSaneo, bcOrdenTotales, bcEstadoDelPedido, chequearOrdenContraBc, lineasReplaceParaCotejo, lineasOrdenParaCotejo, paredAprobacionActiva, itemsBloqueadosDeLineas, bcSincronizarEncabezado, bcBorrarPedidoAbierto, conPedidoAbierto, campoVacioEnBc, explicarCampoVacioEnBc, bcSellarCreadoPor } from "@/lib/bc";
 import { ordenTotalConIva, lineasSinPrecio } from "@/lib/helpers";
 import { actor } from "@/lib/actor";
 import { mensajeSeguro } from "@/lib/error-sql";
@@ -114,6 +115,8 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     // Antes lo creaba la app de Producción al aprobar; ahora ese paso solo LANZA el
     // pedido que ya existe (y así el aprobador ve en BC exactamente lo que aprueba).
     let bcNo: string | undefined = bcNumber;
+    // Lanzada en BC por la regla de aprobación automática (lib/aprobacion-automatica.ts).
+    let sinAprobacion: { detalle: string; aviso: string; numeroBc: string } | undefined;
     if (estado === "pendiente_aprobacion" && crearEnBcAlEnviar()) {
       const o = await getOrden(id);
       if (!o) return NextResponse.json({ error: "no encontrada" }, { status: 404 });
@@ -309,8 +312,11 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
       // El N.º de BC ya quedó guardado, así que no se pierde nada y se puede
       // reintentar corrigiendo.
       const numeroBc = bcNo || o.bcNumber || "";
+      // Solo un pedido VERIFICADO igual a la orden se puede lanzar sin que lo mire nadie.
+      let cotejoOk = false;
       if (numeroBc && !escrituraFallo) {
         const chequeo = await chequearOrdenContraBc(numeroBc, lineasReplaceParaCotejo(lineasBc), o.proveedorNo || o.proveedorId);
+        cotejoOk = chequeo.estado === "ok";
         const detalle = (chequeo.cotejo?.diferencias ?? []).map((d) => `• ${d.texto}`).join("\n");
         // La diferencia de UNIDAD se avisa pero NO frena. Pasa cuando el ítem en BC no
         // tiene registrada la unidad con la que se guardó la línea (una solicitud en UND
@@ -369,11 +375,15 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
       // 13% en BC, porque el proveedor tenía el grupo de IVA doméstico. El 0 era el
       // bueno. Comparar y DECIRLO es lo único que la app puede hacer de su lado: el
       // número que se contabiliza es el de BC.
+      // undefined = no se preguntó; null = se preguntó y BC no lo dio (ver aprobacionAutomatica).
+      let totalBc: number | null | undefined;
       if (bcNo) {
+        totalBc = null;
         try {
           const bcT = await bcOrdenTotales(bcNo);
           const moneda = (c?: string) => ((c ?? "").trim().toUpperCase() || "CRC");
           if (bcT && moneda(bcT.currencyCode) === moneda(o.currencyCode)) {
+            totalBc = bcT.total;
             // Con IVA en TODAS las líneas, cargo incluido: BC también le cobra IVA al
             // flete. El `* 1` que llevaba el cargo dejaba el estimado corto por ese
             // IVA y el aviso acusaba a BC de cobrar de más en toda orden con cargo.
@@ -387,10 +397,48 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
           }
         } catch { /* si BC no contesta los totales, el envío no se frena por eso */ }
       }
+
+      // ── SIN APROBACIÓN: menor a ₡210 000 en colones, o Holcim ─────────────
+      // La app lanza el pedido ella misma, con el mismo AdelantePO_ReleaseOrder que usa
+      // Producción al aprobar (envía la solicitud en BC, la aprueba como la cuenta de
+      // servicio y libera). Solo sobre un pedido que se acaba de VERIFICAR igual a la
+      // orden: con el cotejo en "sin-lectura" o la reescritura fallida no se suelta nada.
+      // Si BC no lo deja lanzar, la orden sigue el camino de siempre (pendiente, la ve
+      // Luis) y se dice por qué: esta regla nunca puede trabar un envío. Si el lanzamiento
+      // falla, BC revierte la transacción entera y el pedido queda Abierto, sin solicitud.
+      if (numeroBc && cotejoOk && aprobacionAutomaticaActiva()) {
+        let decision = aprobacionAutomatica(o, { app: ordenTotalConIva(o), bc: totalBc });
+        // Reenvío: el total de BC no se leyó arriba. Se lee solo si el monto decide.
+        if (decision.aplica && decision.motivo === "monto" && totalBc === undefined) {
+          const bcT = await bcOrdenTotales(numeroBc).catch(() => null);
+          decision = aprobacionAutomatica(o, { app: ordenTotalConIva(o), bc: bcT ? bcT.total : null });
+        }
+        if (decision.aplica) {
+          try {
+            const status = await bcReleasePedido(numeroBc);
+            if (estadoLanzamientoBc(status) === "lanzado") sinAprobacion = { detalle: decision.detalle, aviso: decision.aviso, numeroBc };
+            else bcAviso = [bcAviso, `Esta orden no necesitaba aprobación, pero Business Central dejó el pedido ${numeroBc} en "${status}" en vez de lanzarlo. Quedó pendiente de aprobación como siempre.`].filter(Boolean).join(" · ");
+          } catch (e: any) {
+            bcAviso = [bcAviso, `Esta orden no necesitaba aprobación, pero Business Central no dejó lanzar el pedido ${numeroBc}: ${String(e?.message ?? e)}. Quedó pendiente de aprobación como siempre.`].filter(Boolean).join(" · ");
+          }
+        }
+      }
     }
 
     await setOrdenEstado(id, estado, a.usuario, a.rol, motivo, bcNo);
-    return NextResponse.json({ ok: true, bcAviso });
+    if (sinAprobacion) {
+      // Dos renglones y no uno: quién la envió (como siempre) y que nadie la aprobó.
+      // El "Aprobada el … por …" de las dos apps sale de este segundo renglón.
+      try {
+        await setOrdenEstado(id, "lanzado", USUARIO_APROBACION_AUTOMATICA, a.rol, undefined, undefined,
+          { tipoMovimiento: MOV_APROBACION_AUTOMATICA, detalle: sinAprobacion.detalle });
+      } catch (e: any) {
+        // En BC ya quedó lanzada. Acá queda pendiente: si Luis la aprueba, ReleaseOrder
+        // contesta "Released" sin hacer nada (es idempotente). No se rompe nada.
+        return NextResponse.json({ ok: true, bcAviso: [bcAviso, `El pedido ${sinAprobacion.numeroBc} quedó LANZADO en Business Central sin aprobación, pero acá no se pudo marcar como lanzada (${mensajeSeguro(e)}). Figura pendiente de aprobación hasta que alguien la apruebe.`].filter(Boolean).join(" · ") });
+      }
+    }
+    return NextResponse.json({ ok: true, bcAviso, lanzadaSinAprobacion: sinAprobacion?.aviso });
   } catch (e: any) {
     return NextResponse.json({ error: mensajeSeguro(e, `PATCH /api/ordenes/${params.id} · cambiar estado`) }, { status: 500 });
   }
