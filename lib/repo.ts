@@ -2136,7 +2136,9 @@ export async function devolverLineasDeOrden(
   };
 }
 
-export async function setOrdenEstado(id: number, estado: string, usuario: string, rol: Role, motivo?: string, bcNumber?: string) {
+// `mov` cambia cómo queda en la bitácora: el tipo propio y un detalle que no es un
+// "Motivo:" (la orden que se lanza sin aprobación dice POR QUÉ no pasó por Luis).
+export async function setOrdenEstado(id: number, estado: string, usuario: string, rol: Role, motivo?: string, bcNumber?: string, mov?: { tipoMovimiento?: string; detalle?: string }) {
   const pool = await getPool();
   // Con material ya recibido/facturado, reabrir es corregir una orden que en BC ya
   // tiene recepciones registradas: quedaría descuadrada y allá tampoco se puede
@@ -2150,9 +2152,11 @@ export async function setOrdenEstado(id: number, estado: string, usuario: string
   let setBc = "";
   if (bcNumber) { req.input("bcno", sql.NVarChar(20), bcNumber); setBc = ", bcNo=@bcno, syncedToBc=1"; }
   await req.query(`UPDATE dbo.OrdenCompra SET idEstado=@e, fechaModificacion=getdate(), modificadoPor=@u${setBc} WHERE idOrdenCompra=@id`);
-  const tipo = estado === "pendiente_aprobacion" ? "enviado_aprobacion" : estado === "lanzado" ? "aprobado_lanzado" : estado === "abierto" ? "reabierto" : estado;
+  const tipo = mov?.tipoMovimiento
+    ?? (estado === "pendiente_aprobacion" ? "enviado_aprobacion" : estado === "lanzado" ? "aprobado_lanzado" : estado === "abierto" ? "reabierto" : estado);
+  const detalle = [mov?.detalle, motivo ? `Motivo: ${motivo}` : ""].filter(Boolean).join(" · ") || undefined;
   const tx = new sql.Transaction(pool); await tx.begin();
-  await logMov(tx, { entidad: "orden", idEntidad: id, documentoNo: prev.recordset[0]?.ordenNo ?? "", tipoMovimiento: tipo, estadoAnterior: codigoDeId(prev.recordset[0]?.idEstado), estadoNuevo: estado, detalle: motivo ? `Motivo: ${motivo}` : undefined, usuario, rol });
+  await logMov(tx, { entidad: "orden", idEntidad: id, documentoNo: prev.recordset[0]?.ordenNo ?? "", tipoMovimiento: tipo, estadoAnterior: codigoDeId(prev.recordset[0]?.idEstado), estadoNuevo: estado, detalle, usuario, rol });
   await tx.commit();
 }
 

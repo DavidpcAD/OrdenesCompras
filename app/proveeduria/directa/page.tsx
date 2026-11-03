@@ -6,6 +6,7 @@ import { Badge, Button, Card, Field, Input, Modal, Select, Textarea, useToast } 
 import { DestinoLinea } from "@/components/destino-linea";
 import { Combobox } from "@/components/combobox";
 import { ConfirmarProveedor } from "@/components/confirmar-proveedor";
+import { avisoAntesDeEnviar } from "@/lib/aprobacion-automatica";
 import { IconCheck, IconWarning } from "@/components/icons";
 import { useStore } from "@/lib/store";
 import { leerBorrador, guardarBorrador, borrarBorrador, hace, type BorradorOrden } from "@/lib/borrador-orden";
@@ -568,15 +569,16 @@ export default function OrdenDirectaPage() {
       // La orden YA está creada acá. Si el envío a aprobación falla —hoy eso incluye
       // que BC no pueda crear el pedido— igual se va al detalle con el motivo: quedarse
       // en el formulario invita a apretar el botón otra vez y crear una orden repetida.
-      let aviso = ""; let tono: "error" | "info" = "info";
+      let aviso = ""; let tono: "error" | "info" = "info"; let lanzada = "";
       if (aprobar) {
         try {
           const r = await setOrdenEstado(orden.id, "pendiente_aprobacion");
           if (r?.bcAviso) aviso = r.bcAviso;
+          if (r?.lanzadaSinAprobacion) lanzada = `${numeroOrden(orden)} · ${r.lanzadaSinAprobacion}`;
         } catch (e: any) { aviso = `La orden quedó guardada como abierta: ${String(e?.message ?? e)}`; tono = "error"; }
       }
-      if (aviso) toast(aviso, tono);
-      else toast(aprobar ? "Orden directa enviada a aprobación" : `Orden directa guardada como abierta · ${numeroOrden(orden)}`, "success");
+      if (aviso) toast(lanzada ? `${lanzada} ${aviso}` : aviso, tono);
+      else toast(aprobar ? (lanzada || "Orden directa enviada a aprobación") : `Orden directa guardada como abierta · ${numeroOrden(orden)}`, "success");
       borrarBorrador("directa", usuario);   // ya es una orden de verdad
       // REPLACE, no push: el formulario NO puede quedar en el historial. Con `push`,
       // el "Volver" del detalle (y el atrás del navegador) devolvían al formulario de
@@ -964,6 +966,7 @@ export default function OrdenDirectaPage() {
         <ConfirmarProveedor
           nombre={provSel?.nombre ?? ""} codigo={provSel?.code}
           resumen={`${cuenta(rows.length, "línea", "líneas")} · ${money(total, currency)}`}
+          sinAprobacion={avisoAntesDeEnviar({ proveedorNo: provSel?.code, currencyCode: currency }, total)}
           enviando={guardando}
           onCancelar={() => setConfirmarEnvio(false)}
           onConfirmar={() => { setConfirmarEnvio(false); void crear(true, true); }}

@@ -32,6 +32,7 @@ const LABEL: Record<string, string> = {
   cerrado: "Cerrado",
   enviado_aprobacion: "Enviado a aprobación",
   aprobado_lanzado: "Aprobado y lanzado",
+  aprobado_automatico: "Lanzado sin aprobación",
   completado: "Completado",
   recepcion_parcial: "Recepción parcial",
   recepcion_total: "Recepción total",
@@ -52,6 +53,8 @@ function etiqueta(m: Movimiento): string {
     if (m.tipoMovimiento === "creado") return "En proveeduría · orden de compra creada";
     if (m.tipoMovimiento === "enviado_aprobacion") return "Orden enviada a aprobación";
     if (m.tipoMovimiento === "aprobado_lanzado") return "Orden aprobada y lanzada";
+    // Menor a ₡210 000 o Holcim (lib/aprobacion-automatica.ts): el porqué va en el detalle.
+    if (m.tipoMovimiento === "aprobado_automatico") return "Orden lanzada sin pasar por aprobación";
     if (m.tipoMovimiento === "rechazado") return "Orden rechazada por Aprobación";
     if (m.tipoMovimiento === "recepcion_parcial") return "Recibido en bodega (parcial)";
     if (m.tipoMovimiento === "recepcion_total") return "Recibido en bodega (total)";
@@ -100,7 +103,8 @@ function colorPunto(m: Movimiento): string {
     switch (m.tipoMovimiento) {
       case "creado": return "var(--ds-color-gray-400)";   // En proveeduría · neutral (gris)
       case "enviado_aprobacion": return "var(--ds-color-yellow)"; // pendiente · amarillo
-      case "aprobado_lanzado": return "var(--ds-color-green-200)"; // lanzada · verde
+      case "aprobado_lanzado":
+      case "aprobado_automatico": return "var(--ds-color-green-200)"; // lanzada · verde
       case "recepcion_parcial": return "var(--ds-color-yellow)"; // recibido parcial · amarillo
       case "recepcion_total":
       case "completado": return "var(--ds-color-green-200)"; // recibido total / completado · verde fuerte

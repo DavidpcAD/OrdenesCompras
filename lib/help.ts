@@ -141,6 +141,8 @@ const ORDEN_DET: HelpEntry = {
   pasos: [
     "Revisá las líneas y el estado actual (arriba).",
     "Si está Abierta, usá “Editar” para ajustarla, o enviala a aprobación: al enviarla se crea el pedido en Business Central (Abierto) y aparece su N.º.",
+    "No todo pasa por Aprobación: una orden en colones de menos de ₡210 000 con IVA, y cualquier orden de Holcim, queda Lanzada en Business Central apenas la enviás. El diálogo de confirmación te lo avisa antes.",
+    "Holcim con otra cantidad en la boleta (25 300 kg en vez de 25 000): “Volver a abrir”, editá la cantidad para que el total cierre con la factura y reenviala: sale lanzada de una vez, sin esperar a Luis Roberto.",
     "Si Aprobación la rechazó, el aviso rojo de arriba dice el motivo: corregí eso, guardá y reenviala.",
     "Si ya está lanzada/recibida, consultá sus recepciones y facturas asociadas.",
     "Con “Imprimir” generás el PDF de la orden (se habilita cuando ya está aprobada).",
@@ -240,7 +242,7 @@ const NUEVA: HelpEntry = {
     "Corregí los precios unitarios si difieren de lo cotizado.",
     "(Opcional) agregá un cargo de flete/transporte que se reparte entre las líneas.",
     "Hay DOS comentarios y no son lo mismo: “Observaciones para el proveedor” se imprimen en el PDF que él recibe; “Comentario para el aprobador” es interno y no sale en el PDF.",
-    "Guardá como “Abierta” (borrador) o “Enviar a aprobación”. Al enviarla se crea el pedido en Business Central, todavía sin lanzar: si BC rechaza algo, la orden no se envía y el aviso dice qué corregir.",
+    "Guardá como “Abierta” (borrador) o “Enviar a aprobación”. Al enviarla se crea el pedido en Business Central, todavía sin lanzar: si BC rechaza algo, la orden no se envía y el aviso dice qué corregir. Si es en colones y el total con IVA es menor a ₡210 000 (o es de Holcim), no pasa por Aprobación: queda Lanzada de una vez.",
   ],
   tips: [
     "Lo que vas armando se guarda solo: si te salís, recargás o volvés mañana, la pantalla lo recupera y te lo dice arriba. Eso vive en ESTA computadora y todavía no es una orden.",
@@ -260,7 +262,7 @@ const DIRECTA: HelpEntry = {
     "Si esa línea va a una obra, elegí la obra y la tarea ANTES de agregarla (quedan puestas para las siguientes). Para corregirlas después, tocá “Cambiar” en la columna Destino.",
     "Repetí para cada material que necesites.",
     "(Opcional) activá el cargo de flete/transporte.",
-    "Revisá Subtotal / IVA / Total y guardá como abierta o enviá a aprobación. Al enviarla se crea el pedido en Business Central, todavía sin lanzar.",
+    "Revisá Subtotal / IVA / Total y guardá como abierta o enviá a aprobación. Al enviarla se crea el pedido en Business Central, todavía sin lanzar. Si es en colones y el total con IVA es menor a ₡210 000 (o es de Holcim), no pasa por Aprobación: queda Lanzada de una vez.",
   ],
   tips: [
     "La tarea es obligatoria cuando ponés obra: sin ella Business Central rechaza la línea.",

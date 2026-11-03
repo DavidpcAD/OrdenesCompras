@@ -14,10 +14,15 @@
 //
 // Por eso el diálogo dice el nombre y nada más que lo imprescindible: un diálogo
 // lleno de datos se cierra sin leerlo, que es exactamente lo que no se quiere acá.
+//
+// Cuando la orden NO va a pasar por Aprobación (menor a ₡210 000 o Holcim, ver
+// lib/aprobacion-automatica.ts), el diálogo lo dice: nadie más la va a mirar antes de
+// que el proveedor la tenga, así que este es el último vistazo de verdad.
 import { Button, Modal } from "./ui.tsx";
+import { IconCheck } from "./icons.tsx";
 
 export function ConfirmarProveedor({
-  nombre, codigo, resumen, enviando, etiqueta = "Sí, enviar a aprobación", onConfirmar, onCancelar,
+  nombre, codigo, resumen, enviando, etiqueta, sinAprobacion, onConfirmar, onCancelar,
 }: {
   nombre: string;
   codigo?: string;
@@ -26,6 +31,8 @@ export function ConfirmarProveedor({
   resumen?: string;
   enviando?: boolean;
   etiqueta?: string;
+  // El porqué de que se lance sin aprobación (avisoAntesDeEnviar), o null.
+  sinAprobacion?: string | null;
   onConfirmar: () => void;
   onCancelar: () => void;
 }) {
@@ -35,17 +42,23 @@ export function ConfirmarProveedor({
       onClose={onCancelar}
       footer={<>
         <Button variant="outline" onClick={onCancelar} disabled={enviando}>Cancelar</Button>
-        <Button loading={enviando} onClick={onConfirmar}>{etiqueta}</Button>
+        <Button loading={enviando} onClick={onConfirmar}>{etiqueta ?? (sinAprobacion ? "Sí, enviar y lanzar" : "Sí, enviar a aprobación")}</Button>
       </>}
     >
       <div className="col gap-2">
-        <span className="ds-body-sm ds-muted">La orden se va a enviar a aprobación a nombre de:</span>
+        <span className="ds-body-sm ds-muted">{sinAprobacion ? "La orden se va a lanzar en Business Central a nombre de:" : "La orden se va a enviar a aprobación a nombre de:"}</span>
         <span className="ds-subtitle-lg">{nombre || "— sin proveedor —"}</span>
         {(codigo || resumen) && (
           <span className="ds-body-sm ds-muted">{[codigo, resumen].filter(Boolean).join(" · ")}</span>
         )}
+        {sinAprobacion && (
+          <div className="ds-callout mt-2" role="note">
+            <span className="ds-callout__icon"><IconCheck size={18} /></span>
+            <div className="ds-callout__body">{sinAprobacion}</div>
+          </div>
+        )}
         <span className="ds-body-sm mt-2" style={{ lineHeight: 1.5 }}>
-          Al aprobarse, el pedido y la factura quedan a nombre de este proveedor en Business Central.
+          {sinAprobacion ? "Al lanzarse" : "Al aprobarse"}, el pedido y la factura quedan a nombre de este proveedor en Business Central.
           Si está equivocado, cambiarlo después ya no se arregla desde acá: lo tiene que deshacer
           Contabilidad con una nota de crédito.
         </span>
