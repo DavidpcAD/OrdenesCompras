@@ -1,6 +1,8 @@
 import crypto from "crypto";
 import bcrypt from "bcryptjs";
 import { getAuthPool, sql } from "./db.ts";
+import { huellaDeClave } from "./session.ts";
+import type { EstadoCuenta } from "./sesion-vigente.ts";
 import type { Role } from "./types.ts";
 
 // Rol (dbo.Rol) -> módulo de la app. Los roles que no calzan NO tienen acceso.
@@ -25,11 +27,14 @@ function moduloDeRol(nombre: string): Role | undefined {
 // Comparación de contraseña contra el hash guardado. SOLO acepta hashes:
 // bcrypt (como guarda ControlUsuarios) o SHA-256 (hex/base64) legado.
 // Ya NO se acepta texto plano: una clave guardada sin hashear no autentica.
-function passwordOk(input: string, stored: string): boolean {
+//
+// bcrypt va en su versión ASÍNCRONA: la síncrona congela el servidor entero ~0,1 s por
+// intento, y con alguien probando claves en ráfaga eso tumbaba la app para todos.
+async function passwordOk(input: string, stored: string): Promise<boolean> {
   if (!stored) return false;
   // bcrypt (así guarda las claves ControlUsuarios): hash empieza con $2a/$2b/$2y.
   if (/^\$2[aby]?\$/.test(stored)) {
-    try { return bcrypt.compareSync(input, stored); } catch { return false; }
+    try { return await bcrypt.compare(input, stored); } catch { return false; }
   }
   // SHA-256 legado (hex o base64). No es texto plano: `stored` debe ser un hash.
   const hex = crypto.createHash("sha256").update(input).digest("hex");
@@ -39,7 +44,48 @@ function passwordOk(input: string, stored: string): boolean {
   return false;
 }
 
-export type AuthUser = { username: string; nombre: string; role: Role; idRol: number; rolNombre: string };
+// `huella` va a la cookie de sesión (ver huellaDeClave en lib/session.ts), NUNCA a la
+// respuesta del login ni a la pantalla.
+export type AuthUser = { username: string; nombre: string; role: Role; idRol: number; rolNombre: string; huella: string };
+
+// Hash bcrypt de una clave cualquiera. Cuando el usuario NO existe se compara contra
+// esto igual, para que "no existe" tarde lo mismo que "clave mala": si no, midiendo el
+// tiempo de respuesta se podía averiguar qué usuarios existen y atacar solo esos.
+const HASH_SEÑUELO = "$2a$10$s13VSTvG11vHlZ1Ju/14zuJ4/B.BwAJmQ/p62XI/gpVzlwXWpGXZW";
+
+// Un usuario puede tener roles en varias apps (p.ej. Kathya: "Contabilidad" en
+// Compras y "Facturador Bodega" en Administración). Elegimos por PRIORIDAD para
+// que el rol específico de Compras gane (Contabilidad sobre Bodega, etc.), en vez
+// de tomar el primero que aparezca. Lo usan el login Y la revisión periódica de la
+// sesión: si eligieran distinto, la revisión creería que te cambiaron el rol.
+async function rolDeUsuario(pool: sql.ConnectionPool, idUsuario: number): Promise<{ role: Role; idRol: number; nombre: string } | null> {
+  const rr = await pool.request().input("id", sql.Int, idUsuario).query(
+    "SELECT ur.idRol, ro.nombre FROM dbo.UsuarioRol ur " +
+    "JOIN dbo.Rol ro ON ro.idRol = ur.idRol WHERE ur.idUsuario = @id"
+  );
+  const PRIORIDAD: Role[] = ["contabilidad", "proveeduria", "facturacion"];
+  let best: { role: Role; idRol: number; nombre: string } | null = null;
+  for (const x of rr.recordset) {
+    const m = moduloDeRol(x.nombre);
+    if (!m) continue;
+    if (!best || PRIORIDAD.indexOf(m) < PRIORIDAD.indexOf(best.role)) best = { role: m, idRol: x.idRol, nombre: x.nombre };
+  }
+  return best;
+}
+
+// Cómo está HOY la cuenta en el padrón: si existe, la huella de su contraseña actual
+// y el módulo que le toca. Es lo que lib/sesion-vigente.ts compara contra la cookie
+// para cortar una sesión abierta cuando cambian la clave, el rol o borran al usuario.
+export async function estadoDeCuenta(username: string): Promise<EstadoCuenta> {
+  const pool = await getAuthPool();
+  const r = await pool.request().input("u", sql.NVarChar(100), (username ?? "").trim()).query(
+    "SELECT TOP 1 idUsuario, passwordHash FROM dbo.Usuario WHERE username = @u"
+  );
+  const row = r.recordset[0];
+  if (!row) return { existe: false };
+  const rol = await rolDeUsuario(pool, row.idUsuario);
+  return { existe: true, huella: await huellaDeClave(row.passwordHash ?? ""), role: rol?.role };
+}
 
 export async function autenticar(
   username: string,
@@ -54,31 +100,19 @@ export async function autenticar(
     "SELECT TOP 1 idUsuario, username, passwordHash FROM dbo.Usuario WHERE username = @u"
   );
   const row = r.recordset[0];
-  if (!row || !passwordOk(password, row.passwordHash ?? "")) {
+  if (!row) {
+    await passwordOk(password, HASH_SEÑUELO);   // mismo tiempo que una clave mala
+    return { ok: false, error: "Usuario o contraseña incorrectos." };
+  }
+  if (!(await passwordOk(password, row.passwordHash ?? ""))) {
     return { ok: false, error: "Usuario o contraseña incorrectos." };
   }
 
-  // Roles del usuario (UsuarioRol -> Rol). Elegimos el primero que mapee a un módulo.
-  const rr = await pool.request().input("id", sql.Int, row.idUsuario).query(
-    "SELECT ur.idRol, ro.nombre FROM dbo.UsuarioRol ur " +
-    "JOIN dbo.Rol ro ON ro.idRol = ur.idRol WHERE ur.idUsuario = @id"
-  );
-  let role: Role | undefined;
-  let idRol = 0;
-  let rolNombre = "";
-  // Un usuario puede tener roles en varias apps (p.ej. Kathya: "Contabilidad" en
-  // Compras y "Facturador Bodega" en Administración). Elegimos por PRIORIDAD para
-  // que el rol específico de Compras gane (Contabilidad sobre Bodega, etc.), en vez
-  // de tomar el primero que aparezca.
-  const PRIORIDAD: Role[] = ["contabilidad", "proveeduria", "facturacion"];
-  let best: { role: Role; idRol: number; nombre: string } | null = null;
-  for (const x of rr.recordset) {
-    const m = moduloDeRol(x.nombre);
-    if (!m) continue;
-    if (!best || PRIORIDAD.indexOf(m) < PRIORIDAD.indexOf(best.role)) best = { role: m, idRol: x.idRol, nombre: x.nombre };
-  }
-  if (best) { role = best.role; idRol = best.idRol; rolNombre = best.nombre; }
-  if (!role) return { ok: false, error: "Tu usuario no tiene un rol con acceso a este sistema." };
+  // Roles del usuario (UsuarioRol -> Rol): el que mapee a un módulo, por prioridad.
+  const best = await rolDeUsuario(pool, row.idUsuario);
+  if (!best) return { ok: false, error: "Tu usuario no tiene un rol con acceso a este sistema." };
+  const { role, idRol, nombre: rolNombre } = best;
+  const huella = await huellaDeClave(row.passwordHash ?? "");
 
-  return { ok: true, user: { username: row.username, nombre: row.username, role, idRol, rolNombre } };
+  return { ok: true, user: { username: row.username, nombre: row.username, role, idRol, rolNombre, huella } };
 }

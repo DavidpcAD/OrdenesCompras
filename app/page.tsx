@@ -27,13 +27,59 @@ export default function LoginPage() {
   const [volverA, setVolverA] = useState<string | null>(null);
   const [vencida, setVencida] = useState(false);
 
+  // ¿Ya hay una sesión abierta en este navegador? Mientras se pregunta, el formulario
+  // no se muestra: si la hay, la persona pasa directo a su módulo sin ver el login.
+  const [revisando, setRevisando] = useState(true);
+
+  // A dónde mandar a alguien que acaba de entrar (o que ya estaba adentro): a la
+  // pantalla donde lo cortó la sesión, si es del área de su rol; si no, a su inicio.
+  function destino(rol: string, volver: string | null): string {
+    const home = ROLE_META[rol as keyof typeof ROLE_META]?.home ?? `/${rol}`;
+    const area = `/${home.split("/")[1]}`;
+    const vuelveAlArea = !!volver && (volver === area || volver.startsWith(area + "/"));
+    return vuelveAlArea ? volver! : home;
+  }
+
   useEffect(() => {
     const sp = new URLSearchParams(window.location.search);
     setVencida(sp.get("motivo") === "sesion");
     const next = sp.get("next");
     // Solo rutas internas: un "next" que venga con http(s):// o con "//" sería un
     // redirect abierto (te logueás acá y terminás en otro sitio).
-    if (next && next.startsWith("/") && !next.startsWith("//")) setVolverA(next);
+    const volver = next && next.startsWith("/") && !next.startsWith("//") ? next : null;
+    setVolverA(volver);
+
+    // Antes esta pantalla nunca miraba la cookie: quien abría la app escribiendo la
+    // dirección, desde un favorito o con "Volver al inicio" tenía que poner la clave
+    // aunque su sesión siguiera abierta. Ahora se pregunta primero (app/api/sesion).
+    // Un 401 acá es lo normal (no hay sesión) y no dispara ningún aviso.
+    let vivo = true;
+    const mostrarFormulario = () => {
+      if (!vivo) return;
+      setRevisando(false);
+      // autoFocus no aplica a un campo que estaba oculto: se enfoca al mostrarlo.
+      requestAnimationFrame(() => document.getElementById("username")?.focus());
+    };
+    // Si el servidor tarda, el formulario aparece igual: nadie se queda mirando nada.
+    const tope = setTimeout(mostrarFormulario, 2500);
+    fetch("/api/sesion")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d: { role?: string; nombre?: string; username?: string } | null) => {
+        if (!vivo) return;
+        if (d?.role && d.role in ROLE_META) {
+          clearTimeout(tope);
+          setRole(d.role as keyof typeof ROLE_META);
+          setUsuario(d.nombre || d.username || "");
+          // replace: el login no queda en el historial, así "atrás" no vuelve acá.
+          router.replace(destino(d.role, volver));
+          return;
+        }
+        clearTimeout(tope);
+        mostrarFormulario();
+      })
+      .catch(() => { clearTimeout(tope); mostrarFormulario(); });
+    return () => { vivo = false; clearTimeout(tope); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   function entrarComo(rol: keyof typeof ROLE_META) {
@@ -54,11 +100,8 @@ export default function LoginPage() {
       if (!r.ok) { setError(data?.error || "No se pudo iniciar sesión."); setCargando(false); return; }
       setRole(data.role);
       setUsuario(data.nombre || username.trim());
-      const home = ROLE_META[data.role as keyof typeof ROLE_META]?.home ?? `/${data.role}`;
       // Vuelve a la pantalla donde lo cortó la sesión, si es del área de su rol.
-      const area = `/${home.split("/")[1]}`;
-      const vuelveAlArea = !!volverA && (volverA === area || volverA.startsWith(area + "/"));
-      router.push(vuelveAlArea ? volverA! : home);
+      router.push(destino(data.role, volverA));
     } catch (e: any) {
       const raw = String(e?.message ?? e);
       // "Failed to fetch" no le dice nada a nadie.
@@ -111,7 +154,7 @@ export default function LoginPage() {
 
       {/* Panel del formulario */}
       <main className="login__main">
-      <div className="login__card">
+      <div className="login__card" aria-busy={revisando}>
         {/* Marca compacta: solo visible en móvil (en desktop está en el panel izquierdo) */}
         <div className="login__card-brand">
           <span className="topbar__logo" style={{ width: 40, height: 40 }}><AdelanteMark width={24} /></span>
@@ -133,7 +176,8 @@ export default function LoginPage() {
             <div style={{ flex: 1 }}>
               <div className="ds-callout__title">Tu sesión venció</div>
               <div className="ds-callout__body">
-                Por seguridad se cierra sola después de 12 horas sin usarla. Entrá de nuevo
+                Se cierra sola si pasan 30 días sin usar la app en este equipo, o si cambió tu
+                contraseña o tus permisos. Entrá de nuevo
                 {volverA ? " y te devolvemos a la pantalla donde estabas." : "."}
               </div>
             </div>

@@ -1,7 +1,13 @@
 import { cookies, headers } from "next/headers";
 import { NextResponse } from "next/server";
-import { SESSION_COOKIE, verifySession, authEnabled } from "./session.ts";
+import { SESSION_COOKIE, verifySession, authEnabled, sessionCookieOptions, type SessionPayload } from "./session.ts";
+import { crearRevisor } from "./sesion-vigente.ts";
 import type { Role } from "./types.ts";
+
+// Revisa cada pocos minutos que la cuenta de la cookie siga igual en el padrón
+// (lib/sesion-vigente.ts). El padrón se importa recién al usarlo: lib/auth.ts arrastra
+// mssql y bcrypt, y este módulo lo cargan las 87 rutas.
+const revisarCuenta = crearRevisor(async (u) => (await import("./auth.ts")).estadoDeCuenta(u));
 
 // SEGUNDO CANDADO de /api/*. El middleware ya exige sesión, pero es UNA sola puerta:
 // en Next < 14.2.25 bastaba el header `x-middleware-subrequest` para que no corriera
@@ -9,12 +15,30 @@ import type { Role } from "./types.ts";
 // cookie por su cuenta. Cada handler de /api lo llama PRIMERO, antes de leer el body
 // o tocar SQL/BC; si el middleware vuelve a fallar, la ruta igual se niega.
 // lib/segundo-candado.test.ts exige que ningún handler nuevo nazca sin esta línea.
+//
+// Además corta la sesión si la cuenta cambió desde que se abrió (contraseña, rol, o el
+// usuario ya no existe). El middleware no lo puede hacer: corre en el runtime "edge",
+// sin acceso a SQL. Por eso vive acá, que es por donde pasa todo pedido de datos.
 export async function exigirSesion(): Promise<NextResponse | null> {
   if (!authEnabled()) return null;
   const s = await verifySession(cookies().get(SESSION_COOKIE)?.value);
-  if (s) return null;
-  console.warn(`[seguridad] /api sin sesión pasó el middleware (¿bypass?) · ip=${ipDe()}`);
-  return NextResponse.json({ error: "No autenticado." }, { status: 401 });
+  if (!s) {
+    console.warn(`[seguridad] /api sin sesión pasó el middleware (¿bypass?) · ip=${ipDe()}`);
+    return NextResponse.json({ error: "No autenticado." }, { status: 401 });
+  }
+  const v = await revisarCuenta(s);
+  if (v.vigente) return null;
+  console.warn(`[seguridad] sesión cerrada porque cambió la cuenta · usuario=${s.u} · ${v.motivo} · ip=${ipDe()}`);
+  const res = NextResponse.json({ error: v.mensaje, motivo: v.motivo }, { status: 401 });
+  // Se borra la cookie con las MISMAS opciones con que se creó (si no, borra "otra").
+  res.cookies.set(SESSION_COOKIE, "", { ...sessionCookieOptions(), maxAge: 0 });
+  return res;
+}
+
+// Quién tiene la sesión abierta, para la pantalla de entrada (app/api/sesion). Se
+// llama DESPUÉS de exigirSesion, que ya hizo la revisión de la cuenta.
+export async function sesionActual(): Promise<SessionPayload | null> {
+  return verifySession(cookies().get(SESSION_COOKIE)?.value);
 }
 
 function ipDe(): string {

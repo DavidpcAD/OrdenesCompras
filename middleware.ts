@@ -16,11 +16,12 @@ const PUBLIC_API = ["/api/login", "/api/logout", "/api/health"];
 // Renovación deslizante: si a la sesión le queda poco, se vuelve a firmar y se
 // devuelve la cookie nueva en ESTA respuesta. Así quien está trabajando nunca ve
 // un 401 en medio de la jornada (era la causa del aviso "No autenticado" con la
-// pantalla ya abierta); la sesión solo caduca tras 12 h SIN usar la app.
+// pantalla ya abierta); la sesión solo caduca tras 30 días SIN usar la app. La
+// huella de la contraseña (`h`) pasa tal cual: es lo que deja cortarla desde afuera.
 async function conSesionRenovada(res: NextResponse, session: SessionPayload): Promise<NextResponse> {
   if (!debeRenovar(session)) return res;
   try {
-    const token = await signSession(session.u, session.r, session.n);
+    const token = await signSession(session.u, session.r, session.n, session.h);
     res.cookies.set(SESSION_COOKIE, token, sessionCookieOptions());
   } catch {
     // Si firmar falla, seguimos con la cookie vieja: pierde la renovación, pero

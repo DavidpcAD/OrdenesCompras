@@ -20,8 +20,8 @@ import { EVENTO_SESION_VENCIDA, urlDeReingreso } from "@/lib/fetch-guard";
 
 // Cuánto aguanta la sesión sin usarse. Es SESSION_MAX_AGE_S de lib/session.ts, pero
 // escrito acá a mano: ese módulo lee SESSION_SECRET y no tiene por qué viajar al
-// navegador solo para sacarle un número. Si allá cambia, acá también.
-const HORAS_SESION = 12;
+// navegador solo para sacarle un número. Si allá cambia, acá también (y en app/page.tsx).
+const DIAS_SESION = 30;
 
 export function AvisoSesionVencida() {
   const [volverA, setVolverA] = useState<string | null>(null);
@@ -86,8 +86,8 @@ export function AvisoSesionVencida() {
           <div>
             <h2 className="ds-subtitle-lg" id={tituloId}>Tu sesión terminó</h2>
             <p className="ds-body-sm ds-muted" id={textoId}>
-              Por seguridad se cierra sola después de {HORAS_SESION} horas sin usarla.
-              Entrá de nuevo para seguir donde estabas.
+              Se cierra sola si pasan {DIAS_SESION} días sin usar la app en este equipo, o si
+              cambió tu contraseña o tus permisos. Entrá de nuevo para seguir donde estabas.
             </p>
           </div>
           <span className="sesion-fin__ic" aria-hidden>

@@ -442,7 +442,7 @@ export function AppShell({ role, children }: { role: Role; children: React.React
                     que cargó bien (y se dice de cuándo), o no hay nada. */}
                 <div className="ds-callout__body">
                   {sesionVencida
-                    ? "Por seguridad se cierra sola después de 12 horas sin usarla. Iniciá sesión otra vez para seguir."
+                    ? "Se cierra sola si pasan 30 días sin usar la app en este equipo, o si cambió tu contraseña o tus permisos. Iniciá sesión otra vez para seguir."
                     : sincronizado
                       ? `Estás viendo lo último que cargó bien (${haceCuanto(edadMs ?? 0)}). Puede haber cambios más nuevos.`
                       : "Todavía no se pudieron traer los datos, así que esta pantalla está vacía: no es que no haya nada."}

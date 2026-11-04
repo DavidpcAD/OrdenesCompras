@@ -1110,6 +1110,10 @@ td.ds-col-fija {
 /* Panel derecho: el formulario, centrado sobre el fondo del tema. */
 .login__main { display: grid; place-items: center; padding: clamp(24px, 5vw, 56px); }
 .login__card { width: 100%; max-width: 400px; }
+/* Mientras se pregunta si ya hay sesión abierta (app/page.tsx), el formulario no se
+   ve: si la hay, la persona pasa directo a su módulo sin ver el login un instante.
+   visibility (no display) para que no salte el layout cuando aparece. */
+.login__card[aria-busy="true"] { visibility: hidden; }
 .login__card-brand { display: none; align-items: center; gap: var(--ds-space-3); margin-bottom: var(--ds-space-6); }
 .login__form-head { margin-bottom: var(--ds-space-5); }
 

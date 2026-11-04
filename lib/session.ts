@@ -7,20 +7,26 @@
 import type { Role } from "./types.ts";
 
 export const SESSION_COOKIE = "adelante_oc_session";
-export const SESSION_MAX_AGE_S = 60 * 60 * 12; // 12 horas
-
-// La sesión se RENUEVA sola mientras la persona esté usando la app (ver
-// middleware.ts). Cuando a la cookie le queda menos de esto por vivir, el próximo
-// request la vuelve a firmar por otras 12 horas.
+// Cuánto aguanta la sesión SIN USARSE: 30 días. Mientras la persona use la app,
+// no vence nunca (se renueva sola, ver middleware.ts).
 //
-// Por qué: antes la cookie duraba 12 h fijas desde el login y NADIE la renovaba.
-// A la hora 12 —en plena jornada— toda llamada empezaba a contestar 401 "No
-// autenticado", la pantalla seguía mostrando la app (el rol vive en localStorage)
-// y aparecía el aviso rojo encima de datos viejos. Con renovación deslizante, el
-// que trabaja no se cae nunca; solo caduca por INACTIVIDAD de 12 h.
-export const SESSION_RENEW_AFTER_S = 60 * 60 * 6; // renovar cuando falten <6 h
+// Historia: primero eran 12 h fijas desde el login (se caía a media jornada); después
+// 12 h sin usarla (ago 2026). Eso igual obligaba a entrar de nuevo CADA MAÑANA —la
+// pestaña quedaba de un día para otro sin pedir nada— y la gente lo vivía como
+// "entrar, salir, entrar, salir" (nov 2026). Una sesión larga solo es segura si se
+// puede cortar desde afuera, y eso lo hace lib/sesion-vigente.ts: cambiar la
+// contraseña, quitarle el rol o borrar el usuario cierra sus sesiones abiertas en
+// minutos, en todos sus equipos.
+export const SESSION_MAX_AGE_S = 60 * 60 * 24 * 30; // 30 días
 
-export type SessionPayload = { u: string; r: Role; n: string; exp: number };
+// Cuando a la cookie le queda menos de esto, el próximo request la vuelve a firmar
+// por otros 30 días. Así se re-firma como mucho UNA vez al día, no en cada request.
+export const SESSION_RENEW_AFTER_S = SESSION_MAX_AGE_S - 60 * 60 * 24;
+
+// `h` es la huella de la contraseña con la que se entró (ver huellaDeClave): si la
+// clave cambia, la huella deja de calzar y la sesión se cierra. Las cookies firmadas
+// antes de nov 2026 no la traen: valen hasta su vencimiento de 12 h y no se renuevan.
+export type SessionPayload = { u: string; r: Role; n: string; exp: number; h?: string };
 
 const nowS = () => Math.floor(Date.now() / 1000);
 
@@ -90,12 +96,25 @@ export function sessionCookieOptions() {
 
 // ¿Toca renovar? Sí cuando a la sesión le queda menos que SESSION_RENEW_AFTER_S.
 // Se exporta aparte (sin cookies ni request) para poder probarlo.
+//
+// Una cookie sin huella (de antes de nov 2026) NO se renueva: si se renovara, viviría
+// para siempre sin que cambiar la contraseña la pudiera cortar. Se deja vencer sola.
 export function debeRenovar(payload: SessionPayload, ahoraS: number = nowS()): boolean {
+  if (!payload.h) return false;
   return payload.exp - ahoraS < SESSION_RENEW_AFTER_S;
 }
 
-export async function signSession(u: string, r: Role, n: string): Promise<string> {
-  const payload: SessionPayload = { u, r, n, exp: nowS() + SESSION_MAX_AGE_S };
+// Huella de la contraseña guardada (el HASH de dbo.Usuario, nunca la clave): una firma
+// corta con SESSION_SECRET. Viaja dentro de la cookie y se compara cada pocos minutos
+// contra la base (lib/sesion-vigente.ts). No sirve para adivinar nada: sin el secreto
+// del servidor no se puede ni calcular ni verificar, y es distinta de la de cualquier
+// otra app que use el mismo hash.
+export async function huellaDeClave(passwordHash: string): Promise<string> {
+  return (await hmac(`clave:${passwordHash}`)).slice(0, 22);
+}
+
+export async function signSession(u: string, r: Role, n: string, h?: string): Promise<string> {
+  const payload: SessionPayload = { u, r, n, exp: nowS() + SESSION_MAX_AGE_S, ...(h ? { h } : {}) };
   const body = b64urlEncode(new TextEncoder().encode(JSON.stringify(payload)));
   return `${body}.${await hmac(body)}`;
 }
