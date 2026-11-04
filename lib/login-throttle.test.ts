@@ -48,3 +48,14 @@ test("los fallos se olvidan pasada la ventana de 15 minutos", () => {
     mock.timers.reset();
   }
 });
+
+test("registrarFallo devuelve la cuenta del usuario (la usa el log de seguridad)", () => {
+  const u = "conteo-log";
+  registrarExito(u);
+  assert.equal(registrarFallo(u), 1);
+  assert.equal(registrarFallo(u), 2);
+  assert.equal(registrarFallo("  CONTEO-LOG "), 3, "mismo usuario aunque cambien espacios y mayúsculas");
+  registrarExito(u);
+  assert.equal(registrarFallo(u), 1, "un login bueno reinicia la cuenta");
+  registrarExito(u);
+});

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createNotasCredito, listNotasCredito } from "@/lib/repo";
-import { actor } from "@/lib/actor";
+import { actor, exigirSesion } from "@/lib/actor";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -10,6 +10,8 @@ export const dynamic = "force-dynamic";
 // Aislado del bootstrap: si la tabla dbo.NotaCreditoDet no existe, GET devuelve []
 // y no rompe el resto de la app.
 export async function GET() {
+  const sinSesion = await exigirSesion();
+  if (sinSesion) return sinSesion;
   try {
     return NextResponse.json({ notas: await listNotasCredito() });
   } catch (e: any) {
@@ -18,6 +20,8 @@ export async function GET() {
 }
 
 export async function POST(req: Request) {
+  const sinSesion = await exigirSesion();
+  if (sinSesion) return sinSesion;
   try {
     const body = await req.json();
     const n = await createNotasCredito({ ...body, usuario: (await actor(body)).usuario });

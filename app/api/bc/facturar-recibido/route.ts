@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { bcFacturarRecibido, reponerLanzamientoTrasFallo, type EstadoBcPedido, verificarLineasPosteables, frenoRegistroActivo, conflictoDeDimensiones, explicarConflictoDimensiones, faltaConfigContable, explicarFaltaConfigContable, campoVacioEnBc, explicarCampoVacioEnBc, fechaFueraDeRangoBc, explicarFechaFueraDeRangoBc } from "@/lib/bc";
 import { frenarPorEncabezado } from "@/lib/freno-encabezado";
 import { frenarPorPrecio } from "@/lib/freno-precio";
-import { actor } from "@/lib/actor";
+import { actor, exigirSesion } from "@/lib/actor";
 import type { Role } from "@/lib/types";
 import { marcarFacturadaTrasBc } from "@/lib/guardado-tras-bc";
 import { anotarFalloDeBc } from "@/lib/fallo-posteo";
@@ -19,6 +19,8 @@ export const dynamic = "force-dynamic";
 // El `facturar` cierra el mismo hueco que en /api/bc/registrar: que el movimiento
 // local no dependa de un segundo viaje del navegador. Ver lib/guardado-tras-bc.ts.
 export async function POST(req: Request) {
+  const sinSesion = await exigirSesion();
+  if (sinSesion) return sinSesion;
   // El body se lee FUERA del try porque el catch necesita el `orderNo` para poder
   // decir de qué pedido habla el error (adentro quedaba fuera de alcance).
   const cuerpo = await req.json().catch(() => ({} as any));

@@ -9,7 +9,7 @@ import {
   enlazarFacturaBc, desenlazarFacturaBc, guardarNota, facturaCorreoPorBcNumero,
   marcarFacturaCorreo, CERRABLES, type FacturaCorreo, type EstadoFactura,
 } from "@/lib/repo-facturas-correo";
-import { actor } from "@/lib/actor";
+import { actor, exigirSesion } from "@/lib/actor";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -53,6 +53,8 @@ export type RespuestaFactura = {
 const DIAS_ATRAS = 45;
 
 export async function GET(req: NextRequest, { params }: { params: { clave: string } }) {
+  const sinSesion = await exigirSesion();
+  if (sinSesion) return sinSesion;
   try {
     const clave = String(params.clave ?? "").trim();
     if (clave.length !== 50) {
@@ -101,6 +103,8 @@ export async function GET(req: NextRequest, { params }: { params: { clave: strin
 }
 
 export async function POST(req: NextRequest, { params }: { params: { clave: string } }) {
+  const sinSesion = await exigirSesion();
+  if (sinSesion) return sinSesion;
   try {
     const clave = String(params.clave ?? "").trim();
     if (clave.length !== 50) {

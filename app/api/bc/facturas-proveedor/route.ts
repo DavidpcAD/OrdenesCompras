@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { exigirSesion } from "@/lib/actor";
 import { bcFacturasConNumeroProveedor } from "@/lib/bc";
 import { clasificarFacturasMismoNumero } from "@/lib/cargo-recibido";
 
@@ -12,6 +13,8 @@ export const dynamic = "force-dynamic";
 // queda dos veces (la 834 de Green Mountain, 29 oct 2026). Si BC no contesta no
 // frena nada: devuelve listas vacías y el error.
 export async function GET(req: NextRequest) {
+  const sinSesion = await exigirSesion();
+  if (sinSesion) return sinSesion;
   const vendor = req.nextUrl.searchParams.get("vendor") ?? "";
   const factura = req.nextUrl.searchParams.get("factura") ?? "";
   try {

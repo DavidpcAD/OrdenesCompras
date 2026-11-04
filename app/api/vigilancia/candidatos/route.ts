@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { exigirSesion } from "@/lib/actor";
 import { facturasYProveedoresDeBc } from "@/lib/bc-facturas-cache";
 import { candidatosDeFactura, type MarcaCandidato } from "@/lib/candidatos-bc";
 import { bcNumerosEnlazados, listarFacturasCorreo, tablaCorreoExiste } from "@/lib/repo-facturas-correo";
@@ -24,6 +25,8 @@ export const dynamic = "force-dynamic";
 const DIAS_ATRAS = 45;
 
 export async function GET(req: NextRequest) {
+  const sinSesion = await exigirSesion();
+  if (sinSesion) return sinSesion;
   try {
     if (!(await tablaCorreoExiste())) return NextResponse.json({ marcas: {} });
 

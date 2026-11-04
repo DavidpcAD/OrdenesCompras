@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createOrden, listOrdenes } from "@/lib/repo";
-import { actor } from "@/lib/actor";
+import { actor, exigirSesion } from "@/lib/actor";
 import { sanearObrasDeLineas, avisoDeSaneo } from "@/lib/bc";
 import { mensajeSeguro } from "@/lib/error-sql";
 
@@ -8,6 +8,8 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET() {
+  const sinSesion = await exigirSesion();
+  if (sinSesion) return sinSesion;
   try {
     return NextResponse.json(await listOrdenes());
   } catch (e: any) {
@@ -16,6 +18,8 @@ export async function GET() {
 }
 
 export async function POST(req: Request) {
+  const sinSesion = await exigirSesion();
+  if (sinSesion) return sinSesion;
   try {
     const body = await req.json();
     // Mismo saneo que al editar: la obra (jobNo) de una línea tiene que ser una obra

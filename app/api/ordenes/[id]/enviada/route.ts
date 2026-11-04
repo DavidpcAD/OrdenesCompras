@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { marcarEnvioProveedor } from "@/lib/repo";
-import { actor } from "@/lib/actor";
+import { actor, exigirSesion } from "@/lib/actor";
 import { mensajeSeguro } from "@/lib/error-sql";
 
 export const runtime = "nodejs";
@@ -13,10 +13,14 @@ export const dynamic = "force-dynamic";
 // que se mandó por WhatsApp, la que el proveedor pidió de nuevo, la que se imprimió
 // del correo. Sin esto el contador de "cuántas faltan" mentiría.
 export async function POST(req: Request, { params }: { params: { id: string } }) {
+  const sinSesion = await exigirSesion();
+  if (sinSesion) return sinSesion;
   return marcar(req, params.id, false);
 }
 
 export async function DELETE(req: Request, { params }: { params: { id: string } }) {
+  const sinSesion = await exigirSesion();
+  if (sinSesion) return sinSesion;
   return marcar(req, params.id, true);
 }
 

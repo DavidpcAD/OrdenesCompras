@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { exigirSesion } from "@/lib/actor";
 import { listWbs, listObras, matrizCeldas } from "@/lib/repo";
 import { mensajeSeguro } from "@/lib/error-sql";
 
@@ -7,6 +8,8 @@ export const dynamic = "force-dynamic";
 
 // Matriz por obra: obras (filas) + WBS (columnas = sub_partidas) + celdas con estado.
 export async function GET() {
+  const sinSesion = await exigirSesion();
+  if (sinSesion) return sinSesion;
   try {
     const [wbs, obras, celdas] = await Promise.all([listWbs(), listObras(), matrizCeldas()]);
     return NextResponse.json({ ...wbs, obras, celdas });

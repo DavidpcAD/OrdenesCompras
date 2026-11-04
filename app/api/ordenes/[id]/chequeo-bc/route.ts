@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { chequearOrdenPorId } from "@/lib/chequeo-orden";
 import { getOrden, guardarChequeoBc } from "@/lib/repo";
-import { actor } from "@/lib/actor";
+import { actor, exigirSesion } from "@/lib/actor";
 import { mensajeSeguro } from "@/lib/error-sql";
 
 export const runtime = "nodejs";
@@ -23,6 +23,8 @@ export const dynamic = "force-dynamic";
 // Nunca 500: si BC no contesta, contesta "sin-lectura" — que NO es lo mismo que
 // "está mal", y por eso son dos estados distintos.
 export async function GET(_req: Request, { params }: { params: { id: string } }) {
+  const sinSesion = await exigirSesion();
+  if (sinSesion) return sinSesion;
   try {
     const a = await actor({}).catch(() => ({ usuario: "sistema", rol: "proveeduria" as const }));
     const r = await chequearOrdenPorId(Number(params.id), { persistir: true, usuario: a.usuario, rol: a.rol });
@@ -46,6 +48,8 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
 // El motivo es OBLIGATORIO y queda en la bitácora: dentro de un mes, "está en verde"
 // tiene que poder explicarse con el N.º del documento que lo arregló.
 export async function POST(req: Request, { params }: { params: { id: string } }) {
+  const sinSesion = await exigirSesion();
+  if (sinSesion) return sinSesion;
   try {
     const body = await req.json().catch(() => ({} as any));
     const motivo = String(body?.motivo ?? "").trim();

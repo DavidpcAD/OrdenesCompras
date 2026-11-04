@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { exigirSesion } from "@/lib/actor";
 import { bcVariantsEx, bcVariantesDeItems } from "@/lib/bc";
 import { mensajeSeguro } from "@/lib/error-sql";
 
@@ -13,6 +14,8 @@ export const dynamic = "force-dynamic";
 // La forma en LOTE existe porque las pantallas que muestran la variante tienen
 // decenas de líneas: una llamada por ítem eran decenas de idas a BC por pantalla.
 export async function GET(req: Request) {
+  const sinSesion = await exigirSesion();
+  if (sinSesion) return sinSesion;
   const q = new URL(req.url).searchParams;
   const item = q.get("item") ?? "";
   const items = (q.get("items") ?? "").split(",").map((s) => s.trim()).filter(Boolean);

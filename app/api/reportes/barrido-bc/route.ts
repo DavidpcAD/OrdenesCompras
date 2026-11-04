@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { exigirSesion } from "@/lib/actor";
 import { listOrdenes, listRecepciones } from "@/lib/repo";
 import { bcFacturasRegistradasDelPeriodo, bcQuienRegistro } from "@/lib/bc";
 import { cruzarFacturasDeBc, resumirBarrido } from "@/lib/barrido-bc";
@@ -20,6 +21,8 @@ export const dynamic = "force-dynamic";
 // ₡41,4 millones. Ver lib/barrido-bc.ts para la historia completa y la distinción
 // entre "lo posteó la app y no lo guardó" y "lo registró una persona en BC".
 export async function GET(req: NextRequest) {
+  const sinSesion = await exigirSesion();
+  if (sinSesion) return sinSesion;
   try {
     const sp = req.nextUrl.searchParams;
     const desde = (sp.get("desde") ?? "").trim() || haceTresMeses();

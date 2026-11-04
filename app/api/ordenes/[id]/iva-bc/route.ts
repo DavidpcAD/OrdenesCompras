@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { anotarIvaExoneradoEnBc, aplicarIvaDeBcEnOrden, getOrden } from "@/lib/repo";
 import { bcExonerarLineasPedido, bcIvaDeLineasOrden } from "@/lib/bc";
-import { actor } from "@/lib/actor";
+import { actor, exigirSesion } from "@/lib/actor";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -23,6 +23,8 @@ export const dynamic = "force-dynamic";
 //   - "exonerar": la orden manda, se le quita el IVA al pedido EN BC y después la
 //     orden se alinea con lo que BC haya quedado calculando.
 export async function POST(req: Request, { params }: { params: { id: string } }) {
+  const sinSesion = await exigirSesion();
+  if (sinSesion) return sinSesion;
   try {
     const body = await req.json().catch(() => ({}));
     const a = await actor(body);

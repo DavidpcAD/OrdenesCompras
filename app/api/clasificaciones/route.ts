@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { exigirSesion } from "@/lib/actor";
 import { listWbs, createClasificacion } from "@/lib/repo";
 import { mensajeSeguro } from "@/lib/error-sql";
 
@@ -7,6 +8,8 @@ export const dynamic = "force-dynamic";
 
 // Árbol del maestro: etapa -> partida -> sub_partida + clasificaciones del ingeniero.
 export async function GET() {
+  const sinSesion = await exigirSesion();
+  if (sinSesion) return sinSesion;
   try {
     return NextResponse.json(await listWbs());
   } catch (e: any) {
@@ -16,6 +19,8 @@ export async function GET() {
 
 // Crear una clasificación (control del ingeniero) colgando de una partida O sub_partida.
 export async function POST(req: Request) {
+  const sinSesion = await exigirSesion();
+  if (sinSesion) return sinSesion;
   try {
     const body = await req.json();
     const nombre = String(body?.nombre ?? "").trim();

@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { bcRecibir, reponerLanzamientoTrasFallo, type EstadoBcPedido, diagnosticarFalloBc, verificarLineasPosteables, frenoRegistroActivo, conflictoDeDimensiones, explicarConflictoDimensiones, faltaConfigContable, explicarFaltaConfigContable, campoVacioEnBc, explicarCampoVacioEnBc, fechaFueraDeRangoBc, explicarFechaFueraDeRangoBc } from "@/lib/bc";
 import { frenarPorEncabezado } from "@/lib/freno-encabezado";
 import { frenarPorPrecio } from "@/lib/freno-precio";
-import { actor } from "@/lib/actor";
+import { actor, exigirSesion } from "@/lib/actor";
 import type { Role } from "@/lib/types";
 import { guardarRecepcionTrasBc } from "@/lib/guardado-tras-bc";
 import { anotarFalloDeBc } from "@/lib/fallo-posteo";
@@ -22,6 +22,8 @@ export const dynamic = "force-dynamic";
 // único que se puede separar es "reintentá" de "BC no tiene el pedido" — pero esa
 // sola ya evita mandar a Bodega a reintentar contra una pared.
 export async function POST(req: Request) {
+  const sinSesion = await exigirSesion();
+  if (sinSesion) return sinSesion;
   const cuerpo = await req.json().catch(() => ({} as any));
   const { orderNo, lineas, postingDate, ordenId, vendorNo } = cuerpo ?? {};
   // Se declara ACÁ y no dentro del try porque el catch también lo necesita: el

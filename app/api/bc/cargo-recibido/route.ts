@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { bcFacturasConNumeroProveedor, bcPostChargeOnReceipts } from "@/lib/bc";
 import { clasificarFacturasMismoNumero, detalleParaHistorial, importeDelCargo } from "@/lib/cargo-recibido";
 import { createCargoRecibido } from "@/lib/repo";
-import { actor } from "@/lib/actor";
+import { actor, exigirSesion } from "@/lib/actor";
 import { mensajeSeguro } from "@/lib/error-sql";
 
 export const runtime = "nodejs";
@@ -19,6 +19,8 @@ export const dynamic = "force-dynamic";
 // registró la app, y la app no guardaba nada. Si el histórico falla, el cargo igual
 // quedó en BC: se contesta ok con `historialError` para que la pantalla lo diga.
 export async function POST(req: NextRequest) {
+  const sinSesion = await exigirSesion();
+  if (sinSesion) return sinSesion;
   let body: any;
   try { body = await req.json(); } catch { return NextResponse.json({ ok: false, error: "El pedido vino vacío o mal armado." }, { status: 400 }); }
 

@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { bcRegistrarFactura, bcSetTarjetaYDimension, reponerLanzamientoTrasFallo, type EstadoBcPedido, diagnosticarFalloBc, verificarLineasPosteables, frenoRegistroActivo, conflictoDeDimensiones, explicarConflictoDimensiones, faltaConfigContable, explicarFaltaConfigContable, campoVacioEnBc, explicarCampoVacioEnBc, fechaFueraDeRangoBc, explicarFechaFueraDeRangoBc } from "@/lib/bc";
 import { frenarPorEncabezado } from "@/lib/freno-encabezado";
 import { frenarPorPrecio } from "@/lib/freno-precio";
-import { actor } from "@/lib/actor";
+import { actor, exigirSesion } from "@/lib/actor";
 import type { Role } from "@/lib/types";
 import { guardarRecepcionTrasBc } from "@/lib/guardado-tras-bc";
 import { anotarFalloDeBc } from "@/lib/fallo-posteo";
@@ -28,6 +28,8 @@ export const dynamic = "force-dynamic";
 // completó. `vendorNo` es opcional: solo sirve para ENCONTRAR esa factura en BC
 // y mostrarle a Bodega cuál es.
 export async function POST(req: Request) {
+  const sinSesion = await exigirSesion();
+  if (sinSesion) return sinSesion;
   const cuerpo = await req.json().catch(() => ({} as any));
   const { orderNo, vendorInvoiceNo, vendorNo, ordenId, lineas, postingDate, cargo, tarjeta } = cuerpo ?? {};
   // Se declara ACÁ y no dentro del try porque el catch también lo necesita: el

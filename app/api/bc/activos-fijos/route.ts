@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { exigirSesion } from "@/lib/actor";
 import { bcActivosFijos } from "@/lib/bc";
 
 export const runtime = "nodejs";
@@ -9,6 +10,8 @@ export const dynamic = "force-dynamic";
 // fijo": esa compra se capitaliza contra el activo y no entra a inventario. Nunca
 // 500, igual que el de recursos.
 export async function GET() {
+  const sinSesion = await exigirSesion();
+  if (sinSesion) return sinSesion;
   try {
     return NextResponse.json({ activos: await bcActivosFijos() });
   } catch (e: any) {

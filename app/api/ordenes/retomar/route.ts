@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { retomarOrdenDescartada } from "@/lib/repo";
 import { bcEstadoDelPedido } from "@/lib/bc";
-import { actor } from "@/lib/actor";
+import { actor, exigirSesion } from "@/lib/actor";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -15,6 +15,8 @@ export const dynamic = "force-dynamic";
 // Solo revive la orden (que en SQL nunca se borró de verdad). El material corregido se
 // le agrega después, desde la pantalla de edición.
 export async function POST(req: Request) {
+  const sinSesion = await exigirSesion();
+  if (sinSesion) return sinSesion;
   try {
     const body = await req.json().catch(() => ({}));
     const ref = String((body as { orden?: string })?.orden ?? "").trim();

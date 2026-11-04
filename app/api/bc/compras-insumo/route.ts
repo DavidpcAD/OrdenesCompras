@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { exigirSesion } from "@/lib/actor";
 import { bcComprasDeItem } from "@/lib/bc";
 
 export const runtime = "nodejs";
@@ -9,6 +10,8 @@ export const dynamic = "force-dynamic";
 // más vieja (lo muestra Inventarios al expandir la fila). Nunca 500: si BC no
 // contesta devuelve { compras: [], error } y la pantalla lo dice sin romperse.
 export async function GET(req: NextRequest) {
+  const sinSesion = await exigirSesion();
+  if (sinSesion) return sinSesion;
   const item = (req.nextUrl.searchParams.get("item") ?? "").trim();
   if (!item) return NextResponse.json({ compras: [], error: "Falta el artículo." }, { status: 400 });
   try {

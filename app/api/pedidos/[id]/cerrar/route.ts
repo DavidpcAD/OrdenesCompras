@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { cerrarSolicitud, reabrirSolicitud } from "@/lib/repo";
-import { actor } from "@/lib/actor";
+import { actor, exigirSesion } from "@/lib/actor";
 import { mensajeSeguro } from "@/lib/error-sql";
 
 export const runtime = "nodejs";
@@ -11,6 +11,8 @@ export const dynamic = "force-dynamic";
 // no cuenta: cualquiera con sesión puede llamar esto con un curl, y una solicitud
 // archivada sin explicación no se puede reconstruir después.
 export async function POST(req: Request, { params }: { params: { id: string } }) {
+  const sinSesion = await exigirSesion();
+  if (sinSesion) return sinSesion;
   try {
     const body = await req.json().catch(() => ({}));
     const { motivo } = body as { motivo?: string };
@@ -28,6 +30,8 @@ export async function POST(req: Request, { params }: { params: { id: string } })
 // Deshacer el archivado. Es DELETE del cierre, no de la solicitud: la solicitud
 // vuelve a la bandeja con su saldo (ver reabrirSolicitud).
 export async function DELETE(req: Request, { params }: { params: { id: string } }) {
+  const sinSesion = await exigirSesion();
+  if (sinSesion) return sinSesion;
   try {
     const body = await req.json().catch(() => ({}));
     const a = await actor(body);

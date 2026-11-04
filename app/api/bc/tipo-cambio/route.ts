@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { exigirSesion } from "@/lib/actor";
 import { bcTipoCambio } from "@/lib/bc";
 
 export const runtime = "nodejs";
@@ -14,6 +15,8 @@ export const dynamic = "force-dynamic";
 // montos de una sola moneda diciendo cuáles quedaron fuera — que es lo que hacía
 // antes. Un panel sin un número es mejor que un panel con un número inventado.
 export async function GET() {
+  const sinSesion = await exigirSesion();
+  if (sinSesion) return sinSesion;
   try {
     return NextResponse.json(await bcTipoCambio());
   } catch (e: any) {

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { exigirSesion } from "@/lib/actor";
 import { bcDescripcionUnidades, bcUnidadesDeItem, bcUnidadesDeCompra } from "@/lib/bc";
 
 export const runtime = "nodejs";
@@ -15,6 +16,8 @@ export const dynamic = "force-dynamic";
 //     (GR 1, EST 255.000, LT 244,01914…), para poder elegir con cuál se le pide
 //     al proveedor en vez de que la app imponga una.
 export async function GET(req: NextRequest) {
+  const sinSesion = await exigirSesion();
+  if (sinSesion) return sinSesion;
   const item = (new URL(req.url).searchParams.get("item") ?? "").trim();
   if (!item) {
     try {

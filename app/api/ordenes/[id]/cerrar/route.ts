@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { cerrarOrden } from "@/lib/repo";
-import { actor } from "@/lib/actor";
+import { actor, exigirSesion } from "@/lib/actor";
 import { mensajeSeguro } from "@/lib/error-sql";
 
 export const runtime = "nodejs";
@@ -11,6 +11,8 @@ export const dynamic = "force-dynamic";
 // `devolverSaldo` (default true) regresa lo no recibido a las solicitudes de
 // origen para que se pueda volver a comprar.
 export async function POST(req: Request, { params }: { params: { id: string } }) {
+  const sinSesion = await exigirSesion();
+  if (sinSesion) return sinSesion;
   try {
     const body = await req.json().catch(() => ({}));
     const a = await actor(body);   // identidad de la sesión, no del body

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { exigirSesion } from "@/lib/actor";
 import { bcRecibidoSinFacturar, bcSinFechaDeEntrega } from "@/lib/bc";
 import { mensajeSeguro } from "@/lib/error-sql";
 
@@ -15,6 +16,8 @@ export const dynamic = "force-dynamic";
 // `hoy` lo manda el navegador porque el servidor puede estar en UTC y en Costa Rica
 // (UTC−6) eso corre la antigüedad un día — con tramos de 15 días, un día importa.
 export async function GET(req: NextRequest) {
+  const sinSesion = await exigirSesion();
+  if (sinSesion) return sinSesion;
   const { searchParams } = new URL(req.url);
   const hoy = searchParams.get("hoy") ?? new Date().toISOString().slice(0, 10);
   try {
