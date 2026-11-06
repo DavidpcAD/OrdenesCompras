@@ -1,12 +1,12 @@
 import { getAuthPool, getPool, pedir, pedirTx, sql } from "./db.ts";
 import { bcDeepLinkPedido, bcDeepLinkFacturaRegistrada, bcDeepLinkFacturaPorNo, bcDeepLinkFacturaBorrador, bcDeepLinkRecepcion, bcUnidadesDeCompra, sanearObrasDeLineas } from "./bc.ts";
 import { unidadCorregida, codigoDeItem } from "./unidad.ts";
-import { etiquetaInterna, esTipoDevolucion, esTipoEdicion, ordenDeDetalleDevolucion } from "./helpers.ts";
+import { etiquetaInterna, esTipoDevolucion, esTipoEdicion, leerNotaRevision, MARCA_DESDE_REVISION, ordenDeDetalleDevolucion } from "./helpers.ts";
 import { resumirCambiosDeLineas } from "./cambios-orden.ts";
 import { componerNotaCierre, detalleDeCierre, lineaCancelada, motivoObligatorio, quitarNotaCierre } from "./cierre-solicitud.ts";
 import { envioDeSello, leerSello, MOV_DESHECHO, MOV_ENVIADA, MOV_PDF, SELLO_SEP, type Sello } from "./envio-proveedor.ts";
 import type { UnidadCompraItem } from "./bc.ts";
-import type { DevolucionSolicitud, Orden, OrdenLinea, Pedido, PedidoLinea, Prioridad, Recepcion, RecepcionFoto, RecepcionLinea, Role, NotaCreditoLinea, CargoRecibidoHist, LineaCargoHist } from "./types.ts";
+import type { DevolucionSolicitud, EnvioARevision, FacturadaDesdeRevision, Orden, OrdenLinea, Pedido, PedidoLinea, Prioridad, Recepcion, RecepcionFoto, RecepcionLinea, Role, NotaCreditoLinea, CargoRecibidoHist, LineaCargoHist } from "./types.ts";
 
 /* ============================================================================
    Capa de acceso a datos (SQL Server) para Compras Adelante.
@@ -2402,9 +2402,18 @@ export async function createRecepcion(input: NewRecepcionDB): Promise<number> {
 // MODO 2 — Kattya registra la factura de una recepción que estaba EN REVISIÓN.
 // Marca el número de factura, sube lo FACTURADO de la orden (= lo recibido en
 // esa recepción) y cierra la orden si ya quedó todo recibido.
-export async function setRecepcionFactura(idRec: number, numeroFactura: string, usuario: string, rol: Role): Promise<void> {
+//
+// `bcFacturaNo` es el CFR-… que devolvió BC al registrar (solo cuando la factura
+// pasó por /api/bc/facturar-recibido). Antes se perdía: la recepción quedaba sin
+// N.º de BC y sin link en "Facturas registradas", a diferencia de las que se
+// registran al recibir. Igual que en createRecepcion, sin la columna se omite.
+export async function setRecepcionFactura(idRec: number, numeroFactura: string, usuario: string, rol: Role, bcFacturaNo?: string): Promise<void> {
   const num = String(numeroFactura ?? "").trim();
   if (!num) throw new Error("El número de factura es obligatorio.");
+  // Solo un N.º de documento de verdad (CFR-011343): si el codeunit contestara un
+  // texto ("Registrado"), eso no se guarda como si fuera el número.
+  const bcNo = String(bcFacturaNo ?? "").trim().toUpperCase();
+  const conBc = /^[A-Z]+-\d+$/.test(bcNo) && bcNo.length <= 50 && await colBcFacturaExiste();
   const pool = await getPool();
   const tx = new sql.Transaction(pool); await tx.begin();
   try {
@@ -2424,6 +2433,10 @@ export async function setRecepcionFactura(idRec: number, numeroFactura: string, 
 
     await pedirTx(tx).input("id", sql.Int, idRec).input("f", sql.NVarChar(40), num)
       .query("UPDATE dbo.RecepcionCompra SET numeroFactura=@f, fechaFactura=ISNULL(fechaFactura,getdate()) WHERE idRecepcionCompra=@id");
+    if (conBc) {
+      await pedirTx(tx).input("id", sql.Int, idRec).input("bc", sql.NVarChar(50), bcNo)
+        .query("UPDATE dbo.RecepcionCompra SET bcFacturaNo=@bc WHERE idRecepcionCompra=@id");
+    }
 
     // subir lo FACTURADO de cada línea de la orden por lo que se recibió en esta recepción
     const dets = await pedirTx(tx).input("id", sql.Int, idRec)
@@ -2443,13 +2456,81 @@ export async function setRecepcionFactura(idRec: number, numeroFactura: string, 
       await pedirTx(tx).input("id", sql.Int, idOrden).input("e", sql.Int, idComp)
         .query("UPDATE dbo.OrdenCompra SET idEstado=@e WHERE idOrdenCompra=@id");
     }
-    await logMov(tx, { entidad: "recepcion", idEntidad: idRec, documentoNo: num, tipoMovimiento: "creado", usuario, rol, detalle: `Factura ${num} registrada (venía de revisión)` });
+    await logMov(tx, { entidad: "recepcion", idEntidad: idRec, documentoNo: num, tipoMovimiento: "creado", usuario, rol, detalle: `Factura ${num} registrada ${MARCA_DESDE_REVISION}` });
     await logMov(tx, { entidad: "orden", idEntidad: idOrden, documentoNo: ordenNo, tipoMovimiento: completa ? "recepcion_total" : "recepcion_parcial", estadoNuevo: completa ? "completado" : undefined, usuario, rol, detalle: `Factura ${num}` });
     await tx.commit();
   } catch (e) {
     await tx.rollback();
     throw e;
   }
+}
+
+// El HISTÓRICO de "Facturas en revisión": las recepciones a las que Contabilidad
+// les registró la factura después. No hay columna que lo diga —una recepción
+// facturada desde revisión queda igual que cualquier otra—, pero cada una deja en
+// la bitácora el movimiento de setRecepcionFactura, con quién y cuándo. Se cruza
+// con la recepción viva para no listar las que se eliminaron después.
+//
+// Es la ÚNICA lectura de la bitácora que no va por entidad (ver listMovimientos),
+// así que no entra al bootstrap: la pide la pantalla de Archivo cuando se abre.
+export async function listFacturadasDesdeRevision(): Promise<FacturadaDesdeRevision[]> {
+  const pool = await getPool();
+  const r = await pedir(pool).input("marca", sql.NVarChar(100), `%${MARCA_DESDE_REVISION}%`)
+    .query(`SELECT m.idMovimiento, m.idEntidad, m.documentoNo, m.usuario, m.rol, m.fecha, o.bcNo
+              FROM dbo.Movimiento m
+              JOIN dbo.RecepcionCompra r ON r.idRecepcionCompra = m.idEntidad AND r.esEliminada = 0
+              LEFT JOIN dbo.OrdenCompra o ON o.idOrdenCompra = r.idOrdenCompra
+             WHERE m.entidad = 'recepcion' AND m.detalle LIKE @marca
+             ORDER BY m.fecha DESC, m.idMovimiento DESC`);
+  // Una recepción se factura una sola vez (setRecepcionFactura lo frena), pero si la
+  // bitácora trajera dos renglones de la misma, manda el más reciente.
+  const vistas = new Set<number>();
+  const filas: FacturadaDesdeRevision[] = [];
+  for (const m of r.recordset) {
+    const id = Number(m.idEntidad);
+    if (vistas.has(id)) continue;
+    vistas.add(id);
+    const bcNo = String(m.bcNo ?? "").trim();
+    filas.push({
+      recepcionId: String(id),
+      numeroFactura: String(m.documentoNo ?? "").trim(),
+      registradaEl: m.fecha?.toISOString?.() ?? "",
+      registradaPor: String(m.usuario ?? "").trim(),
+      rol: m.rol ?? undefined,
+      bcFacturasUrl: (bcNo && bcDeepLinkFacturaRegistrada(bcNo)) || undefined,
+    });
+  }
+  return filas;
+}
+
+// La otra punta: cuándo, quién y por qué se mandó cada recepción a revisión. Es el
+// movimiento "recibido" que escribe createRecepcion cuando no hay N.º de factura;
+// desde la confirmación de Bodega su detalle trae el N.º y el motivo (ver
+// componerNotaRevision). Las de antes solo dicen quién y cuándo.
+export async function listEnviosARevision(): Promise<EnvioARevision[]> {
+  const pool = await getPool();
+  const r = await pedir(pool)
+    .query(`SELECT m.idMovimiento, m.idEntidad, m.detalle, m.usuario, m.fecha
+              FROM dbo.Movimiento m
+              JOIN dbo.RecepcionCompra r ON r.idRecepcionCompra = m.idEntidad AND r.esEliminada = 0
+             WHERE m.entidad = 'recepcion' AND m.tipoMovimiento = 'recibido'
+             ORDER BY m.fecha DESC, m.idMovimiento DESC`);
+  const vistas = new Set<number>();
+  const filas: EnvioARevision[] = [];
+  for (const m of r.recordset) {
+    const id = Number(m.idEntidad);
+    if (vistas.has(id)) continue;
+    vistas.add(id);
+    const nota = leerNotaRevision(m.detalle);
+    filas.push({
+      recepcionId: String(id),
+      enviadaEl: m.fecha?.toISOString?.() ?? "",
+      enviadaPor: String(m.usuario ?? "").trim(),
+      facturaProveedor: nota?.facturaProveedor,
+      motivo: nota?.motivo,
+    });
+  }
+  return filas;
 }
 
 // ------------------------------------------------- FOTOS DE LA FACTURA (Bodega)

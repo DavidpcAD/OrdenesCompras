@@ -150,6 +150,23 @@ export const ordenes: Orden[] = [
         precioUnitario: 7800, ivaPct: 13, cantidadRecibida: 0, cantidadFacturada: 0 },
     ],
   },
+  // Orden en dólares, recibida completa en dos tandas que Bodega dejó EN REVISIÓN
+  // (sin factura): la primera ya la registró Contabilidad (rec2, histórico de
+  // Archivo → "Ya registradas"); la segunda sigue esperando (rec3, "Pendientes").
+  // Sin `bcNumber` A PROPÓSITO: con él, "Registrar factura" en modo prueba llama a
+  // /api/bc/facturar-recibido, que usa las credenciales reales de BC.
+  {
+    id: "ord3", numero: "CP-000871", proveedorId: "p1", fecha: "2026-06-13",
+    currencyCode: "USD", estado: "lanzado", versionesArchivadas: 1, creadoPor: "Angie",
+    lineas: [
+      { id: "o3l1", tipo: "articulo", articuloId: "a7", pedidoLineaId: "seed", pedidoNumero: "PED-000115",
+        descripcion: "CEMENTO GRIS 50KG", cantidad: 100, unidad: "SACO", almacen: "ALM-CENTRAL",
+        obraSolicitud: "OBRA-001", precioUnitario: 7.1, ivaPct: 13, cantidadRecibida: 100, cantidadFacturada: 60 },
+      { id: "o3l2", tipo: "articulo", articuloId: "a6", pedidoLineaId: "seed", pedidoNumero: "PED-000115",
+        descripcion: "VARILLA #4 GRADO 40 (6m)", cantidad: 50, unidad: "UND", almacen: "ALM-CENTRAL",
+        obraSolicitud: "OBRA-001", precioUnitario: 3.2, ivaPct: 13, cantidadRecibida: 50, cantidadFacturada: 50 },
+    ],
+  },
 ];
 
 export const movimientos: Movimiento[] = [
@@ -159,6 +176,11 @@ export const movimientos: Movimiento[] = [
   { id: "m4", entidad: "orden", idEntidad: "ord1", documentoNo: "CP-000862", tipoMovimiento: "recepcion_parcial", estadoNuevo: "lanzado", usuario: "Kattya", rol: "facturacion", fecha: "2026-06-10T10:40:00", detalle: "Factura F-0099281" },
   { id: "m5", entidad: "orden", idEntidad: "ord2", documentoNo: "CP-000863", tipoMovimiento: "creado", estadoNuevo: "abierto", usuario: "Angie", rol: "proveeduria", fecha: "2026-06-12T11:00:00" },
   { id: "m6", entidad: "orden", idEntidad: "ord2", documentoNo: "CP-000863", tipoMovimiento: "enviado_aprobacion", estadoAnterior: "abierto", estadoNuevo: "pendiente_aprobacion", usuario: "Angie", rol: "proveeduria", fecha: "2026-06-12T11:05:00" },
+  // rec2 y rec3 (ord3): cómo las mandó Bodega a revisión (con la nota de la
+  // confirmación: N.º y motivo) y, la primera, cuándo la registró Contabilidad.
+  { id: "m8", entidad: "recepcion", idEntidad: "rec2", documentoNo: "(en revisión)", tipoMovimiento: "recibido", usuario: "Pedro", rol: "facturacion", fecha: "2026-06-14T10:05:00", detalle: "Recepción (factura en revisión) · Factura del proveedor 8571 · Motivo: El precio no coincide con la orden — el cemento viene a USD 7,40" },
+  { id: "m7", entidad: "recepcion", idEntidad: "rec2", documentoNo: "8571", tipoMovimiento: "creado", usuario: "Kattya", rol: "contabilidad", fecha: "2026-06-16T15:20:00", detalle: "Factura 8571 registrada (venía de revisión)" },
+  { id: "m9", entidad: "recepcion", idEntidad: "rec3", documentoNo: "(en revisión)", tipoMovimiento: "recibido", usuario: "Pedro", rol: "facturacion", fecha: "2026-06-18T09:40:00", detalle: "Recepción (factura en revisión) · Sin factura del proveedor · Motivo: La factura no vino con el material — el chofer dice que la mandan por correo" },
 ];
 
 export const recepciones: Recepcion[] = [
@@ -176,5 +198,19 @@ export const recepciones: Recepcion[] = [
       { ordenLineaId: "ol1", cantidadRecibida: 20 },
       { ordenLineaId: "ol2", cantidadRecibida: 12 },
     ],
+  },
+  {
+    id: "rec2", ordenId: "ord3", numeroFactura: "8571", fechaFactura: "2026-06-16",
+    fechaRecepcion: "2026-06-14", fechaRegistro: "2026-06-14", total: 586, parcial: true,
+    bcFacturaNo: "CFR-010388",
+    lineas: [
+      { ordenLineaId: "o3l1", cantidadRecibida: 60 },
+      { ordenLineaId: "o3l2", cantidadRecibida: 50 },
+    ],
+  },
+  {
+    id: "rec3", ordenId: "ord3", numeroFactura: "", fechaFactura: "",
+    fechaRecepcion: "2026-06-18", fechaRegistro: "2026-06-18", total: 284, parcial: false, facturaEnRevision: true,
+    lineas: [{ ordenLineaId: "o3l1", cantidadRecibida: 40 }],
   },
 ];

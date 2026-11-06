@@ -9,11 +9,12 @@ import { DestinoOrden } from "@/components/destino-linea";
 import { useStore } from "@/lib/store";
 import { useOrden } from "@/lib/use-orden";
 import { useVolver } from "@/lib/use-volver";
-import { cuenta, MOTIVOS_NC, esLineaCargo, esLineaRecibible, esNombreObraVacio, etiquetaTipoLinea, formatDate, money, distribuirCargo, num, ordenAlmacenes, ordenBadge, ordenLineaImporte, ordenLineaPendiente, ordenRecibidoPct, todayISO, numeroOrden } from "@/lib/helpers";
+import { cuenta, componerNotaRevision, MOTIVOS_NC, MOTIVOS_REVISION, esLineaCargo, esLineaRecibible, esNombreObraVacio, etiquetaTipoLinea, formatDate, money, distribuirCargo, num, ordenAlmacenes, ordenBadge, ordenLineaImporte, ordenLineaPendiente, ordenRecibidoPct, todayISO, numeroOrden } from "@/lib/helpers";
 import { codigoDeItem } from "@/lib/unidad";
 import { comprimirFoto, pesoLegible } from "@/lib/foto";
 import type { FotoComprimida } from "@/lib/foto";
 import type { MotivoNC, OrdenLinea } from "@/lib/types";
+import type { MotivoRevision } from "@/lib/helpers";
 
 // Una opción de BC (código + nombre) para los selects de "pago con tarjeta". Mismo
 // shape que OpcionBc de lib/bc.ts, acá local para no importar server-only al cliente.
@@ -101,6 +102,12 @@ export default function RegistrarFacturaPage() {
   }, [orden]);
 
   const [numeroFactura, setNumeroFactura] = useState("");
+  // CONFIRMACIÓN de "Recibir sin factura": antes era un clic y el material quedaba
+  // recibido en BC sin decir por qué. Ahora se ve qué entra, se anota el N.º de la
+  // factura (si vino) y el motivo, y recién ahí se recibe. Lo escrito se conserva si
+  // BC frena el registro: al volver a abrir no hay que escribirlo otra vez.
+  const [revision, setRevision] = useState<{ abierta: boolean; factura: string; motivo: MotivoRevision | ""; detalle: string }>(
+    { abierta: false, factura: "", motivo: "", detalle: "" });
   const [fechaFactura, setFechaFactura] = useState(todayISO());
   const [fechaRegistro, setFechaRegistro] = useState(todayISO());
   const [fechaRecepcion, setFechaRecepcion] = useState(todayISO());
@@ -436,7 +443,7 @@ export default function RegistrarFacturaPage() {
   // como siempre, después y del lado del cliente.
   function recepcionParaServidor(
     lineas: { ordenLineaId: string; cantidadRecibida: number }[],
-    p: { numeroFactura: string; total: number },
+    p: { numeroFactura: string; total: number; nota?: string },
   ) {
     if (!modoApi || !orden) return undefined;
     return {
@@ -444,6 +451,7 @@ export default function RegistrarFacturaPage() {
       numeroFactura: p.numeroFactura,
       fechaFactura, fechaRecepcion, fechaRegistro,
       total: p.total,
+      nota: p.nota || undefined,
       lineas: lineas.map((l) => ({ idOrdenCompraDet: Number(l.ordenLineaId), cantidadRecibida: l.cantidadRecibida })),
     };
   }
@@ -661,13 +669,36 @@ export default function RegistrarFacturaPage() {
     }
   }
 
+  // Lo mismo que se revisa antes de recibir, sea con factura o a revisión. Se corre
+  // ANTES de abrir la confirmación: no tiene sentido escribir el motivo de algo que
+  // igual no se va a poder recibir.
+  function puedeRecibirEnRevision(): boolean {
+    if (!algoRecibido) { toast("Indicá al menos una cantidad a recibir.", "error"); return false; }
+    if (avisarCargo && !cargoAvisoDesc.trim()) { toast("Escribí qué cargo de producto trae la factura para avisarle a Contabilidad (o desmarcá la casilla).", "error"); return false; }
+    const excede = recibibles.find((l) => Number(recibir[l.id] || 0) > ordenLineaPendiente(l) + 1e-9);
+    if (excede) { toast(`No podés recibir más de lo pendiente en "${excede.descripcion}".`, "error"); return false; }
+    return true;
+  }
+
+  function abrirRevision() {
+    if (!puedeRecibirEnRevision()) return;
+    // El N.º que ya estaba escrito arriba es casi siempre el de esta factura.
+    setRevision((r) => ({ ...r, abierta: true, factura: r.factura || numeroFactura.trim() }));
+  }
+
+  function confirmarRevision() {
+    if (!revision.motivo || (revision.motivo === "otro" && !revision.detalle.trim())) return;
+    const nota = componerNotaRevision(revision.factura, revision.motivo, revision.detalle);
+    setRevision((r) => ({ ...r, abierta: false }));
+    void recibirEnRevision(nota);
+  }
+
   // MODO 2: el material llegó bien pero la factura viene con problemas. Se recibe
   // el material (BC: solo recepción) y la factura queda EN REVISIÓN para Kattya.
-  async function recibirEnRevision() {
-    if (!algoRecibido) { toast("Indicá al menos una cantidad a recibir.", "error"); return; }
-    if (avisarCargo && !cargoAvisoDesc.trim()) { toast("Escribí qué cargo de producto trae la factura para avisarle a Contabilidad (o desmarcá la casilla).", "error"); return; }
-    const excede = recibibles.find((l) => Number(recibir[l.id] || 0) > ordenLineaPendiente(l) + 1e-9);
-    if (excede) { toast(`No podés recibir más de lo pendiente en "${excede.descripcion}".`, "error"); return; }
+  // `nota` = N.º de factura y motivo de la confirmación (ver componerNotaRevision):
+  // va a la bitácora de la recepción, de donde lo lee Archivo.
+  async function recibirEnRevision(nota: string) {
+    if (!puedeRecibirEnRevision()) return;
     const lineas = recibibles
       .filter((l) => Number(recibir[l.id] || 0) > 0)
       .map((l) => ({ ordenLineaId: l.id, cantidadRecibida: Number(recibir[l.id]) }));
@@ -692,7 +723,7 @@ export default function RegistrarFacturaPage() {
               // confirme. Acá el hueco era peor —sin N.º de factura no hay cómo
               // preguntarle después a BC si esto entró—, así que este es justo el
               // movimiento que no se puede perder entre dos viajes.
-              recepcion: recepcionParaServidor(lineas, { numeroFactura: "", total: subtotalRecibido }),
+              recepcion: recepcionParaServidor(lineas, { numeroFactura: "", total: subtotalRecibido, nota }),
             }),
           });
           const d = await r.json().catch(() => ({}));
@@ -739,7 +770,7 @@ export default function RegistrarFacturaPage() {
         try {
           rec = await registrarRecepcion({
             ordenId: orden!.id, numeroFactura: "", fechaFactura, fechaRecepcion, fechaRegistro,
-            total: subtotalRecibido, lineas, facturaEnRevision: true,
+            total: subtotalRecibido, lineas, facturaEnRevision: true, nota,
             cargoAviso: cargoAvisoPayload(),
           });
         } catch (e: any) {
@@ -1327,7 +1358,7 @@ export default function RegistrarFacturaPage() {
           </div>
           <div className="row gap-3 wrap recv-actions">
             <Button variant="outline" onClick={() => setPreview(true)} disabled={!algoRecibido}>Vista previa</Button>
-            <Button variant="ghost" onClick={recibirEnRevision} disabled={!algoRecibido || guardando} title="El material llegó bien pero la factura tiene problemas: recibí el material y mandá la factura a revisión.">Recibir sin factura (a revisión)</Button>
+            <Button variant="ghost" onClick={abrirRevision} disabled={!algoRecibido || guardando} title="El material llegó pero la factura no se puede registrar todavía: recibí el material y mandá la factura a revisión (te pide el motivo).">Recibir sin factura (a revisión)</Button>
             <Button variant="green" onClick={registrar} disabled={!algoRecibido || !numeroFactura.trim() || (tarjetaOn && (!tarjeta || !dimCode || !dimValue))} loading={guardando}>{guardando ? "Registrando…" : "Registrar factura"}</Button>
           </div>
           {guardando && (
@@ -1383,6 +1414,64 @@ export default function RegistrarFacturaPage() {
             </Field>
           </Modal>
         )}
+
+        {revision.abierta && (() => {
+          const aRecibir = recibibles.filter((l) => Number(recibir[l.id] || 0) > 0)
+            .sort((a, b) => a.descripcion.localeCompare(b.descripcion, "es"));
+          const faltaDetalle = revision.motivo === "otro" && !revision.detalle.trim();
+          const cerrar = () => setRevision((r) => ({ ...r, abierta: false }));
+          return (
+            <Modal
+              title="Recibir sin factura"
+              onClose={cerrar}
+              footer={<>
+                <Button variant="outline" onClick={cerrar}>Cancelar</Button>
+                <Button variant="green" onClick={confirmarRevision} disabled={!revision.motivo || faltaDetalle || guardando}>Recibir y dejar en revisión</Button>
+              </>}
+            >
+              <p className="ds-body-sm" style={{ marginTop: 0 }}>
+                El material <span className="ds-strong">entra al inventario en Business Central</span> y la factura queda{" "}
+                <span className="ds-strong">pendiente</span>: Contabilidad la registra después, desde Archivo.
+              </p>
+              <p className="ds-label ds-muted" style={{ margin: "16px 0 8px" }}>
+                Vas a recibir {cuenta(aRecibir.length, "material", "materiales")}
+              </p>
+              <div className="col gap-3" style={{ borderTop: "1.5px solid var(--ds-color-gray-100)", paddingTop: 12 }}>
+                {aRecibir.map((l) => (
+                  <div key={l.id} className="row row--between gap-4" style={{ alignItems: "baseline" }}>
+                    <div style={{ minWidth: 0 }}>
+                      <div className="ds-clamp-2" title={l.descripcion}>{l.descripcion}</div>
+                      <div className="ds-body-sm ds-muted">{num.format(Number(recibir[l.id]))} {l.unidad}</div>
+                    </div>
+                    <span className="ds-strong" style={{ whiteSpace: "nowrap" }}>{money(importeRecibir(l), orden.currencyCode)}</span>
+                  </div>
+                ))}
+                <div className="row row--between gap-4" style={{ borderTop: "1.5px solid var(--ds-color-gray-100)", paddingTop: 10 }}>
+                  <span className="ds-body-sm ds-muted">Subtotal sin IVA</span>
+                  <span className="ds-strong" style={{ whiteSpace: "nowrap" }}>{money(subtotalRecibido, orden.currencyCode)}</span>
+                </div>
+              </div>
+              <div className="mt-4">
+                <Field label="N.º de factura del proveedor" help="Si el proveedor no mandó factura, dejalo vacío.">
+                  <Input value={revision.factura} placeholder="Ej. 8600"
+                    onChange={(e) => setRevision((r) => ({ ...r, factura: e.target.value }))} />
+                </Field>
+                <Field label="¿Por qué queda en revisión?">
+                  <Select value={revision.motivo} placeholder="Elegí el motivo…"
+                    onChange={(e) => setRevision((r) => ({ ...r, motivo: e.target.value as MotivoRevision }))}>
+                    {MOTIVOS_REVISION.map((m) => <option key={m.v} value={m.v}>{m.label}</option>)}
+                  </Select>
+                </Field>
+                <Field label={revision.motivo === "otro" ? "¿Qué pasó?" : "Detalle para Contabilidad (opcional)"}
+                  warning={faltaDetalle} help={faltaDetalle ? "Con «Otro motivo» hay que contar qué pasó." : undefined}>
+                  <Textarea rows={2} value={revision.detalle}
+                    placeholder={revision.motivo === "precio" ? "Ej. el cemento viene a ₡7 400 y la orden dice ₡7 100" : "Lo que Contabilidad tiene que saber para registrarla…"}
+                    onChange={(e) => setRevision((r) => ({ ...r, detalle: e.target.value }))} />
+                </Field>
+              </div>
+            </Modal>
+          );
+        })()}
 
         {preview && (
           <Modal

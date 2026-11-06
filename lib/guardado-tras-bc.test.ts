@@ -68,7 +68,14 @@ test("marcar facturada: pasa el N.º y el autor de la cookie", async () => {
   let visto: any[] = [];
   const r = await marcarFacturadaTrasBc({ idRecepcionCompra: 55, numeroFactura: " 19741 " }, QUIEN, async (...a) => { visto = a; });
   assert.equal(r.facturada, true);
-  assert.deepEqual(visto, [55, "19741", "Pedro", "facturacion"]);
+  assert.deepEqual(visto, [55, "19741", "Pedro", "facturacion", undefined]);
+});
+
+test("marcar facturada: guarda también el N.º de BC que devolvió el registro", async () => {
+  let visto: any[] = [];
+  const r = await marcarFacturadaTrasBc({ idRecepcionCompra: 55, numeroFactura: "8600" }, QUIEN, async (...a) => { visto = a; }, " CFR-011343 ");
+  assert.equal(r.facturada, true);
+  assert.deepEqual(visto, [55, "8600", "Pedro", "facturacion", "CFR-011343"]);
 });
 
 test("marcar facturada: sin id o sin número no se marca nada", async () => {

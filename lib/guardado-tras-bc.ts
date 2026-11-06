@@ -92,12 +92,16 @@ export async function guardarRecepcionTrasBc(
 // factura queda registrada en BC y la recepción se queda "en revisión" para siempre,
 // invitando a registrarla otra vez.
 export type FacturaTrasBc = { idRecepcionCompra: number; numeroFactura: string };
-export type MarcarFacturada = (idRec: number, numeroFactura: string, usuario: string, rol: Role) => Promise<void>;
+export type MarcarFacturada = (idRec: number, numeroFactura: string, usuario: string, rol: Role, bcFacturaNo?: string) => Promise<void>;
 
+// `bcFacturaNo` = el CFR-… que acaba de devolver BC. Lo pone el SERVIDOR (no viene
+// en el payload del navegador): es el número del documento que se registró allá, y
+// con él la recepción gana su link en "Facturas registradas".
 export async function marcarFacturadaTrasBc(
   f: FacturaTrasBc | undefined | null,
   actor: { usuario: string; rol: Role },
   marcar: MarcarFacturada = setRecepcionFactura,
+  bcFacturaNo?: string,
 ): Promise<{ facturada?: boolean; errorLocal?: string }> {
   if (!f || typeof f !== "object") return {};
   const idRec = Number(f.idRecepcionCompra);
@@ -105,7 +109,7 @@ export async function marcarFacturadaTrasBc(
   if (!Number.isFinite(idRec) || idRec <= 0) return { errorLocal: "La recepción vino sin id, no se marcó facturada acá." };
   if (!numero) return { errorLocal: "La factura vino sin número, no se marcó facturada acá." };
   try {
-    await marcar(idRec, numero, actor.usuario, actor.rol);
+    await marcar(idRec, numero, actor.usuario, actor.rol, String(bcFacturaNo ?? "").trim() || undefined);
     return { facturada: true };
   } catch (e: any) {
     return { errorLocal: String(e?.message ?? e) };

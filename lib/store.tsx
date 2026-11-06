@@ -8,7 +8,7 @@ import type {
   NotaCreditoLinea, MotivoNC, Prioridad,
 } from "./types";
 import * as seed from "./seed";
-import { devolverPendienteAPedidos, esLineaRecibible, nextNumero, nowISO, ordenEstaCompleta, ordenTotalConIva, PERSONA_POR_ROL, todayISO } from "./helpers";
+import { devolverPendienteAPedidos, esLineaRecibible, MARCA_DESDE_REVISION, nextNumero, nowISO, ordenEstaCompleta, ordenTotalConIva, PERSONA_POR_ROL, todayISO } from "./helpers";
 import { aprobacionAutomatica, MOV_APROBACION_AUTOMATICA, USUARIO_APROBACION_AUTOMATICA } from "./aprobacion-automatica.ts";
 import { componerNotaCierre, detalleDeCierre, lineaCancelada, motivoObligatorio, quitarNotaCierre } from "./cierre-solicitud.ts";
 import { api, setEtagBootstrap, USE_API as USE_API_BUILD, type CursoresLote } from "./api";
@@ -1095,7 +1095,7 @@ export function StoreProvider({ children, useApi }: { children: React.ReactNode;
           return { ...upd, estado: (ordenEstaCompleta(upd) ? "completado" : upd.estado) as Orden["estado"] };
         });
         const recepciones = d.recepciones.map((r) => (r.id === recepcionId ? { ...r, numeroFactura, facturaEnRevision: false } : r));
-        const mov = mkMov({ entidad: "recepcion", idEntidad: recepcionId, documentoNo: numeroFactura, tipoMovimiento: "creado", detalle: `Factura ${numeroFactura} registrada (venía de revisión)` });
+        const mov = mkMov({ entidad: "recepcion", idEntidad: recepcionId, documentoNo: numeroFactura, tipoMovimiento: "creado", detalle: `Factura ${numeroFactura} registrada ${MARCA_DESDE_REVISION}` });
         const notif = mkNotif("factura", `Factura ${numeroFactura} registrada en ${orden?.numero ?? ""} (salió de revisión)`, `/proveeduria/ordenes/${rec.ordenId}`, "proveeduria");
         return { ...d, ordenes, recepciones, movimientos: [mov, ...d.movimientos], notificaciones: [notif, ...d.notificaciones] };
       });

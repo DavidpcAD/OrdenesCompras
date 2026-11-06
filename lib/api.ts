@@ -1,5 +1,5 @@
 // Cliente del front-end para las API routes (modo API).
-import type { Orden, Pedido, Recepcion, NotaCreditoLinea } from "./types.ts";
+import type { EnvioARevision, FacturadaDesdeRevision, Orden, Pedido, Recepcion, NotaCreditoLinea } from "./types.ts";
 import { LOTE_DEFECTO } from "./lotes.ts";
 
 export const USE_API = process.env.NEXT_PUBLIC_USE_API === "1";
@@ -179,6 +179,11 @@ export const api = {
   // MODO 2: registrar la factura de una recepción que estaba en revisión.
   setRecepcionFactura: (id: string, body: unknown): Promise<{ ok: true }> =>
     fetch(`/api/recepciones/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }).then(jsonOrThrow),
+  // …y lo que dice la bitácora de las que pasaron por revisión: por qué se
+  // mandaron y a cuáles ya se les registró la factura.
+  revisionDeRecepciones: (): Promise<{ envios: EnvioARevision[]; registradas: FacturadaDesdeRevision[] }> =>
+    fetch("/api/recepciones/revision", { cache: "no-store" }).then(jsonOrThrow)
+      .then((d) => ({ envios: (d.envios ?? []) as EnvioARevision[], registradas: (d.registradas ?? []) as FacturadaDesdeRevision[] })),
 
   // Notas de crédito (líneas de factura con problema, para emitir NC).
   createNotasCredito: (body: unknown): Promise<{ ok: true }> =>

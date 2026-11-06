@@ -24,8 +24,9 @@ import {
   ordenDeDetalleDevolucion, ordenEsperaCorreccion, ordenDeDevolucion, lineasCorregidasDeOrden,
   esLineaMaterial, esLineaRecibible, esLineaCargo, etiquetaTipoLinea,
   chequeoBcVencido, CHEQUEO_BC_FRESCO_MS, MONEDAS, monedaIso, lineasSinPrecio,
+  componerNotaRevision, leerNotaRevision, lineasDeRecepcion,
 } from "./helpers.ts";
-import type { Orden, OrdenLinea, Pedido, PedidoLinea } from "./types.ts";
+import type { Orden, OrdenLinea, Pedido, PedidoLinea, Recepcion } from "./types.ts";
 
 const linea = (p: Partial<OrdenLinea> & { id: string }): OrdenLinea => ({
   id: p.id, tipo: p.tipo ?? "articulo", descripcion: p.descripcion ?? "X",
@@ -1230,4 +1231,45 @@ test("precio: sin líneas no hay nada que frenar", () => {
 
 test("precio: el CARGO en cero también cuenta (un flete de ₡0 no viaja a BC)", () => {
   assert.deepEqual(lineasSinPrecio([{ precio: 0, descripcion: "FLETE / TRANSPORTE" }]), ["FLETE / TRANSPORTE"]);
+});
+
+// ── Recibir sin factura: el motivo y el N.º viajan en la nota de la bitácora ──
+test("revisión: la nota lleva el N.º y el motivo, y se vuelve a leer igual", () => {
+  const nota = componerNotaRevision(" 8600 ", "precio", "cobró ₡2 600 c/u");
+  assert.equal(nota, "Factura del proveedor 8600 · Motivo: El precio no coincide con la orden — cobró ₡2 600 c/u");
+  // Como queda en la bitácora: con el encabezado que le pone createRecepcion delante.
+  assert.deepEqual(leerNotaRevision(`Recepción (factura en revisión) · ${nota}`),
+    { facturaProveedor: "8600", motivo: "El precio no coincide con la orden — cobró ₡2 600 c/u" });
+});
+
+test("revisión: sin N.º de factura se dice, y 'otro' es solo lo que escribió Bodega", () => {
+  const nota = componerNotaRevision("", "otro", "  el proveedor   la manda mañana ");
+  assert.equal(nota, "Sin factura del proveedor · Motivo: el proveedor la manda mañana");
+  assert.deepEqual(leerNotaRevision(`Recepción (factura en revisión) · ${nota}`), { motivo: "el proveedor la manda mañana" });
+});
+
+test("revisión: un '·' en el N.º no rompe la lectura", () => {
+  const nota = componerNotaRevision("FE · 001", "sin_factura");
+  assert.deepEqual(leerNotaRevision(nota), { facturaProveedor: "FE-001", motivo: "La factura no vino con el material" });
+});
+
+test("revisión: las recepciones de antes (sin nota) no inventan motivo", () => {
+  assert.equal(leerNotaRevision("Recepción (factura en revisión)"), null);
+  assert.equal(leerNotaRevision("Recepción (factura en revisión) · Aviso de cargo: flete"), null);
+  assert.equal(leerNotaRevision(undefined), null);
+});
+
+test("líneas de una recepción: precio de la factura si lo hay, si no el de la orden, con descuento", () => {
+  const o = { id: "o", lineas: [
+    linea({ id: "l1", precioUnitario: 100, descuentoPct: 10 }),
+    linea({ id: "l2", precioUnitario: 50 }),
+  ] } as unknown as Orden;
+  const rec = { id: "r", ordenId: "o", lineas: [
+    { ordenLineaId: "l1", cantidadRecibida: 2 },
+    { ordenLineaId: "l2", cantidadRecibida: 3, precioFactura: 40 },
+    { ordenLineaId: "ya-no-esta", cantidadRecibida: 1 },
+  ] } as unknown as Recepcion;
+  const f = lineasDeRecepcion(rec, o);
+  assert.deepEqual(f.map((x) => x.importe), [180, 120, 0]);
+  assert.equal(f[2].ol, undefined);
 });
