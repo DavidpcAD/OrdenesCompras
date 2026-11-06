@@ -899,6 +899,11 @@ td.ds-col-fija {
    celda y van a sangre. Un panel que en cambio es texto y secciones (el de
    Inventarios) se envuelve en esto para no quedar pegado al filo. */
 .dt-exp-pad { padding: var(--ds-space-3) var(--ds-space-4); }
+/* Panel que se abre DENTRO de una tarjeta (las tablas cortas de Archivo): sin
+   tarjeta propia. El DS no pone tarjeta sobre tarjeta, y la sombra de la de adentro
+   se apilaba con la de afuera. Queda la banda gris de `.dt-exp-body` y el contenido
+   directo encima, sin sticky: esas tablas no scrollean de lado. */
+.dt-exp-card--plano { position: static; width: auto; background: none; box-shadow: none; border-radius: 0; overflow: visible; }
 .dt-exp-card .ds-table > tbody > tr:first-child > td { padding-top: var(--ds-space-3); }
 /* En móvil el panel NO se suelta del sticky: la tabla sigue midiendo 1700px y un
    `width: auto` volvía a estirar la tarjeta a ese ancho, con el Importe y el total
@@ -1264,6 +1269,12 @@ td.ds-col-fija {
 .prioridad-seg__dot { width: 7px; height: 7px; border-radius: 50%; background: var(--ds-color-gray-300); flex-shrink: 0; }
 .prioridad-seg__dot[data-tono="yellow"] { background: var(--ds-color-yellow); }
 .prioridad-seg__dot[data-tono="red"]    { background: var(--ds-text-danger); }
+
+/* El mismo puntito en un segmentado cualquiera, para decir "acá hay algo esperando"
+   sin pintarle una franja de color a la tarjeta (el DS no usa sombras de colores).
+   Lo usa "Facturas en revisión" → Pendientes. */
+.segmented__btn--dot { display: inline-flex; align-items: center; gap: 7px; }
+.segmented__dot { width: 7px; height: 7px; border-radius: 50%; background: var(--ds-text-danger); flex-shrink: 0; }
 
 /* Filtros de estado como "chips" (pills con contador) — lenguaje visual distinto
    del toggle de vista, para que no se vean como una barra doble amontonada. */
