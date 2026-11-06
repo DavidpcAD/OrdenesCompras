@@ -320,6 +320,34 @@ export interface Recepcion {
   fotos?: RecepcionFoto[];
 }
 
+// Una recepción que estuvo EN REVISIÓN y a la que después Contabilidad le registró
+// la factura ("Archivo y recepciones" → pestaña Ya registradas). No es una tabla:
+// sale de la bitácora (`dbo.Movimiento`), donde `setRecepcionFactura` deja
+// "Factura X registrada (venía de revisión)" con quién y cuándo. El resto de los
+// datos (orden, proveedor, líneas, importe) ya está en la Recepcion del store.
+export interface FacturadaDesdeRevision {
+  recepcionId: string;
+  numeroFactura: string;
+  registradaEl: string;     // ISO datetime (UTC): se muestra en hora local
+  registradaPor: string;
+  rol?: string;
+  // Las facturas registradas DEL PEDIDO en BC. Va de respaldo para las recepciones
+  // que no guardaron su CFR-… (antes del 6 nov 2026 este camino no lo guardaba): el
+  // pedido ya no existe en BC cuando se factura completo, así que su link no sirve.
+  bcFacturasUrl?: string;
+}
+
+// Cuándo y quién mandó una recepción A revisión, y lo que dijo Bodega al hacerlo
+// (N.º de la factura del proveedor y motivo). Sale del movimiento "recibido" de la
+// bitácora; las recepciones de antes de la confirmación no traen N.º ni motivo.
+export interface EnvioARevision {
+  recepcionId: string;
+  enviadaEl: string;        // ISO datetime (UTC)
+  enviadaPor: string;
+  facturaProveedor?: string;
+  motivo?: string;
+}
+
 // ============================ NOTAS DE CRÉDITO (Bodega · Kattya) ============
 // Líneas de una factura recibida que vienen MAL (dañado / menos cantidad / precio
 // distinto). El material se recibe igual, pero esas líneas se marcan para emitir

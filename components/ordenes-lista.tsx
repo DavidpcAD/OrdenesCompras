@@ -450,7 +450,7 @@ export function OrdenesLista({
 // Mete un punto separador entre los pedazos que SÍ existen de un renglón de
 // metadatos. Aparte del `.join(" · ")` de siempre porque acá los pedazos son
 // nodos (un badge, un chip con link), no texto.
-function intercalar(partes: (React.ReactNode | null)[]) {
+export function intercalar(partes: (React.ReactNode | null)[]) {
   const vivas = partes.filter(Boolean);
   return vivas.flatMap((n, i) => (i === 0 ? [n] : [<span key={`sep${i}`} className="ocl-line__sep" aria-hidden>·</span>, n]));
 }

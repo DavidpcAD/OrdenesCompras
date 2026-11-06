@@ -65,6 +65,38 @@ type VistaCfg = {
 };
 type Vista = { id: number; nombre: string; config: VistaCfg; esPredeterminada: boolean };
 
+// El botón ⇕ y el panel que despliega, sueltos para las tablas que NO son una
+// DataTable (p. ej. "Facturas en revisión" en Archivo, que es una lista corta
+// sin buscador). Son los mismos que usa la DataTable por dentro: así una fila que
+// se abre se ve y se mueve igual en toda la app.
+export function BotonLineas({ abierto, onClick }: { abierto: boolean; onClick: () => void }) {
+  return (
+    <button type="button" className={`dt-exp-btn${abierto ? " is-open" : ""}`} aria-expanded={abierto}
+      title={abierto ? "Ocultar líneas" : "Ver líneas"} onClick={onClick}>
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M6 9l6 6 6-6" /></svg>
+    </button>
+  );
+}
+
+// La fila que va debajo de la que se abrió. `children` llega en null mientras está
+// cerrada, para no armar el panel de cada fila de la tabla sin que nadie lo vea.
+export function FilaExpandida({ abierta, colSpan, children }: { abierta: boolean; colSpan: number; children: ReactNode }) {
+  return (
+    <tr className="dt-exp-row">
+      <td colSpan={colSpan} style={{ padding: 0, border: 0 }}>
+        <div className={`dt-exp-wrap${abierta ? " is-open" : ""}`}>
+          <div className="dt-exp-clip">
+            {/* `.dt-exp-card`: el detalle va contenido en una tarjeta
+                pegada a la izquierda, no estirado a lo ancho de la
+                tabla (ver el bloque en globals.css). */}
+            <div className="dt-exp-body"><div className="dt-exp-card">{children}</div></div>
+          </div>
+        </div>
+      </td>
+    </tr>
+  );
+}
+
 export function DataTable<T>({
   data, columns, tablaKey, getRowId, onRowClick, rowClassName, vacio = "No hay registros.", modoInicial = "tabla", renderExpanded,
   titulo = "Reporte", buscarPlaceholder = "Buscar en la tabla…", loading = false, columnVisibilityInicial, paginacion = true,
@@ -778,10 +810,7 @@ export function DataTable<T>({
                         onKeyDown={onRowClick ? (e) => { if ((e.key === "Enter" || e.key === " ") && e.target === e.currentTarget) { e.preventDefault(); abrirFila(row); } } : undefined}>
                         {renderExpanded && (
                           <td className="dt-xcell" onClick={(e) => e.stopPropagation()}>
-                            <button type="button" className={`dt-exp-btn${open ? " is-open" : ""}`} aria-expanded={open}
-                              title={open ? "Ocultar líneas" : "Ver líneas"} onClick={() => toggleExpanded(row.id)}>
-                              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M6 9l6 6 6-6" /></svg>
-                            </button>
+                            <BotonLineas abierto={open} onClick={() => toggleExpanded(row.id)} />
                           </td>
                         )}
                         {row.getVisibleCells().map((cell) => {
@@ -790,18 +819,9 @@ export function DataTable<T>({
                         })}
                       </tr>
                       {renderExpanded && (
-                        <tr className="dt-exp-row">
-                          <td colSpan={table.getVisibleLeafColumns().length + 1} style={{ padding: 0, border: 0 }}>
-                            <div className={`dt-exp-wrap${open ? " is-open" : ""}`}>
-                              <div className="dt-exp-clip">
-                                {/* `.dt-exp-card`: el detalle va contenido en una tarjeta
-                                    pegada a la izquierda, no estirado a lo ancho de la
-                                    tabla (ver el bloque en globals.css). */}
-                                <div className="dt-exp-body"><div className="dt-exp-card">{open ? renderExpanded(row.original) : null}</div></div>
-                              </div>
-                            </div>
-                          </td>
-                        </tr>
+                        <FilaExpandida abierta={open} colSpan={table.getVisibleLeafColumns().length + 1}>
+                          {open ? renderExpanded(row.original) : null}
+                        </FilaExpandida>
                       )}
                     </Fragment>
                   );

@@ -6,7 +6,7 @@ import { IconWarning } from "@/components/icons";
 import { FotosFactura } from "@/components/fotos-factura";
 import { useStore } from "@/lib/store";
 import { useVolver } from "@/lib/use-volver";
-import { cuenta, etiquetaTipoLinea, money, formatDate, num, numeroOrden } from "@/lib/helpers";
+import { cuenta, etiquetaTipoLinea, lineasDeRecepcion, money, formatDate, num, numeroOrden } from "@/lib/helpers";
 
 // Detalle de UNA recepción/factura: qué se recibió exactamente en ese registro
 // (líneas, cantidad recibida, precio e importe), distinto del detalle acumulado
@@ -35,13 +35,7 @@ export default function RecepcionDetallePage() {
   const cur = orden?.currencyCode;
 
   // Resuelve cada línea de la recepción contra su línea de orden.
-  const filas = rec.lineas.map((rl) => {
-    const ol = orden?.lineas.find((l) => l.id === rl.ordenLineaId);
-    const precio = rl.precioFactura ?? ol?.precioUnitario ?? 0;
-    const desc = ol?.descuentoPct ?? 0;
-    const importe = rl.cantidadRecibida * precio * (1 - desc / 100);
-    return { rl, ol, precio, importe };
-  });
+  const filas = lineasDeRecepcion(rec, orden);
   const esCargo = (f: typeof filas[number]) => f.ol?.tipo === "cargo";
 
   // `rec.total` es el importe SIN IVA (en Archivo se llama "Importe (excl. IVA)").

@@ -78,7 +78,7 @@ export async function POST(req: Request) {
     quien = await actor(cuerpo);
     const postedNo = await bcFacturarRecibido(orderNo, vendorInvoiceNo, lineas ?? [], postingDate, quien.usuario);
     // La factura ya está registrada en BC: la recepción se marca facturada acá mismo.
-    const guardado = await marcarFacturadaTrasBc(cuerpo?.facturar, quien);
+    const guardado = await marcarFacturadaTrasBc(cuerpo?.facturar, quien, undefined, postedNo);
     return NextResponse.json({ ok: true, postedNo, ...guardado });
   } catch (e: any) {
     const error = String(e?.message ?? e);

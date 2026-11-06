@@ -1220,6 +1220,70 @@ export const MOTIVOS_NC: { v: MotivoNC; label: string; tone: "yellow" | "red"; q
 export const motivoNC = (m: MotivoNC | string) =>
   MOTIVOS_NC.find((x) => x.v === m) ?? { v: m as MotivoNC, label: String(m), tone: "yellow" as const, queHacer: "" };
 
+// Cada línea de UNA recepción, resuelta contra su línea de orden: qué se recibió,
+// a qué precio (el de la factura si Bodega lo anotó distinto; si no, el del
+// pedido) y cuánto suma con el descuento de la línea. La comparten el detalle de
+// la recepción y el panel de líneas de Archivo, para que los dos sumen igual.
+export function lineasDeRecepcion(rec: Recepcion, orden?: Orden) {
+  return rec.lineas.map((rl) => {
+    const ol = orden?.lineas.find((l) => l.id === rl.ordenLineaId);
+    const precio = rl.precioFactura ?? ol?.precioUnitario ?? 0;
+    const importe = rl.cantidadRecibida * precio * (1 - (ol?.descuentoPct ?? 0) / 100);
+    return { rl, ol, precio, importe };
+  });
+}
+
+// POR QUÉ UNA FACTURA QUEDA EN REVISIÓN. Bodega lo elige en la confirmación de
+// "Recibir sin factura" (antes era un clic y la recepción quedaba sin decir nada):
+// Contabilidad necesita saber qué revisar antes de registrarla. `otro` obliga a
+// escribir el detalle.
+export const MOTIVOS_REVISION = [
+  { v: "sin_factura", label: "La factura no vino con el material" },
+  { v: "precio", label: "El precio no coincide con la orden" },
+  { v: "cantidad", label: "La cantidad de la factura no coincide con lo recibido" },
+  { v: "datos", label: "La factura trae datos incorrectos (cédula, nombre, IVA)" },
+  { v: "otro", label: "Otro motivo" },
+] as const;
+export type MotivoRevision = (typeof MOTIVOS_REVISION)[number]["v"];
+
+// El motivo y el N.º de factura viajan en la nota de la recepción, que termina en
+// la bitácora ("Recepción (factura en revisión) · Factura del proveedor 8600 ·
+// Motivo: …"). No hay columna para esto: así no hace falta migración, y la
+// bitácora es justo donde se busca "qué pasó con esta recepción". El formato es
+// fijo porque Archivo lo vuelve a leer con `leerNotaRevision`.
+const NOTA_REV_SIN_FACTURA = "Sin factura del proveedor";
+const NOTA_REV_FACTURA = "Factura del proveedor ";
+const NOTA_REV_MOTIVO = " · Motivo: ";
+export function componerNotaRevision(factura: string, motivo: MotivoRevision | "", detalle = ""): string {
+  // " · " separa los pedazos de la nota: adentro del número no puede ir.
+  const f = String(factura ?? "").replace(/\s*·\s*/g, "-").replace(/\s+/g, " ").trim().slice(0, 40);
+  const d = String(detalle ?? "").replace(/\s+/g, " ").trim();
+  const etiqueta = MOTIVOS_REVISION.find((m) => m.v === motivo)?.label ?? "";
+  const texto = motivo === "otro" ? d : [etiqueta, d].filter(Boolean).join(" — ");
+  return `${f ? NOTA_REV_FACTURA + f : NOTA_REV_SIN_FACTURA}${NOTA_REV_MOTIVO}${texto || "sin especificar"}`.slice(0, 400);
+}
+
+// Lo contrario: de un `detalle` de la bitácora saca el N.º y el motivo. Null si el
+// movimiento no trae nota de revisión (las recepciones de antes de la confirmación).
+export function leerNotaRevision(detalle: string | undefined | null): { facturaProveedor?: string; motivo: string } | null {
+  const t = String(detalle ?? "");
+  const i = t.indexOf(NOTA_REV_MOTIVO);
+  if (i < 0) return null;
+  const antes = t.slice(0, i);
+  const motivo = t.slice(i + NOTA_REV_MOTIVO.length).trim();
+  const j = antes.lastIndexOf(NOTA_REV_FACTURA);
+  if (j >= 0) return { facturaProveedor: antes.slice(j + NOTA_REV_FACTURA.length).trim() || undefined, motivo };
+  if (antes.endsWith(NOTA_REV_SIN_FACTURA)) return { motivo };
+  return null;
+}
+
+// La marca que deja en la bitácora una factura registrada DESPUÉS, sobre una
+// recepción que había quedado en revisión ("Factura 8600 registrada (venía de
+// revisión)"). No es solo texto: el histórico de Archivo y recepciones busca
+// esos movimientos por esta marca (ver listFacturadasDesdeRevision), así que el
+// que la escribe y el que la busca tienen que usar la misma.
+export const MARCA_DESDE_REVISION = "(venía de revisión)";
+
 export function cuenta(n: number, singular: string, plural: string): string {
   return `${n} ${n === 1 ? singular : plural}`;
 }
