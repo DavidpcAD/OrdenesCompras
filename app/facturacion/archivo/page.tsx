@@ -261,13 +261,16 @@ export default function ArchivoPage() {
             falta registrar y el histórico de lo que ya salió de acá. Cada fila abre
             sus líneas, y el N.º de la orden abre el pedido en BC. */}
         {(enRevision.length > 0 || historial.length > 0 || !!hist.error) && (
-          <Card className="mt-6" style={{ padding: 0, overflow: "hidden", boxShadow: enRevision.length > 0 ? "inset 3px 0 0 var(--ds-color-red-100), var(--ds-shadow-01)" : undefined }}>
+          <Card className="mt-6" style={{ padding: 0, overflow: "hidden" }}>
             <div className="row row--between wrap gap-3" style={{ padding: "12px 16px", borderBottom: "1.5px solid var(--ds-color-gray-100)", alignItems: "center" }}>
               <div className="row gap-3 wrap" style={{ alignItems: "center" }}>
                 <span className="ds-subtitle" style={{ fontSize: "var(--ds-font-size-subtitle)" }}>Facturas en revisión</span>
                 <div className="segmented" role="tablist" aria-label="Facturas en revisión">
+                  {/* Lo que hay que atender se marca con el puntito rojo de la pestaña,
+                      no con una franja de color en la tarjeta: el DS no usa sombras de color. */}
                   <button type="button" role="tab" aria-selected={vista === "pendientes"}
-                    className={`segmented__btn ${vista === "pendientes" ? "is-active" : ""}`} onClick={() => setPestana("pendientes")}>
+                    className={`segmented__btn segmented__btn--dot ${vista === "pendientes" ? "is-active" : ""}`} onClick={() => setPestana("pendientes")}>
+                    {enRevision.length > 0 && <span className="segmented__dot" aria-hidden />}
                     Pendientes · {enRevision.length}
                   </button>
                   <button type="button" role="tab" aria-selected={vista === "registradas"}
@@ -308,7 +311,7 @@ export default function ArchivoPage() {
                               <td className="ds-num">{money(r.total, o?.currencyCode)}</td>
                               <td className="ds-num"><Button variant="green" size="sm" onClick={() => { setNumFac(envio?.facturaProveedor ?? ""); setFacObj(r); }}>Registrar factura</Button></td>
                             </tr>
-                            <FilaExpandida abierta={abierta} colSpan={7}>
+                            <FilaExpandida plano abierta={abierta} colSpan={7}>
                               {abierta ? (
                                 <LineasDeRecepcion rec={r} orden={o} accion={o ? (
                                   <Link className="chip-link" href={`/facturacion/ver/${o.id}`} title="Abrir la orden completa">
@@ -364,7 +367,7 @@ export default function ArchivoPage() {
                                 <td className="ds-num">{money(rec.total, o?.currencyCode)}</td>
                                 <td className="ds-body-sm"><FacturaBc rec={rec} respaldo={h.bcFacturasUrl} /></td>
                               </tr>
-                              <FilaExpandida abierta={abierta} colSpan={8}>
+                              <FilaExpandida plano abierta={abierta} colSpan={8}>
                                 {abierta ? (
                                   <LineasDeRecepcion rec={rec} orden={o} motivo={hist.envioDe.get(rec.id)?.motivo} accion={(
                                     <Link className="chip-link" href={`/facturacion/recepcion/${rec.id}`} title="Abrir el detalle de esta factura">

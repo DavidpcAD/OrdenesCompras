@@ -80,7 +80,8 @@ export function BotonLineas({ abierto, onClick }: { abierto: boolean; onClick: (
 
 // La fila que va debajo de la que se abrió. `children` llega en null mientras está
 // cerrada, para no armar el panel de cada fila de la tabla sin que nadie lo vea.
-export function FilaExpandida({ abierta, colSpan, children }: { abierta: boolean; colSpan: number; children: ReactNode }) {
+// `plano`: la tabla ya vive dentro de una tarjeta, así que el panel no lleva la suya.
+export function FilaExpandida({ abierta, colSpan, children, plano = false }: { abierta: boolean; colSpan: number; children: ReactNode; plano?: boolean }) {
   return (
     <tr className="dt-exp-row">
       <td colSpan={colSpan} style={{ padding: 0, border: 0 }}>
@@ -89,7 +90,7 @@ export function FilaExpandida({ abierta, colSpan, children }: { abierta: boolean
             {/* `.dt-exp-card`: el detalle va contenido en una tarjeta
                 pegada a la izquierda, no estirado a lo ancho de la
                 tabla (ver el bloque en globals.css). */}
-            <div className="dt-exp-body"><div className="dt-exp-card">{children}</div></div>
+            <div className="dt-exp-body"><div className={`dt-exp-card${plano ? " dt-exp-card--plano" : ""}`}>{children}</div></div>
           </div>
         </div>
       </td>
