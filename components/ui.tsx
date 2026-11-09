@@ -49,7 +49,14 @@ export function Button({
 // ---------------------------------------------------------------- Field
 export function Field({
   label, help, warning, className = "", children,
-}: { label: string; help?: string; warning?: boolean; className?: string; children: React.ReactNode }) {
+}: {
+  label: string;
+  /** Texto bajo el campo. Puede llevar un enlace de acción ("Usar esa fecha"). */
+  help?: React.ReactNode;
+  warning?: boolean;
+  className?: string;
+  children: React.ReactNode;
+}) {
   // Asocia el label con el input (a11y): si el hijo es un elemento simple, le
   // inyecta un id y apunta el htmlFor ahí. Si ya trae id, se respeta. Si el hijo
   // no es un elemento único (fragmento/varios), cae a no asociar (sin romper).

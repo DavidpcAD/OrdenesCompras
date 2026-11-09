@@ -340,7 +340,7 @@ const limpiaNombre = (s: string) =>
     .replace(/\b(S A|SA|SRL|S R L|LTDA|SOCIEDAD|ANONIMA|LIMITADA|DE|DEL|LA|EL|Y|CR|COSTA|RICA)\b/g, " ")
     .replace(/\s+/g, " ").trim();
 
-function seParecen(a: string, b: string): boolean {
+export function seParecen(a: string, b: string): boolean {
   const A = new Set(limpiaNombre(a).split(" ").filter((w) => w.length > 3));
   const B = new Set(limpiaNombre(b).split(" ").filter((w) => w.length > 3));
   if (!A.size || !B.size) return false;

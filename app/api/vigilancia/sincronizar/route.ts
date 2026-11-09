@@ -1,12 +1,14 @@
 import { NextResponse } from "next/server";
 import { exigirSesion } from "@/lib/actor";
 import { facturasYProveedoresDeBc } from "@/lib/bc-facturas-cache";
+import { bcNotasCreditoCompra, type BcNotaCreditoCompra } from "@/lib/bc";
+import { facturasAnuladas } from "@/lib/enlace-factura";
 import { cruzar, type Comprobante } from "@/lib/cruce-correo-bc";
 import { estadoBuzon, leerBuzon } from "@/lib/graph-buzon";
 import {
   tablaCorreoExiste, FALTA_TABLA, guardarComprobantes, pendientesDeCotejo,
   guardarCotejo, leerSincronizacion, guardarSincronizacion, marcarRechazadas,
-  type ResultadoCotejo,
+  bcNumerosRetenidos, type ResultadoCotejo,
 } from "@/lib/repo-facturas-correo";
 
 export const runtime = "nodejs";
@@ -154,9 +156,25 @@ async function correr(buzon: ReturnType<typeof estadoBuzon>, emitir: (o: unknown
       const masVieja = comprobantes.map((c) => c.fecha).filter(Boolean).sort()[0] ?? "";
       const desde = /^\d{4}-\d{2}-\d{2}$/.test(masVieja) ? corre(masVieja, -30) : "2025-11-01";
 
-      const { facturas, proveedores } = await facturasYProveedoresDeBc(desde);
+      const [{ facturas, proveedores }, retenidas, notas] = await Promise.all([
+        facturasYProveedoresDeBc(desde),
+        bcNumerosRetenidos(),
+        // Si BC no contesta las notas de crédito se coteja como antes: es preferible a
+        // dejar la Auditoría sin cotejar.
+        bcNotasCreditoCompra(desde).catch(() => [] as BcNotaCreditoCompra[]),
+      ]);
       emitir({ fase: "cotejo", hechos: 0, total: pendientes.length });
-      const cruce = cruzar(comprobantes, facturas, proveedores);
+      // Dos clases de factura de BC que NO pueden ser el registro de un comprobante
+      // pendiente (nov 2026, pedido de Contabilidad):
+      //  · la que ya tiene dueño fijo —enlazada a mano, o registrada con otro—. Sin
+      //    esto, la que se pasaba a mano de un comprobante a otro volvía al de antes en
+      //    la corrida siguiente, porque el N.º digitado en BC sigue siendo el de aquel;
+      //  · la que una nota de crédito dejó en cero. Una factura registrada con el N.º
+      //    equivocado y anulada con una NC interna ("NCI-…") seguía contando como el
+      //    registro de ese comprobante, que salía "registrado y descuadrado".
+      const anuladas = facturasAnuladas(facturas, notas);
+      const libres = facturas.filter((f) => !retenidas.has(f.numero) && !anuladas.has(f.numero));
+      const cruce = cruzar(comprobantes, libres, proveedores);
 
       const resultados: ResultadoCotejo[] = [
         ...cruce.calzadas.map((c) => ({

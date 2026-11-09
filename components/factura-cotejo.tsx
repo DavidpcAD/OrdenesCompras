@@ -6,6 +6,7 @@ import { IconCheck, IconWarning } from "@/components/icons";
 import { formatDate, money, num } from "@/lib/helpers";
 import { TIPOS, type LineaComprobante, type ResumenComprobante } from "@/lib/cruce-correo-bc";
 import type { Candidato, CotejoRenglones } from "@/lib/candidatos-bc";
+import type { DuennoEnlace, NotaQueAnula, OtroComprobante } from "@/lib/enlace-factura";
 import type { BcFacturaCompraDetalle } from "@/lib/bc";
 import type { FacturaCorreo } from "@/lib/repo-facturas-correo";
 
@@ -32,11 +33,19 @@ type Lado<T> = { ok: true } & T | { ok: false; error: string };
 type Datos = {
   factura: FacturaCorreo;
   correo: Lado<{ archivo: string; lineas: LineaComprobante[]; resumen: ResumenComprobante }>;
-  bc: Lado<{ factura: BcFacturaCompraDetalle; esPrevia: boolean }>;
+  bc: Lado<{ factura: BcFacturaCompraDetalle; esPrevia: boolean; anuladaPor?: NotaQueAnula[] }>;
   candidatos: Candidato[];
   candidatosError?: string;
   renglones: CotejoRenglones | null;
+  duenno?: DuennoEnlace | null;
+  numeroEsDeEste?: boolean;
+  otros?: OtroComprobante[];
 };
+
+// Los 20 dígitos del consecutivo → solo la cola sin ceros: así le dice la gente a una
+// factura. El
+// consecutivo completo sigue en el título del diálogo.
+const corto = (consecutivo: string) => consecutivo.slice(-10).replace(/^0+/, "") || consecutivo;
 
 export function FacturaCotejo({ fila, onCambio, onClose }: {
   fila: FacturaCorreo;
@@ -54,6 +63,9 @@ export function FacturaCotejo({ fila, onCambio, onClose }: {
   const [nota, setNota] = useState(fila.nota ?? "");
   const [motivo, setMotivo] = useState("");
   const [ocupado, setOcupado] = useState(false);
+  // La lista de "¿Es de otro comprobante?", cerrada de entrada: casi siempre el
+  // enlace está bien y abrirla de oficio sería ruido.
+  const [verOtros, setVerOtros] = useState(false);
 
   const cargar = useCallback(async (bc: string | null, señal?: AbortSignal) => {
     try {
@@ -74,11 +86,13 @@ export function FacturaCotejo({ fila, onCambio, onClose }: {
     return () => ctl.abort();
   }, [cargar, previa]);
 
-  // Guardar: enlazar (bcNumero), soltar (bcNumero: null) o solo comentar (nota).
-  const guardar = useCallback(async (cuerpo: Record<string, unknown>, exito: string) => {
+  // Guardar: enlazar (bcNumero), soltar (bcNumero: null), pasar (mover) o solo
+  // comentar (nota). `destino` es para pasarle la factura de BC a OTRO comprobante
+  // desde este; lo que se recarga después es siempre este.
+  const guardar = useCallback(async (cuerpo: Record<string, unknown>, exito: string, destino = fila.clave) => {
     setOcupado(true);
     try {
-      const r = await fetch(`/api/vigilancia/factura/${fila.clave}`, {
+      const r = await fetch(`/api/vigilancia/factura/${destino}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(cuerpo),
@@ -87,6 +101,7 @@ export function FacturaCotejo({ fila, onCambio, onClose }: {
       if (!r.ok) throw new Error(j?.error ?? `Error ${r.status}`);
       toast(exito, "success");
       setPrevia(null);
+      setVerOtros(false);
       await cargar(null);
       onCambio?.();
       return true;
@@ -102,6 +117,8 @@ export function FacturaCotejo({ fila, onCambio, onClose }: {
   const bc = datos?.bc.ok ? datos.bc.factura : null;
   const esPrevia = (datos?.bc.ok && datos.bc.esPrevia) || false;
   const correo = datos?.correo.ok ? datos.correo : null;
+  const duenno = esPrevia ? datos?.duenno ?? null : null;
+  const anuladaPor = datos?.bc.ok ? datos.bc.anuladaPor ?? [] : [];
   const cargando = !datos && !error;
   const tipo = TIPOS[actual.tipoDoc] ?? "Comprobante";
 
@@ -118,7 +135,20 @@ export function FacturaCotejo({ fila, onCambio, onClose }: {
         <EstadoBadge factura={actual} />
       </div>
 
-      <Diferencia correo={correo?.resumen ?? null} bc={bc} renglones={datos?.renglones ?? null} esPrevia={esPrevia} />
+      {bc && anuladaPor.length > 0 && (
+        <AvisoAnulada bcNumero={bc.numero} notas={anuladaPor} esPrevia={esPrevia} />
+      )}
+
+      {duenno && bc && (
+        <AvisoDuenno duenno={duenno} bcNumero={bc.numero} numeroProveedor={bc.numeroProveedor}
+          numeroEsDeEste={!!datos?.numeroEsDeEste} este={corto(actual.consecutivo)} />
+      )}
+
+      {/* Con la factura de BC anulada, "BC tiene ₡X de más" es ruido: no tiene nada.
+          Mirando una para enlazar sí sirve, porque ayuda a confirmar la pareja. */}
+      {!(anuladaPor.length > 0 && !esPrevia) && (
+        <Diferencia correo={correo?.resumen ?? null} bc={bc} renglones={datos?.renglones ?? null} esPrevia={esPrevia} />
+      )}
 
       <div className="cot-cols">
         <Columna
@@ -173,22 +203,54 @@ export function FacturaCotejo({ fila, onCambio, onClose }: {
                 <Button variant="outline" size="sm" onClick={() => setPrevia(null)} disabled={ocupado}>
                   ← Ver los otros
                 </Button>
-                <Button size="sm" disabled={ocupado}
-                  onClick={() => void guardar({ bcNumero: bc.numero, nota: nota.trim() || undefined }, `Quedó enlazada a ${bc.numero}.`)}>
-                  Sí, es esta
-                </Button>
+                {/* Si ya la tiene otro, el botón dice lo que de verdad va a pasar: no es
+                    "enlazar", es quitársela a aquel. El aviso de arriba explica a quién. */}
+                {duenno ? (
+                  <Button size="sm" disabled={ocupado}
+                    onClick={() => void guardar(
+                      { bcNumero: bc.numero, mover: true, nota: nota.trim() || undefined },
+                      `${bc.numero} quedó con este comprobante; la ${corto(duenno.consecutivo)} volvió a pendientes.`)}>
+                    Pasarla a este comprobante
+                  </Button>
+                ) : (
+                  <Button size="sm" disabled={ocupado}
+                    onClick={() => void guardar({ bcNumero: bc.numero, nota: nota.trim() || undefined }, `Quedó enlazada a ${bc.numero}.`)}>
+                    Sí, es esta
+                  </Button>
+                )}
               </div>
-            ) : actual.bcCalzePor === "manual" ? (
+            ) : (
               <div className="row gap-2 wrap" style={{ justifyContent: "space-between", alignItems: "center" }}>
+                {/* Por qué está amarrada. En la automática es el N.º digitado en BC, y
+                    decirlo es lo que deja ver un error de digitación de un vistazo: el
+                    N.º de un comprobante chiquito al lado de una factura grande. */}
                 <span className="ds-muted ds-body-sm">
-                  Enlazada a mano{actual.revisadoPor ? ` por ${actual.revisadoPor}` : ""}
+                  {actual.bcCalzePor === "manual"
+                    ? `Enlazada a mano${actual.revisadoPor ? ` por ${actual.revisadoPor}` : ""}`
+                    : datos?.numeroEsDeEste && bc.numeroProveedor
+                      ? `Calzó sola: en BC se digitó el N.º ${bc.numeroProveedor}`
+                      : "Calzó sola por el N.º digitado en BC"}
                 </span>
-                <Button variant="outline" size="sm" disabled={ocupado}
-                  onClick={() => void guardar({ bcNumero: null }, "Se soltó el enlace: vuelve a la cola.")}>
-                  Soltar
-                </Button>
+                <div className="row gap-3" style={{ alignItems: "center" }}>
+                  {/* Pasarle a otro comprobante una factura que está en cero no
+                      arregla nada: ese tampoco quedaría registrado. */}
+                  {!anuladaPor.length && (
+                    <button type="button" className="link-btn link-btn--sm" aria-expanded={verOtros}
+                      aria-controls="cot-otros" disabled={ocupado} onClick={() => setVerOtros((v) => !v)}>
+                      ¿Es de otro comprobante?
+                    </button>
+                  )}
+                  {/* Lo automático se suelta solo si la factura de BC está anulada: si
+                      no, el N.º digitado allá la volvería a amarrar en la próxima vuelta. */}
+                  {(actual.bcCalzePor === "manual" || anuladaPor.length > 0) && (
+                    <Button variant="outline" size="sm" disabled={ocupado}
+                      onClick={() => void guardar({ bcNumero: null }, "Se soltó el enlace: vuelve a la cola.")}>
+                      Soltar
+                    </Button>
+                  )}
+                </div>
               </div>
-            ) : undefined}
+            )}
           />
         ) : (
           <Candidatos
@@ -205,6 +267,18 @@ export function FacturaCotejo({ fila, onCambio, onClose }: {
           />
         )}
       </div>
+
+      {verOtros && bc && !esPrevia && !anuladaPor.length && (
+        <OtrosComprobantes
+          bcNumero={bc.numero} bcTotal={bc.total} moneda={bc.moneda}
+          emisor={actual.nombreEmisor || actual.cedulaEmisor}
+          lista={datos?.otros ?? []} ocupado={ocupado}
+          onPasar={(o) => void guardar(
+            { bcNumero: bc.numero, mover: true },
+            `${bc.numero} pasó a la ${corto(o.consecutivo)}; esta volvió a pendientes.`,
+            o.clave)}
+        />
+      )}
 
       {/* El comentario de revisión. Reemplaza la columna "Comentarios" del Excel que
           Contabilidad llevaba aparte: acá viaja con la factura y lo ve el que la
@@ -418,6 +492,134 @@ function Aviso({ tono, titulo, children }: { tono: "yellow" | "green"; titulo: s
         <div className="ds-callout__body">{children}</div>
       </div>
     </div>
+  );
+}
+
+// --------------------------------------------------------- factura anulada en BC
+//
+// Una factura de BC que una nota de crédito deja en cero sigue saliendo como
+// registrada, y hasta nov 2026 la Auditoría le creía: un comprobante salía "registrado
+// y descuadrado" contra una factura que Contabilidad había anulado con una NC interna
+// ("NCI-…") porque se digitó con el número equivocado. El
+// cotejo automático ya no las toma; esto es para las que quedaron enlazadas de antes
+// o a mano, y para cuando se está por enlazar una.
+function AvisoAnulada({ bcNumero, notas, esPrevia }: { bcNumero: string; notas: NotaQueAnula[]; esPrevia: boolean }) {
+  const cuales = notas
+    .map((n) => `${n.numero}${n.numeroProveedor ? ` (${n.numeroProveedor}, ${formatDate(n.fecha)})` : ""}`)
+    .join(" y ");
+  return (
+    <Aviso tono="yellow" titulo={`${bcNumero} está anulada en Business Central`}>
+      {notas.length === 1 ? "La nota de crédito" : "Las notas de crédito"} {cuales} la {notas.length === 1 ? "deja" : "dejan"} en
+      cero.{" "}
+      {esPrevia
+        ? "Enlazarla acá dice que este comprobante y esa factura se anularon juntos. Si este comprobante sigue vigente, todavía falta registrarlo."
+        : "Este comprobante no tiene un registro vigente en BC: si el proveedor también lo anuló, cerralo con ese motivo; si no, falta registrarlo de nuevo y conviene soltar este enlace."}
+    </Aviso>
+  );
+}
+
+// --------------------------------------------------------- dueño de la factura
+//
+// Se está mirando una factura de BC que ya respalda OTRO comprobante. Lo que hay que
+// saber antes de decidir es si ese amarre tiene fundamento, y el fundamento es el N.º
+// que se digitó en BC. Los tres casos:
+//
+//   · En BC se digitó el N.º del que la tiene: casi seguro está bien, y este es otro
+//     documento.
+//   · El N.º digitado en BC no es ninguno de los dos: deciden los renglones y la fecha.
+//   · En BC se digitó el N.º de ESTE y la tiene otro: señal fuerte de que hay que
+//     pasarla.
+function AvisoDuenno({ duenno, bcNumero, numeroProveedor, numeroEsDeEste, este }: {
+  duenno: DuennoEnlace;
+  bcNumero: string;
+  numeroProveedor: string;
+  numeroEsDeEste: boolean;
+  este: string;
+}) {
+  const suyo = corto(duenno.consecutivo);
+  const quien = duenno.bcCalzePor === "manual"
+    ? `La enlazó a mano ${duenno.revisadoPor ?? "una persona"}`
+    : "La amarró el cotejo automático";
+  const ficha = `${duenno.nombreEmisor}, emitida el ${formatDate(duenno.fechaEmision)} por ${money(duenno.total, duenno.moneda)}`;
+
+  if (duenno.numeroEsDeEl) {
+    return (
+      <Aviso tono="yellow" titulo={`${bcNumero} es de la ${suyo}: en BC se digitó ese N.º`}>
+        La tiene ese comprobante ({ficha}) y {quien.charAt(0).toLowerCase() + quien.slice(1)}. Lo más
+        probable es que la {este} sea otro documento: una segunda compra que todavía no se registra, o la misma
+        factura reemitida —y entonces debería llegar una nota de crédito que anule la {suyo}—. Si de verdad
+        es esta, pasala: la {suyo} vuelve a pendientes.
+      </Aviso>
+    );
+  }
+  if (numeroEsDeEste) {
+    return (
+      <Aviso tono="yellow" titulo={`${bcNumero} está con la ${suyo}, pero en BC se digitó el N.º de esta`}>
+        {quien} ({ficha}). Si es de esta, pasala: la {suyo} vuelve a pendientes.
+      </Aviso>
+    );
+  }
+  return (
+    <Aviso tono="yellow" titulo={`${bcNumero} ya está con la ${suyo}`}>
+      {quien} ({ficha}). El N.º digitado en BC{numeroProveedor ? ` (${numeroProveedor})` : ""} no es el de
+      ninguno de los dos, así que deciden los renglones y la fecha. Si es de esta, pasala: la {suyo} vuelve
+      a pendientes.
+    </Aviso>
+  );
+}
+
+// ------------------------------------------------------- es de otro comprobante
+//
+// La otra puerta: se abrió el comprobante que SE QUEDÓ la factura de BC y no es suya
+// (un comprobante chiquito contra una factura grande, porque en BC se digitó su N.º).
+// El dueño de verdad casi siempre es otro comprobante del mismo proveedor que
+// sigue sin registrar; acá salen ordenados por parecido en monto, y se le pasa con un
+// toque. El que se queda sin ella vuelve a pendientes, y el cotejo automático ya no se
+// la devuelve.
+function OtrosComprobantes({ bcNumero, bcTotal, moneda, emisor, lista, ocupado, onPasar }: {
+  bcNumero: string;
+  bcTotal: number;
+  moneda: string;
+  emisor: string;
+  lista: OtroComprobante[];
+  ocupado: boolean;
+  onPasar: (o: OtroComprobante) => void;
+}) {
+  return (
+    <section id="cot-otros" className="cot-col mt-4" aria-label={`¿De cuál comprobante es ${bcNumero}?`}>
+      <header className="cot-col__head">
+        <div className="ds-strong ds-body-sm">¿De cuál comprobante es {bcNumero}?</div>
+        <div className="ds-muted ds-body-sm">
+          Los de {emisor} que siguen sin registrar, del más parecido a los {money(bcTotal, moneda)} de BC. Al
+          pasarla, este vuelve a pendientes.
+        </div>
+      </header>
+      {lista.length ? lista.map((o) => (
+        <div className="cot-linea" key={o.clave}>
+          <div>
+            <div className="ds-body-sm ds-strong">
+              {corto(o.consecutivo)}
+              {o.numeroEsDeEl && <span className="ds-muted"> · en BC se digitó este N.º</span>}
+            </div>
+            <div className="ds-muted ds-body-sm">
+              {TIPOS[o.tipoDoc] ?? "Comprobante"} · emitida el {formatDate(o.fechaEmision)}
+              {o.nota ? ` · ${o.nota}` : ""}
+            </div>
+          </div>
+          <div className="cot-num">
+            <div className="ds-body-sm ds-strong">{money(o.total, o.moneda)}</div>
+            <button type="button" className="link-btn link-btn--sm" disabled={ocupado} onClick={() => onPasar(o)}>
+              Pasarla a esta
+            </button>
+          </div>
+        </div>
+      )) : (
+        <p className="cot-col__aviso ds-body-sm ds-muted">
+          No hay otros comprobantes de este proveedor sin registrar en el mes antes ni en el mes después. Si la
+          factura de BC es de uno que no llegó al correo, dejalo dicho en el comentario.
+        </p>
+      )}
+    </section>
   );
 }
 

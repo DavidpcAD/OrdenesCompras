@@ -333,6 +333,7 @@ const RECIBIR: HelpEntry = {
     "Revisá el Subtotal / IVA / Total de abajo. Cada línea muestra su importe según la cantidad que anotaste.",
     "Antes de registrar, en “Foto de la factura” podés adjuntar la foto de la factura física: se guarda con la recepción y después la ves en Facturas digitadas.",
     "Si la factura está bien → “Registrar factura” y escribí el N.º de factura del proveedor.",
+    "Al escribir el N.º, la app busca el comprobante que el proveedor mandó al correo de facturación. Si lo encuentra, bajo “Fecha de la factura” te dice la fecha de emisión de verdad y si no coincide con la que pusiste; “Usar esa fecha” la corrige.",
     "Si el material está bien pero la factura tiene un problema → “Recibir sin factura (a revisión)”: Contabilidad la registra después.",
   ],
   tips: [
@@ -458,6 +459,8 @@ const VIGILANCIA: HelpEntry = {
     "Cuando el monto no cuadra, abrí la factura: arriba dice de cuánto es la diferencia y para qué lado, y abajo se comparan los renglones. Las líneas del correo salen del XML adjunto, así que se leen en el momento — si el correo se movió de carpeta, la columna lo dice y el enlace a Outlook igual sirve.",
     "Las candidatas se proponen, no se enlazan solas, y es a propósito: en un mes hay más de cien pares de facturas del mismo proveedor con el monto idéntico —material que se compra seguido—, y algunas hasta con los mismos renglones. Lo único que las separa es la fecha, y eso lo decide una persona.",
     "Una factura enlazada a mano queda marcada “a mano” y la sincronización ya no la toca. Si te equivocaste, abrila y dale “Soltar”: vuelve a la cola y el cotejo automático la retoma.",
+    "Una factura de BC respalda UN solo comprobante. Si la que estás mirando ya la tiene otro, arriba sale cuál, quién la enlazó y si en BC se digitó el N.º de aquel —en ese caso casi seguro está bien y este es otro documento—. Si de verdad es de este, “Pasarla a este comprobante” se la quita al otro, que vuelve a pendientes.",
+    "Cuando la que calzó sola no es la suya (en BC se digitó el N.º equivocado), abrí esa factura y tocá “¿Es de otro comprobante?”: salen los del mismo proveedor que siguen sin registrar, del más parecido en monto, y “Pasarla a esta” la mueve. El cotejo automático ya no se la devuelve al primero.",
     "Cerrar y palomear son cosas distintas. La palomita es “ya la vi”; cerrar es “esto no va a estar en BC nunca, y este es el motivo”. Una factura sin registrar se puede palomear sin cerrarla, cuando la viste y sabés que todavía falta digitarla.",
     "Cerrar exige motivo a propósito: un caso cerrado sin explicación no se distingue, un mes después, de uno que alguien quiso sacar de la lista. Y una factura enlazada a una de BC no se puede cerrar como que no aplica: primero se suelta el enlace.",
   ],
