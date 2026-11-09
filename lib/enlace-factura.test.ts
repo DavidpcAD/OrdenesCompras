@@ -7,7 +7,8 @@
 //   npm test
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { comprobanteDeNumero, facturasAnuladas, numeroDigitadoEs, sinPuntoFinal, type ComprobanteBuscable } from "./enlace-factura.ts";
+import { comprobanteDeNumero, facturasAnuladas, facturasParaCotejo, numeroDigitadoEs, sinPuntoFinal, type ComprobanteBuscable } from "./enlace-factura.ts";
+import { cruzar, type Comprobante } from "./cruce-correo-bc.ts";
 
 test("el N.º digitado en BC es el de ese comprobante, no el de otro del mismo proveedor", () => {
   assert.equal(numeroDigitadoEs("00100001010000123401", "123401"), true);
@@ -132,4 +133,38 @@ test("dos notas parciales que suman el total sí la anulan, y el redondeo no est
 
 test("una nota sin factura aplicada no anula nada", () => {
   assert.equal(facturasAnuladas(FACTURAS_BC, [nota("CNCR-000004", "NC-000004", 250, "")]).size, 0);
+});
+
+// ---------------------------------------------------------------------------
+// Qué puede tomar el cotejo automático.
+
+const COMPROBANTE: Comprobante = {
+  clave: clave("3101000000", "00100001010000000777"), consecutivo: "00100001010000000777", tipo: "01",
+  cedulaEmisor: "3101000000", nombreEmisor: "Proveedor de Prueba, S.A.", cedulaReceptor: "",
+  fecha: "2026-11-02", total: 100, moneda: "USD",
+};
+const PROVEEDORES = [{ codigo: "PROV-000001", nombre: "PROVEEDOR DE PRUEBA, S.A.", cedula: "3101000000" }];
+const bc = (numero: string, numeroProveedor = "777", total = 100) => ({
+  numero, numeroProveedor, proveedorCodigo: "PROV-000001", proveedorNombre: "PROVEEDOR DE PRUEBA, S.A.",
+  fecha: "2026-11-02", total, moneda: "USD",
+});
+const cotejar = (facturas: ReturnType<typeof bc>[], retenidas = new Set<string>(), anuladas = new Map<string, unknown>()) =>
+  cruzar([COMPROBANTE], facturasParaCotejo(facturas, retenidas, anuladas), PROVEEDORES);
+
+test("un borrador de BC no es el registro: el comprobante sigue pendiente", () => {
+  // Antes salía "Registrada" contra el borrador, y al registrarse de verdad BC lo
+  // borraba y la fila quedaba amarrada a un N.º que ya no existía.
+  const r = cotejar([bc("CF-000001", "777", 0)]);
+  assert.equal(r.calzadas.length + r.descuadradas.length, 0);
+  assert.deepEqual(r.soloEnCorreo.map((c) => c.clave), [COMPROBANTE.clave]);
+});
+
+test("ya registrada, calza con su CFR- aunque el borrador siga en la lista", () => {
+  const r = cotejar([bc("CF-000001", "777", 0), bc("CFR-000001")]);
+  assert.equal(r.calzadas[0]?.factura.numero, "CFR-000001");
+});
+
+test("la que ya tiene dueño o está anulada tampoco se ofrece", () => {
+  assert.equal(cotejar([bc("CFR-000001")], new Set(["CFR-000001"])).soloEnCorreo.length, 1);
+  assert.equal(cotejar([bc("CFR-000001")], new Set(), new Map([["CFR-000001", []]])).soloEnCorreo.length, 1);
 });

@@ -8,6 +8,7 @@ import {
   type DuennoEnlace, type NotaQueAnula, type OtroComprobante,
 } from "@/lib/enlace-factura";
 import { estadoBuzon, xmlDeComprobante } from "@/lib/graph-buzon";
+import { estaRegistrada } from "@/lib/vigilancia-facturas";
 import {
   leerFacturaCorreo, tablaCorreoExiste, FALTA_TABLA, bcNumerosEnlazados,
   enlazarFacturaBc, desenlazarFacturaBc, guardarNota, facturaCorreoPorBcNumero,
@@ -94,8 +95,9 @@ export async function GET(req: NextRequest, { params }: { params: { clave: strin
       ladoBc(numeroBc, !!previa),
       // Los candidatos solo hacen falta cuando no hay nada enlazado. Con una factura
       // ya amarrada, ofrecer alternativas es ruido — y si resultó ser la equivocada,
-      // primero se suelta y ahí vuelven a salir.
-      factura.bcNumero
+      // primero se suelta y ahí vuelven a salir. Amarrada a un BORRADOR cuenta como
+      // nada: al registrarse, BC lo borra y el CFR- que queda es justo el candidato.
+      factura.bcNumero && estaRegistrada({ numero: factura.bcNumero })
         ? Promise.resolve({ lista: [] as Candidato[], error: undefined as string | undefined })
         : buscarCandidatos(factura),
       // Lo que hay que saber ANTES de tocar "Sí, es esta": si esa factura de BC ya
@@ -183,6 +185,15 @@ export async function POST(req: NextRequest, { params }: { params: { clave: stri
         return NextResponse.json(
           { error: `Business Central no tiene ninguna factura de compra ${numero}. Revisá el número.` },
           { status: 404 },
+        );
+      }
+      // Un borrador todavía no está en los libros, y al registrarlo BC lo borra y le da
+      // otro número (CFR-…): el enlace quedaría apuntando a la nada con la fila diciendo
+      // "registrada". Pasó con el cotejo automático en nov 2026; a mano tampoco.
+      if (!estaRegistrada(enBc)) {
+        return NextResponse.json(
+          { error: `${enBc.numero} todavía es un borrador en Business Central: no está registrada. Cuando la registren allá, el cotejo la encuentra sola; si no, enlazá el CFR- que le quede.` },
+          { status: 409 },
         );
       }
       const cuadra = enBc.moneda === factura.moneda && Math.abs(enBc.total - factura.total) <= 0.5;

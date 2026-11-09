@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { exigirSesion } from "@/lib/actor";
 import { facturasYProveedoresDeBc } from "@/lib/bc-facturas-cache";
 import { bcNotasCreditoCompra, type BcNotaCreditoCompra } from "@/lib/bc";
-import { facturasAnuladas } from "@/lib/enlace-factura";
+import { facturasAnuladas, facturasParaCotejo } from "@/lib/enlace-factura";
 import { cruzar, type Comprobante } from "@/lib/cruce-correo-bc";
 import { estadoBuzon, leerBuzon } from "@/lib/graph-buzon";
 import {
@@ -164,16 +164,9 @@ async function correr(buzon: ReturnType<typeof estadoBuzon>, emitir: (o: unknown
         bcNotasCreditoCompra(desde).catch(() => [] as BcNotaCreditoCompra[]),
       ]);
       emitir({ fase: "cotejo", hechos: 0, total: pendientes.length });
-      // Dos clases de factura de BC que NO pueden ser el registro de un comprobante
-      // pendiente (nov 2026, pedido de Contabilidad):
-      //  · la que ya tiene dueño fijo —enlazada a mano, o registrada con otro—. Sin
-      //    esto, la que se pasaba a mano de un comprobante a otro volvía al de antes en
-      //    la corrida siguiente, porque el N.º digitado en BC sigue siendo el de aquel;
-      //  · la que una nota de crédito dejó en cero. Una factura registrada con el N.º
-      //    equivocado y anulada con una NC interna ("NCI-…") seguía contando como el
-      //    registro de ese comprobante, que salía "registrado y descuadrado".
-      const anuladas = facturasAnuladas(facturas, notas);
-      const libres = facturas.filter((f) => !retenidas.has(f.numero) && !anuladas.has(f.numero));
+      // Fuera los borradores, las que ya tienen dueño y las anuladas: ver
+      // `facturasParaCotejo` (nov 2026, pedidos de Contabilidad).
+      const libres = facturasParaCotejo(facturas, retenidas, facturasAnuladas(facturas, notas));
       const cruce = cruzar(comprobantes, libres, proveedores);
 
       const resultados: ResultadoCotejo[] = [
