@@ -25,7 +25,7 @@
 //    misma llenó. El comprobante que mandó el proveedor está en el correo, con su fecha
 //    de emisión: con eso se verifica en vez de confiar.
 import { colasDelConsecutivo, seParecen } from "./cruce-correo-bc.ts";
-import { normalizarNumero, soloDigitos } from "./vigilancia-facturas.ts";
+import { estaRegistrada, normalizarNumero, soloDigitos } from "./vigilancia-facturas.ts";
 
 /**
  * ¿El N.º del proveedor que se digitó en BC es el de este comprobante?
@@ -165,4 +165,30 @@ export function facturasAnuladas(
     if (credito >= f.total - 0.5) out.set(f.numero, ns);
   }
   return out;
+}
+
+// ---------------------------------------------------------------------------
+// QUÉ PUEDE TOMAR EL COTEJO AUTOMÁTICO
+
+/**
+ * Las facturas de BC que el cotejo automático puede tomar como el registro de un
+ * comprobante. Quedan fuera tres:
+ *
+ *  · el BORRADOR (CF-…, no CFR-…). Todavía no está en los libros. El cotejo lo tomaba
+ *    y el comprobante salía "Registrada" el día que alguien empezaba a digitarlo; al
+ *    registrarlo de verdad BC borraba el borrador, le daba otro número, y la fila
+ *    quedaba amarrada a un documento que ya no existía. Sigue pendiente hasta que
+ *    aparezca su CFR-.
+ *  · la RETENIDA, que ya tiene dueño fijo (enlazada a mano, o registrada con otro
+ *    comprobante). Sin esto, la que se pasaba a mano de un comprobante a otro volvía
+ *    al de antes en la corrida siguiente, porque el N.º digitado en BC sigue siendo el
+ *    de aquel.
+ *  · la ANULADA por notas de crédito: ya no es el registro de nada.
+ */
+export function facturasParaCotejo<T extends { numero: string }>(
+  facturas: T[],
+  retenidas: ReadonlySet<string>,
+  anuladas: ReadonlyMap<string, unknown>,
+): T[] {
+  return facturas.filter((f) => estaRegistrada(f) && !retenidas.has(f.numero) && !anuladas.has(f.numero));
 }

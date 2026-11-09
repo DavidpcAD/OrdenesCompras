@@ -207,17 +207,33 @@ export async function guardarComprobantes(
  * automático no pudo —el número quedó mal tecleado—, así que volver a cotejarlos
  * borraría ese trabajo cada tres minutos. Un enlace a mano solo lo deshace otra
  * persona, desde la pantalla.
+ *
+ * TAMBIÉN las "registradas" contra un BORRADOR de BC (CF-…, no CFR-…). Hasta nov 2026
+ * el cotejo tomaba los borradores como si fueran el registro: el comprobante salía
+ * "Registrada" el día que alguien empezaba a digitarlo, y cuando por fin se registraba
+ * BC borraba el borrador y la fila quedaba amarrada a un documento que ya no existe,
+ * sin que nadie la volviera a mirar. El cotejo ya no toma borradores, y estas vuelven
+ * a la cola para encontrar su CFR- o quedar pendientes.
  */
 export async function pendientesDeCotejo(): Promise<FacturaCorreo[]> {
   if (!(await tablaCorreoExiste())) return [];
   const pool = await getPool();
   const r = await pool.request().query(`
     SELECT * FROM dbo.FacturaCorreo
-    WHERE estado IN ('pendiente','descuadrada')
-      AND (bcCalzePor IS NULL OR bcCalzePor <> 'manual')
+    WHERE ${EN_COLA_DEL_COTEJO}
     ORDER BY fechaEmision ASC`);
   return r.recordset.map(fila);
 }
+
+// Lo que el cotejo automático vuelve a mirar en cada corrida. Vive en un solo lugar
+// porque `bcNumerosRetenidos` es exactamente lo contrario, y si las dos se desalinean
+// una factura de BC puede quedar con dos dueños o con ninguno.
+// `NOT LIKE 'CFR%'` es la misma regla que `estaRegistrada` (lib/vigilancia-facturas.ts):
+// la serie de las registradas es CFR-, cualquier otra cosa es un borrador.
+const EN_COLA_DEL_COTEJO = `
+      (estado IN ('pendiente','descuadrada')
+        OR (estado = 'registrada' AND bcNumero NOT LIKE 'CFR%'))
+      AND (bcCalzePor IS NULL OR bcCalzePor <> 'manual')`;
 
 /**
  * Marca como RECHAZADAS las claves que vinieron en un acuse de Hacienda con mensaje 3.
@@ -301,7 +317,8 @@ export async function bcNumerosEnlazados(): Promise<Set<string>> {
 
 /**
  * Los N.º de BC que tiene amarrados un comprobante que el cotejo automático YA NO
- * revisa: los enlazados a mano y los que ya quedaron "registrada".
+ * revisa: los enlazados a mano y los que ya quedaron "registrada" contra un CFR-. Es
+ * lo contrario de `EN_COLA_DEL_COTEJO`.
  *
  * El cotejo solo vuelve a mirar las pendientes y las descuadradas, y a cada una le
  * ofrece todas las facturas de BC. Sin este filtro, al pasar a mano una factura de BC
@@ -316,7 +333,7 @@ export async function bcNumerosRetenidos(): Promise<Set<string>> {
   const r = await pool.request().query(`
     SELECT DISTINCT bcNumero FROM dbo.FacturaCorreo
     WHERE bcNumero IS NOT NULL
-      AND NOT (estado IN ('pendiente','descuadrada') AND (bcCalzePor IS NULL OR bcCalzePor <> 'manual'))`);
+      AND NOT (${EN_COLA_DEL_COTEJO})`);
   return new Set(r.recordset.map((x: any) => String(x.bcNumero).trim()).filter(Boolean));
 }
 
@@ -434,6 +451,8 @@ export type ResultadoCotejo = {
  * `fechaRegistro` se pone UNA sola vez, la primera vez que se ve registrada, y no se
  * vuelve a tocar: es el momento en que la factura apareció en BC, y de ahí sale
  * "cuánto tardó en digitarse". Si se reescribiera en cada corrida diría siempre "hoy".
+ * La excepción es la que estaba amarrada a un BORRADOR (ver `pendientesDeCotejo`): esa
+ * fecha es la del borrador, no la del registro, así que se toma la de ahora.
  */
 export async function guardarCotejo(
   resultados: ResultadoCotejo[],
@@ -466,7 +485,8 @@ export async function guardarCotejo(
         bcCalzePor    = v.bcCalzePor,
         ultimoCotejo  = getdate(),
         fechaRegistro = CASE
-                          WHEN v.estado IN ('registrada','descuadrada') AND f.fechaRegistro IS NULL
+                          WHEN v.estado IN ('registrada','descuadrada')
+                               AND (f.fechaRegistro IS NULL OR f.bcNumero NOT LIKE 'CFR%')
                             THEN getdate()
                           WHEN v.estado NOT IN ('registrada','descuadrada')
                             THEN NULL

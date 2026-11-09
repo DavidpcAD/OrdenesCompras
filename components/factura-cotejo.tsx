@@ -7,6 +7,7 @@ import { formatDate, money, num } from "@/lib/helpers";
 import { TIPOS, type LineaComprobante, type ResumenComprobante } from "@/lib/cruce-correo-bc";
 import type { Candidato, CotejoRenglones } from "@/lib/candidatos-bc";
 import type { DuennoEnlace, NotaQueAnula, OtroComprobante } from "@/lib/enlace-factura";
+import { estaRegistrada } from "@/lib/vigilancia-facturas";
 import type { BcFacturaCompraDetalle } from "@/lib/bc";
 import type { FacturaCorreo } from "@/lib/repo-facturas-correo";
 
@@ -204,8 +205,13 @@ export function FacturaCotejo({ fila, onCambio, onClose }: {
                   ← Ver los otros
                 </Button>
                 {/* Si ya la tiene otro, el botón dice lo que de verdad va a pasar: no es
-                    "enlazar", es quitársela a aquel. El aviso de arriba explica a quién. */}
-                {duenno ? (
+                    "enlazar", es quitársela a aquel. El aviso de arriba explica a quién.
+                    Un borrador no se enlaza: al registrarse cambia de número. */}
+                {!estaRegistrada(bc) ? (
+                  <span className="ds-muted ds-body-sm">
+                    Es un borrador: todavía no está registrada en BC. Se enlaza cuando la registren.
+                  </span>
+                ) : duenno ? (
                   <Button size="sm" disabled={ocupado}
                     onClick={() => void guardar(
                       { bcNumero: bc.numero, mover: true, nota: nota.trim() || undefined },
