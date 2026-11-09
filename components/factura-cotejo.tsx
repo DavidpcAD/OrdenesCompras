@@ -42,7 +42,8 @@ type Datos = {
   otros?: OtroComprobante[];
 };
 
-// "00100001010000102944" → "102944": así le dice la gente a una factura. El
+// Los 20 dígitos del consecutivo → solo la cola sin ceros: así le dice la gente a una
+// factura. El
 // consecutivo completo sigue en el título del diálogo.
 const corto = (consecutivo: string) => consecutivo.slice(-10).replace(/^0+/, "") || consecutivo;
 
@@ -221,8 +222,8 @@ export function FacturaCotejo({ fila, onCambio, onClose }: {
             ) : (
               <div className="row gap-2 wrap" style={{ justifyContent: "space-between", alignItems: "center" }}>
                 {/* Por qué está amarrada. En la automática es el N.º digitado en BC, y
-                    decirlo es lo que deja ver un error de digitación de un vistazo:
-                    "se digitó el N.º 179529" al lado de ₡421 376,01 contra ₡6 912. */}
+                    decirlo es lo que deja ver un error de digitación de un vistazo: el
+                    N.º de un comprobante chiquito al lado de una factura grande. */}
                 <span className="ds-muted ds-body-sm">
                   {actual.bcCalzePor === "manual"
                     ? `Enlazada a mano${actual.revisadoPor ? ` por ${actual.revisadoPor}` : ""}`
@@ -497,9 +498,9 @@ function Aviso({ tono, titulo, children }: { tono: "yellow" | "green"; titulo: s
 // --------------------------------------------------------- factura anulada en BC
 //
 // Una factura de BC que una nota de crédito deja en cero sigue saliendo como
-// registrada, y hasta el 9 nov 2026 la Auditoría le creía: la 179529 de Construplaza
-// salía "registrada y descuadrada por ₡414 464" contra CFR-012042, que Contabilidad
-// había anulado con "NCI-179529" porque se digitó con el número equivocado. El
+// registrada, y hasta nov 2026 la Auditoría le creía: un comprobante salía "registrado
+// y descuadrado" contra una factura que Contabilidad había anulado con una NC interna
+// ("NCI-…") porque se digitó con el número equivocado. El
 // cotejo automático ya no las toma; esto es para las que quedaron enlazadas de antes
 // o a mano, y para cuando se está por enlazar una.
 function AvisoAnulada({ bcNumero, notas, esPrevia }: { bcNumero: string; notas: NotaQueAnula[]; esPrevia: boolean }) {
@@ -521,14 +522,13 @@ function AvisoAnulada({ bcNumero, notas, esPrevia }: { bcNumero: string; notas: 
 //
 // Se está mirando una factura de BC que ya respalda OTRO comprobante. Lo que hay que
 // saber antes de decidir es si ese amarre tiene fundamento, y el fundamento es el N.º
-// que se digitó en BC. Tres casos reales del 9 nov 2026:
+// que se digitó en BC. Los tres casos:
 //
-//   · Toyman: CFR-011784 se digitó con el N.º 102944 y está con la 102944. Casi
-//     seguro está bien, y la 103229 es otro documento.
-//   · Tecni Gypsum: CFR-012135 se digitó con "704181", que no es ninguno de los dos.
-//     Ahí deciden los renglones y la fecha.
-//   · (al revés) que en BC se haya digitado el N.º de ESTE y la tenga otro: señal
-//     fuerte de que hay que pasarla.
+//   · En BC se digitó el N.º del que la tiene: casi seguro está bien, y este es otro
+//     documento.
+//   · El N.º digitado en BC no es ninguno de los dos: deciden los renglones y la fecha.
+//   · En BC se digitó el N.º de ESTE y la tiene otro: señal fuerte de que hay que
+//     pasarla.
 function AvisoDuenno({ duenno, bcNumero, numeroProveedor, numeroEsDeEste, este }: {
   duenno: DuennoEnlace;
   bcNumero: string;
@@ -571,8 +571,8 @@ function AvisoDuenno({ duenno, bcNumero, numeroProveedor, numeroEsDeEste, este }
 // ------------------------------------------------------- es de otro comprobante
 //
 // La otra puerta: se abrió el comprobante que SE QUEDÓ la factura de BC y no es suya
-// (Construplaza 179529: ₡6 912 en el correo, ₡421 376,01 en BC porque allá se digitó
-// ese N.º). El dueño de verdad casi siempre es otro comprobante del mismo proveedor que
+// (un comprobante chiquito contra una factura grande, porque en BC se digitó su N.º).
+// El dueño de verdad casi siempre es otro comprobante del mismo proveedor que
 // sigue sin registrar; acá salen ordenados por parecido en monto, y se le pasa con un
 // toque. El que se queda sin ella vuelve a pendientes, y el cotejo automático ya no se
 // la devuelve.

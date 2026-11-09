@@ -118,7 +118,7 @@ export default function RegistrarFacturaPage() {
 
   // EL COMPROBANTE QUE EL PROVEEDOR MANDÓ AL CORREO, si ya llegó: de ahí sale la fecha
   // de emisión REAL. Antes el "coincide ✓" solo comparaba dos fechas que la persona
-  // misma tecleó — Kattya, 9 nov 2026: la 731655 de Durman era del 04/11 y con 06/11 la
+  // misma tecleó — Contabilidad, nov 2026: con una fecha que no era la de la factura, la
   // pantalla igual decía que coincidía. Se busca un rato después de dejar de escribir,
   // no en cada tecla; si no aparece (o aparecen dos), no se dice nada.
   const [comprobante, setComprobante] = useState<ComprobanteDeFactura | null>(null);

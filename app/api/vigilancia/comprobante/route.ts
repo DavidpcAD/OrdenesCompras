@@ -6,13 +6,13 @@ import { cedulaDeProveedorBc, comprobantesPorCola, tablaCorreoExiste } from "@/l
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-// GET /api/vigilancia/comprobante?numero=731655&proveedorNo=PROV-000123&proveedor=DURMAN%20ESQUIVEL
+// GET /api/vigilancia/comprobante?numero=<N.º de factura>&proveedorNo=<PROV-…>&proveedor=<nombre>
 //
 // EL COMPROBANTE DEL CORREO QUE CORRESPONDE A LA FACTURA QUE SE ESTÁ DIGITANDO.
 //
-// Lo pidió Kattya el 9 nov 2026: en Registrar factura puso 06/11 a una factura de Durman
-// que era del 04/11 y la pantalla le dijo "Coincide con la fecha de factura ✓". Decía la
-// verdad —las dos fechas que ella tecleó eran iguales— pero no la que ella esperaba. La
+// Lo pidió Contabilidad (nov 2026): en Registrar factura puso una fecha que no era la
+// de la factura y la pantalla le dijo "Coincide con la fecha de factura ✓". Decía la
+// verdad —las dos fechas que tecleó eran iguales— pero no la que se esperaba. La
 // fecha de emisión real está en el XML que el proveedor mandó al buzón, y la Auditoría
 // ya lo leyó: acá solo se busca.
 //

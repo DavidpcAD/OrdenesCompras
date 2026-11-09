@@ -304,10 +304,10 @@ export async function bcNumerosEnlazados(): Promise<Set<string>> {
  * revisa: los enlazados a mano y los que ya quedaron "registrada".
  *
  * El cotejo solo vuelve a mirar las pendientes y las descuadradas, y a cada una le
- * ofrece todas las facturas de BC. Sin este filtro, al pasar CFR-012042 de la 179529
- * a la 309100 la 179529 volvía a pendientes, el cotejo veía otra vez el N.º 179529
- * digitado en BC y se la devolvía a los tres minutos: dos comprobantes con la misma
- * factura. Las descuadradas automáticas NO entran: esas se recotejan con su propia
+ * ofrece todas las facturas de BC. Sin este filtro, al pasar a mano una factura de BC
+ * de un comprobante a otro, el primero volvía a pendientes, el cotejo veía otra vez su
+ * N.º digitado en BC y se la devolvía a los tres minutos: dos comprobantes con la
+ * misma factura. Las descuadradas automáticas NO entran: esas se recotejan con su propia
  * factura en cada corrida y quitársela las dejaría huérfanas.
  */
 export async function bcNumerosRetenidos(): Promise<Set<string>> {
@@ -324,9 +324,9 @@ export async function bcNumerosRetenidos(): Promise<Set<string>> {
  * Los comprobantes del mismo emisor, sin enlazar, a los que se les podría pasar la
  * factura de BC que hoy tiene `f`. El más parecido en monto primero.
  *
- * Es la otra puerta del mismo arreglo: cuando se abre el comprobante que se quedó la
- * factura (la 179529 de Construplaza, ₡6 912 contra ₡421 376,01 en BC), el que la
- * debería tener está en esta lista (la 309100, ₡414 464). Se mira un mes para cada
+ * Es la otra puerta del mismo arreglo: cuando se abre el comprobante que se quedó una
+ * factura de BC que no es suya (un comprobante chiquito contra una factura grande,
+ * porque en BC se digitó su N.º), el que la debería tener suele estar en esta lista. Se mira un mes para cada
  * lado de la fecha del comprobante, que es mucho más que lo que tarda una digitación.
  */
 export async function otrosDelEmisor(f: FacturaCorreo, totalBc: number, max = 6): Promise<FacturaCorreo[]> {
@@ -559,11 +559,10 @@ const SQL_ENLAZAR = `
 /**
  * Pasar una factura de BC de un comprobante a otro, en un solo paso.
  *
- * Es lo que faltaba el 9 nov 2026: Kattya veía "ya está enlazada al comprobante X,
+ * Es lo que faltaba (nov 2026): Contabilidad veía "ya está enlazada al comprobante X,
  * soltala de ahí primero" y no había cómo — si el amarre lo había hecho el cotejo
- * automático, ni siquiera existía el botón de soltar. Caso Construplaza: CFR-012042 se
- * digitó con el N.º 179529 y el cotejo, con razón, le creyó al número; la factura de
- * verdad es la 309100.
+ * automático, ni siquiera existía el botón de soltar. Pasa cuando en BC se digita el
+ * N.º de otro comprobante del mismo proveedor: el cotejo, con razón, le cree al número.
  *
  * Va en una transacción y se suelta SOLO si el otro todavía la tiene: si alguien la
  * movió mientras tanto, no se pisa nada y se devuelve false.
