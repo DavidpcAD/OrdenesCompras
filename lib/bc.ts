@@ -5377,9 +5377,9 @@ export async function bcFacturaCompraConLineas(numeroFactura: string): Promise<B
 //
 // Una factura de BC anulada con una nota de crédito por el total sigue saliendo en
 // `purchaseInvoices` como registrada, y el cotejo del correo le creía. Caso que lo
-// destapó (9 nov 2026): CFR-012042 se registró con el N.º 179529 por error,
-// Contabilidad la anuló con CNCR-000514 ("NCI-179529"), y la Auditoría siguió
-// diciendo que la 179529 estaba registrada y descuadrada por ₡414 464.
+// destapó (nov 2026): una factura se registró con el N.º del proveedor equivocado,
+// Contabilidad la anuló con una NC interna ("NCI-…"), y la Auditoría siguió diciendo
+// que ese comprobante estaba registrado y descuadrado.
 //
 // Registradas = Open, Paid y Corrective (la que crea "Corregir"/"Cancelar" sobre una
 // factura registrada). Draft e In Review son borradores y no anulan nada.
@@ -5387,7 +5387,7 @@ const NC_REGISTRADA = new Set(["Open", "Paid", "Corrective"]);
 
 export type BcNotaCreditoCompra = {
   numero: string;
-  /** El N.º que se digitó del documento del proveedor ("NC-224254", "NCI-179529"). */
+  /** El N.º que se digitó del documento del proveedor ("NC-…", o "NCI-…" si es interna). */
   numeroProveedor: string;
   fecha: string;
   total: number;

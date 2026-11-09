@@ -165,13 +165,13 @@ async function correr(buzon: ReturnType<typeof estadoBuzon>, emitir: (o: unknown
       ]);
       emitir({ fase: "cotejo", hechos: 0, total: pendientes.length });
       // Dos clases de factura de BC que NO pueden ser el registro de un comprobante
-      // pendiente (9 nov 2026, Kattya):
+      // pendiente (nov 2026, pedido de Contabilidad):
       //  · la que ya tiene dueño fijo —enlazada a mano, o registrada con otro—. Sin
       //    esto, la que se pasaba a mano de un comprobante a otro volvía al de antes en
       //    la corrida siguiente, porque el N.º digitado en BC sigue siendo el de aquel;
-      //  · la que una nota de crédito dejó en cero. CFR-012042 se registró con el N.º
-      //    179529 por error y se anuló con "NCI-179529", y la Auditoría seguía diciendo
-      //    que la 179529 estaba registrada y descuadrada por ₡414 464.
+      //  · la que una nota de crédito dejó en cero. Una factura registrada con el N.º
+      //    equivocado y anulada con una NC interna ("NCI-…") seguía contando como el
+      //    registro de ese comprobante, que salía "registrado y descuadrado".
       const anuladas = facturasAnuladas(facturas, notas);
       const libres = facturas.filter((f) => !retenidas.has(f.numero) && !anuladas.has(f.numero));
       const cruce = cruzar(comprobantes, libres, proveedores);

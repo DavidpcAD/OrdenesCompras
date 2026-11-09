@@ -1,7 +1,7 @@
 // DE QUIÉN ES UNA FACTURA DE BC, Y CUÁL ES EL COMPROBANTE DE UNA FACTURA QUE SE DIGITA.
 //
-// Las dos preguntas salieron el mismo día (9 nov 2026, Kattya) y tienen la misma raíz:
-// la app ya sabía algo que a la persona le tocaba ir a averiguar a mano.
+// Las dos preguntas las hizo Contabilidad el mismo día (nov 2026) y tienen la misma
+// raíz: la app ya sabía algo que a la persona le tocaba ir a averiguar a mano.
 //
 // 1. "Dice que ya está enlazada, y solo este registro existe como pareja". En la
 //    Auditoría una factura de BC respalda UN comprobante. Cuando se quiere enlazar a
@@ -9,15 +9,16 @@
 //    es a cuál está amarrada y si ese amarre tiene fundamento. El fundamento es el N.º
 //    del proveedor que se digitó en BC: si es el de aquel comprobante, lo más seguro es
 //    que el amarre esté bien y que este sea OTRO documento (una segunda compra, o la
-//    misma factura reemitida). Los tres casos reales de ese día:
+//    misma factura reemitida). Los tres casos que salieron:
 //
-//      · Toyman: CFR-011784 se digitó con el N.º 102944 y está con la 102944. La 103229
-//        es otro comprobante por lo mismo, sin recepción en BC. El amarre está bien.
-//      · Tecni Gypsum: CFR-012135 se digitó con "704181", que no es ni la 370159 ni la
-//        370418 (es un pedazo de la clave de la segunda). Ahí decide la persona.
-//      · Construplaza: CFR-012042 (₡421 376,01) se digitó con el N.º 179529, que es un
-//        comprobante de ₡6 912. El cotejo automático le creyó al número; la factura es
-//        la 309100 y había que poder pasarla.
+//      · La factura de BC se digitó con el N.º del OTRO comprobante, del mismo día y
+//        por lo mismo. Este es un segundo documento sin recepción en BC: el amarre
+//        está bien.
+//      · El N.º digitado en BC no es el de ninguno de los dos (era un pedazo de la
+//        clave de uno, corrido un dígito). Ahí decide la persona.
+//      · Una factura grande se digitó con el N.º de un comprobante chiquito del mismo
+//        proveedor. El cotejo automático le creyó al número, y había que poder pasarla
+//        al comprobante que sí era.
 //
 // 2. "Si le pongo otra fecha se mantiene la frase". En Registrar factura, la fecha de la
 //    factura la teclea una persona y el "coincide ✓" solo comparaba dos campos que ella
@@ -39,7 +40,7 @@ export function numeroDigitadoEs(consecutivo: string, numeroProveedor: string | 
   return colasDelConsecutivo(consecutivo).includes(n);
 }
 
-/** "TORNILLOS TOYMAN S. A." + "." daba "S. A.." en el aviso. */
+/** Un nombre que termina en "S. A." más el punto de la oración daba "S. A.." en el aviso. */
 export const sinPuntoFinal = (s: string | null | undefined): string =>
   String(s ?? "").replace(/[\s.]+$/, "");
 
@@ -97,10 +98,10 @@ export type ComprobanteDeFactura = {
 /**
  * El comprobante del correo que corresponde al N.º de factura que se está digitando.
  *
- * Se acepta lo que la gente teclea de verdad: la cola ("731655"), con letras o ceros
- * adelante ("F-0731655"), el consecutivo de 20 o la clave de 50. SIEMPRE amarrado al
+ * Se acepta lo que la gente teclea de verdad: la cola ("123456"), con letras o ceros
+ * adelante ("F-0123456"), el consecutivo de 20 o la clave de 50. SIEMPRE amarrado al
  * proveedor —por cédula si se tiene, si no por nombre—, porque una cola corta sola
- * calza con cualquier cosa (el 81239 de Multisuministros calzaba con EASYBOX).
+ * calza con cualquier cosa (el número de un proveedor calzaba con la factura de otro).
  *
  * Si hay más de uno que calce, devuelve null: no adivina. Una fecha equivocada
  * sugerida con seguridad es peor que no sugerir nada.
@@ -134,10 +135,10 @@ export function comprobanteDeNumero<T extends ComprobanteBuscable>(
 //
 // Una factura de compra anulada con nota de crédito por el total sigue apareciendo en
 // BC como "registrada", y el cotejo del correo la tomaba como el registro del
-// comprobante. Medido el 9 nov 2026: 268 facturas de BC están en cero por una NC, y 6
-// comprobantes de la Auditoría estaban "descuadrados" contra una de ellas — entre
-// ellos la 179529 de Construplaza contra CFR-012042, que Contabilidad había anulado
-// con "NCI-179529" porque se registró con el número equivocado.
+// comprobante. Medido en nov 2026: cientos de facturas de BC estaban en cero por una NC,
+// y varios comprobantes de la Auditoría salían "descuadrados" contra una de ellas —
+// entre ellos uno cuya factura Contabilidad había anulado con una NC interna ("NCI-…")
+// porque se registró con el número equivocado.
 
 export type NotaQueAnula = { numero: string; numeroProveedor: string; fecha: string; total: number; aplicaA: string };
 
