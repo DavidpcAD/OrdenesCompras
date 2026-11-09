@@ -15,6 +15,7 @@ import { comprimirFoto, pesoLegible } from "@/lib/foto";
 import type { FotoComprimida } from "@/lib/foto";
 import type { MotivoNC, OrdenLinea } from "@/lib/types";
 import type { MotivoRevision } from "@/lib/helpers";
+import type { ComprobanteDeFactura } from "@/lib/enlace-factura";
 
 // Una opción de BC (código + nombre) para los selects de "pago con tarjeta". Mismo
 // shape que OpcionBc de lib/bc.ts, acá local para no importar server-only al cliente.
@@ -111,6 +112,36 @@ export default function RegistrarFacturaPage() {
   const [fechaFactura, setFechaFactura] = useState(todayISO());
   const [fechaRegistro, setFechaRegistro] = useState(todayISO());
   const [fechaRecepcion, setFechaRecepcion] = useState(todayISO());
+  // Las tres fechas se mueven juntas cuando cambia la de la factura (Contabilidad
+  // después puede separar recepción y registro).
+  const ponerFechaFactura = (v: string) => { setFechaFactura(v); setFechaRegistro(v); setFechaRecepcion(v); };
+
+  // EL COMPROBANTE QUE EL PROVEEDOR MANDÓ AL CORREO, si ya llegó: de ahí sale la fecha
+  // de emisión REAL. Antes el "coincide ✓" solo comparaba dos fechas que la persona
+  // misma tecleó — Kattya, 9 nov 2026: la 731655 de Durman era del 04/11 y con 06/11 la
+  // pantalla igual decía que coincidía. Se busca un rato después de dejar de escribir,
+  // no en cada tecla; si no aparece (o aparecen dos), no se dice nada.
+  const [comprobante, setComprobante] = useState<ComprobanteDeFactura | null>(null);
+  useEffect(() => {
+    setComprobante(null);
+    const n = numeroFactura.trim();
+    if (n.replace(/\D/g, "").replace(/^0+/, "").length < 4 || !orden) return;
+    const ctl = new AbortController();
+    const t = setTimeout(async () => {
+      try {
+        const q = new URLSearchParams({
+          numero: n,
+          proveedor: orden.proveedorNombre ?? "",
+          proveedorNo: orden.proveedorNo || orden.proveedorId || "",
+        });
+        const r = await fetch(`/api/vigilancia/comprobante?${q}`, { cache: "no-store", signal: ctl.signal });
+        if (!r.ok) return;
+        const j = await r.json();
+        setComprobante(j?.comprobante ?? null);
+      } catch { /* es una ayuda: si falla, la pantalla sigue igual */ }
+    }, 450);
+    return () => { clearTimeout(t); ctl.abort(); };
+  }, [numeroFactura, orden?.proveedorNombre, orden?.proveedorNo, orden?.proveedorId]); // eslint-disable-line react-hooks/exhaustive-deps
   const [preview, setPreview] = useState(false);
   const [guardando, setGuardando] = useState(false);
   // Confirmación de lo que pasó en BC: stock antes → después (inventario) y el
@@ -979,8 +1010,20 @@ export default function RegistrarFacturaPage() {
             <Field label="N.º de factura del proveedor">
               <Input value={numeroFactura} onChange={(e) => setNumeroFactura(e.target.value)} placeholder="Ej. F-0099281" />
             </Field>
-            <Field label="Fecha de la factura">
-              <DateField value={fechaFactura} onChange={(v) => { setFechaFactura(v); setFechaRegistro(v); setFechaRecepcion(v); }} />
+            <Field label="Fecha de la factura"
+              warning={!!comprobante && comprobante.fechaEmision !== fechaFactura}
+              help={!comprobante ? undefined
+                : comprobante.fechaEmision === fechaFactura
+                  ? `Coincide con el comprobante que llegó al correo (${money(comprobante.total, comprobante.moneda)}) ✓`
+                  : <>
+                      El comprobante que llegó al correo es del {formatDate(comprobante.fechaEmision)}
+                      {" "}({money(comprobante.total, comprobante.moneda)}).{" "}
+                      <button type="button" className="link-btn link-btn--sm"
+                        onClick={() => ponerFechaFactura(comprobante.fechaEmision)}>
+                        Usar esa fecha
+                      </button>
+                    </>}>
+              <DateField value={fechaFactura} onChange={ponerFechaFactura} />
             </Field>
             {/* Una sola fecha (recepción y registro se llevan por detrás igual a la
                 factura) en Bodega, y también en Contabilidad cuando la orden es de

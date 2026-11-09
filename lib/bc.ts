@@ -5373,6 +5373,70 @@ export async function bcFacturaCompraConLineas(numeroFactura: string): Promise<B
   };
 }
 
+// ── NOTAS DE CRÉDITO DE COMPRA: LO QUE DEJA UNA FACTURA EN CERO ─────────────────
+//
+// Una factura de BC anulada con una nota de crédito por el total sigue saliendo en
+// `purchaseInvoices` como registrada, y el cotejo del correo le creía. Caso que lo
+// destapó (9 nov 2026): CFR-012042 se registró con el N.º 179529 por error,
+// Contabilidad la anuló con CNCR-000514 ("NCI-179529"), y la Auditoría siguió
+// diciendo que la 179529 estaba registrada y descuadrada por ₡414 464.
+//
+// Registradas = Open, Paid y Corrective (la que crea "Corregir"/"Cancelar" sobre una
+// factura registrada). Draft e In Review son borradores y no anulan nada.
+const NC_REGISTRADA = new Set(["Open", "Paid", "Corrective"]);
+
+export type BcNotaCreditoCompra = {
+  numero: string;
+  /** El N.º que se digitó del documento del proveedor ("NC-224254", "NCI-179529"). */
+  numeroProveedor: string;
+  fecha: string;
+  total: number;
+  moneda: string;
+  /** La factura de compra a la que se aplicó (CFR-…), si se aplicó a una. */
+  aplicaA: string;
+};
+
+const CAMPOS_NC = "number,vendorCreditMemoNumber,creditMemoDate,status,totalAmountIncludingTax,currencyCode,invoiceNumber";
+
+const notaCredito = (c: any): BcNotaCreditoCompra => ({
+  numero: c.number ?? "",
+  numeroProveedor: c.vendorCreditMemoNumber ?? "",
+  fecha: c.creditMemoDate ?? "",
+  total: Number(c.totalAmountIncludingTax ?? 0) || 0,
+  moneda: c.currencyCode || "CRC",
+  aplicaA: String(c.invoiceNumber ?? "").trim(),
+});
+
+/** Notas de crédito de compra REGISTRADAS desde una fecha (los borradores no cuentan). */
+export async function bcNotasCreditoCompra(desde: string): Promise<BcNotaCreditoCompra[]> {
+  const cid = await getStdCompanyId();
+  const filtro = encodeURIComponent(`creditMemoDate ge ${desde}`);
+  const out: BcNotaCreditoCompra[] = [];
+  for (let pagina = 0; pagina < VIG_PAGINAS_MAX; pagina++) {
+    const url = `${stdRoot()}/companies(${cid})/purchaseCreditMemos?$filter=${filtro}` +
+      `&$top=${VIG_PAGINA}&$skip=${pagina * VIG_PAGINA}&$orderby=creditMemoDate&$select=${CAMPOS_NC}`;
+    const res = await bcFetch(url, { cache: "no-store" });
+    if (!res.ok) throw new Error(`BC ${res.status} en purchaseCreditMemos: ${(await res.text()).slice(0, 250)}`);
+    const filas: any[] = (await res.json())?.value ?? [];
+    for (const c of filas) if (NC_REGISTRADA.has(c.status)) out.push(notaCredito(c));
+    if (filas.length < VIG_PAGINA) break;
+  }
+  return out;
+}
+
+/** Las notas de crédito registradas que se aplicaron a ESA factura de compra. */
+export async function bcNotasDeFactura(numeroFactura: string): Promise<BcNotaCreditoCompra[]> {
+  const no = (numeroFactura ?? "").trim();
+  if (!no) return [];
+  const cid = await getStdCompanyId();
+  const url = `${stdRoot()}/companies(${cid})/purchaseCreditMemos`
+    + `?$filter=${encodeURIComponent(`invoiceNumber eq '${odataStr(no)}'`)}&$select=${CAMPOS_NC}`;
+  const res = await bcFetch(url, { cache: "no-store" });
+  if (!res.ok) throw new Error(`BC ${res.status} en purchaseCreditMemos: ${(await res.text()).slice(0, 250)}`);
+  const filas: any[] = (await res.json())?.value ?? [];
+  return filas.filter((c) => NC_REGISTRADA.has(c.status)).map(notaCredito);
+}
+
 export type BcProveedorCedula = { codigo: string; nombre: string; cedula: string };
 
 /**

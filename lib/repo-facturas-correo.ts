@@ -14,6 +14,7 @@
 import { getPool, sql } from "./db.ts";
 import { bcDeepLinkFacturaPorNo } from "./bc.ts";
 import type { Comprobante } from "./cruce-correo-bc.ts";
+import { TIPOS_FACTURA } from "./enlace-factura.ts";
 
 // "rechazada" = Hacienda (o nosotros como receptores) rechazó el comprobante. No es
 // una factura atrasada: es una factura que NO EXISTE para efectos fiscales y que
@@ -298,6 +299,96 @@ export async function bcNumerosEnlazados(): Promise<Set<string>> {
   return new Set(r.recordset.map((x: any) => String(x.bcNumero).trim()).filter(Boolean));
 }
 
+/**
+ * Los N.º de BC que tiene amarrados un comprobante que el cotejo automático YA NO
+ * revisa: los enlazados a mano y los que ya quedaron "registrada".
+ *
+ * El cotejo solo vuelve a mirar las pendientes y las descuadradas, y a cada una le
+ * ofrece todas las facturas de BC. Sin este filtro, al pasar CFR-012042 de la 179529
+ * a la 309100 la 179529 volvía a pendientes, el cotejo veía otra vez el N.º 179529
+ * digitado en BC y se la devolvía a los tres minutos: dos comprobantes con la misma
+ * factura. Las descuadradas automáticas NO entran: esas se recotejan con su propia
+ * factura en cada corrida y quitársela las dejaría huérfanas.
+ */
+export async function bcNumerosRetenidos(): Promise<Set<string>> {
+  if (!(await tablaCorreoExiste())) return new Set();
+  const pool = await getPool();
+  const r = await pool.request().query(`
+    SELECT DISTINCT bcNumero FROM dbo.FacturaCorreo
+    WHERE bcNumero IS NOT NULL
+      AND NOT (estado IN ('pendiente','descuadrada') AND (bcCalzePor IS NULL OR bcCalzePor <> 'manual'))`);
+  return new Set(r.recordset.map((x: any) => String(x.bcNumero).trim()).filter(Boolean));
+}
+
+/**
+ * Los comprobantes del mismo emisor, sin enlazar, a los que se les podría pasar la
+ * factura de BC que hoy tiene `f`. El más parecido en monto primero.
+ *
+ * Es la otra puerta del mismo arreglo: cuando se abre el comprobante que se quedó la
+ * factura (la 179529 de Construplaza, ₡6 912 contra ₡421 376,01 en BC), el que la
+ * debería tener está en esta lista (la 309100, ₡414 464). Se mira un mes para cada
+ * lado de la fecha del comprobante, que es mucho más que lo que tarda una digitación.
+ */
+export async function otrosDelEmisor(f: FacturaCorreo, totalBc: number, max = 6): Promise<FacturaCorreo[]> {
+  if (!(await tablaCorreoExiste())) return [];
+  if (!f.cedulaEmisor || !f.fechaEmision) return [];
+  const pool = await getPool();
+  const r = await pool.request()
+    .input("ced", sql.VarChar(12), f.cedulaEmisor)
+    .input("clave", sql.Char(50), f.clave)
+    .input("fecha", sql.Date, f.fechaEmision)
+    .input("total", sql.Decimal(19, 4), totalBc)
+    .input("max", sql.Int, max)
+    .query(`
+      SELECT TOP (@max) * FROM dbo.FacturaCorreo
+      WHERE cedulaEmisor = @ced AND clave <> @clave
+        AND bcNumero IS NULL AND estado = 'pendiente'
+        AND tipoDoc IN (${TIPOS_FACTURA.map((t) => `'${t}'`).join(",")})
+        AND fechaEmision BETWEEN DATEADD(day, -31, @fecha) AND DATEADD(day, 31, @fecha)
+      ORDER BY ABS(total - @total), ABS(DATEDIFF(day, fechaEmision, @fecha))`);
+  return r.recordset.map(fila);
+}
+
+/**
+ * Los comprobantes cuyo consecutivo termina con lo que se tecleó, para Registrar
+ * factura. Es un prefiltro grueso; `comprobanteDeNumero` (lib/enlace-factura.ts) es el
+ * que amarra al proveedor y decide.
+ */
+export async function comprobantesPorCola(numero: string): Promise<FacturaCorreo[]> {
+  if (!(await tablaCorreoExiste())) return [];
+  const digitos = String(numero ?? "").replace(/\D/g, "");
+  const cola = digitos.replace(/^0+/, "");
+  if (cola.length < 4) return [];
+  const pool = await getPool();
+  const r = await pool.request()
+    .input("cola", sql.VarChar(60), `%${cola}`)
+    .input("clave", sql.VarChar(60), digitos)
+    .query(`
+      SELECT TOP 20 * FROM dbo.FacturaCorreo
+      WHERE (consecutivo LIKE @cola OR clave = @clave)
+        AND tipoDoc IN (${TIPOS_FACTURA.map((t) => `'${t}'`).join(",")})
+      ORDER BY fechaEmision DESC`);
+  return r.recordset.map(fila);
+}
+
+/**
+ * La cédula con la que llegan al correo los comprobantes de ese proveedor de BC,
+ * aprendida de los que ya se cotejaron. Así Registrar factura amarra el N.º al
+ * proveedor aunque la ficha de BC no tenga cédula (el 70% no la tiene) y sin
+ * preguntarle nada a BC.
+ */
+export async function cedulaDeProveedorBc(codigo: string): Promise<string | null> {
+  if (!codigo || !(await tablaCorreoExiste())) return null;
+  const pool = await getPool();
+  const r = await pool.request()
+    .input("prov", sql.VarChar(40), codigo)
+    .query(`
+      SELECT TOP 1 cedulaEmisor FROM dbo.FacturaCorreo
+      WHERE bcProveedor = @prov
+      GROUP BY cedulaEmisor ORDER BY COUNT(*) DESC`);
+  return r.recordset[0]?.cedulaEmisor ?? null;
+}
+
 export async function listarFacturasCorreo(opts: { desde?: string; hasta?: string; estado?: string } = {}): Promise<FacturaCorreo[]> {
   if (!(await tablaCorreoExiste())) return [];
   const pool = await getPool();
@@ -427,40 +518,111 @@ export async function marcarRevisada(clave: string, revisada: boolean, usuario: 
  */
 export async function enlazarFacturaBc(
   clave: string,
-  bc: { numero: string; proveedor?: string | null; total?: number | null; cuadra: boolean },
+  bc: DatosEnlace,
   usuario: string,
   nota?: string,
 ): Promise<void> {
   if (!(await tablaCorreoExiste())) throw new Error(FALTA_TABLA);
   const pool = await getPool();
-  await pool.request()
+  await entradasEnlace(pool.request(), clave, bc, usuario, nota).query(SQL_ENLAZAR);
+}
+
+type DatosEnlace = { numero: string; proveedor?: string | null; total?: number | null; cuadra: boolean };
+
+const entradasEnlace = (req: sql.Request, clave: string, bc: DatosEnlace, usuario: string, nota?: string) =>
+  req
     .input("clave", sql.Char(50), clave)
     .input("numero", sql.VarChar(40), bc.numero)
     .input("proveedor", sql.VarChar(40), bc.proveedor ?? null)
     .input("total", sql.Decimal(19, 4), bc.total ?? null)
     .input("estado", sql.VarChar(20), bc.cuadra ? "registrada" : "descuadrada")
     .input("usuario", sql.NVarChar(100), usuario)
-    .input("nota", sql.NVarChar(500), (nota ?? "").slice(0, 500) || null)
-    .query(`
-      UPDATE dbo.FacturaCorreo SET
-        bcNumero      = @numero,
-        bcProveedor   = @proveedor,
-        bcTotal       = @total,
-        bcCalzePor    = 'manual',
-        estado        = @estado,
-        -- Igual que en el cotejo: es CUÁNDO se supo que estaba en BC, y no se
-        -- reescribe si ya se sabía.
-        fechaRegistro = ISNULL(fechaRegistro, getdate()),
-        ultimoCotejo  = getdate(),
-        revisadoPor   = @usuario,
-        revisadoEn    = getdate(),
-        -- Un comentario en blanco no borra el que ya estaba escrito.
-        nota          = ISNULL(@nota, nota)
-      WHERE clave = @clave`);
+    .input("nota", sql.NVarChar(500), (nota ?? "").slice(0, 500) || null);
+
+const SQL_ENLAZAR = `
+  UPDATE dbo.FacturaCorreo SET
+    bcNumero      = @numero,
+    bcProveedor   = @proveedor,
+    bcTotal       = @total,
+    bcCalzePor    = 'manual',
+    estado        = @estado,
+    -- Igual que en el cotejo: es CUÁNDO se supo que estaba en BC, y no se
+    -- reescribe si ya se sabía.
+    fechaRegistro = ISNULL(fechaRegistro, getdate()),
+    ultimoCotejo  = getdate(),
+    revisadoPor   = @usuario,
+    revisadoEn    = getdate(),
+    -- Un comentario en blanco no borra el que ya estaba escrito.
+    nota          = ISNULL(@nota, nota)
+  WHERE clave = @clave`;
+
+/**
+ * Pasar una factura de BC de un comprobante a otro, en un solo paso.
+ *
+ * Es lo que faltaba el 9 nov 2026: Kattya veía "ya está enlazada al comprobante X,
+ * soltala de ahí primero" y no había cómo — si el amarre lo había hecho el cotejo
+ * automático, ni siquiera existía el botón de soltar. Caso Construplaza: CFR-012042 se
+ * digitó con el N.º 179529 y el cotejo, con razón, le creyó al número; la factura de
+ * verdad es la 309100.
+ *
+ * Va en una transacción y se suelta SOLO si el otro todavía la tiene: si alguien la
+ * movió mientras tanto, no se pisa nada y se devuelve false.
+ *
+ * El que pierde la factura vuelve a "pendiente", y no la recupera en la próxima
+ * sincronización: el enlace nuevo es a mano, y el cotejo automático no le ofrece a
+ * nadie una factura de BC que ya tiene dueño fuera de su alcance (`bcNumerosRetenidos`).
+ * Si no tenía comentario, se le deja dicho a dónde se fue su factura, para que el
+ * próximo que lo abra no se pregunte por qué volvió a pendientes.
+ */
+export async function moverEnlaceBc(
+  deClave: string,
+  aClave: string,
+  bc: DatosEnlace,
+  usuario: string,
+  notas: { destino?: string; origen: string },
+): Promise<boolean> {
+  if (!(await tablaCorreoExiste())) throw new Error(FALTA_TABLA);
+  const pool = await getPool();
+  const tx = new sql.Transaction(pool);
+  await tx.begin();
+  try {
+    const suelta = await new sql.Request(tx)
+      .input("de", sql.Char(50), deClave)
+      .input("numero", sql.VarChar(40), bc.numero)
+      .input("usuario", sql.NVarChar(100), usuario)
+      .input("notaDe", sql.NVarChar(500), notas.origen.slice(0, 500))
+      .query(`
+        UPDATE dbo.FacturaCorreo SET
+          bcNumero = NULL, bcProveedor = NULL, bcTotal = NULL, bcCalzePor = NULL,
+          estado = 'pendiente', fechaRegistro = NULL, ultimoCotejo = getdate(),
+          revisadoPor = @usuario, revisadoEn = getdate(),
+          nota = ISNULL(nota, @notaDe)
+        WHERE clave = @de AND bcNumero = @numero`);
+    if (!(suelta.rowsAffected?.[0] ?? 0)) {
+      await tx.rollback();
+      return false;
+    }
+    await entradasEnlace(new sql.Request(tx), aClave, bc, usuario, notas.destino).query(SQL_ENLAZAR);
+    await tx.commit();
+    return true;
+  } catch (e) {
+    await tx.rollback().catch(() => {});
+    throw e;
+  }
 }
 
-/** Deshacer el enlace: vuelve a la cola de pendientes y el cotejo la retoma. */
-export async function desenlazarFacturaBc(clave: string, usuario: string): Promise<void> {
+/**
+ * Deshacer el enlace: vuelve a la cola de pendientes y el cotejo la retoma.
+ *
+ * Normalmente solo el enlace a mano. `tambienAutomatico` es para cuando la factura de
+ * BC quedó anulada con nota de crédito: el cotejo ya no la toma, así que soltarla no
+ * se deshace sola en la próxima corrida (la ruta lo comprueba antes de pedirlo).
+ */
+export async function desenlazarFacturaBc(
+  clave: string,
+  usuario: string,
+  opts: { tambienAutomatico?: boolean } = {},
+): Promise<void> {
   if (!(await tablaCorreoExiste())) throw new Error(FALTA_TABLA);
   const pool = await getPool();
   await pool.request()
@@ -471,7 +633,7 @@ export async function desenlazarFacturaBc(clave: string, usuario: string): Promi
         bcNumero = NULL, bcProveedor = NULL, bcTotal = NULL, bcCalzePor = NULL,
         estado = 'pendiente', fechaRegistro = NULL, ultimoCotejo = getdate(),
         revisadoPor = @usuario, revisadoEn = getdate()
-      WHERE clave = @clave AND bcCalzePor = 'manual'`);
+      WHERE clave = @clave AND ${opts.tambienAutomatico ? "bcNumero IS NOT NULL" : "bcCalzePor = 'manual'"}`);
 }
 
 /**
