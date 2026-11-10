@@ -1,8 +1,8 @@
 "use client";
 
-import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
+import { Fragment, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import type { ColumnDef } from "@tanstack/react-table";
 import { Badge, Button, Card, Field, Input, Modal, Tile, useToast } from "@/components/ui";
 import { BotonLineas, DataTable, FilaExpandida } from "@/components/data-table";
@@ -10,7 +10,7 @@ import { LineasDeRecepcion } from "@/components/lineas-recepcion";
 import { PanelOrdenRevision, totalesDeRecepcion } from "@/components/panel-orden-revision";
 import { useStore } from "@/lib/store";
 import { api } from "@/lib/api";
-import { cuenta, money, formatDate, formatDateTime, leerNotaRevision, lineasDeRecepcion, MARCA_DESDE_REVISION, num, numeroOrden, precioUnit, type CantidadFacturada } from "@/lib/helpers";
+import { cuenta, money, formatDate, formatDateTime, leerNotaRevision, lineasDeRecepcion, MARCA_DESDE_REVISION, num, numeroOrden, precioUnit, todayISO, type CantidadFacturada } from "@/lib/helpers";
 import { codigoDeItem } from "@/lib/unidad";
 import type { EnvioARevision, FacturadaDesdeRevision, Movimiento, Orden, Recepcion } from "@/lib/types";
 
@@ -222,9 +222,36 @@ function LineasDeLaFactura({ rec, orden, cant, setCant, excede, setExcede, pie }
   );
 }
 
+// useSearchParams pide un límite de Suspense para el prerender (mismo patrón que la
+// pantalla de Compras). El panel abierto vive en la URL: ver `panelRec` abajo.
+// Las fechas que ya se saben de una recepción en revisión, juntas, para elegir la de
+// la factura sin ir a buscarlas: la orden emitida, cuándo la recibió Bodega y, si
+// Bodega anotó una fecha de factura distinta, también esa.
+function FechasDeLaRecepcion({ rec, orden, enviadaPor }: { rec: Recepcion; orden?: Orden; enviadaPor?: string }) {
+  const quien = rec.recibidoPor || enviadaPor;
+  const anotada = rec.fechaFactura && rec.fechaFactura !== rec.fechaRecepcion ? rec.fechaFactura : "";
+  return (
+    <dl className="rev-datos rev-datos--fila">
+      {orden?.fecha && <><dt>Orden emitida</dt><dd>{formatDate(orden.fecha)}</dd></>}
+      <dt>Recibido en bodega</dt>
+      <dd>{rec.fechaRecepcion ? formatDate(rec.fechaRecepcion) : "—"}{quien ? <span className="ds-muted rev-datos__nota"> · {quien}</span> : null}</dd>
+      {anotada && <><dt>Fecha que anotó Bodega</dt><dd>{formatDate(anotada)}</dd></>}
+    </dl>
+  );
+}
+
 export default function ArchivoPage() {
+  return (
+    <Suspense fallback={<main className="page page--wide" />}>
+      <ArchivoContenido />
+    </Suspense>
+  );
+}
+
+function ArchivoContenido() {
   const { ordenes, recepciones, proveedores, movimientos, facturarRecepcion, modoApi, recargar } = useStore();
   const router = useRouter();
+  const params = useSearchParams();
   const toast = useToast();
   const prov = (id: string) => proveedores.find((p) => p.id === id);
   const ordenDe = (r: Recepcion) => ordenes.find((x) => x.id === r.ordenId);
@@ -260,7 +287,19 @@ export default function ArchivoPage() {
 
   // El PANEL de la orden (al costado): se abre tocando la fila de una factura en
   // revisión, para ver cómo está la orden antes de registrar sin salir de Archivo.
-  const [panelRec, setPanelRec] = useState<string | null>(null);
+  // Vive en la URL (?revision=ID) y no en un estado: al ir a "Abrir la orden completa"
+  // y volver, se perdía cuál estaba abierta y había que buscarla otra vez en la lista.
+  // Se usa `replace` para no llenar el historial con cada fila que se mira.
+  const panelRec = params.get("revision");
+  const setPanelRec = (id: string | null) =>
+    router.replace(id ? `/facturacion/archivo?revision=${encodeURIComponent(id)}` : "/facturacion/archivo", { scroll: false });
+  // Al volver con el panel en la URL, la fila queda a la vista (una sola vez por fila).
+  const filaVista = useRef<string | null>(null);
+  useEffect(() => {
+    if (!panelRec || filaVista.current === panelRec) return;
+    const tr = document.querySelector(`tr[data-rec="${CSS.escape(panelRec)}"]`);
+    if (tr) { filaVista.current = panelRec; tr.scrollIntoView({ block: "center" }); }
+  }, [panelRec, recepciones.length]);
 
   // Registrar la factura de una recepción que quedó en revisión. `cant` = lo que
   // trae la factura de cada línea (arranca con lo recibido); `notaResto` = qué pasa
@@ -271,7 +310,18 @@ export default function ArchivoPage() {
   const [excede, setExcede] = useState<Record<string, boolean>>({});
   const [notaResto, setNotaResto] = useState("");
   const [guardando, setGuardando] = useState(false);
+  // Antes de registrar en BC, un paso para REVISAR lo que se va a registrar: el N.º, la
+  // fecha, las líneas y el total con IVA para compararlo con el papel. Registrar crea
+  // la factura y la cuenta por pagar, y eso no se deshace desde la app.
+  const [revisar, setRevisar] = useState(false);
+  // LA FECHA DE LA FACTURA del proveedor. Con ella se registra en BC (fecha de registro
+  // y del documento; de la del documento BC saca el vencimiento). Antes se usaba sola
+  // la fecha en que Bodega recibió, y una factura emitida días antes quedaba con otra
+  // fecha y otro vencimiento. Arranca VACÍA a propósito: se elige mirando el papel.
+  const [fechaFac, setFechaFac] = useState("");
   function abrirFactura(r: Recepcion, facturaProveedor?: string) {
+    setRevisar(false);
+    setFechaFac("");
     setNumFac(facturaProveedor ?? "");
     setCant(Object.fromEntries(r.lineas.map((l) => [l.ordenLineaId, String(l.cantidadRecibida)])));
     setExcede({});
@@ -282,21 +332,27 @@ export default function ArchivoPage() {
   const cuentaFactura = useMemo(() => {
     if (!facObj) return null;
     const o = ordenes.find((x) => x.id === facObj.ordenId);
+    // Cada línea al céntimo antes de sumar, como BC: así el total con IVA de acá es el
+    // mismo que va a quedar en la factura de BC.
+    const r2 = (n: number) => Math.round(n * 100) / 100;
     let sub = 0, iva = 0, restoSub = 0, restoLineas = 0, lineas = 0;
+    const detalle: { descripcion: string; cantidad: number; unidad: string; precio: number; importe: number }[] = [];
     for (const { rl, ol, precio } of lineasDeRecepcion(facObj, o)) {
       const q = Math.min(rl.cantidadRecibida, Math.max(0, Number(cant[rl.ordenLineaId] ?? rl.cantidadRecibida) || 0));
       const f = precio * (1 - (ol?.descuentoPct ?? 0) / 100);
-      sub += q * f;
-      iva += q * f * ((ol?.ivaPct ?? 0) / 100);
-      if (q > 0) lineas++;
-      if (q < rl.cantidadRecibida) { restoLineas++; restoSub += (rl.cantidadRecibida - q) * f; }
+      const importe = r2(q * f);
+      sub += importe;
+      iva += importe * ((ol?.ivaPct ?? 0) / 100);
+      if (q > 0) { lineas++; detalle.push({ descripcion: ol?.descripcion ?? "Línea", cantidad: q, unidad: ol?.unidad ?? "", precio, importe }); }
+      if (q < rl.cantidadRecibida) { restoLineas++; restoSub += r2((rl.cantidadRecibida - q) * f); }
     }
-    return { sub, iva, lineas, restoLineas, restoSub, cur: o?.currencyCode };
+    return { sub: r2(sub), iva: r2(iva), lineas, restoLineas, restoSub: r2(restoSub), cur: o?.currencyCode, detalle };
   }, [facObj, cant, ordenes]);
   async function confirmarFactura() {
     const rec = facObj;
     if (!rec) return;
     if (!numFac.trim()) { toast("Ingresá el número de factura.", "error"); return; }
+    if (!fechaFac) { toast("Elegí la fecha de la factura.", "error"); setRevisar(false); return; }
     const o = ordenDe(rec);
     // Cuánto trae la factura de cada línea. Si es todo lo recibido, no viaja el corte
     // y el registro es exactamente el de siempre.
@@ -337,15 +393,15 @@ export default function ArchivoPage() {
             body: JSON.stringify({
               orderNo: o.bcNumber, vendorInvoiceNo: numFac.trim(), lineas: bcLineas, ordenId: o.id,
               vendorNo: o.proveedorNo || o.proveedorId,
-              // La fecha de registro en BC: la de la recepción (cuando entró el material),
-              // o la de la factura. Sin esto le llegaba "" al codeunit y BC la rechazaba.
-              postingDate: rec.fechaRecepcion || rec.fechaFactura || undefined,
+              // La fecha que eligió Contabilidad (la de la factura del proveedor): el
+              // codeunit la pone como fecha de registro y del documento.
+              postingDate: fechaFac,
               // Que la recepción quede marcada facturada en la MISMA llamada: si esto
               // viaja aparte y se pierde, en BC hay una factura registrada y acá una
               // recepción "en revisión" pidiendo que la registren otra vez.
               // Con una factura parcial viaja el corte: el servidor lo revisa ANTES de
               // facturar en BC y, ya facturado, parte la recepción en la misma llamada.
-              facturar: modoApi ? { idRecepcionCompra: Number(rec.id), numeroFactura: numFac.trim(), parcial } : undefined,
+              facturar: modoApi ? { idRecepcionCompra: Number(rec.id), numeroFactura: numFac.trim(), parcial, fechaFactura: fechaFac } : undefined,
             }),
           });
           const d = await r.json().catch(() => ({}));
@@ -359,7 +415,7 @@ export default function ArchivoPage() {
         }
       }
       if (yaFacturada) await recargar().catch(() => { /* el toast igual dice que se registró */ });
-      else await facturarRecepcion(rec.id, numFac.trim(), parcial);
+      else await facturarRecepcion(rec.id, numFac.trim(), parcial, fechaFac);
       const quedan = esParcial ? rec.lineas.filter((l) => (enFactura.get(l.ordenLineaId) ?? 0) < l.cantidadRecibida).length : 0;
       toast(`Factura ${numFac} registrada${aviso}${quedan ? ` · ${cuenta(quedan, "línea sigue", "líneas siguen")} en revisión` : ""}`, "success");
       setFacObj(null); setNumFac("");
@@ -453,7 +509,7 @@ export default function ArchivoPage() {
                         const sinPanel = (e: React.SyntheticEvent) => e.stopPropagation();
                         return (
                           <Fragment key={r.id}>
-                            <tr className={`is-clickable ${panelRec === r.id ? "is-panel" : ""}`} tabIndex={0}
+                            <tr className={`is-clickable ${panelRec === r.id ? "is-panel" : ""}`} tabIndex={0} data-rec={r.id}
                               aria-label={`Ver la orden ${o ? numeroOrden(o) : ""} en el panel`}
                               onClick={() => setPanelRec(r.id)}
                               onKeyDown={(e) => { if (e.target === e.currentTarget && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); setPanelRec(r.id); } }}>
@@ -575,9 +631,9 @@ export default function ArchivoPage() {
           );
         })()}
 
-        {facObj && cuentaFactura && (
+        {facObj && cuentaFactura && !revisar && (
           <Modal wide conLista title={`Registrar factura · ${(() => { const o = ordenDe(facObj); return o ? numeroOrden(o) : ""; })()}`} onClose={() => setFacObj(null)}
-            footer={<><Button variant="outline" onClick={() => setFacObj(null)}>Cancelar</Button><Button variant="green" onClick={confirmarFactura} disabled={!numFac.trim() || guardando || cuentaFactura.lineas === 0}>{guardando ? "Registrando…" : "Registrar factura"}</Button></>}>
+            footer={<><Button variant="outline" onClick={() => setFacObj(null)}>Cancelar</Button><Button variant="green" onClick={() => { if (!numFac.trim()) { toast("Ingresá el número de factura.", "error"); return; } if (!fechaFac) { toast("Elegí la fecha de la factura.", "error"); return; } setRevisar(true); }} disabled={!numFac.trim() || !fechaFac || cuentaFactura.lineas === 0}>Revisar antes de registrar</Button></>}>
             <p className="ds-muted ds-body-sm" style={{ marginTop: 0 }}>
               El material ya entró a Business Central. Dejá en cada línea lo que trae la factura: lo que no venga queda recibido sin facturar y sigue en revisión.
             </p>
@@ -591,11 +647,17 @@ export default function ArchivoPage() {
                 </p>
               );
             })()}
+            {/* LAS FECHAS que ya se conocen, a la vista mientras se elige la de la
+                factura: cuándo se emitió la orden y cuándo la recibió Bodega. */}
+            <FechasDeLaRecepcion rec={facObj} orden={ordenDe(facObj)} enviadaPor={hist.envioDe.get(facObj.id)?.enviadaPor} />
             {/* El N.º y la nota de lo que queda, lado a lado: cada renglón que se
                 ahorra acá es una línea más de la factura a la vista. */}
             <div className="frv-campos">
               <Field label="N.º de factura del proveedor">
                 <Input value={numFac} onChange={(e) => setNumFac(e.target.value)} placeholder="Ej. F-0099281" />
+              </Field>
+              <Field label="Fecha de la factura" help="La que dice la factura del proveedor. Con ella se registra en BC y de ella sale el vencimiento.">
+                <Input type="date" value={fechaFac} max={todayISO()} onChange={(e) => setFechaFac(e.target.value)} />
               </Field>
               {cuentaFactura.restoLineas > 0 && (
                 <Field label="¿Qué pasa con lo que no vino? (opcional)">
@@ -618,6 +680,56 @@ export default function ArchivoPage() {
               )} />
           </Modal>
         )}
+
+        {/* EL PASO DE REVISIÓN: lo que va a quedar en Business Central, antes de
+            registrarlo. "Volver" regresa al formulario con todo lo escrito. */}
+        {facObj && cuentaFactura && revisar && (() => {
+          const o = ordenDe(facObj);
+          const cur = cuentaFactura.cur;
+          const fechaReg = fechaFac;
+          return (
+            <Modal wide title={`Revisá antes de registrar · ${o ? numeroOrden(o) : ""}`} onClose={() => { if (!guardando) setFacObj(null); }}
+              footer={<>
+                <Button variant="outline" onClick={() => setRevisar(false)} disabled={guardando}>Volver</Button>
+                <Button variant="green" loading={guardando} onClick={() => void confirmarFactura()}>{guardando ? "Registrando en BC…" : "Sí, registrar en BC"}</Button>
+              </>}>
+              <p className="ds-body-sm" style={{ marginTop: 0 }}>
+                Esto registra la factura en <span className="ds-strong">Business Central</span>: crea la factura de compra y la
+                cuenta por pagar al proveedor. Desde la app no se deshace, así que revisá que todo calce con el papel.
+              </p>
+              <dl className="rev-datos">
+                <dt>Proveedor</dt><dd>{provNombre(o)}</dd>
+                <dt>Pedido</dt><dd>{o ? numeroOrden(o) : "—"}</dd>
+                <dt>N.º de factura</dt><dd>{numFac.trim()}</dd>
+                <dt>Fecha de la factura</dt><dd>{fechaReg ? formatDate(fechaReg) : "—"} <span className="ds-muted rev-datos__nota">· es la fecha de registro en BC y de ella sale el vencimiento</span></dd>
+                <dt>Recibido en bodega</dt><dd>{facObj.fechaRecepcion ? formatDate(facObj.fechaRecepcion) : "—"}{(facObj.recibidoPor || hist.envioDe.get(facObj.id)?.enviadaPor) ? <span className="ds-muted rev-datos__nota"> · {facObj.recibidoPor || hist.envioDe.get(facObj.id)?.enviadaPor}</span> : null}</dd>
+                {o?.fecha && <><dt>Orden emitida</dt><dd>{formatDate(o.fecha)}</dd></>}
+              </dl>
+              <ul className="rev-lineas">
+                {cuentaFactura.detalle.map((l, i) => (
+                  <li key={i}>
+                    <span>{l.descripcion} <span className="ds-muted">· {num.format(l.cantidad)} {l.unidad} × {precioUnit(l.precio, cur)}</span></span>
+                    <span className="ds-num ds-strong">{money(l.importe, cur)}</span>
+                  </li>
+                ))}
+              </ul>
+              {cuentaFactura.restoLineas > 0 && (
+                <p className="ds-body-sm" style={{ margin: "8px 0 0" }}>
+                  <span className="ds-strong">Sigue en revisión:</span> {cuenta(cuentaFactura.restoLineas, "línea", "líneas")} sin facturar
+                  ({money(cuentaFactura.restoSub, cur)} sin IVA){notaResto.trim() ? ` · ${notaResto.trim()}` : ""}.
+                </p>
+              )}
+              <div className="rev-total">
+                <div className="panel-orden__fila"><span className="ds-muted">Sin IVA</span><span className="ds-num">{money(cuentaFactura.sub, cur)}</span></div>
+                <div className="panel-orden__fila"><span className="ds-muted">IVA</span><span className="ds-num">{money(cuentaFactura.iva, cur)}</span></div>
+                <div className="panel-orden__fila panel-orden__fila--total"><span>Total con IVA</span><span className="ds-num">{money(cuentaFactura.sub + cuentaFactura.iva, cur)}</span></div>
+              </div>
+              <p className="ds-body-sm ds-muted" style={{ margin: "8px 0 0" }}>
+                Compará el total con IVA con el “Total” de la factura del proveedor. Si no coincide, volvé y revisá las cantidades.
+              </p>
+            </Modal>
+          );
+        })()}
       </main>
     </>
   );

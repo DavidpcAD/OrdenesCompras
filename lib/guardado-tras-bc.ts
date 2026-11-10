@@ -27,6 +27,7 @@
 // recepciones del mismo material.
 import { createRecepcion, setRecepcionFactura, type FacturaParcialDB, type NewRecepcionDB } from "./repo.ts";
 import type { Role } from "./types.ts";
+import { ES_ISO } from "./fechas.ts";
 
 // El insert, inyectable. En producción es siempre `createRecepcion`; el parámetro
 // existe para poder probar los frenos de acá (orden que no coincide, id inválido,
@@ -104,8 +105,10 @@ export function parcialValido(p: unknown): FacturaParcialDB | undefined {
 // invitando a registrarla otra vez.
 // `parcial` = la factura no trae todo lo recibido: lo demás sigue en revisión en una
 // recepción aparte (ver setRecepcionFactura). Sin él se factura la recepción entera.
-export type FacturaTrasBc = { idRecepcionCompra: number; numeroFactura: string; parcial?: FacturaParcialDB | null };
-export type MarcarFacturada = (idRec: number, numeroFactura: string, usuario: string, rol: Role, bcFacturaNo?: string, parcial?: FacturaParcialDB | null) => Promise<unknown>;
+// `fechaFactura` = la fecha que eligió Contabilidad (la de la factura del proveedor): con
+// esa misma se registró en BC, y la recepción la guarda como fecha de factura y de registro.
+export type FacturaTrasBc = { idRecepcionCompra: number; numeroFactura: string; parcial?: FacturaParcialDB | null; fechaFactura?: string };
+export type MarcarFacturada = (idRec: number, numeroFactura: string, usuario: string, rol: Role, bcFacturaNo?: string, parcial?: FacturaParcialDB | null, fechaFactura?: string) => Promise<unknown>;
 
 // `bcFacturaNo` = el CFR-… que acaba de devolver BC. Lo pone el SERVIDOR (no viene
 // en el payload del navegador): es el número del documento que se registró allá, y
@@ -122,7 +125,8 @@ export async function marcarFacturadaTrasBc(
   if (!Number.isFinite(idRec) || idRec <= 0) return { errorLocal: "La recepción vino sin id, no se marcó facturada acá." };
   if (!numero) return { errorLocal: "La factura vino sin número, no se marcó facturada acá." };
   try {
-    await marcar(idRec, numero, actor.usuario, actor.rol, String(bcFacturaNo ?? "").trim() || undefined, parcialValido(f.parcial));
+    await marcar(idRec, numero, actor.usuario, actor.rol, String(bcFacturaNo ?? "").trim() || undefined, parcialValido(f.parcial),
+      ES_ISO(f.fechaFactura) ? f.fechaFactura : undefined);
     return { facturada: true };
   } catch (e: any) {
     return { errorLocal: String(e?.message ?? e) };

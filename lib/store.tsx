@@ -159,7 +159,7 @@ interface StoreShape {
   // MODO 2: registrar la factura de una recepción que quedó EN REVISIÓN (Kattya).
   // `parcial`: la factura no trae todo lo recibido (cuánto trae de cada línea, y una
   // nota opcional de lo que queda). Lo demás sigue en revisión en una recepción aparte.
-  facturarRecepcion: (recepcionId: string, numeroFactura: string, parcial?: { lineas: CantidadFacturada[]; nota?: string }) => Promise<void>;
+  facturarRecepcion: (recepcionId: string, numeroFactura: string, parcial?: { lineas: CantidadFacturada[]; nota?: string }, fechaFactura?: string) => Promise<void>;
 
   // Devuelve al ingeniero las LÍNEAS elegidas de una solicitud. El pedido entero
   // pasa a "Devuelto" solo si no le queda ninguna línea viva (lo decide el server).
@@ -1083,9 +1083,9 @@ export function StoreProvider({ children, useApi }: { children: React.ReactNode;
 
     // MODO 2 — Kattya registra la factura de una recepción que estaba EN REVISIÓN.
     // Marca la factura, sube lo FACTURADO de la orden y cierra la revisión.
-    const facturarRecepcion: StoreShape["facturarRecepcion"] = async (recepcionId, numeroFactura, parcial) => {
+    const facturarRecepcion: StoreShape["facturarRecepcion"] = async (recepcionId, numeroFactura, parcial, fechaFactura) => {
       if (USE_API) {
-        await api.setRecepcionFactura(recepcionId, { numeroFactura, usuario: persona, rol: rolActual, parcial });
+        await api.setRecepcionFactura(recepcionId, { numeroFactura, usuario: persona, rol: rolActual, parcial, fechaFactura });
         await refreshFromApi();
         return;
       }
@@ -1118,7 +1118,8 @@ export function StoreProvider({ children, useApi }: { children: React.ReactNode;
         const valor = (lin: Recepcion["lineas"]) => lineasDeRecepcion({ ...rec, lineas: lin }, orden).reduce((s, x) => s + x.importe, 0);
         const totales = resto ? repartirTotalRecepcion(rec.total, valor(corte.facturadas), valor(rec.lineas)) : null;
         const recepciones = d.recepciones.map((r) => (r.id === recepcionId
-          ? { ...r, numeroFactura, facturaEnRevision: false, lineas: corte.facturadas, total: totales?.facturado ?? r.total }
+          ? { ...r, numeroFactura, facturaEnRevision: false, lineas: corte.facturadas, total: totales?.facturado ?? r.total,
+              ...(fechaFactura ? { fechaFactura, fechaRegistro: fechaFactura } : {}) }
           : r));
         if (resto) recepciones.unshift({ ...resto, total: totales!.queda });
         const restoTxt = resto ? ` · la factura trae ${corte.facturadas.length} de ${rec.lineas.length} líneas; lo demás sigue en revisión` : "";

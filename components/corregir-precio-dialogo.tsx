@@ -31,6 +31,9 @@ export function CorregirPrecioDialogo({ orden, onClose, onHecho }: {
   const [motivo, setMotivo] = useState("");
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState("");
+  // Antes de escribir en BC, un paso para REVISAR el cambio: qué precio cambia, cuánto
+  // pasa a valer la orden y qué va a pasar con el pedido allá.
+  const [revisando, setRevisando] = useState(false);
   const cur = orden.currencyCode;
   const lineas = lineasCorregibles(orden);
 
@@ -46,9 +49,16 @@ export function CorregirPrecioDialogo({ orden, onClose, onHecho }: {
   const sinAprobacion = aprobacionAutomatica(orden, { app: despues }).aplica;
   const faltaMotivo = motivo.trim().length < 5;
 
-  async function confirmar() {
+  function revisar() {
     const v = validarCorreccionPrecio(orden, cambios, motivo);
     if (v.error) { setError(v.error); return; }
+    setError("");
+    setRevisando(true);
+  }
+
+  async function confirmar() {
+    const v = validarCorreccionPrecio(orden, cambios, motivo);
+    if (v.error) { setError(v.error); setRevisando(false); return; }
     setGuardando(true);
     setError("");
     try {
@@ -61,13 +71,46 @@ export function CorregirPrecioDialogo({ orden, onClose, onHecho }: {
     }
   }
 
+  if (revisando) {
+    return (
+      <Modal wide title={`Revisá el cambio de precio · ${numeroOrden(orden)}`} onClose={() => { if (!guardando) onClose(); }} footer={
+        <>
+          <Button variant="outline" onClick={() => setRevisando(false)} disabled={guardando}>Volver</Button>
+          <Button loading={guardando} onClick={() => void confirmar()}>{guardando ? "Corrigiéndolo en BC…" : "Sí, corregir precio"}</Button>
+        </>
+      }>
+        <p className="ds-body-sm" style={{ marginTop: 0 }}>
+          Esto cambia el precio <span className="ds-strong">en Business Central y en la app</span>. Para hacerlo, el pedido se
+          reabre un momento en BC y {sinAprobacion
+            ? <>se <span className="ds-strong">vuelve a lanzar solo</span> (esta orden no necesita aprobación): la factura se puede registrar de una vez.</>
+            : <>queda <span className="ds-strong">pendiente de aprobación</span>: hasta que la aprueben no se puede registrar la factura.</>}
+        </p>
+        <ul className="rev-lineas">
+          {deLosPrecios.cambios.map((c) => (
+            <li key={c.linea.id}>
+              <span>{c.linea.descripcion} <span className="ds-muted">· {num.format(c.linea.cantidad)} {c.linea.unidad}</span></span>
+              <span className="ds-num"><span className="ds-muted">{precioTxt(c.antes, cur)}</span> → <span className="ds-strong">{precioTxt(c.nuevo, cur)}</span></span>
+            </li>
+          ))}
+        </ul>
+        <div className="rev-total">
+          <div className="panel-orden__fila"><span className="ds-muted">Total con IVA hoy</span><span className="ds-num">{money(antes, cur)}</span></div>
+          <div className="panel-orden__fila panel-orden__fila--total"><span>Total con IVA nuevo</span><span className="ds-num">{money(despues, cur)}</span></div>
+          <div className="panel-orden__fila"><span className="ds-muted">Diferencia</span><span className="ds-num">{dif >= 0 ? "+" : "−"}{money(Math.abs(dif), cur)}</span></div>
+        </div>
+        <dl className="rev-datos">
+          <dt>Motivo</dt><dd>{motivo.trim()}</dd>
+        </dl>
+        {error && <p className="ds-body-sm" role="alert" style={{ color: "var(--ds-text-danger)", margin: "8px 0 0", whiteSpace: "pre-wrap" }}>{error}</p>}
+      </Modal>
+    );
+  }
+
   return (
     <Modal wide conLista title={`Corregir precio · ${numeroOrden(orden)}`} onClose={() => { if (!guardando) onClose(); }} footer={
       <>
         <Button variant="outline" onClick={onClose} disabled={guardando}>Cancelar</Button>
-        <Button loading={guardando} onClick={() => void confirmar()} disabled={guardando || !haCambio || faltaMotivo}>
-          {guardando ? "Corrigiéndolo en BC…" : "Corregir precio"}
-        </Button>
+        <Button onClick={revisar} disabled={guardando || !haCambio || faltaMotivo}>Revisar el cambio</Button>
       </>
     }>
       <p className="ds-body-sm" style={{ marginTop: 0 }}>

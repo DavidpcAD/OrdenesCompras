@@ -68,7 +68,7 @@ test("marcar facturada: pasa el N.º y el autor de la cookie", async () => {
   let visto: any[] = [];
   const r = await marcarFacturadaTrasBc({ idRecepcionCompra: 55, numeroFactura: " 19741 " }, QUIEN, async (...a) => { visto = a; });
   assert.equal(r.facturada, true);
-  assert.deepEqual(visto, [55, "19741", "Pedro", "facturacion", undefined, undefined]);
+  assert.deepEqual(visto, [55, "19741", "Pedro", "facturacion", undefined, undefined, undefined]);
 });
 
 test("marcar facturada: el corte de una factura parcial llega limpio a la base", async () => {
@@ -91,7 +91,15 @@ test("marcar facturada: guarda también el N.º de BC que devolvió el registro"
   let visto: any[] = [];
   const r = await marcarFacturadaTrasBc({ idRecepcionCompra: 55, numeroFactura: "8600" }, QUIEN, async (...a) => { visto = a; }, " CFR-011343 ");
   assert.equal(r.facturada, true);
-  assert.deepEqual(visto, [55, "8600", "Pedro", "facturacion", "CFR-011343", undefined]);
+  assert.deepEqual(visto, [55, "8600", "Pedro", "facturacion", "CFR-011343", undefined, undefined]);
+});
+
+test("marcar facturada: la fecha que eligió Contabilidad llega a la base; una fecha rara no", async () => {
+  let visto: any[] = [];
+  await marcarFacturadaTrasBc({ idRecepcionCompra: 55, numeroFactura: "8600", fechaFactura: "2026-01-27" }, QUIEN, async (...a) => { visto = a; });
+  assert.equal(visto[6], "2026-01-27");
+  await marcarFacturadaTrasBc({ idRecepcionCompra: 55, numeroFactura: "8600", fechaFactura: "27/01/2026" }, QUIEN, async (...a) => { visto = a; });
+  assert.equal(visto[6], undefined);
 });
 
 test("marcar facturada: sin id o sin número no se marca nada", async () => {

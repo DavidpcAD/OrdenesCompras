@@ -116,7 +116,7 @@ export async function POST(req: Request) {
     // toast de "queda para reintentar". Ver fechaFueraDeRangoBc en lib/bc.ts.
     if (fechaFueraDeRangoBc(error)) {
       return NextResponse.json({
-        ok: false, error: `NO se facturó: ${explicarFechaFueraDeRangoBc("")}${avisoVuelta}`,
+        ok: false, error: `NO se facturó: ${explicarFechaFueraDeRangoBc(postingDate)}${avisoVuelta}`,
         frenoFechaBc: true,
       }, { status: 409 });
     }

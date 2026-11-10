@@ -2475,7 +2475,10 @@ export async function createRecepcion(input: NewRecepcionDB): Promise<number> {
 // BC, donde lo no facturado queda "recibido sin facturar" en el pedido. Sin
 // `parcial`, se factura la recepción entera (lo de siempre).
 export type FacturaParcialDB = { lineas: CantidadFacturada[]; nota?: string };
-export async function setRecepcionFactura(idRec: number, numeroFactura: string, usuario: string, rol: Role, bcFacturaNo?: string, parcial?: FacturaParcialDB | null): Promise<{ recepcionRestoId?: number }> {
+// `fechaFactura` (yyyy-mm-dd): la fecha que eligió Contabilidad, la de la factura del
+// proveedor. Con esa se registró en BC (fecha de registro y del documento), así que la
+// recepción la guarda como fecha de factura y de registro. Sin ella, lo de siempre.
+export async function setRecepcionFactura(idRec: number, numeroFactura: string, usuario: string, rol: Role, bcFacturaNo?: string, parcial?: FacturaParcialDB | null, fechaFactura?: string): Promise<{ recepcionRestoId?: number }> {
   const num = String(numeroFactura ?? "").trim();
   if (!num) throw new Error("El número de factura es obligatorio.");
   // Solo un N.º de documento de verdad (CFR-011343): si el codeunit contestara un
@@ -2518,8 +2521,13 @@ export async function setRecepcionFactura(idRec: number, numeroFactura: string, 
     const quedaDe = new Map(corte.quedan.map((l) => [l.ordenLineaId, l.cantidadRecibida]));
     const hayResto = corte.quedan.length > 0;
 
-    await pedirTx(tx).input("id", sql.Int, idRec).input("f", sql.NVarChar(40), num)
-      .query("UPDATE dbo.RecepcionCompra SET numeroFactura=@f, fechaFactura=ISNULL(fechaFactura,getdate()) WHERE idRecepcionCompra=@id");
+    if (fechaFactura && /^\d{4}-\d{2}-\d{2}$/.test(fechaFactura)) {
+      await pedirTx(tx).input("id", sql.Int, idRec).input("f", sql.NVarChar(40), num).input("fecha", sql.Date, fechaFactura)
+        .query("UPDATE dbo.RecepcionCompra SET numeroFactura=@f, fechaFactura=@fecha, fechaRegistro=@fecha WHERE idRecepcionCompra=@id");
+    } else {
+      await pedirTx(tx).input("id", sql.Int, idRec).input("f", sql.NVarChar(40), num)
+        .query("UPDATE dbo.RecepcionCompra SET numeroFactura=@f, fechaFactura=ISNULL(fechaFactura,getdate()) WHERE idRecepcionCompra=@id");
+    }
     if (conBc) {
       await pedirTx(tx).input("id", sql.Int, idRec).input("bc", sql.NVarChar(50), bcNo)
         .query("UPDATE dbo.RecepcionCompra SET bcFacturaNo=@bc WHERE idRecepcionCompra=@id");

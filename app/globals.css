@@ -1192,6 +1192,22 @@ td.ds-col-fija {
 .panel-orden__hist { margin-top: var(--ds-space-4); border-top: 1px solid var(--ds-color-gray-100); padding-top: var(--ds-space-3); }
 @media (max-width: 760px) { .panel-orden__totales { grid-template-columns: minmax(0, 1fr); } }
 
+/* ── Paso de revisión antes de escribir en BC (registrar factura, corregir precio) ──
+   Datos clave en pares rótulo/valor, las líneas que se mueven y el total que se
+   compara contra el papel. */
+.rev-datos { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 6px var(--ds-space-4); margin: var(--ds-space-3) 0 var(--ds-space-4); font-size: var(--ds-font-size-body-sm); }
+.rev-datos dt { color: var(--ds-color-gray-400); }
+.rev-datos dd { margin: 0; font-weight: var(--ds-font-weight-semibold); min-width: 0; overflow-wrap: anywhere; }
+.rev-datos__nota { font-weight: var(--ds-font-weight-regular); }
+/* Las fechas arriba del formulario de registrar: en fila, para no comerse alto. */
+.rev-datos--fila { display: flex; flex-wrap: wrap; gap: 4px var(--ds-space-2); align-items: baseline; margin: 0 0 var(--ds-space-3); }
+.rev-datos--fila dd { margin-right: var(--ds-space-4); }
+.rev-lineas { list-style: none; margin: 0; padding: 0; border: 1px solid var(--ds-color-gray-100); border-radius: var(--ds-radius-lg); max-height: max(160px, calc(88vh - 520px)); overflow-y: auto; }
+.rev-lineas li { display: flex; justify-content: space-between; align-items: baseline; gap: var(--ds-space-3); padding: 8px var(--ds-space-4); border-bottom: 1px solid var(--ds-color-gray-100); font-size: var(--ds-font-size-body-sm); }
+.rev-lineas li:last-child { border-bottom: 0; }
+.rev-lineas .ds-num { white-space: nowrap; }
+.rev-total { margin-top: var(--ds-space-3); padding: var(--ds-space-3) var(--ds-space-4); border-radius: var(--ds-radius-lg); display: flex; flex-direction: column; gap: 4px; background: color-mix(in srgb, var(--ds-color-gray-100) 50%, var(--ds-tint-base)); }
+
 /* ── Versiones de una recepción (components/versiones-recepcion.tsx) ──────────
    La más nueva arriba. Lista simple con divisores: la versión actual se marca con
    el Badge, no con color de fondo, para que las viejas se lean igual de bien. */
