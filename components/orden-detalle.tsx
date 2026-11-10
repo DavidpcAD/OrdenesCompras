@@ -2,17 +2,17 @@
 
 import { Fragment, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Badge, Button, Card, Textarea } from "@/components/ui";
+import { Badge, Button, Card, Skeleton, Textarea } from "@/components/ui";
 import { IconChevronDown, IconWarning } from "@/components/icons";
 import { OrderLinesTable } from "@/components/order-lines";
 import { Timeline } from "@/components/timeline";
 import { useStore } from "@/lib/store";
-import { esLineaCargo, esLineaRecibible, money, num, formatDate, formatDateTime, ordenBadgeDe, proveedorLabel, ordenIva, ordenLineaImporte, ordenRecibidoPct, ordenPedidos, ordenEsDirecta, ordenTotalConIva, numeroOrden, tieneBc, destinoDeRecepcion, ordenEsperaCorreccion, chequeoBcVencido } from "@/lib/helpers";
+import { esLineaCargo, esLineaRecibible, money, num, formatDate, formatDateTime, ordenBadgeDe, proveedorLabel, ordenIva, ordenLineaImporte, ordenRecibidoPct, ordenPedidos, ordenEsDirecta, ordenTotalConIva, numeroOrden, tieneBc, destinoDeRecepcion, ordenEsperaCorreccion, chequeoBcVencido, envioARevisionDe, esRecepcionEnRevision } from "@/lib/helpers";
 import { vaAlProveedor } from "@/lib/envio-proveedor";
 import { badgePrioridad } from "@/components/prioridad";
 import { ChipPedido } from "@/components/ordenes-lista";
 import { useVolver } from "@/lib/use-volver";
-import type { Orden } from "@/lib/types";
+import type { EnvioARevision, Movimiento, Orden, Recepcion } from "@/lib/types";
 
 // Lo que ya se sabe del envío al proveedor, en el encabezado del detalle: cuándo
 // salió, por quién y si fue bajando el PDF o marcándolo a mano. Con el botón para
@@ -224,6 +224,7 @@ export function OrdenDetalle({
   const espera = ordenEsperaCorreccion(orden);
   const esDirecta = ordenEsDirecta(orden) && !espera;
   const recs = recepciones.filter((r) => r.ordenId === orden.id);
+  const revision = useEnviosARevision(recs);
   // El subtotal y el IVA suman TODO lo que no es cargo: material, recurso y activo
   // fijo. Con `tipo === "articulo"` una compra directa de un servicio salía con
   // subtotal ₡0 y el total no cuadraba con lo que el proveedor iba a facturar.
@@ -601,10 +602,11 @@ export function OrdenDetalle({
               <tbody>
                 {recs.map((r) => {
                   const abierto = verFactura === r.id;
+                  const enRevision = esRecepcionEnRevision(r);
                   return (
                     <Fragment key={r.id}>
-                      <tr className="is-clickable" onClick={() => setVerFactura(abierto ? null : r.id)}>
-                        <td className="ds-strong">{r.numeroFactura}</td>
+                      <tr className={`is-clickable${enRevision ? " fac-con-motivo" : ""}`} onClick={() => setVerFactura(abierto ? null : r.id)}>
+                        <td className="ds-strong">{enRevision ? <span className="ds-muted" style={{ fontWeight: 400 }}>—</span> : r.numeroFactura}</td>
                         {/* Solo lo traen las recepciones posteriores a
                             sql/recepcion_bc_factura.sql; en las viejas va "—" porque no
                             hay nada que inventar. stopPropagation: el clic de la fila
@@ -642,7 +644,10 @@ export function OrdenDetalle({
                           );
                         })()}</td>
                         <td className="ds-num">{money(r.total, orden.currencyCode)}</td>
-                        <td>{r.parcial ? <Badge tone="yellow">Parcial</Badge> : <Badge tone="green">Completa</Badge>}</td>
+                        {/* En revisión manda sobre parcial/completa: lo que falta es la FACTURA, y
+                            "Completa" se leía como que ya estaba todo listo. Si la entrega
+                            fue parcial lo dice el detalle desplegado. */}
+                        <td>{enRevision ? <Badge tone="yellow">En revisión</Badge> : r.parcial ? <Badge tone="yellow">Parcial</Badge> : <Badge tone="green">Completa</Badge>}</td>
                         <td className="ds-num ds-muted">
                           <button type="button" className="fac-ver-btn" aria-expanded={abierto}
                             aria-label={`${abierto ? "Ocultar" : "Ver"} detalle de la factura ${r.numeroFactura}`}
@@ -652,12 +657,22 @@ export function OrdenDetalle({
                           </button>
                         </td>
                       </tr>
+                      {/* El porqué, a la vista y sin abrir nada: es lo que Proveeduría
+                          y Aprobación no tenían cómo saber y le tenían que preguntar a
+                          Bodega. */}
+                      {enRevision && (
+                        <tr className="fac-motivo">
+                          <td colSpan={8}>
+                            <MotivoDeRevision rec={r} envio={revision.envios.get(r.id)} cargando={revision.cargando} fallo={revision.fallo} />
+                          </td>
+                        </tr>
+                      )}
                       {abierto && (
                         <tr>
                           <td colSpan={8} style={{ background: "var(--ds-color-surface)", padding: "6px 12px 14px" }}>
                             <div className="fac-det">
                               <div className="fac-det__head">
-                                <span className="ds-strong">Factura {r.numeroFactura}</span>
+                                <span className="ds-strong">{enRevision ? "Sin factura registrada · en revisión" : `Factura ${r.numeroFactura}`}</span>
                                 <span className="ds-body-sm ds-muted">Registrada {formatDate(r.fechaRegistro)} · {r.parcial ? "entrega parcial" : "entrega completa"}</span>
                               </div>
                               <div className="fac-det__grid fac-det__colhead">
@@ -723,5 +738,59 @@ export function OrdenDetalle({
       <h3 className="ds-subtitle mt-6" style={{ marginBottom: 12 }}>Historial</h3>
       <Card><Timeline entidad="orden" idEntidad={orden.id} /></Card>
     </main>
+  );
+}
+
+// POR QUÉ BODEGA MANDÓ CADA RECEPCIÓN A REVISIÓN (la que sigue sin factura). Sale de
+// la bitácora de ESA recepción, que no viene en el bootstrap: en modo API se pide
+// solo para las que están en revisión, que casi siempre son una o ninguna. Una vez
+// registrada la factura la fila deja de estar en revisión y esto ya no se pide; el
+// porqué sigue en el historial de la orden.
+function useEnviosARevision(recs: Recepcion[]) {
+  const { movimientos, modoApi } = useStore();
+  const ids = recs.filter(esRecepcionEnRevision).map((r) => r.id);
+  const clave = ids.join(",");
+  const [remotos, setRemotos] = useState<Map<string, EnvioARevision | null> | null>(null);
+  const [fallo, setFallo] = useState(false);
+  useEffect(() => {
+    if (!modoApi || !clave) return;
+    let vivo = true;
+    setRemotos(null);
+    setFallo(false);
+    Promise.all(clave.split(",").map(async (id) => {
+      const r = await fetch(`/api/movimientos?entidad=recepcion&id=${encodeURIComponent(id)}`);
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const d = await r.json();
+      return [id, envioARevisionDe(Array.isArray(d) ? (d as Movimiento[]) : [], id)] as const;
+    }))
+      .then((pares) => { if (vivo) setRemotos(new Map(pares)); })
+      .catch(() => { if (vivo) { setRemotos(new Map()); setFallo(true); } });
+    return () => { vivo = false; };
+  }, [modoApi, clave]);
+
+  if (!modoApi) {
+    return { envios: new Map(ids.map((id) => [id, envioARevisionDe(movimientos, id)])), cargando: false, fallo: false };
+  }
+  return { envios: remotos ?? new Map<string, EnvioARevision | null>(), cargando: !!clave && remotos === null, fallo };
+}
+
+function MotivoDeRevision({ rec, envio, cargando, fallo }: { rec: Recepcion; envio?: EnvioARevision | null; cargando: boolean; fallo: boolean }) {
+  if (cargando) return <Skeleton width="45%" height={12} radius={6} style={{ display: "block" }} />;
+  const quien = envio?.enviadaPor || rec.recibidoPor || "Bodega";
+  const cuando = envio?.enviadaEl ? formatDateTime(envio.enviadaEl) : formatDate(rec.fechaRecepcion);
+  return (
+    <div className="fac-motivo__txt">
+      <span className="ds-strong">Por qué está en revisión: </span>
+      {envio?.motivo
+        ? envio.motivo
+        : fallo
+          ? <span className="ds-muted">no se pudo leer; está en el historial de abajo.</span>
+          // Las de antes del 6 nov 2026: Bodega todavía no tenía que decir por qué.
+          : <span className="ds-muted">no quedó anotado (se recibió antes de que la app pidiera el motivo)</span>}
+      <span className="ds-muted">
+        {envio?.motivo ? ` · ${envio.facturaProveedor ? `Factura del proveedor ${envio.facturaProveedor}` : "Sin factura del proveedor"}` : ""}
+        {` · ${quien}, ${cuando}`}
+      </span>
+    </div>
   );
 }

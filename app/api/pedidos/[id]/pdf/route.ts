@@ -41,7 +41,15 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
       bcDescripcionUnidades().catch(() => ({})),
       bcNombresDeVariante(pedido.lineas.map((l) => l.articuloId ?? "")).catch(() => ({})),
     ]);
-    const pdf = await pedidoAPdf(pedido, unidades, nombresVar);
+    // `?lineas=12,15,18`: solo las que Proveeduría marcó en la solicitud. Una
+    // solicitud se reparte entre proveedores y a cada uno se le cotiza SU grupo:
+    // mandarle la lista entera es pedirle precio de lo que se le va a comprar a otro.
+    const soloIds = (new URL(req.url).searchParams.get("lineas") ?? "").split(",").map((s) => s.trim()).filter(Boolean);
+    const elegidas = soloIds.length ? pedido.lineas.filter((l) => soloIds.includes(String(l.id))) : pedido.lineas;
+    if (!elegidas.length) {
+      return NextResponse.json({ error: "Ninguna de las líneas elegidas es de esta solicitud: recargá la página y volvé a marcarlas." }, { status: 409 });
+    }
+    const pdf = await pedidoAPdf({ ...pedido, lineas: elegidas }, unidades, nombresVar);
     const verEnPantalla = new URL(req.url).searchParams.get("ver") === "1";
     return new NextResponse(pdf as any, {
       headers: {

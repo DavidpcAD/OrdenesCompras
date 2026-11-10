@@ -313,7 +313,8 @@ export default function ArchivoPage() {
                             </tr>
                             <FilaExpandida plano abierta={abierta} colSpan={7}>
                               {abierta ? (
-                                <LineasDeRecepcion rec={r} orden={o} accion={o ? (
+                                // El motivo completo: en la fila va cortado a dos renglones.
+                                <LineasDeRecepcion rec={r} orden={o} motivo={envio?.motivo} accion={o ? (
                                   <Link className="chip-link" href={`/facturacion/ver/${o.id}`} title="Abrir la orden completa">
                                     Abrir la orden<span className="chip-link__ir" aria-hidden>↗</span>
                                   </Link>

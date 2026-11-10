@@ -8,7 +8,7 @@ import type {
   NotaCreditoLinea, MotivoNC, Prioridad,
 } from "./types";
 import * as seed from "./seed";
-import { devolverPendienteAPedidos, esLineaRecibible, MARCA_DESDE_REVISION, nextNumero, nowISO, ordenEstaCompleta, ordenTotalConIva, PERSONA_POR_ROL, todayISO } from "./helpers";
+import { DETALLE_EN_REVISION, devolverPendienteAPedidos, esLineaRecibible, MARCA_DESDE_REVISION, nextNumero, nowISO, ordenEstaCompleta, ordenTotalConIva, PERSONA_POR_ROL, todayISO } from "./helpers";
 import { aprobacionAutomatica, MOV_APROBACION_AUTOMATICA, USUARIO_APROBACION_AUTOMATICA } from "./aprobacion-automatica.ts";
 import { componerNotaCierre, detalleDeCierre, lineaCancelada, motivoObligatorio, quitarNotaCierre } from "./cierre-solicitud.ts";
 import { api, setEtagBootstrap, USE_API as USE_API_BUILD, type CursoresLote } from "./api";
@@ -1024,7 +1024,7 @@ export function StoreProvider({ children, useApi }: { children: React.ReactNode;
           completada = !enRevision && ordenEstaCompleta(upd);
           return { ...upd, estado: (completada ? "completado" : upd.estado) as Orden["estado"] };
         });
-        const detalle = (enRevision ? "Recepción (factura en revisión)" : `Factura ${input.numeroFactura}`)
+        const detalle = (enRevision ? DETALLE_EN_REVISION : `Factura ${input.numeroFactura}`)
           + (input.nota ? ` · ${input.nota}` : "");
         const movRec = mkMov({ entidad: "recepcion", idEntidad: created.id, documentoNo: input.numeroFactura || "(en revisión)", tipoMovimiento: enRevision ? "recibido" : "creado", detalle });
         const movOrd = mkMov({ entidad: "orden", idEntidad: input.ordenId, documentoNo: orden.numero, tipoMovimiento: completada ? "recepcion_total" : "recepcion_parcial", estadoNuevo: completada ? "completado" : orden.estado, detalle });

@@ -181,6 +181,10 @@ export const movimientos: Movimiento[] = [
   { id: "m8", entidad: "recepcion", idEntidad: "rec2", documentoNo: "(en revisión)", tipoMovimiento: "recibido", usuario: "Pedro", rol: "facturacion", fecha: "2026-06-14T10:05:00", detalle: "Recepción (factura en revisión) · Factura del proveedor 8571 · Motivo: El precio no coincide con la orden — el cemento viene a USD 7,40" },
   { id: "m7", entidad: "recepcion", idEntidad: "rec2", documentoNo: "8571", tipoMovimiento: "creado", usuario: "Kattya", rol: "contabilidad", fecha: "2026-06-16T15:20:00", detalle: "Factura 8571 registrada (venía de revisión)" },
   { id: "m9", entidad: "recepcion", idEntidad: "rec3", documentoNo: "(en revisión)", tipoMovimiento: "recibido", usuario: "Pedro", rol: "facturacion", fecha: "2026-06-18T09:40:00", detalle: "Recepción (factura en revisión) · Sin factura del proveedor · Motivo: La factura no vino con el material — el chofer dice que la mandan por correo" },
+  // El mismo envío visto desde la ORDEN (createRecepcion escribe los dos): es lo que
+  // lee Proveeduría en el historial del detalle de la orden.
+  { id: "m10", entidad: "orden", idEntidad: "ord3", documentoNo: "CP-000871", tipoMovimiento: "recepcion_parcial", estadoNuevo: "lanzado", usuario: "Pedro", rol: "facturacion", fecha: "2026-06-14T10:05:00", detalle: "Recepción (factura en revisión) · Factura del proveedor 8571 · Motivo: El precio no coincide con la orden — el cemento viene a USD 7,40" },
+  { id: "m11", entidad: "orden", idEntidad: "ord3", documentoNo: "CP-000871", tipoMovimiento: "recepcion_parcial", estadoNuevo: "lanzado", usuario: "Pedro", rol: "facturacion", fecha: "2026-06-18T09:40:00", detalle: "Recepción (factura en revisión) · Sin factura del proveedor · Motivo: La factura no vino con el material — el chofer dice que la mandan por correo" },
 ];
 
 export const recepciones: Recepcion[] = [

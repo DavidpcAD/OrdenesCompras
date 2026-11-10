@@ -1,7 +1,7 @@
 import { getAuthPool, getPool, pedir, pedirTx, sql } from "./db.ts";
 import { bcDeepLinkPedido, bcDeepLinkFacturaRegistrada, bcDeepLinkFacturaPorNo, bcDeepLinkFacturaBorrador, bcDeepLinkRecepcion, bcUnidadesDeCompra, sanearObrasDeLineas } from "./bc.ts";
 import { unidadCorregida, codigoDeItem } from "./unidad.ts";
-import { etiquetaInterna, esTipoDevolucion, esTipoEdicion, leerNotaRevision, MARCA_DESDE_REVISION, ordenDeDetalleDevolucion } from "./helpers.ts";
+import { DETALLE_EN_REVISION, etiquetaInterna, esTipoDevolucion, esTipoEdicion, leerNotaRevision, MARCA_DESDE_REVISION, ordenDeDetalleDevolucion } from "./helpers.ts";
 import { resumirCambiosDeLineas } from "./cambios-orden.ts";
 import { componerNotaCierre, detalleDeCierre, lineaCancelada, motivoObligatorio, quitarNotaCierre } from "./cierre-solicitud.ts";
 import { envioDeSello, leerSello, MOV_DESHECHO, MOV_ENVIADA, MOV_PDF, SELLO_SEP, type Sello } from "./envio-proveedor.ts";
@@ -2388,7 +2388,7 @@ export async function createRecepcion(input: NewRecepcionDB): Promise<number> {
         .query("UPDATE dbo.OrdenCompra SET idEstado=@e WHERE idOrdenCompra=@id");
     }
     const nota = String(input.nota ?? "").trim();
-    const detMov = (enRevision ? "Recepción (factura en revisión)" : `Factura ${input.numeroFactura}`) + (nota ? ` · ${nota}` : "");
+    const detMov = (enRevision ? DETALLE_EN_REVISION : `Factura ${input.numeroFactura}`) + (nota ? ` · ${nota}` : "");
     await logMov(tx, { entidad: "recepcion", idEntidad: idRec, documentoNo: input.numeroFactura || "(en revisión)", tipoMovimiento: enRevision ? "recibido" : "creado", usuario: input.usuario, rol: input.rol, detalle: detMov });
     await logMov(tx, { entidad: "orden", idEntidad: input.idOrdenCompra, documentoNo: ordenNo, tipoMovimiento: completa ? "recepcion_total" : "recepcion_parcial", estadoNuevo: completa ? "completado" : undefined, usuario: input.usuario, rol: input.rol, detalle: detMov });
     await tx.commit();
