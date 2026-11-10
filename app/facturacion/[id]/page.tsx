@@ -16,6 +16,7 @@ import type { FotoComprimida } from "@/lib/foto";
 import type { MotivoNC, OrdenLinea } from "@/lib/types";
 import type { MotivoRevision } from "@/lib/helpers";
 import type { ComprobanteDeFactura } from "@/lib/enlace-factura";
+import { explicarFacturaYaUsada, queHacerConFacturaYaUsada, tituloFacturaYaUsada } from "@/lib/factura-ajena";
 
 // Una opción de BC (código + nombre) para los selects de "pago con tarjeta". Mismo
 // shape que OpcionBc de lib/bc.ts, acá local para no importar server-only al cliente.
@@ -36,13 +37,17 @@ type ConsumoObra = { obra: string; obraNombre?: string; taskNo?: string; itemNo?
 // líneas que viajan a BC y el resumen final (inventario vs. consumo).
 type DetalleLinea = { l: OrdenLinea; qty: number; obra: { codigo: string; nombre?: string } | null };
 // Por qué dijo NO Business Central, tal como lo diagnostica /api/bc/registrar.
-// "reintentable" es el caso de siempre; los otros dos significan que BC YA tiene el
-// movimiento y que reintentar no va a servir nunca (ver diagnosticarFalloBc).
+// "reintentable" es el caso de siempre; "factura-duplicada" y "pedido-no-existe"
+// pueden significar que BC YA tiene el movimiento (yaEnBc) y que reintentar no va a
+// servir nunca (ver diagnosticarFalloBc). "factura-ya-usada" es lo contrario: el
+// N.º de factura ya lo usó en BC OTRO pedido (o una factura anulada), esta
+// recepción NO se registró y no hay nada que conciliar — hay que registrarla con
+// otro N.º (ver lib/factura-ajena.ts).
 type DiagBc = {
-  motivo?: "factura-duplicada" | "pedido-no-existe" | "reintentable";
+  motivo?: "factura-duplicada" | "pedido-no-existe" | "reintentable" | "factura-ya-usada";
   yaEnBc?: boolean;
   pedido?: "existe" | "no-existe" | "sin-respuesta" | null;
-  facturaBc?: { numero: string; vendorNo: string; fecha: string; total: number; estado: string } | null;
+  facturaBc?: { numero: string; vendorNo: string; fecha: string; total: number; estado: string; pedido?: string | null; anuladaCon?: string } | null;
 };
 
 // Cuántas fotos de la factura se pueden adjuntar (igual que el límite de la API).
@@ -1008,7 +1013,7 @@ export default function RegistrarFacturaPage() {
           <h3 className="ds-subtitle" style={{ marginBottom: 16 }}>Datos de la factura</h3>
           <div className="grid-2">
             <Field label="N.º de factura del proveedor">
-              <Input value={numeroFactura} onChange={(e) => setNumeroFactura(e.target.value)} placeholder="Ej. F-0099281" />
+              <Input id="numero-factura-proveedor" value={numeroFactura} onChange={(e) => setNumeroFactura(e.target.value)} placeholder="Ej. F-0099281" />
             </Field>
             <Field label="Fecha de la factura"
               warning={!!comprobante && comprobante.fechaEmision !== fechaFactura}
@@ -1566,6 +1571,64 @@ export default function RegistrarFacturaPage() {
         {conciliar && (() => {
           const { diag } = conciliar;
           const fBc = diag.facturaBc;
+          // El N.º de factura ya lo usó en BC OTRO pedido, o una factura anulada
+          // (CP-006578 / CFR-012069, 10 nov 2026). Esta recepción NO quedó
+          // registrada, así que conciliar sería mentir: no se ofrece. Lo único que
+          // sirve es registrar con otro N.º.
+          if (diag.motivo === "factura-ya-usada") {
+            const ajena = {
+              facturaProveedor: numeroFactura.trim(),
+              factura: fBc?.numero ?? "",
+              pedidoDeLaFactura: fBc?.pedido ?? "",
+              anuladaCon: fBc?.anuladaCon,
+              orderNo: orden.bcNumber ?? "",
+            };
+            const cambiarNumero = () => {
+              setConciliar(null);
+              // El Modal le devuelve el foco a quien lo abrió al cerrarse: se espera
+              // un tick para que el foco quede en el campo del número.
+              setTimeout(() => {
+                const campo = document.getElementById("numero-factura-proveedor") as HTMLInputElement | null;
+                campo?.focus();
+                campo?.select();
+              }, 0);
+            };
+            return (
+              <Modal
+                title={tituloFacturaYaUsada(ajena)}
+                onClose={() => setConciliar(null)}
+                footer={<Button variant="green" onClick={cambiarNumero}>Cambiar el N.º de factura</Button>}
+              >
+                <p className="ds-label">{explicarFacturaYaUsada(ajena)}</p>
+                {fBc && (
+                  <Card flat className="mt-4">
+                    <div className="ds-label ds-muted">La factura que ya tiene ese número en BC</div>
+                    <div className="row row--between wrap gap-2 mt-2" style={{ alignItems: "baseline" }}>
+                      <span className="ds-strong">{fBc.numero}</span>
+                      <span className="ds-body-sm ds-muted">
+                        {[
+                          ajena.pedidoDeLaFactura ? `pedido ${ajena.pedidoDeLaFactura}` : "sin pedido",
+                          fBc.fecha ? fBc.fecha.slice(0, 10) : "",
+                          fBc.anuladaCon ? `anulada con ${fBc.anuladaCon}` : fBc.estado,
+                          fBc.total ? money(fBc.total, orden.currencyCode) : "",
+                        ].filter(Boolean).join(" · ")}
+                      </span>
+                    </div>
+                  </Card>
+                )}
+                <Card flat className="mt-4 ds-form-field--advertencia">
+                  <div className="row gap-3">
+                    <span style={{ color: "var(--ds-text-danger)" }}><IconWarning /></span>
+                    <div>
+                      <div className="ds-strong">No se registró nada: ni la recepción acá ni el movimiento en BC</div>
+                      <p className="ds-label ds-muted">{queHacerConFacturaYaUsada(ajena)}</p>
+                    </div>
+                  </div>
+                </Card>
+                <p className="ds-body-sm ds-muted mt-4">Lo que contestó BC: {conciliar.error}</p>
+              </Modal>
+            );
+          }
           const sinPedido = diag.motivo === "pedido-no-existe";
           // yaEnBc = hay prueba de que BC ya tiene el movimiento (lo dijo BC o se
           // encontró la factura registrada). Sin prueba no se pinta como seguro.
@@ -1578,7 +1641,9 @@ export default function RegistrarFacturaPage() {
             ? "Se registró en Business Central, pero no se pudo guardar acá"
             : seguro
             ? (sinPedido ? "Esta recepción ya está registrada en BC" : "Business Central ya tiene esta factura")
-            : `Business Central ya no tiene el pedido ${orden.bcNumber}`;
+            : sinPedido
+            ? `Business Central ya no tiene el pedido ${orden.bcNumber}`
+            : `BC dice que la factura ${numeroFactura.trim()} ya existe`;
           const conciliarAhora = async () => {
             const c = conciliar;
             setConciliar(null);
@@ -1617,7 +1682,9 @@ export default function RegistrarFacturaPage() {
                 ? <>La factura {numeroFactura.trim()} <span className="ds-strong">quedó registrada en Business Central</span> con todos sus movimientos: el material entró y la contabilidad está hecha. Lo que falló fue guardarla en la app. Dale a “Guardar la recepción acá” para terminar — <span className="ds-strong">no se vuelve a registrar en BC</span>.</>
                 : seguro
                 ? <>El material <span className="ds-strong">ya entró en Business Central</span>: volver a intentarlo no va a servir nunca. Lo único que falta es guardar esta recepción en la app.</>
-                : <>BC contestó que no tiene ningún pedido con ese número, así que no se puede registrar desde acá. Puede que ya se haya registrado allá (al completarse, BC borra el pedido) — pero <span className="ds-strong">no encontramos la factura {numeroFactura.trim()} en BC para confirmarlo</span>.</>}
+                : sinPedido
+                ? <>BC contestó que no tiene ningún pedido con ese número, así que no se puede registrar desde acá. Puede que ya se haya registrado allá (al completarse, BC borra el pedido) — pero <span className="ds-strong">no encontramos la factura {numeroFactura.trim()} de este pedido en BC para confirmarlo</span>.</>
+                : <>BC contestó que la factura {numeroFactura.trim()} ya existe para este proveedor, pero <span className="ds-strong">no se pudo confirmar que la haya registrado este pedido ({orden.bcNumber})</span>. Si la registró otro pedido, este NO está registrado y hay que registrarlo con otro N.º de factura.</>}
             </p>
 
             {soloGuardado && (
@@ -1656,9 +1723,12 @@ export default function RegistrarFacturaPage() {
                   <div>
                     <div className="ds-strong">Verificá en BC antes de conciliar</div>
                     <p className="ds-label ds-muted">
-                      Si la recepción NO está registrada en BC, conciliar deja la app diciendo que el material entró cuando en BC no entró.
-                      Buscá la factura {numeroFactura.trim()} del proveedor en BC; si no está, cancelá y avisale a Proveeduría —
-                      esta orden necesita que le arreglen el pedido allá.
+                      Si la recepción NO está registrada en BC, conciliar deja la app diciendo que el material entró cuando en BC no entró.{" "}
+                      {sinPedido
+                        ? <>Buscá la factura {numeroFactura.trim()} del proveedor en BC; si no está, cancelá y avisale a Proveeduría —
+                          esta orden necesita que le arreglen el pedido allá.</>
+                        : <>Buscá la factura {numeroFactura.trim()} del proveedor en BC y fijate de qué pedido es. Si no es de {orden.bcNumber},
+                          cancelá: {queHacerConFacturaYaUsada({ facturaProveedor: numeroFactura.trim() })}</>}
                     </p>
                   </div>
                 </div>
