@@ -8,7 +8,7 @@ import type {
   NotaCreditoLinea, MotivoNC, Prioridad,
 } from "./types";
 import * as seed from "./seed";
-import { DETALLE_EN_REVISION, devolverPendienteAPedidos, esLineaRecibible, MARCA_DESDE_REVISION, nextNumero, nowISO, ordenEstaCompleta, ordenTotalConIva, PERSONA_POR_ROL, todayISO } from "./helpers";
+import { componerNotaRevision, DETALLE_EN_REVISION, devolverPendienteAPedidos, esLineaRecibible, lineasDeRecepcion, MARCA_DESDE_REVISION, motivoRestoDeFactura, nextNumero, nowISO, ordenEstaCompleta, ordenTotalConIva, partirRecepcionPorFactura, PERSONA_POR_ROL, repartirTotalRecepcion, todayISO, type CantidadFacturada } from "./helpers";
 import { aprobacionAutomatica, MOV_APROBACION_AUTOMATICA, USUARIO_APROBACION_AUTOMATICA } from "./aprobacion-automatica.ts";
 import { componerNotaCierre, detalleDeCierre, lineaCancelada, motivoObligatorio, quitarNotaCierre } from "./cierre-solicitud.ts";
 import { api, setEtagBootstrap, USE_API as USE_API_BUILD, type CursoresLote } from "./api";
@@ -156,7 +156,9 @@ interface StoreShape {
   // cuántas quedaron guardadas (0 = no se pudo, la pantalla avisa).
   guardarFotosRecepcion: (recepcionId: string, fotos: FotoParaSubir[]) => Promise<number>;
   // MODO 2: registrar la factura de una recepción que quedó EN REVISIÓN (Kattya).
-  facturarRecepcion: (recepcionId: string, numeroFactura: string) => Promise<void>;
+  // `parcial`: la factura no trae todo lo recibido (cuánto trae de cada línea, y una
+  // nota opcional de lo que queda). Lo demás sigue en revisión en una recepción aparte.
+  facturarRecepcion: (recepcionId: string, numeroFactura: string, parcial?: { lineas: CantidadFacturada[]; nota?: string }) => Promise<void>;
 
   // Devuelve al ingeniero las LÍNEAS elegidas de una solicitud. El pedido entero
   // pasa a "Devuelto" solo si no le queda ninguna línea viva (lo decide el server).
@@ -1075,29 +1077,52 @@ export function StoreProvider({ children, useApi }: { children: React.ReactNode;
 
     // MODO 2 — Kattya registra la factura de una recepción que estaba EN REVISIÓN.
     // Marca la factura, sube lo FACTURADO de la orden y cierra la revisión.
-    const facturarRecepcion: StoreShape["facturarRecepcion"] = async (recepcionId, numeroFactura) => {
+    const facturarRecepcion: StoreShape["facturarRecepcion"] = async (recepcionId, numeroFactura, parcial) => {
       if (USE_API) {
-        await api.setRecepcionFactura(recepcionId, { numeroFactura, usuario: persona, rol: rolActual });
+        await api.setRecepcionFactura(recepcionId, { numeroFactura, usuario: persona, rol: rolActual, parcial });
         await refreshFromApi();
         return;
       }
+      // Misma validación que el servidor, ANTES de tocar el estado: un error acá no
+      // puede dejar la recepción a medio partir.
+      const recAntes = data.recepciones.find((r) => r.id === recepcionId);
+      if (!recAntes) return;
+      const corte = partirRecepcionPorFactura(recAntes.lineas, parcial?.lineas ?? null);
+      if (corte.error) throw new Error(corte.error);
       setData((d) => {
         const rec = d.recepciones.find((r) => r.id === recepcionId);
         if (!rec) return d;
         const orden = d.ordenes.find((o) => o.id === rec.ordenId);
+        const facturadaDe = new Map(corte.facturadas.map((l) => [l.ordenLineaId, l.cantidadRecibida]));
+        // Lo que no vino en la factura: recepción nueva, en revisión, con la misma
+        // fecha y a nombre de quien recibió (ver setRecepcionFactura en el repo).
+        const resto: Recepcion | null = corte.quedan.length ? {
+          ...rec, id: uid(), numeroFactura: "", facturaEnRevision: true, bcFacturaNo: undefined, bcFacturaUrl: undefined,
+          fotos: undefined, lineas: corte.quedan,
+        } : null;
         const ordenes = d.ordenes.map((o) => {
           if (o.id !== rec.ordenId) return o;
           const lineas = o.lineas.map((l) => {
-            const rl = rec.lineas.find((x) => x.ordenLineaId === l.id);
-            return rl ? { ...l, cantidadFacturada: l.cantidadFacturada + rl.cantidadRecibida } : l;
+            const q = facturadaDe.get(l.id);
+            return q ? { ...l, cantidadFacturada: l.cantidadFacturada + q } : l;
           });
           const upd = { ...o, lineas };
-          return { ...upd, estado: (ordenEstaCompleta(upd) ? "completado" : upd.estado) as Orden["estado"] };
+          return { ...upd, estado: (!resto && ordenEstaCompleta(upd) ? "completado" : upd.estado) as Orden["estado"] };
         });
-        const recepciones = d.recepciones.map((r) => (r.id === recepcionId ? { ...r, numeroFactura, facturaEnRevision: false } : r));
-        const mov = mkMov({ entidad: "recepcion", idEntidad: recepcionId, documentoNo: numeroFactura, tipoMovimiento: "creado", detalle: `Factura ${numeroFactura} registrada ${MARCA_DESDE_REVISION}` });
-        const notif = mkNotif("factura", `Factura ${numeroFactura} registrada en ${orden?.numero ?? ""} (salió de revisión)`, `/proveeduria/ordenes/${rec.ordenId}`, "proveeduria");
-        return { ...d, ordenes, recepciones, movimientos: [mov, ...d.movimientos], notificaciones: [notif, ...d.notificaciones] };
+        const valor = (lin: Recepcion["lineas"]) => lineasDeRecepcion({ ...rec, lineas: lin }, orden).reduce((s, x) => s + x.importe, 0);
+        const totales = resto ? repartirTotalRecepcion(rec.total, valor(corte.facturadas), valor(rec.lineas)) : null;
+        const recepciones = d.recepciones.map((r) => (r.id === recepcionId
+          ? { ...r, numeroFactura, facturaEnRevision: false, lineas: corte.facturadas, total: totales?.facturado ?? r.total }
+          : r));
+        if (resto) recepciones.unshift({ ...resto, total: totales!.queda });
+        const restoTxt = resto ? ` · la factura trae ${corte.facturadas.length} de ${rec.lineas.length} líneas; lo demás sigue en revisión` : "";
+        const movs = [mkMov({ entidad: "recepcion", idEntidad: recepcionId, documentoNo: numeroFactura, tipoMovimiento: "creado", detalle: `Factura ${numeroFactura} registrada ${MARCA_DESDE_REVISION}${restoTxt}` })];
+        if (resto) {
+          const motivo = componerNotaRevision("", "otro", motivoRestoDeFactura(numeroFactura, parcial?.nota ?? ""));
+          movs.unshift(mkMov({ entidad: "recepcion", idEntidad: resto.id, documentoNo: "(en revisión)", tipoMovimiento: "recibido", detalle: `${DETALLE_EN_REVISION} · ${motivo}` }));
+        }
+        const notif = mkNotif("factura", `Factura ${numeroFactura} registrada en ${orden?.numero ?? ""} (salió de revisión${resto ? "; parte sigue en revisión" : ""})`, `/proveeduria/ordenes/${rec.ordenId}`, "proveeduria");
+        return { ...d, ordenes, recepciones, movimientos: [...movs, ...d.movimientos], notificaciones: [notif, ...d.notificaciones] };
       });
     };
 

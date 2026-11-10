@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { setRecepcionFactura } from "@/lib/repo";
 import { actor, exigirSesion } from "@/lib/actor";
 import { mensajeSeguro } from "@/lib/error-sql";
+import { parcialValido } from "@/lib/guardado-tras-bc";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -13,8 +14,9 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   try {
     const body = await req.json();
     const a = await actor({ ...body, rol: body.rol ?? "facturacion" });
-    await setRecepcionFactura(Number(params.id), String(body.numeroFactura ?? ""), a.usuario, a.rol);
-    return NextResponse.json({ ok: true });
+    // `parcial`: la factura no trae todo lo recibido; lo demás sigue en revisión.
+    const r = await setRecepcionFactura(Number(params.id), String(body.numeroFactura ?? ""), a.usuario, a.rol, undefined, parcialValido(body.parcial));
+    return NextResponse.json({ ok: true, ...r });
   } catch (e: any) {
     return NextResponse.json({ error: mensajeSeguro(e) }, { status: 500 });
   }

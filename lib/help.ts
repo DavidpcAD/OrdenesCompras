@@ -420,10 +420,13 @@ const ARCHIVO: HelpEntry = {
   resumen: "Órdenes cerradas y facturas registradas.",
   detalle: [
     "Historial de órdenes recibidas al 100% y todas las facturas registradas. Es consulta/respaldo; no se editan.",
+    "“Facturas en revisión” es el material que Bodega recibió sin factura: ya entró a Business Central y falta registrar la factura del proveedor.",
+    "Al registrarla, cada línea trae lo recibido: bajala o quitala si la factura no la trae. Lo que no venga en la factura queda recibido sin facturar en BC y sigue acá, en revisión. No se puede facturar más de lo recibido: si llegó más, Bodega recibe la diferencia primero.",
   ],
   pasos: [
     "Buscá o filtrá la orden/factura que necesitás.",
     "Abrila para ver el detalle y las facturas asociadas.",
+    "En revisión: “Registrar factura” → N.º del proveedor → ajustá las líneas a lo que trae la factura → compará el total con IVA contra el papel.",
   ],
 };
 const VIGILANCIA: HelpEntry = {

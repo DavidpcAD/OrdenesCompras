@@ -25,7 +25,7 @@
 // cambia algo, y en el modo "factura en revisión" —que no tiene N.º de factura y
 // por eso no pasa por el guard de duplicados— un reintento ciego podría dejar dos
 // recepciones del mismo material.
-import { createRecepcion, setRecepcionFactura, type NewRecepcionDB } from "./repo.ts";
+import { createRecepcion, setRecepcionFactura, type FacturaParcialDB, type NewRecepcionDB } from "./repo.ts";
 import type { Role } from "./types.ts";
 
 // El insert, inyectable. En producción es siempre `createRecepcion`; el parámetro
@@ -85,14 +85,27 @@ export async function guardarRecepcionTrasBc(
   }
 }
 
+// El corte de una factura parcial, tal como viene del navegador: solo las dos cosas
+// que importan y con tipos limpios. Un `parcial` que no es objeto o no trae lista de
+// líneas se ignora (= factura completa, lo de siempre); lo que SÍ trae lo valida
+// partirRecepcionPorFactura adentro de la transacción.
+export function parcialValido(p: unknown): FacturaParcialDB | undefined {
+  if (!p || typeof p !== "object" || !Array.isArray((p as any).lineas)) return undefined;
+  const lineas = ((p as any).lineas as any[]).map((l) => ({ ordenLineaId: String(l?.ordenLineaId ?? ""), cantidad: Number(l?.cantidad) }));
+  const nota = String((p as any).nota ?? "").slice(0, 200).trim();
+  return nota ? { lineas, nota } : { lineas };
+}
+
 // ── LA OTRA MITAD: FACTURAR LO QUE YA SE HABÍA RECIBIDO ──────────────────────
 // Mismo hueco, otra pantalla (Bodega → "Archivo y recepciones", cuando la factura
 // venía en revisión y Contabilidad la registra después). Ahí el movimiento local es
 // más chico —marcar la recepción como facturada— pero perderlo duele igual: la
 // factura queda registrada en BC y la recepción se queda "en revisión" para siempre,
 // invitando a registrarla otra vez.
-export type FacturaTrasBc = { idRecepcionCompra: number; numeroFactura: string };
-export type MarcarFacturada = (idRec: number, numeroFactura: string, usuario: string, rol: Role, bcFacturaNo?: string) => Promise<void>;
+// `parcial` = la factura no trae todo lo recibido: lo demás sigue en revisión en una
+// recepción aparte (ver setRecepcionFactura). Sin él se factura la recepción entera.
+export type FacturaTrasBc = { idRecepcionCompra: number; numeroFactura: string; parcial?: FacturaParcialDB | null };
+export type MarcarFacturada = (idRec: number, numeroFactura: string, usuario: string, rol: Role, bcFacturaNo?: string, parcial?: FacturaParcialDB | null) => Promise<unknown>;
 
 // `bcFacturaNo` = el CFR-… que acaba de devolver BC. Lo pone el SERVIDOR (no viene
 // en el payload del navegador): es el número del documento que se registró allá, y
@@ -109,7 +122,7 @@ export async function marcarFacturadaTrasBc(
   if (!Number.isFinite(idRec) || idRec <= 0) return { errorLocal: "La recepción vino sin id, no se marcó facturada acá." };
   if (!numero) return { errorLocal: "La factura vino sin número, no se marcó facturada acá." };
   try {
-    await marcar(idRec, numero, actor.usuario, actor.rol, String(bcFacturaNo ?? "").trim() || undefined);
+    await marcar(idRec, numero, actor.usuario, actor.rol, String(bcFacturaNo ?? "").trim() || undefined, parcialValido(f.parcial));
     return { facturada: true };
   } catch (e: any) {
     return { errorLocal: String(e?.message ?? e) };

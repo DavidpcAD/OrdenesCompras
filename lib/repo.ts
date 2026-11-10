@@ -1,7 +1,7 @@
 import { getAuthPool, getPool, pedir, pedirTx, sql } from "./db.ts";
 import { bcDeepLinkPedido, bcDeepLinkFacturaRegistrada, bcDeepLinkFacturaPorNo, bcDeepLinkFacturaBorrador, bcDeepLinkRecepcion, bcUnidadesDeCompra, sanearObrasDeLineas } from "./bc.ts";
 import { unidadCorregida, codigoDeItem } from "./unidad.ts";
-import { DETALLE_EN_REVISION, etiquetaInterna, esTipoDevolucion, esTipoEdicion, leerNotaRevision, MARCA_DESDE_REVISION, ordenDeDetalleDevolucion } from "./helpers.ts";
+import { componerNotaRevision, DETALLE_EN_REVISION, etiquetaInterna, esTipoDevolucion, esTipoEdicion, leerNotaRevision, MARCA_DESDE_REVISION, motivoRestoDeFactura, ordenDeDetalleDevolucion, partirRecepcionPorFactura, repartirTotalRecepcion, type CantidadFacturada } from "./helpers.ts";
 import { resumirCambiosDeLineas } from "./cambios-orden.ts";
 import { componerNotaCierre, detalleDeCierre, lineaCancelada, motivoObligatorio, quitarNotaCierre } from "./cierre-solicitud.ts";
 import { envioDeSello, leerSello, MOV_DESHECHO, MOV_ENVIADA, MOV_PDF, SELLO_SEP, type Sello } from "./envio-proveedor.ts";
@@ -2316,8 +2316,7 @@ export async function createRecepcion(input: NewRecepcionDB): Promise<number> {
         throw new Error(`La factura ${input.numeroFactura} ya está registrada en ${ordenNo}. Revisá "Facturas digitadas" antes de volver a registrarla.`);
       }
     }
-    const max = await pedirTx(tx).query("SELECT MAX(CAST(SUBSTRING(recepcionNo,5,20) AS INT)) AS m FROM dbo.RecepcionCompra WHERE recepcionNo LIKE 'REC-%'");
-    const numero = "REC-" + String((max.recordset[0].m ?? 0) + 1).padStart(6, "0");
+    const numero = await siguienteRecepcionNo(tx);
     // El N.º de BC entra en el mismo INSERT, pero solo si la columna ya está: se
     // pregunta antes en vez de romper el registro por una migración pendiente.
     const bcNo = String(input.bcFacturaNo ?? "").trim().slice(0, 50);
@@ -2400,14 +2399,21 @@ export async function createRecepcion(input: NewRecepcionDB): Promise<number> {
 }
 
 // MODO 2 — Kattya registra la factura de una recepción que estaba EN REVISIÓN.
-// Marca el número de factura, sube lo FACTURADO de la orden (= lo recibido en
-// esa recepción) y cierra la orden si ya quedó todo recibido.
+// Marca el número de factura, sube lo FACTURADO de la orden y cierra la orden si ya
+// quedó todo recibido y facturado.
 //
 // `bcFacturaNo` es el CFR-… que devolvió BC al registrar (solo cuando la factura
 // pasó por /api/bc/facturar-recibido). Antes se perdía: la recepción quedaba sin
 // N.º de BC y sin link en "Facturas registradas", a diferencia de las que se
 // registran al recibir. Igual que en createRecepcion, sin la columna se omite.
-export async function setRecepcionFactura(idRec: number, numeroFactura: string, usuario: string, rol: Role, bcFacturaNo?: string): Promise<void> {
+//
+// `parcial` = la factura NO trae todo lo recibido (ver partirRecepcionPorFactura):
+// lo facturado se queda en esta recepción y lo demás pasa a una recepción NUEVA que
+// sigue en revisión, con su propio motivo en la bitácora. Es el mismo corte que hace
+// BC, donde lo no facturado queda "recibido sin facturar" en el pedido. Sin
+// `parcial`, se factura la recepción entera (lo de siempre).
+export type FacturaParcialDB = { lineas: CantidadFacturada[]; nota?: string };
+export async function setRecepcionFactura(idRec: number, numeroFactura: string, usuario: string, rol: Role, bcFacturaNo?: string, parcial?: FacturaParcialDB | null): Promise<{ recepcionRestoId?: number }> {
   const num = String(numeroFactura ?? "").trim();
   if (!num) throw new Error("El número de factura es obligatorio.");
   // Solo un N.º de documento de verdad (CFR-011343): si el codeunit contestara un
@@ -2418,7 +2424,8 @@ export async function setRecepcionFactura(idRec: number, numeroFactura: string, 
   const tx = new sql.Transaction(pool); await tx.begin();
   try {
     const rec = await pedirTx(tx).input("id", sql.Int, idRec)
-      .query("SELECT idOrdenCompra, numeroFactura FROM dbo.RecepcionCompra WHERE idRecepcionCompra=@id AND esEliminada=0");
+      .query(`SELECT idOrdenCompra, recepcionNo, numeroFactura, fechaFactura, fechaRecepcion, fechaRegistro, total, creadoPor
+                FROM dbo.RecepcionCompra WHERE idRecepcionCompra=@id AND esEliminada=0`);
     const row = rec.recordset[0];
     if (!row) throw new Error(`La recepción ${idRec} no existe.`);
     // Idempotencia: esto SUMA quantityFacturada por cada línea recibida. Si la
@@ -2431,6 +2438,24 @@ export async function setRecepcionFactura(idRec: number, numeroFactura: string, 
     }
     const idOrden = row.idOrdenCompra as number;
 
+    // Las líneas de la recepción, con lo que hace falta para valorarlas (el precio de
+    // la factura si Bodega lo anotó, si no el de la orden, menos el descuento).
+    const dets = (await pedirTx(tx).input("id", sql.Int, idRec)
+      .query(`SELECT d.idRecepcionCompraDet, d.idOrdenCompraDet, d.lineNum, d.quantityRecibida, d.precioFactura,
+                     ISNULL(o.directUnitCost,0) AS precioOrden, ISNULL(o.lineDiscountPct,0) AS descuento
+                FROM dbo.RecepcionCompraDet d
+                LEFT JOIN dbo.OrdenCompraDet o ON o.idOrdenCompraDet = d.idOrdenCompraDet
+               WHERE d.idRecepcionCompra=@id ORDER BY d.lineNum`)).recordset as any[];
+    const lineas: RecepcionLinea[] = dets.map((d) => ({
+      ordenLineaId: String(d.idOrdenCompraDet), cantidadRecibida: Number(d.quantityRecibida ?? 0),
+      precioFactura: d.precioFactura != null ? Number(d.precioFactura) : undefined,
+    }));
+    const corte = partirRecepcionPorFactura(lineas, parcial?.lineas ?? null);
+    if (corte.error) throw new Error(corte.error);
+    const facturadaDe = new Map(corte.facturadas.map((l) => [l.ordenLineaId, l.cantidadRecibida]));
+    const quedaDe = new Map(corte.quedan.map((l) => [l.ordenLineaId, l.cantidadRecibida]));
+    const hayResto = corte.quedan.length > 0;
+
     await pedirTx(tx).input("id", sql.Int, idRec).input("f", sql.NVarChar(40), num)
       .query("UPDATE dbo.RecepcionCompra SET numeroFactura=@f, fechaFactura=ISNULL(fechaFactura,getdate()) WHERE idRecepcionCompra=@id");
     if (conBc) {
@@ -2438,11 +2463,61 @@ export async function setRecepcionFactura(idRec: number, numeroFactura: string, 
         .query("UPDATE dbo.RecepcionCompra SET bcFacturaNo=@bc WHERE idRecepcionCompra=@id");
     }
 
-    // subir lo FACTURADO de cada línea de la orden por lo que se recibió en esta recepción
-    const dets = await pedirTx(tx).input("id", sql.Int, idRec)
-      .query("SELECT idOrdenCompraDet, quantityRecibida FROM dbo.RecepcionCompraDet WHERE idRecepcionCompra=@id");
-    for (const d of dets.recordset) {
-      await pedirTx(tx).input("id", sql.Int, d.idOrdenCompraDet).input("q", sql.Decimal(18, 4), d.quantityRecibida)
+    // EL CORTE: lo que no vino en la factura pasa a una recepción nueva, en revisión
+    // (sin N.º de factura), con la misma fecha de recepción y a nombre de quien
+    // recibió el material: no lo recibió Contabilidad, solo lo separó.
+    let idResto: number | undefined;
+    let restoNo = "";
+    if (hayResto) {
+      const valor = (d: any, q: number) => q * (d.precioFactura != null ? Number(d.precioFactura) : Number(d.precioOrden)) * (1 - Number(d.descuento) / 100);
+      const impTotal = dets.reduce((s, d) => s + valor(d, Number(d.quantityRecibida ?? 0)), 0);
+      const impFact = dets.reduce((s, d) => s + valor(d, facturadaDe.get(String(d.idOrdenCompraDet)) ?? 0), 0);
+      const totales = repartirTotalRecepcion(Number(row.total ?? 0), impFact, impTotal);
+      restoNo = await siguienteRecepcionNo(tx);
+      const ins = await pedirTx(tx)
+        .input("idOrdenCompra", sql.Int, idOrden)
+        .input("recepcionNo", sql.NVarChar(50), restoNo)
+        .input("fechaFactura", sql.Date, row.fechaFactura ?? null)
+        .input("fechaRecepcion", sql.Date, row.fechaRecepcion ?? null)
+        .input("fechaRegistro", sql.Date, row.fechaRegistro ?? null)
+        .input("total", sql.Decimal(18, 2), totales.queda)
+        .input("creadoPor", sql.NVarChar(100), row.creadoPor ?? usuario)
+        .query(`INSERT dbo.RecepcionCompra (idOrdenCompra,recepcionNo,numeroFactura,fechaFactura,fechaRecepcion,fechaRegistro,total,esEliminada,fechaCreacion,creadoPor)
+                OUTPUT INSERTED.idRecepcionCompra
+                VALUES (@idOrdenCompra,@recepcionNo,'',@fechaFactura,@fechaRecepcion,@fechaRegistro,@total,0,getdate(),@creadoPor)`);
+      idResto = ins.recordset[0].idRecepcionCompra as number;
+      await pedirTx(tx).input("id", sql.Int, idRec).input("t", sql.Decimal(18, 2), totales.facturado)
+        .query("UPDATE dbo.RecepcionCompra SET total=@t WHERE idRecepcionCompra=@id");
+      for (const d of dets) {
+        const id = String(d.idOrdenCompraDet);
+        const fact = facturadaDe.get(id) ?? 0;
+        const queda = quedaDe.get(id) ?? 0;
+        if (!queda) continue;
+        if (!fact) {
+          // La línea entera no vino: se MUDA tal cual (conserva quién y cuándo la recibió).
+          await pedirTx(tx).input("det", sql.Int, d.idRecepcionCompraDet).input("nuevo", sql.Int, idResto)
+            .query("UPDATE dbo.RecepcionCompraDet SET idRecepcionCompra=@nuevo WHERE idRecepcionCompraDet=@det");
+        } else {
+          // Vino con menos: aquí queda lo facturado y la diferencia va a la nueva.
+          await pedirTx(tx).input("det", sql.Int, d.idRecepcionCompraDet).input("q", sql.Decimal(18, 4), fact)
+            .query("UPDATE dbo.RecepcionCompraDet SET quantityRecibida=@q WHERE idRecepcionCompraDet=@det");
+          await pedirTx(tx)
+            .input("idRecepcionCompra", sql.Int, idResto)
+            .input("idOrdenCompraDet", sql.Int, d.idOrdenCompraDet)
+            .input("lineNum", sql.Int, Number(d.lineNum ?? 10000))
+            .input("quantityRecibida", sql.Decimal(18, 4), queda)
+            .input("precioFactura", sql.Decimal(18, 4), d.precioFactura ?? null)
+            .input("creadoPor", sql.NVarChar(100), row.creadoPor ?? usuario)
+            .query(`INSERT dbo.RecepcionCompraDet (idRecepcionCompra,idOrdenCompraDet,lineNum,quantityRecibida,precioFactura,fechaCreacion,creadoPor)
+                    VALUES (@idRecepcionCompra,@idOrdenCompraDet,@lineNum,@quantityRecibida,@precioFactura,getdate(),@creadoPor)`);
+        }
+      }
+    }
+
+    // Subir lo FACTURADO de cada línea de la orden: lo que trae la factura, no lo
+    // recibido (con una factura parcial, lo demás sigue sin facturar, como en BC).
+    for (const [idDet, q] of facturadaDe) {
+      await pedirTx(tx).input("id", sql.Int, Number(idDet)).input("q", sql.Decimal(18, 4), q)
         .query("UPDATE dbo.OrdenCompraDet SET quantityFacturada=ISNULL(quantityFacturada,0)+@q WHERE idOrdenCompraDet=@id");
     }
 
@@ -2450,19 +2525,56 @@ export async function setRecepcionFactura(idRec: number, numeroFactura: string, 
     const ordenNo = ord.recordset[0]?.ordenNo ?? "";
     const saldo = await pedirTx(tx).input("id", sql.Int, idOrden)
       .query("SELECT SUM(quantity - ISNULL(quantityRecibida,0)) AS pend FROM dbo.OrdenCompraDet WHERE idOrdenCompra=@id AND ISNULL(tipoLinea,'articulo') <> 'cargo'");
-    const completa = Number(saldo.recordset[0].pend ?? 0) <= 0;
+    // Con otra recepción todavía en revisión (la que acaba de quedar, u otra de antes)
+    // la orden NO se cierra: igual que en createRecepcion, queda pendiente de factura.
+    const revs = await pedirTx(tx).input("id", sql.Int, idOrden)
+      .query("SELECT COUNT(*) AS n FROM dbo.RecepcionCompra WHERE idOrdenCompra=@id AND esEliminada=0 AND LTRIM(RTRIM(ISNULL(numeroFactura,'')))=''");
+    const completa = Number(saldo.recordset[0].pend ?? 0) <= 0 && Number(revs.recordset[0]?.n ?? 0) === 0;
     if (completa) {
       const idComp = await idDeEstado("completado");
       await pedirTx(tx).input("id", sql.Int, idOrden).input("e", sql.Int, idComp)
         .query("UPDATE dbo.OrdenCompra SET idEstado=@e WHERE idOrdenCompra=@id");
     }
-    await logMov(tx, { entidad: "recepcion", idEntidad: idRec, documentoNo: num, tipoMovimiento: "creado", usuario, rol, detalle: `Factura ${num} registrada ${MARCA_DESDE_REVISION}` });
-    await logMov(tx, { entidad: "orden", idEntidad: idOrden, documentoNo: ordenNo, tipoMovimiento: completa ? "recepcion_total" : "recepcion_parcial", estadoNuevo: completa ? "completado" : undefined, usuario, rol, detalle: `Factura ${num}` });
+    const restoTxt = hayResto
+      ? ` · la factura trae ${corte.facturadas.length} de ${lineas.length} líneas; lo demás sigue en revisión en ${restoNo}`
+      : "";
+    await logMov(tx, { entidad: "recepcion", idEntidad: idRec, documentoNo: num, tipoMovimiento: "creado", usuario, rol, detalle: `Factura ${num} registrada ${MARCA_DESDE_REVISION}${restoTxt}` });
+    if (idResto) {
+      // El "recibido" de la recepción nueva es su envío a revisión: con él Archivo y el
+      // detalle de la orden muestran por qué está ahí (ver listEnviosARevision).
+      const motivo = componerNotaRevision("", "otro", motivoRestoDeFactura(num, parcial?.nota ?? ""));
+      await logMov(tx, { entidad: "recepcion", idEntidad: idResto, documentoNo: "(en revisión)", tipoMovimiento: "recibido", usuario, rol, detalle: `${DETALLE_EN_REVISION} · ${motivo}` });
+    }
+    await logMov(tx, { entidad: "orden", idEntidad: idOrden, documentoNo: ordenNo, tipoMovimiento: completa ? "recepcion_total" : "recepcion_parcial", estadoNuevo: completa ? "completado" : undefined, usuario, rol, detalle: `Factura ${num}${restoTxt}` });
     await tx.commit();
+    return { recepcionRestoId: idResto };
   } catch (e) {
     await tx.rollback();
     throw e;
   }
+}
+
+// ANTES de facturar en BC: que el corte que pide la pantalla se pueda hacer acá. Si
+// la factura se registra en BC y después la base rechaza el corte (una cantidad de
+// más, una pestaña vieja), queda una factura en BC y la recepción "en revisión" acá,
+// pidiendo que la registren otra vez. Devuelve el error para la pantalla, o null.
+export async function errorDeFacturaParcial(idRec: number, parcial: FacturaParcialDB): Promise<string | null> {
+  const pool = await getPool();
+  const rec = await pedir(pool).input("id", sql.Int, idRec)
+    .query("SELECT numeroFactura FROM dbo.RecepcionCompra WHERE idRecepcionCompra=@id AND esEliminada=0");
+  const row = rec.recordset[0];
+  if (!row) return "Esa recepción ya no existe. Recargá la página.";
+  if (String(row.numeroFactura ?? "").trim()) return `Esa recepción ya tiene la factura ${String(row.numeroFactura).trim()} registrada. Recargá la página.`;
+  const d = await pedir(pool).input("id", sql.Int, idRec)
+    .query("SELECT idOrdenCompraDet, quantityRecibida FROM dbo.RecepcionCompraDet WHERE idRecepcionCompra=@id");
+  const lineas: RecepcionLinea[] = d.recordset.map((x: any) => ({ ordenLineaId: String(x.idOrdenCompraDet), cantidadRecibida: Number(x.quantityRecibida ?? 0) }));
+  return partirRecepcionPorFactura(lineas, parcial.lineas).error ?? null;
+}
+
+// El siguiente REC-…, dentro de la transacción que lo va a usar.
+async function siguienteRecepcionNo(tx: sql.Transaction): Promise<string> {
+  const max = await pedirTx(tx).query("SELECT MAX(CAST(SUBSTRING(recepcionNo,5,20) AS INT)) AS m FROM dbo.RecepcionCompra WHERE recepcionNo LIKE 'REC-%'");
+  return "REC-" + String((max.recordset[0].m ?? 0) + 1).padStart(6, "0");
 }
 
 // El HISTÓRICO de "Facturas en revisión": las recepciones a las que Contabilidad

@@ -1,4 +1,4 @@
-import type { EnvioARevision, LineType, MotivoNC, Movimiento, Orden, OrdenLinea, Pedido, PedidoLinea, Recepcion, Role, TipoSolicitud } from "./types.ts";
+import type { EnvioARevision, LineType, MotivoNC, Movimiento, Orden, OrdenLinea, Pedido, PedidoLinea, Recepcion, RecepcionLinea, Role, TipoSolicitud } from "./types.ts";
 import { comentarioSinMarcasInternas, motivoDeCierre, segmentosDeNota } from "./cierre-solicitud.ts";
 
 // ── QUÉ ES CADA TIPO DE LÍNEA, EN UN SOLO LUGAR ──────────────────────────────
@@ -1252,6 +1252,79 @@ export function lineasDeRecepcion(rec: Recepcion, orden?: Orden) {
     const importe = rl.cantidadRecibida * precio * (1 - (ol?.descuentoPct ?? 0) / 100);
     return { rl, ol, precio, importe };
   });
+}
+
+// FACTURAR MENOS DE LO RECIBIDO ("Facturas en revisión"). La factura del proveedor
+// no siempre trae todo lo que Bodega recibió: material que llegó y el proveedor
+// factura aparte, o una línea con otra cantidad. BC ya lo permite —el codeunit de
+// facturar lo recibido factura por línea lo que se le pida, hasta lo recibido sin
+// facturar, y el resto se queda allá "recibido sin facturar"—, así que la recepción
+// de la app se PARTE igual que en BC: lo facturado se queda en la recepción original
+// (con su N.º, su bitácora y sus fotos) y lo que no vino en la factura pasa a una
+// recepción nueva que sigue en revisión.
+//
+// `facturado` = cuánto trae la factura de cada línea. Sin darlo se factura todo (lo
+// de siempre); una línea que no viene en la lista es 0, o sea, no viene en la
+// factura. Nunca se acota en silencio: más de lo recibido o un número raro es un
+// ERROR, porque eso solo puede venir de una pantalla vieja o de un payload a mano, y
+// adivinar la cantidad de una factura es meter plata mal.
+export type CantidadFacturada = { ordenLineaId: string; cantidad: number };
+const r4 = (n: number) => Math.round(n * 1e4) / 1e4;
+export function partirRecepcionPorFactura(
+  lineas: RecepcionLinea[],
+  facturado?: CantidadFacturada[] | null,
+): { facturadas: RecepcionLinea[]; quedan: RecepcionLinea[]; error?: string } {
+  if (!facturado) return { facturadas: lineas.filter((l) => l.cantidadRecibida > 0), quedan: [] };
+  const vistas = new Set<string>();
+  for (const l of lineas) {
+    if (vistas.has(l.ordenLineaId)) {
+      return { facturadas: [], quedan: [], error: "Esta recepción tiene la misma línea dos veces y no se puede partir. Registrá la factura completa o avisale a Proveeduría." };
+    }
+    vistas.add(l.ordenLineaId);
+  }
+  const pedido = new Map<string, number>();
+  for (const f of facturado) {
+    const id = String(f?.ordenLineaId ?? "");
+    const q = Number(f?.cantidad);
+    if (!vistas.has(id)) return { facturadas: [], quedan: [], error: "La factura trae una línea que no está en esta recepción. Recargá la página y volvé a intentarlo." };
+    if (pedido.has(id)) return { facturadas: [], quedan: [], error: "La factura trae la misma línea dos veces. Recargá la página y volvé a intentarlo." };
+    if (!Number.isFinite(q) || q < 0) return { facturadas: [], quedan: [], error: "Una cantidad de la factura no es válida. Revisala y volvé a intentarlo." };
+    pedido.set(id, r4(q));
+  }
+  const facturadas: RecepcionLinea[] = [];
+  const quedan: RecepcionLinea[] = [];
+  for (const l of lineas) {
+    const recibida = r4(Number(l.cantidadRecibida) || 0);
+    const q = pedido.get(l.ordenLineaId) ?? 0;
+    if (q > recibida + 1e-6) {
+      return { facturadas: [], quedan: [], error: `Una línea trae ${q} en la factura y solo se recibieron ${recibida}. No se puede facturar más de lo recibido: si llegó más, Bodega tiene que recibir la diferencia primero.` };
+    }
+    if (q > 0) facturadas.push({ ...l, cantidadRecibida: q });
+    const resto = r4(recibida - q);
+    if (resto > 0) quedan.push({ ...l, cantidadRecibida: resto });
+  }
+  if (!facturadas.length) return { facturadas: [], quedan: [], error: "La factura no trae ninguna línea de esta recepción: no hay nada que registrar." };
+  return { facturadas, quedan };
+}
+
+// El importe sin IVA de la recepción, repartido entre lo facturado y lo que sigue en
+// revisión según lo que vale cada parte. Se reparte el TOTAL GUARDADO (no se
+// recalcula) para que las dos partes sumen exactamente lo que Bodega registró.
+export function repartirTotalRecepcion(total: number, importeFacturado: number, importeTotal: number): { facturado: number; queda: number } {
+  const t = Number(total) || 0;
+  const parte = importeTotal > 0 ? Math.min(1, Math.max(0, importeFacturado / importeTotal)) : 1;
+  const facturado = Math.round(t * parte * 100) / 100;
+  return { facturado, queda: Math.round((t - facturado) * 100) / 100 };
+}
+
+// El motivo con que queda en revisión lo que no vino en la factura. Pasa por la
+// misma nota que escribe Bodega (componerNotaRevision), así Archivo y el detalle de
+// la orden lo leen igual que cualquier otro envío a revisión.
+export function motivoRestoDeFactura(numeroFactura: string, nota = ""): string {
+  const n = String(numeroFactura ?? "").trim();
+  const t = String(nota ?? "").replace(/\s+/g, " ").trim();
+  const extra = t ? t[0].toLocaleUpperCase("es-CR") + t.slice(1) : "";
+  return `No venía en la factura ${n}; lo demás de la recepción ya se registró con ella` + (extra ? `. ${extra}` : "");
 }
 
 // POR QUÉ UNA FACTURA QUEDA EN REVISIÓN. Bodega lo elige en la confirmación de

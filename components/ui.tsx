@@ -436,8 +436,12 @@ export function EmptyState({ icon, title, hint }: {
 }
 
 // ---------------------------------------------------------------- Modal
-export function Modal({ title, onClose, children, footer, wide }: {
-  title: string; onClose: () => void; children: React.ReactNode; footer?: React.ReactNode; wide?: boolean;
+// `conLista`: el diálogo trae UNA lista larga (un hijo con la clase `modal__lista`).
+// Esa lista toma el alto que sobra y scrollea sola, y el resto —título, campos,
+// resumen, botones— queda siempre a la vista. Sin esto había que adivinar en CSS
+// cuánto mide lo de alrededor (ver `.addl-scroll`) y, si crecía, salían dos scrolls.
+export function Modal({ title, onClose, children, footer, wide, conLista }: {
+  title: string; onClose: () => void; children: React.ReactNode; footer?: React.ReactNode; wide?: boolean; conLista?: boolean;
 }) {
   const titleId = useId();
   const modalRef = useRef<HTMLDivElement>(null);
@@ -484,7 +488,7 @@ export function Modal({ title, onClose, children, footer, wide }: {
   if (!montado) return null;   // en el servidor no hay <body> al que portar
   return createPortal(
     <div className="modal-overlay" onClick={onClose}>
-      <div ref={modalRef} tabIndex={-1} className={`modal ${wide ? "modal--wide" : ""}`} role="dialog" aria-modal="true" aria-labelledby={titleId} onClick={(e) => e.stopPropagation()}>
+      <div ref={modalRef} tabIndex={-1} className={`modal ${wide ? "modal--wide" : ""} ${conLista ? "modal--lista" : ""}`} role="dialog" aria-modal="true" aria-labelledby={titleId} onClick={(e) => e.stopPropagation()}>
         <div className="row row--between" style={{ marginBottom: 16 }}>
           <h3 className="ds-subtitle-lg" id={titleId}>{title}</h3>
           <button className="modal-close" onClick={onClose} aria-label="Cerrar"><IconClose size={18} /></button>

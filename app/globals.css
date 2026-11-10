@@ -1821,6 +1821,12 @@ td.ds-col-fija {
 .modal-overlay { position: fixed; inset: 0; background: #0006; display: grid; place-items: center; z-index: 80; padding: var(--ds-space-6); animation: fade .15s ease; overflow: auto; }
 .modal { width: 100%; max-width: 560px; min-width: 0; background: var(--ds-surface); border-radius: var(--ds-radius-2xl); box-shadow: var(--ds-shadow-03-big); padding: var(--ds-space-6); max-height: 88vh; overflow: auto; }
 .modal--wide { max-width: 920px; }
+/* Diálogo con una lista larga adentro (`conLista` en el Modal): columna flexible
+   donde solo `.modal__lista` cede alto y scrollea; lo demás nunca se encoge. Si ni
+   el mínimo de la lista cabe (pantalla muy baja), scrollea el diálogo entero. */
+.modal--lista { display: flex; flex-direction: column; }
+.modal--lista > * { flex-shrink: 0; }
+.modal--lista > .modal__lista { flex: 1 1 auto; min-height: 200px; display: flex; flex-direction: column; }
 /* El reset deja los <p> en margen 0, y un diálogo que explica algo en dos o tres
    párrafos salía como un solo bloque de texto pegado (los otros diálogos lo tapaban
    porque tienen un campo en medio). Solo entre párrafos hermanos: el primero sigue
@@ -2541,6 +2547,70 @@ button.ana-kpi:active { transform: translateY(1px); }
 .qty-input:focus { outline: 2px solid var(--ds-color-green-100); outline-offset: 2px; border-color: var(--ds-color-green-100); }
 .qty-input:disabled { opacity: .5; }
 .qty-input::-webkit-outer-spin-button, .qty-input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+/* La pastilla en chico, para listas largas dentro de un diálogo (Registrar factura
+   desde revisión): misma forma y mismos bordes de estado, a la altura de un renglón.
+   Ámbar = la factura trae menos de lo recibido; gris = la línea no viene. */
+.qty-input--sm { width: 72px; height: 36px; font-size: var(--ds-font-size-body-md); }
+.qty-input.is-parcial { border-color: var(--ds-color-yellow); }
+.qty-input.is-cero { border-color: var(--ds-color-gray-200); }
+
+/* ── Registrar factura desde revisión: lo que trae la factura, línea por línea ──
+   Hermana de `.ocl-line` (mismo nombre, código y sub-renglón), con una columna para
+   la cantidad editable y otra para Quitar/Poner. Va en un Modal `conLista`: la
+   lista toma el alto que sobra y scrollea sola, sin segundo scroll de `.modal`. */
+.frv-box { margin-top: var(--ds-space-4); border: 1px solid var(--ds-color-gray-100); border-radius: var(--ds-radius-lg); overflow: hidden; }
+.frv-box > .ocl-top { flex-shrink: 0; }
+.frv-scroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+.frv-line {
+  display: grid; grid-template-columns: minmax(0, 1fr) 92px 128px 112px 56px; column-gap: var(--ds-space-3); row-gap: 2px;
+  align-items: center; padding: 8px var(--ds-space-4); border-bottom: 1px solid var(--ds-color-gray-100);
+}
+.frv-line:last-child { border-bottom: 0; }
+.frv-line--head { position: sticky; top: 0; z-index: 1; background: var(--ds-surface); padding: 7px var(--ds-space-4); border-bottom: 1px solid var(--ds-color-gray-200); }
+.frv-line--head > span { font-size: var(--ds-font-size-body-sm); font-weight: var(--ds-font-weight-semibold); color: var(--ds-color-gray-400); }
+.frv-line__rec { white-space: nowrap; font-weight: var(--ds-font-weight-semibold); }
+.frv-line__qty { display: flex; justify-content: flex-end; }
+.frv-line__amt { white-space: nowrap; font-weight: var(--ds-font-weight-semibold); }
+.frv-line__act { text-align: right; }
+.frv-line__lbl { display: none; }
+/* La línea que no viene en la factura se apaga, pero se puede leer: hay que poder
+   volver a ponerla sin adivinar cuál era. */
+.frv-line.is-fuera .ocl-line__name, .frv-line.is-fuera .frv-line__amt { color: var(--ds-color-gray-400); }
+.frv-hint { grid-column: 1 / -1; font-size: var(--ds-font-size-body-sm); color: var(--ds-color-gray-500); }
+.frv-hint--danger { color: var(--ds-text-danger); }
+/* Pie de la lista: lo que se factura (y con IVA, que es el número que se compara
+   contra el "Total a pagar" del papel) y lo que sigue en revisión. Mismo fondo que
+   `.ocl-foot`: cierra la lista en vez de ser un bloque más del diálogo. */
+.frv-sum {
+  flex-shrink: 0; display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px var(--ds-space-4);
+  padding: 10px var(--ds-space-4); border-top: 1px solid var(--ds-color-gray-200);
+  background: color-mix(in srgb, var(--ds-color-gray-100) 50%, var(--ds-tint-base));
+}
+.frv-sum__total { white-space: nowrap; font-size: var(--ds-font-size-body-md); }
+.frv-sum__resto { flex-basis: 100%; color: var(--ds-color-gray-500); }
+.frv-campos { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 var(--ds-space-4); }
+
+/* En angosto no caben cinco columnas: el material arriba a todo lo ancho, después
+   recibido e importe, y abajo la cantidad con su acción; el precio unitario pasa al
+   renglón del código. Y la lista deja de scrollear sola: en un celular el diálogo
+   entero scrollea, que es lo que se espera, en vez de una lista de una línea. */
+@media (max-width: 760px) {
+  .frv-line {
+    grid-template-columns: minmax(0, 1fr) auto; row-gap: 6px;
+    grid-template-areas: "desc desc" "rec amt" "qty act" "hint hint";
+  }
+  .frv-line--head { display: none; }
+  .frv-line__desc { grid-area: desc; }
+  .frv-line__rec { grid-area: rec; text-align: left; }
+  .frv-line__amt { grid-area: amt; }
+  .frv-line__qty { grid-area: qty; justify-content: flex-start; }
+  .frv-line__act { grid-area: act; }
+  .frv-hint { grid-area: hint; }
+  .frv-line__lbl { display: inline; color: var(--ds-color-gray-400); font-weight: var(--ds-font-weight-regular); }
+  .frv-campos { grid-template-columns: minmax(0, 1fr); }
+  .modal--lista { display: block; }
+  .modal--lista .frv-scroll { overflow: visible; }
+}
 
 /* Nota de crédito (móvil): la línea marcada NO se expande. El tipo + comentario
    se editan en un POPUP (Modal). La identifica el chip rojo, no un acento. */

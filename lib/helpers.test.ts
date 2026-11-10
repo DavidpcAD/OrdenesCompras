@@ -26,6 +26,7 @@ import {
   chequeoBcVencido, CHEQUEO_BC_FRESCO_MS, MONEDAS, monedaIso, lineasSinPrecio,
   componerNotaRevision, leerNotaRevision, lineasDeRecepcion,
   envioARevisionDe, esRecepcionEnRevision, DETALLE_EN_REVISION, faltaMotivoRevision,
+  partirRecepcionPorFactura, repartirTotalRecepcion, motivoRestoDeFactura,
 } from "./helpers.ts";
 import type { Movimiento, Orden, OrdenLinea, Pedido, PedidoLinea, Recepcion } from "./types.ts";
 
@@ -1342,4 +1343,81 @@ test("líneas de una recepción: precio de la factura si lo hay, si no el de la 
   const f = lineasDeRecepcion(rec, o);
   assert.deepEqual(f.map((x) => x.importe), [180, 120, 0]);
   assert.equal(f[2].ol, undefined);
+});
+
+// Facturar menos de lo recibido: lo facturado se queda, lo demás sigue en revisión.
+// Los datos son de prueba (no de una orden real): 3 líneas, una que no viene en la
+// factura y una que viene con menos.
+const REC_3 = [
+  { ordenLineaId: "a", cantidadRecibida: 45 },
+  { ordenLineaId: "b", cantidadRecibida: 50, precioFactura: 10 },
+  { ordenLineaId: "c", cantidadRecibida: 20 },
+];
+
+test("partir recepción: sin cantidades se factura todo (lo de siempre)", () => {
+  const p = partirRecepcionPorFactura(REC_3);
+  assert.equal(p.error, undefined);
+  assert.deepEqual(p.facturadas, REC_3);
+  assert.deepEqual(p.quedan, []);
+});
+
+test("partir recepción: una línea fuera de la factura y otra con menos pasan a revisión", () => {
+  const p = partirRecepcionPorFactura(REC_3, [
+    { ordenLineaId: "a", cantidad: 45 },
+    { ordenLineaId: "b", cantidad: 0 },
+    { ordenLineaId: "c", cantidad: 12.5 },
+  ]);
+  assert.equal(p.error, undefined);
+  assert.deepEqual(p.facturadas, [
+    { ordenLineaId: "a", cantidadRecibida: 45 },
+    { ordenLineaId: "c", cantidadRecibida: 12.5 },
+  ]);
+  // El precio de la factura viaja con la línea a la recepción nueva.
+  assert.deepEqual(p.quedan, [
+    { ordenLineaId: "b", cantidadRecibida: 50, precioFactura: 10 },
+    { ordenLineaId: "c", cantidadRecibida: 7.5 },
+  ]);
+});
+
+test("partir recepción: la línea que no viene en la lista es 0 (no viene en la factura)", () => {
+  const p = partirRecepcionPorFactura(REC_3, [{ ordenLineaId: "a", cantidad: 45 }]);
+  assert.deepEqual(p.facturadas.map((l) => l.ordenLineaId), ["a"]);
+  assert.deepEqual(p.quedan.map((l) => [l.ordenLineaId, l.cantidadRecibida]), [["b", 50], ["c", 20]]);
+});
+
+test("partir recepción: nunca acota en silencio — más de lo recibido es error", () => {
+  const p = partirRecepcionPorFactura(REC_3, [{ ordenLineaId: "a", cantidad: 60 }]);
+  assert.match(p.error ?? "", /trae 60 en la factura y solo se recibieron 45/);
+  assert.match(p.error ?? "", /Bodega tiene que recibir la diferencia/);
+  assert.deepEqual(p.facturadas, []);
+});
+
+test("partir recepción: números raros, líneas ajenas o repetidas, y nada que facturar", () => {
+  assert.match(partirRecepcionPorFactura(REC_3, [{ ordenLineaId: "a", cantidad: -1 }]).error ?? "", /no es válida/);
+  assert.match(partirRecepcionPorFactura(REC_3, [{ ordenLineaId: "a", cantidad: Number.NaN }]).error ?? "", /no es válida/);
+  assert.match(partirRecepcionPorFactura(REC_3, [{ ordenLineaId: "zz", cantidad: 1 }]).error ?? "", /no está en esta recepción/);
+  assert.match(partirRecepcionPorFactura(REC_3, [{ ordenLineaId: "a", cantidad: 1 }, { ordenLineaId: "a", cantidad: 2 }]).error ?? "", /misma línea dos veces/);
+  assert.match(partirRecepcionPorFactura(REC_3, []).error ?? "", /nada que registrar/);
+  assert.match(partirRecepcionPorFactura([...REC_3, { ordenLineaId: "a", cantidadRecibida: 1 }], []).error ?? "", /misma línea dos veces/);
+});
+
+test("partir recepción: decimales de 4 cifras sin arrastrar error de coma flotante", () => {
+  const p = partirRecepcionPorFactura([{ ordenLineaId: "a", cantidadRecibida: 0.3 }], [{ ordenLineaId: "a", cantidad: 0.1 }]);
+  assert.deepEqual(p.quedan, [{ ordenLineaId: "a", cantidadRecibida: 0.2 }]);
+});
+
+test("repartir total: las dos partes suman exactamente lo guardado", () => {
+  const r = repartirTotalRecepcion(1000.01, 1, 3);
+  assert.equal(r.facturado, 333.34);
+  assert.equal(Math.round((r.facturado + r.queda) * 100) / 100, 1000.01);
+  // Sin importes (todo a precio 0): se queda todo en lo facturado.
+  assert.deepEqual(repartirTotalRecepcion(50, 0, 0), { facturado: 50, queda: 0 });
+});
+
+test("motivo de lo que no vino en la factura: se lee como cualquier envío a revisión", () => {
+  const m = motivoRestoDeFactura(" 731 ", "  el proveedor   la manda aparte ");
+  assert.equal(m, "No venía en la factura 731; lo demás de la recepción ya se registró con ella. El proveedor la manda aparte");
+  const nota = componerNotaRevision("", "otro", m);
+  assert.deepEqual(leerNotaRevision(`${DETALLE_EN_REVISION} · ${nota}`), { motivo: m });
+  assert.equal(faltaMotivoRevision({ numeroFactura: "", nota }), null);
 });

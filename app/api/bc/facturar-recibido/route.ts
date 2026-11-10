@@ -4,7 +4,8 @@ import { frenarPorEncabezado } from "@/lib/freno-encabezado";
 import { frenarPorPrecio } from "@/lib/freno-precio";
 import { actor, exigirSesion } from "@/lib/actor";
 import type { Role } from "@/lib/types";
-import { marcarFacturadaTrasBc } from "@/lib/guardado-tras-bc";
+import { marcarFacturadaTrasBc, parcialValido } from "@/lib/guardado-tras-bc";
+import { errorDeFacturaParcial } from "@/lib/repo";
 import { anotarFalloDeBc } from "@/lib/fallo-posteo";
 import { ES_ISO } from "@/lib/fechas";
 import { todayISO } from "@/lib/helpers";
@@ -38,6 +39,17 @@ export async function POST(req: Request) {
   // Cómo estaba el pedido en BC al EMPEZAR, según el freno de encabezado. Es lo
   // único que después permite saber si el posteo lo des-lanzó (ver abajo).
   let estadoBc: EstadoBcPedido | undefined;
+  // FRENO 0 — la FACTURA PARCIAL (lo que trae la factura es menos de lo recibido),
+  // ANTES de tocar BC: si la base rechazara el corte después, BC tendría la factura
+  // y la recepción seguiría "en revisión" acá pidiendo que la registren otra vez.
+  const parcial = parcialValido(cuerpo?.facturar?.parcial);
+  if (parcial && cuerpo?.facturar?.idRecepcionCompra) {
+    // Si la base no contesta acá, tampoco va a poder guardar el corte después de BC:
+    // mejor no facturar allá todavía.
+    const errParcial = await errorDeFacturaParcial(Number(cuerpo.facturar.idRecepcionCompra), parcial)
+      .catch(() => "la base de datos no contestó y no se pudo revisar la recepción. No se tocó Business Central: reintentá en un momento.");
+    if (errParcial) return NextResponse.json({ ok: false, error: `NO se facturó: ${errParcial}`, frenoParcial: true }, { status: 409 });
+  }
   try {
     // FRENO 1 — el ENCABEZADO del pedido en BC: mismo proveedor y LANZADO allá
     // (ver lib/freno-encabezado.ts). Acá es lo último que queda antes de que la
