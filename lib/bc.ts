@@ -12,6 +12,7 @@ import { almacenDeLinea } from "./helpers.ts";
 import { cotejarLineas, type Cotejo, type LineaApp, type LineaBc } from "./bc-conciliacion.ts";
 import type { FacturaBcPeriodo } from "./barrido-bc.ts";
 import { importeDelCargo, tipoDeFacturaBc, type FacturaMismoNumero } from "./cargo-recibido.ts";
+import { duenoDeLaFactura, facturaNoSirve, pruebaQueYaEntro } from "./factura-ajena.ts";
 
 type TokenCache = { token: string; exp: number };
 let tokenCache: TokenCache | null = null;
@@ -4490,23 +4491,34 @@ export function chequeoAplica(estado: EstadoChequeoBc, estadoOrden: string): boo
   return true;   // "desalineado" importa siempre: la plata ya no cuadra
 }
 
-export type BcFacturaProveedor = { numero: string; vendorNo: string; fecha: string; total: number; estado: string };
+export type BcFacturaProveedor = {
+  numero: string; vendorNo: string; fecha: string; total: number; estado: string;
+  // De qué pedido salió (orderNumber): '' = se registró sin pedido; null = BC no lo
+  // dijo. Es lo que separa "este pedido ya está registrado" de "ese N.º lo usó otro
+  // pedido" (ver lib/factura-ajena.ts). Opcional para no romper a quien la arma a mano.
+  pedido?: string | null;
+  // La nota de crédito que la anuló, si se buscó y se encontró. Una factura anulada
+  // no prueba que la recepción esté registrada, aunque sea de este mismo pedido.
+  anuladaCon?: string;
+};
 
 // La factura de compra que BC YA tiene con ese N.º de factura del proveedor, si
 // existe. Es la prueba de que el registro sí entró (aunque la app lo haya
-// reportado como fallido) y lo que se le muestra a Bodega antes de conciliar.
+// reportado como fallido) —SIEMPRE que `pedido` sea el de esta orden— y lo que se
+// le muestra a Bodega antes de conciliar.
 // null = no está, o BC no dejó buscarla: nunca inventa un "sí".
 export async function bcFacturaDeProveedor(vendorInvoiceNo: string, vendorNo = ""): Promise<BcFacturaProveedor | null> {
   const inv = (vendorInvoiceNo ?? "").trim();
   const prov = (vendorNo ?? "").trim();
   if (!inv) return null;
-  const CAMPOS = "&$select=number,vendorInvoiceNumber,vendorNumber,invoiceDate,status,totalAmountIncludingTax";
+  const CAMPOS = "&$select=number,vendorInvoiceNumber,vendorNumber,invoiceDate,status,totalAmountIncludingTax,orderNumber";
   const mapear = (r: any): BcFacturaProveedor => ({
     numero: String(r?.number ?? ""),
     vendorNo: String(r?.vendorNumber ?? ""),
     fecha: String(r?.invoiceDate ?? ""),
     total: Number(r?.totalAmountIncludingTax ?? 0) || 0,
     estado: String(r?.status ?? ""),
+    pedido: r?.orderNumber == null ? null : String(r.orderNumber).trim(),
   });
   try {
     const cid = await getStdCompanyId();
@@ -4533,22 +4545,81 @@ export async function bcFacturaDeProveedor(vendorInvoiceNo: string, vendorNo = "
   }
 }
 
+// La nota de crédito que anuló una factura registrada (purchaseCreditMemos trae
+// `invoiceNumber` = la factura que corrige). '' = no tiene; null = BC no contestó.
+// Hace falta porque una factura anulada con nota correctiva queda "Paid", no
+// "Canceled": por el estado no se ve (CFR-012069 / CNCR-000507, 10 nov 2026).
+export async function bcNotaQueAnulaFactura(facturaNo: string): Promise<string | null> {
+  const no = (facturaNo ?? "").trim();
+  if (!no) return null;
+  try {
+    const cid = await getStdCompanyId();
+    const url = `${stdRoot()}/companies(${cid})/purchaseCreditMemos?$filter=${encodeURIComponent(`invoiceNumber eq '${odataStr(no)}'`)}&$select=number,invoiceNumber&$top=1`;
+    const res = await bcFetch(url, { cache: "no-store" });
+    if (!res.ok) return null;
+    const d: any = await res.json().catch(() => ({}));
+    return String(d?.value?.[0]?.number ?? "").trim();
+  } catch { return null; }
+}
+
+// De qué pedido salió una factura registrada en BC (CFR-…). '' = sin pedido;
+// null = no está o BC no contestó (y entonces no se frena nada por esto).
+export async function bcPedidoDeFacturaRegistrada(facturaNo: string): Promise<string | null> {
+  const no = (facturaNo ?? "").trim();
+  if (!no) return null;
+  try {
+    const cid = await getStdCompanyId();
+    const url = `${stdRoot()}/companies(${cid})/purchaseInvoices?$filter=${encodeURIComponent(`number eq '${odataStr(no)}'`)}&$select=number,orderNumber&$top=1`;
+    const res = await bcFetch(url, { cache: "no-store" });
+    if (!res.ok) return null;
+    const d: any = await res.json().catch(() => ({}));
+    const f = d?.value?.[0];
+    if (!f || f.orderNumber == null) return null;
+    return String(f.orderNumber).trim();
+  } catch { return null; }
+}
+
 export type DiagnosticoBc = {
-  motivo: FalloRegistroBc;
-  yaEnBc: boolean;                       // true = BC ya tiene el movimiento
+  // "factura-ya-usada" no sale de leer el texto de BC (clasificarFalloBc): sale de ir
+  // a ver la factura repetida y encontrar que es de OTRO pedido, sin pedido, o que
+  // se anuló. Esta recepción NO está registrada y no hay nada que conciliar.
+  motivo: FalloRegistroBc | "factura-ya-usada";
+  yaEnBc: boolean;                       // true = BC ya tiene el movimiento DE ESTA ORDEN
   pedido: BcPedidoEstado | null;
   facturaBc: BcFacturaProveedor | null;  // la factura que BC ya tiene, si se pudo ver
 };
 
+// La factura repetida, con la nota de crédito que la anuló si la hay. La nota se
+// busca siempre que haya factura: anulada, ni siquiera la de este pedido prueba nada.
+async function facturaConAnulacion(vendorInvoiceNo: string, vendorNo: string): Promise<BcFacturaProveedor | null> {
+  const f = await bcFacturaDeProveedor(vendorInvoiceNo, vendorNo);
+  if (!f?.numero) return f;
+  const anuladaCon = await bcNotaQueAnulaFactura(f.numero);
+  return anuladaCon ? { ...f, anuladaCon } : f;
+}
+
 // Traduce el "no" de BC a algo que la pantalla pueda usar: ¿se reintenta, o esto
 // ya está registrado allá y lo único que falta es guardarlo acá?
+//
+// "Ya está registrado" se da SOLO con prueba: la factura salió de ESTE pedido y no
+// se anuló. Antes bastaba con que BC dijera "la factura ya existe", y así CP-006578
+// quedó "Completa" en la app enlazada a CFR-012069, que era de CP-006485 y estaba
+// anulada: BC no deja repetir el N.º de factura de un proveedor, así que el "ya
+// existe" también sale cuando el número lo usó otro pedido. Ver lib/factura-ajena.ts.
 export async function diagnosticarFalloBc(error: string, orderNo: string, vendorInvoiceNo = "", vendorNo = ""): Promise<DiagnosticoBc> {
   const motivo = clasificarFalloBc(error);
   if (motivo === "reintentable") return { motivo, yaEnBc: false, pedido: null, facturaBc: null };
   if (motivo === "factura-duplicada") {
-    // Que la factura ya exista lo dijo BC: con eso alcanza. Buscarla es para
-    // MOSTRAR cuál es (N.º, fecha, total), no para decidir.
-    return { motivo, yaEnBc: true, pedido: null, facturaBc: await bcFacturaDeProveedor(vendorInvoiceNo, vendorNo) };
+    const facturaBc = await facturaConAnulacion(vendorInvoiceNo, vendorNo);
+    const dueno = duenoDeLaFactura(facturaBc?.pedido, orderNo);
+    if (pruebaQueYaEntro(dueno, facturaBc?.anuladaCon)) return { motivo, yaEnBc: true, pedido: null, facturaBc };
+    // Nada que conciliar: esta recepción NO se registró, y BC no va a aceptar ese N.º.
+    if (facturaBc && facturaNoSirve(dueno, facturaBc.anuladaCon)) {
+      return { motivo: "factura-ya-usada", yaEnBc: false, pedido: null, facturaBc };
+    }
+    // BC dijo "ya existe" pero no se pudo ver de qué pedido es: sin prueba no se
+    // pinta como seguro (la pantalla pide verificar en BC antes de conciliar).
+    return { motivo, yaEnBc: false, pedido: null, facturaBc };
   }
   // "Pedido no encontrado": se confirma contra BC antes de darlo por cierto. Si el
   // pedido sí está, el mensaje hablaba de otra cosa (o fue un parpadeo) y esto se
@@ -4556,9 +4627,11 @@ export async function diagnosticarFalloBc(error: string, orderNo: string, vendor
   const pedido = await bcEstadoDelPedido(orderNo);
   if (pedido !== "no-existe") return { motivo: "reintentable", yaEnBc: false, pedido, facturaBc: null };
   // Sin pedido en BC, la factura registrada es la prueba de que ya se registró
-  // todo (Purch.-Post borra el pedido al completarlo).
-  const facturaBc = await bcFacturaDeProveedor(vendorInvoiceNo, vendorNo);
-  return { motivo, yaEnBc: !!facturaBc, pedido, facturaBc };
+  // todo (Purch.-Post borra el pedido al completarlo) — si salió de ESTE pedido y
+  // sigue viva. Una de otro pedido, o anulada, no prueba nada y no se muestra.
+  const facturaBc = await facturaConAnulacion(vendorInvoiceNo, vendorNo);
+  const prueba = pruebaQueYaEntro(duenoDeLaFactura(facturaBc?.pedido, orderNo), facturaBc?.anuladaCon);
+  return { motivo, yaEnBc: prueba, pedido, facturaBc: prueba ? facturaBc : null };
 }
 
 // Qué hacer con el pedido que ESTA APP des-lanzó para poder reintentar un posteo,
