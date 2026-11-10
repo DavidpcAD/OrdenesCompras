@@ -2264,6 +2264,57 @@ export async function anotarIvaExoneradoEnBc(
   } catch (e) { await tx.rollback(); throw e; }
 }
 
+// CORREGIR EL PRECIO de líneas de una orden que ya tiene material recibido (ver
+// lib/corregir-precio.ts). Se llama DESPUÉS de que BC aceptó el precio nuevo.
+//
+// A diferencia de updateOrden, el precio se cambia EN SU LUGAR: updateOrden borra y
+// reinserta las líneas, y con recepciones eso dejaría cada RecepcionCompraDet
+// apuntando a un idOrdenCompraDet que ya no existe. Acá no se borra nada.
+//
+// Lo que se recalcula: el total guardado de las recepciones que siguen EN REVISIÓN
+// (es el "Total est." de Archivo). Las ya facturadas no: su importe es el de su factura.
+export const MOV_PRECIO_CORREGIDO = "precio_corregido";
+export async function corregirPreciosOrden(
+  idOrden: number, cambios: { idOrdenCompraDet: number; precio: number }[], detalle: string, usuario: string, rol: Role,
+): Promise<{ ordenNo: string; recepcionesRecalculadas: number }> {
+  if (!cambios.length) throw new Error("No vino ningún precio que cambiar.");
+  const pool = await getPool();
+  const tx = new sql.Transaction(pool); await tx.begin();
+  try {
+    const ord = await pedirTx(tx).input("id", sql.Int, idOrden)
+      .query("SELECT ordenNo FROM dbo.OrdenCompra WHERE idOrdenCompra=@id AND esEliminada=0");
+    if (!ord.recordset.length) throw new Error("Orden no encontrada.");
+    const ordenNo = String(ord.recordset[0].ordenNo ?? "");
+    for (const c of cambios) {
+      // La línea tiene que ser de ESTA orden y no estar facturada completa: lo mismo
+      // que validó la pantalla, pero contra lo que hay ahora en la base.
+      const r = await pedirTx(tx).input("d", sql.Int, c.idOrdenCompraDet).input("o", sql.Int, idOrden)
+        .query(`SELECT descripcion, quantity, ISNULL(quantityFacturada,0) AS facturada
+                  FROM dbo.OrdenCompraDet WHERE idOrdenCompraDet=@d AND idOrdenCompra=@o`);
+      const l = r.recordset[0];
+      if (!l) throw new Error(`La línea ${c.idOrdenCompraDet} no es de esta orden. Recargá la página.`);
+      if (Number(l.quantity) > 0 && Number(l.facturada) >= Number(l.quantity) - 1e-6) {
+        throw new Error(`«${l.descripcion}» ya está facturada completa: su precio ya no se cambia.`);
+      }
+      await pedirTx(tx).input("d", sql.Int, c.idOrdenCompraDet).input("p", sql.Decimal(18, 4), c.precio)
+        .query("UPDATE dbo.OrdenCompraDet SET directUnitCost=@p WHERE idOrdenCompraDet=@d");
+    }
+    const rec = await pedirTx(tx).input("o", sql.Int, idOrden).query(`
+      UPDATE r SET total = x.total
+        FROM dbo.RecepcionCompra r
+        JOIN (SELECT d.idRecepcionCompra,
+                     ROUND(SUM(d.quantityRecibida * ISNULL(d.precioFactura, ISNULL(o.directUnitCost,0))
+                               * (1 - ISNULL(o.lineDiscountPct,0) / 100.0)), 2) AS total
+                FROM dbo.RecepcionCompraDet d
+                JOIN dbo.OrdenCompraDet o ON o.idOrdenCompraDet = d.idOrdenCompraDet
+               GROUP BY d.idRecepcionCompra) x ON x.idRecepcionCompra = r.idRecepcionCompra
+       WHERE r.idOrdenCompra=@o AND r.esEliminada=0 AND LTRIM(RTRIM(ISNULL(r.numeroFactura,'')))=''`);
+    await logMov(tx, { entidad: "orden", idEntidad: idOrden, documentoNo: ordenNo, tipoMovimiento: MOV_PRECIO_CORREGIDO, detalle, usuario, rol });
+    await tx.commit();
+    return { ordenNo, recepcionesRecalculadas: Number(rec.rowsAffected?.[0] ?? 0) };
+  } catch (e) { await tx.rollback(); throw e; }
+}
+
 // ----------------------------------------------------------------- RECEPCIONES
 export interface NewRecepcionDB {
   idOrdenCompra: number; numeroFactura: string; fechaFactura: string; fechaRecepcion: string; fechaRegistro: string;

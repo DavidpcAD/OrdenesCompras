@@ -135,6 +135,13 @@ export const api = {
   }> =>
     fetch(`/api/ordenes/${id}/iva-bc`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }).then(jsonOrThrow),
 
+  // Corregir el precio de líneas con material recibido, en BC y acá (ver
+  // lib/corregir-precio.ts). `relanzada`: no necesitaba aprobación y quedó lanzada.
+  corregirPrecio: (id: string, body: unknown): Promise<{
+    ok: true; relanzada: boolean; pendienteAprobacion: boolean; aviso?: string; avisos: string[]; cambiadas: number;
+  }> =>
+    fetch(`/api/ordenes/${id}/corregir-precio`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }).then(jsonOrThrow),
+
   // Devolver al ingeniero LÍNEAS que ya están dentro de una orden Abierta/Rechazada:
   // salen de la orden (el saldo vuelve a la solicitud) y quedan marcadas devueltas.
   devolverLineasOrden: (id: string, body: unknown): Promise<{ ordenNo: string; devueltas: number; nombres: string[]; ordenDescartada: boolean; bcAviso?: string }> =>

@@ -10,6 +10,7 @@ import type {
 import * as seed from "./seed";
 import { componerNotaRevision, DETALLE_EN_REVISION, devolverPendienteAPedidos, esLineaRecibible, lineasDeRecepcion, MARCA_DESDE_REVISION, motivoRestoDeFactura, nextNumero, nowISO, ordenEstaCompleta, ordenTotalConIva, partirRecepcionPorFactura, PERSONA_POR_ROL, repartirTotalRecepcion, todayISO, type CantidadFacturada } from "./helpers";
 import { aprobacionAutomatica, MOV_APROBACION_AUTOMATICA, USUARIO_APROBACION_AUTOMATICA } from "./aprobacion-automatica.ts";
+import { detalleCorreccion, ordenConPrecios, validarCorreccionPrecio } from "./corregir-precio.ts";
 import { componerNotaCierre, detalleDeCierre, lineaCancelada, motivoObligatorio, quitarNotaCierre } from "./cierre-solicitud.ts";
 import { api, setEtagBootstrap, USE_API as USE_API_BUILD, type CursoresLote } from "./api";
 import { unirPorId } from "./lotes";
@@ -177,6 +178,11 @@ interface StoreShape {
   alinearIvaConBc: (idOrden: string) => Promise<{ cambiadas: number; detalle: string[] }>;
   // Y al revés: quitarle el IVA al pedido EN BC, porque esta compra no lo lleva (una
   // importación paga el impuesto en aduana y va en su línea de cargo).
+  // Corregir el precio de líneas que ya tienen material recibido: en BC (todo o nada) y
+  // acá, sin borrar las líneas. `relanzada` = no necesitaba aprobación y volvió a lanzarse.
+  corregirPrecio: (idOrden: string, lineas: { ordenLineaId: string; precio: number }[], motivo: string) => Promise<{
+    relanzada: boolean; pendienteAprobacion: boolean; aviso?: string; avisos: string[];
+  }>;
   exonerarIvaEnBc: (idOrden: string) => Promise<{
     grupo: string; cambiadas: string[]; ivaAntes: number; ivaDespues: number;
     moneda: string; alineadas: number; aviso?: string;
@@ -1243,6 +1249,39 @@ export function StoreProvider({ children, useApi }: { children: React.ReactNode;
     };
 
     // -------- QUITARLE EL IVA AL PEDIDO EN BUSINESS CENTRAL (importación) --------
+    const corregirPrecio: StoreShape["corregirPrecio"] = async (idOrden, lineas, motivo) => {
+      if (USE_API) {
+        const r = await api.corregirPrecio(idOrden, { lineas, motivo, usuario: persona, rol: rolActual });
+        await refreshFromApi();
+        return { relanzada: !!r?.relanzada, pendienteAprobacion: !!r?.pendienteAprobacion, aviso: r?.aviso, avisos: Array.isArray(r?.avisos) ? r.avisos : [] };
+      }
+      // Modo prueba: no hay BC. Mismas validaciones que el servidor, el precio cambia en
+      // su lugar y queda la bitácora; la orden se da por relanzada si no necesita aprobación.
+      const o = data.ordenes.find((x) => x.id === idOrden);
+      if (!o) throw new Error("Orden no encontrada.");
+      const v = validarCorreccionPrecio(o, lineas, motivo);
+      if (v.error) throw new Error(v.error);
+      const precios = new Map(v.cambios.map((c) => [c.linea.id, c.nuevo]));
+      const nueva = ordenConPrecios(o, v.cambios.map((c) => ({ ordenLineaId: c.linea.id, precio: c.nuevo })));
+      const relanzada = aprobacionAutomatica(o, { app: ordenTotalConIva(nueva) }).aplica;
+      const detalle = detalleCorreccion(v.cambios, motivo, o.currencyCode)
+        + (relanzada ? " · relanzada sin aprobación (modo prueba)" : " · pendiente de aprobación (modo prueba)");
+      setData((d) => {
+        const ordenes = d.ordenes.map((x) => (x.id !== idOrden ? x : {
+          ...x,
+          estado: (relanzada ? x.estado : "pendiente_aprobacion") as Orden["estado"],
+          lineas: x.lineas.map((l) => (precios.has(l.id) ? { ...l, precioUnitario: precios.get(l.id)! } : l)),
+        }));
+        const ordenNueva = ordenes.find((x) => x.id === idOrden)!;
+        const recepciones = d.recepciones.map((r) => (r.ordenId !== idOrden || r.numeroFactura ? r : {
+          ...r, total: Math.round(lineasDeRecepcion(r, ordenNueva).reduce((s2, x) => s2 + x.importe, 0) * 100) / 100,
+        }));
+        const mov = mkMov({ entidad: "orden", idEntidad: idOrden, documentoNo: o.numero, tipoMovimiento: "precio_corregido", detalle });
+        return { ...d, ordenes, recepciones, movimientos: [mov, ...d.movimientos] };
+      });
+      return { relanzada, pendienteAprobacion: !relanzada, avisos: [] };
+    };
+
     const exonerarIvaEnBc: StoreShape["exonerarIvaEnBc"] = async (idOrden) => {
       if (!USE_API) throw new Error("Sin Business Central no hay pedido al que quitarle el IVA (la app está en modo de prueba).");
       const r = await api.exonerarIvaEnBc(idOrden, { accion: "exonerar", usuario: persona, rol: rolActual });
@@ -1377,7 +1416,7 @@ export function StoreProvider({ children, useApi }: { children: React.ReactNode;
       maquinas: seed.maquinas, almacenes: seed.almacenes,
       pedidos: data.pedidos, ordenes: data.ordenes, recepciones: data.recepciones, movimientos: data.movimientos,
       addPedido, editPedido, setPedidoEstado, deletePedido,
-      createOrden, updateOrden, setOrdenEstado, corregirBcNumber, marcarEnviadaProveedor, cerrarOrden, descartarOrden, retomarOrden, nuevaOrdenConPendiente, registrarRecepcion, guardarFotosRecepcion, facturarRecepcion, devolverPedido, cerrarSolicitud, reabrirSolicitud, devolverLineasOrden, alinearIvaConBc, exonerarIvaEnBc, devolverOrden, reset,
+      createOrden, updateOrden, setOrdenEstado, corregirBcNumber, marcarEnviadaProveedor, cerrarOrden, descartarOrden, retomarOrden, nuevaOrdenConPendiente, registrarRecepcion, guardarFotosRecepcion, facturarRecepcion, devolverPedido, cerrarSolicitud, reabrirSolicitud, devolverLineasOrden, alinearIvaConBc, exonerarIvaEnBc, corregirPrecio, devolverOrden, reset,
       notasCredito, marcarNotasCredito, cargarNotasCredito, resolverNotaCredito,
       notificaciones: data.notificaciones, marcarNotifsLeidas, marcarNotifLeida,
       borrador, setBorrador,

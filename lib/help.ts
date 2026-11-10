@@ -155,6 +155,7 @@ const ORDEN_DET: HelpEntry = {
     "Si el resto se lo vas a comprar a otro, marcá “Crear una orden nueva con lo pendiente”: cierra esta y te deja la nueva armada y abierta.",
     "Si además la solicitud ya no se va a comprar, marcá “Archivar también la solicitud”: queda archivada con el mismo motivo y la misma nota, sin tener que ir a buscarla a otra pantalla.",
     "Una orden con facturas registradas ya no se puede volver a abrir: lo que llegó mal va por devolución.",
+    "Si el material ya se recibió y la factura trae otro precio, no hace falta volver a abrirla: “Corregir precio” cambia el precio de lo que todavía no está facturado, en Business Central y acá, sin tocar las recepciones. Pide el motivo; si la orden no necesita aprobación se vuelve a lanzar sola, si no, vuelve a Aprobación.",
   ],
 };
 const ORDEN_EDITAR: HelpEntry = {

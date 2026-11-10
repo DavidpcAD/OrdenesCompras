@@ -40,6 +40,7 @@ const LABEL: Record<string, string> = {
   bc_renumerado: "N.º de Business Central corregido",
   encabezado_cambiado: "Cambió el proveedor o la moneda",
   bc_iva_exento: "IVA quitado en Business Central",
+  precio_corregido: "Precio corregido (con material recibido)",
   pdf_proveedor: "PDF bajado para el proveedor",
   enviada_proveedor: "Marcada como enviada al proveedor",
   envio_deshecho: "Se quitó la marca de enviada",
@@ -137,6 +138,7 @@ function colorPunto(m: Movimiento): string {
       case "encabezado_cambiado": return "var(--ds-color-yellow)"; // le cambiaron el proveedor/moneda a la orden
       case "bc_encabezado": return "var(--ds-color-yellow)";  // cambió el proveedor/moneda del pedido
       case "bc_iva_exento": return "var(--ds-color-yellow)";  // se le quitó el IVA al pedido en BC
+      case "precio_corregido": return "var(--ds-color-yellow)";  // cambió el precio de algo ya recibido
       case "pdf_proveedor":
       case "enviada_proveedor": return "var(--ds-color-green-100)";  // salió al proveedor
       case "envio_deshecho": return "var(--ds-color-gray-400)";      // se deshizo la marca

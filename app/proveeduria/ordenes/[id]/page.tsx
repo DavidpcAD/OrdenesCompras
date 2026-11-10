@@ -6,6 +6,8 @@ import { Button, Checkbox, EmptyState, Field, Input, Modal, Select, Skeleton, Te
 import { IconWarning } from "@/components/icons";
 import { OrdenDetalle } from "@/components/orden-detalle";
 import { ConfirmarProveedor } from "@/components/confirmar-proveedor";
+import { CorregirPrecioDialogo, type ResultadoCorreccion } from "@/components/corregir-precio-dialogo";
+import { puedeCorregirPrecio } from "@/lib/corregir-precio";
 import { avisoAntesDeEnviar } from "@/lib/aprobacion-automatica";
 import { useStore } from "@/lib/store";
 import { useOrden } from "@/lib/use-orden";
@@ -19,6 +21,9 @@ export default function ProvOrdenDetallePage() {
   const [procesando, setProcesando] = useState(false);
   // Quitarle el IVA al pedido EN BC: escribe allá, así que se confirma antes.
   const [exonerando, setExonerando] = useState(false);
+  // Corregir el precio de algo ya recibido: Editar no sirve con recepciones (borra y
+  // reinserta las líneas), así que va por su propio camino. Ver lib/corregir-precio.ts.
+  const [corrigiendoPrecio, setCorrigiendoPrecio] = useState(false);
   // Sube cada vez que se cambió algo en BC, para que el detalle vuelva a leer de allá
   // los totales. Sin esto quedaban clavados en lo que se leyó al abrir la orden, y el
   // IVA recién quitado seguía apareciendo en pantalla hasta recargar (CP-005254).
@@ -117,6 +122,17 @@ export default function ProvOrdenDetallePage() {
   // devolución, no por corregir la orden.
   const tieneRecepciones = recepciones.some((r) => r.ordenId === orden.id)
     || orden.lineas.some((l) => (l.cantidadRecibida ?? 0) > 0 || (l.cantidadFacturada ?? 0) > 0);
+  const corregiblePrecio = puedeCorregirPrecio(orden, tieneRecepciones);
+  function precioCorregido(r: ResultadoCorreccion) {
+    setCorrigiendoPrecio(false);
+    setRefrescoBc((n) => n + 1);
+    const listo = r.relanzada
+      ? `${numeroOrden(orden!)}: precio corregido y el pedido ${orden!.bcNumber} se volvió a lanzar en BC. Ya se puede registrar la factura.`
+      : `${numeroOrden(orden!)}: precio corregido. La orden quedó pendiente de aprobación.`;
+    const extra = [r.aviso, r.avisos.length ? `OJO: ${r.avisos.join("; ")}` : ""].filter(Boolean).join(" ");
+    if (extra) { setAvisoBc(`${listo} ${extra}`); toast(listo, "info"); }
+    else { setAvisoBc(null); toast(listo, "success"); }
+  }
 
   // Motivos típicos por los que una orden se cierra con material pendiente. El
   // motivo es obligatorio: sin él, dentro de un mes nadie sabe por qué faltó.
@@ -378,10 +394,18 @@ export default function ProvOrdenDetallePage() {
       {/* Reabrir = des-lanzar también el pedido en BC (lo hace el server): con el
           pedido lanzado allá no se puede corregir ni re-sincronizar. Si BC no pudo,
           el toast lo dice y el aviso amarillo del detalle queda visible. */}
+      {/* Corregir el precio con material ya recibido: en su lugar, en BC y acá. */}
+      {corregiblePrecio && (
+        <Button variant="outline" disabled={procesando}
+          title="El material ya se recibió: cambia el precio de lo que todavía no está facturado, en Business Central y acá, sin tocar las recepciones."
+          onClick={() => setCorrigiendoPrecio(true)}>
+          Corregir precio
+        </Button>
+      )}
       {orden.estado === "lanzado" && (
         <Button variant="outline" disabled={procesando || tieneRecepciones}
           title={tieneRecepciones
-            ? "Ya tiene facturas/recepciones registradas: no se puede volver a abrir. Lo que llegó mal va por devolución."
+            ? `Ya tiene facturas/recepciones registradas: no se puede volver a abrir. Lo que llegó mal va por devolución.${corregiblePrecio ? " Si lo que cambió es el precio, usá «Corregir precio»." : ""}`
             : "Reabre la orden acá y des-lanza el pedido en Business Central para corregirla y volver a enviarla a aprobación."}
           onClick={() => void act("abierto", `${numeroOrden(orden)} reabierta${orden.bcNumber ? ` · ${orden.bcNumber} des-lanzado en BC` : ""} — corregila y volvé a enviarla a aprobación`, { reabrirBc: true })}>
           Volver a abrir
@@ -461,7 +485,9 @@ export default function ProvOrdenDetallePage() {
               <div className="ds-callout__title">
                 {/^(?!.*desalineado).*est[áa] incompleta en Business Central/is.test(avisoBc)
                   ? "Una ficha de Business Central está incompleta"
-                  : "Business Central quedó desalineado"}
+                  : /: precio corregido/.test(avisoBc)
+                    ? "Precio corregido, con algo que revisar"
+                    : "Business Central quedó desalineado"}
               </div>
               <div className="ds-callout__body" style={{ whiteSpace: "pre-wrap" }}>{avisoBc}</div>
             </div>
@@ -494,6 +520,10 @@ export default function ProvOrdenDetallePage() {
             “Usar el IVA de BC”, que copia el 13% a la orden sin tocar Business Central.
           </p>
         </Modal>
+      )}
+
+      {corrigiendoPrecio && (
+        <CorregirPrecioDialogo orden={orden} onClose={() => setCorrigiendoPrecio(false)} onHecho={precioCorregido} />
       )}
 
       {renumerando && (

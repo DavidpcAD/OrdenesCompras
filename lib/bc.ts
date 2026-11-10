@@ -1941,6 +1941,37 @@ export async function bcReopenPedido(orderNo: string): Promise<string> {
   return d?.value ?? "Open";
 }
 
+// CORREGIR EL PRECIO de líneas del pedido que ya tienen material recibido (sin
+// facturar), vía AdelantePO_UpdateLinePrices (AdelanteAPI 1.2.31.0). Va por el codeunit
+// y no por la API estándar porque ahí es todo o nada: valida todas las líneas, reabre el
+// pedido si estaba lanzado y cambia los precios en una sola transacción; si algo falla,
+// BC revierte también la reapertura. El pedido queda ABIERTO: relanzarlo (o mandarlo a
+// aprobación) lo decide quien llama. Ver lib/corregir-precio.ts.
+export async function bcActualizarPreciosPedido(
+  orderNo: string,
+  lineas: { lineNo: number; itemNo: string; directUnitCost: number; expectedCost: number }[],
+): Promise<string> {
+  if (!orderNo) throw new Error("Falta el número de pedido de BC.");
+  if (!lineas.length) throw new Error("No vino ninguna línea a la que cambiarle el precio.");
+  const cid = await getStdCompanyId();
+  const res = await bcFetch(`${odataRoot()}/AdelantePO_UpdateLinePrices?company=${encodeURIComponent(cid)}`, {
+    method: "POST", cache: "no-store",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ orderNo, linesJson: JSON.stringify(lineas) }),
+  });
+  if (!res.ok) {
+    const txt = (await res.text()).slice(0, 600);
+    // Sin publicar, BC no conoce la acción: lo dice con un 404 o con un 400 que
+    // nombra el segmento de la URL. Las dos cosas significan lo mismo para quien lee.
+    if (res.status === 404 || (res.status === 400 && /UpdateLinePrices/i.test(txt) && /segment|segmento|not found|no se encontr/i.test(txt))) {
+      throw new Error("Business Central todavía no tiene la acción para corregir precios (AdelantePO_UpdateLinePrices): hay que publicar la extensión AdelanteAPI 1.2.31.0. No se cambió nada.");
+    }
+    throw new Error(mensajeBc(txt) || `BC ${res.status} al corregir el precio`);
+  }
+  const d: any = await res.json().catch(() => ({}));
+  return String(d?.value ?? "").trim();
+}
+
 // AMAZON PAGADO CON TARJETA. Antes de registrar la factura, al pedido hay que ponerle
 // la FORMA DE PAGO (la tarjeta que escoge el usuario) y una DIMENSIÓN en el encabezado
 // (p.ej. TM = G-GASTOS TARJETAS). Lo hace el codeunit "Adelante PO Actions"

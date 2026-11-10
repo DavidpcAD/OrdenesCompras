@@ -2566,6 +2566,10 @@ button.ana-kpi:active { transform: translateY(1px); }
   align-items: center; padding: 8px var(--ds-space-4); border-bottom: 1px solid var(--ds-color-gray-100);
 }
 .frv-line:last-child { border-bottom: 0; }
+/* La misma rejilla para "Corregir precio": material, cantidad, precio de hoy, precio
+   nuevo (editable) e importe. El precio lleva decimales: campo más ancho y a la derecha. */
+.frv-line--precio { grid-template-columns: minmax(0, 1fr) 96px 128px 144px 124px; }
+.qty-input--precio { width: 136px; text-align: right; padding: 0 var(--ds-space-4); }
 .frv-line--head { position: sticky; top: 0; z-index: 1; background: var(--ds-surface); padding: 7px var(--ds-space-4); border-bottom: 1px solid var(--ds-color-gray-200); }
 .frv-line--head > span { font-size: var(--ds-font-size-body-sm); font-weight: var(--ds-font-weight-semibold); color: var(--ds-color-gray-400); }
 .frv-line__rec { white-space: nowrap; font-weight: var(--ds-font-weight-semibold); }
