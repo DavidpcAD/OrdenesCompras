@@ -5,7 +5,7 @@ import { Badge } from "@/components/ui";
 import { DestinoLinea } from "@/components/destino-linea";
 import { intercalar } from "@/components/ordenes-lista";
 import { codigoDeItem } from "@/lib/unidad";
-import { cuenta, esLineaRecibible, etiquetaTipoLinea, lineasDeRecepcion, money, num } from "@/lib/helpers";
+import { cuenta, esLineaRecibible, etiquetaTipoLinea, lineasDeRecepcion, money, num, precioUnit } from "@/lib/helpers";
 import type { Orden, Recepcion } from "@/lib/types";
 
 // LAS LÍNEAS DE UNA RECEPCIÓN: lo que entró en ESE registro, no lo acumulado de la
@@ -72,7 +72,7 @@ export function LineasDeRecepcion({ rec, orden, accion, motivo }: { rec: Recepci
                 <div className="ds-num ocl-line__qty">
                   {num.format(rl.cantidadRecibida)} <span className="ocl-line__u">{ol?.unidad ?? ""}</span>
                 </div>
-                <div className="ds-num ocl-line__price"><span className="ocl-line__lbl">Precio unit. </span>{money(precio, cur)}</div>
+                <div className="ds-num ocl-line__price"><span className="ocl-line__lbl">Precio unit. </span>{precioUnit(precio, cur)}</div>
                 <div className="ds-num ocl-line__amt">{money(importe, cur)}</div>
               </div>
             );

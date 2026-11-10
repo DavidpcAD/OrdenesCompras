@@ -249,6 +249,19 @@ export function money(amount: number, currencyCode?: string): string {
   }
 }
 
+// El PRECIO UNITARIO con sus decimales (hasta 4, los que guarda la base). `money`
+// redondea a 2: con un precio de 4 decimales (₡x,xxxx) la pantalla mostraba un precio
+// que no es el que quedó en BC, y el importe —que sí es exacto— no calzaba con
+// "precio × cantidad" hecho a mano. Para totales e importes se sigue usando `money`.
+export function precioUnit(amount: number, currencyCode?: string): string {
+  const cur = monedaIso(currencyCode) || "CRC";
+  try {
+    return new Intl.NumberFormat("es-CR", { style: "currency", currency: cur, minimumFractionDigits: 2, maximumFractionDigits: 4 }).format(amount || 0);
+  } catch {
+    return `${cur} ${new Intl.NumberFormat("es-CR", { maximumFractionDigits: 4 }).format(amount || 0)}`;
+  }
+}
+
 // El selector de Moneda de la app usa "" = CRC (colones) y el código de BC para el
 // resto (USD, EURO). BC devuelve "CRC" para proveedores en colones, que NO matchea
 // la opción "" y dejaba el Select en "Seleccioná…". Normaliza el código de BC al

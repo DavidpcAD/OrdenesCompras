@@ -1264,8 +1264,8 @@ export function StoreProvider({ children, useApi }: { children: React.ReactNode;
       const precios = new Map(v.cambios.map((c) => [c.linea.id, c.nuevo]));
       const nueva = ordenConPrecios(o, v.cambios.map((c) => ({ ordenLineaId: c.linea.id, precio: c.nuevo })));
       const relanzada = aprobacionAutomatica(o, { app: ordenTotalConIva(nueva) }).aplica;
-      const detalle = detalleCorreccion(v.cambios, motivo, o.currencyCode)
-        + (relanzada ? " · relanzada sin aprobación (modo prueba)" : " · pendiente de aprobación (modo prueba)");
+      const detalle = detalleCorreccion(v.cambios, motivo, o.currencyCode,
+        [relanzada ? "relanzada sin aprobación (modo prueba)" : "pendiente de aprobación (modo prueba)"]);
       setData((d) => {
         const ordenes = d.ordenes.map((x) => (x.id !== idOrden ? x : {
           ...x,
@@ -1273,9 +1273,15 @@ export function StoreProvider({ children, useApi }: { children: React.ReactNode;
           lineas: x.lineas.map((l) => (precios.has(l.id) ? { ...l, precioUnitario: precios.get(l.id)! } : l)),
         }));
         const ordenNueva = ordenes.find((x) => x.id === idOrden)!;
-        const recepciones = d.recepciones.map((r) => (r.ordenId !== idOrden || r.numeroFactura ? r : {
-          ...r, total: Math.round(lineasDeRecepcion(r, ordenNueva).reduce((s2, x) => s2 + x.importe, 0) * 100) / 100,
-        }));
+        const antes = new Map(v.cambios.map((c) => [c.linea.id, c.antes]));
+        const recepciones = d.recepciones.map((r) => {
+          if (r.ordenId !== idOrden) return r;
+          // Ya facturada: sus líneas se quedan con el precio con que se facturaron.
+          if (r.numeroFactura) {
+            return { ...r, lineas: r.lineas.map((l) => (antes.has(l.ordenLineaId) && l.precioFactura == null ? { ...l, precioFactura: antes.get(l.ordenLineaId) } : l)) };
+          }
+          return { ...r, total: Math.round(lineasDeRecepcion(r, ordenNueva).reduce((s2, x) => s2 + x.importe, 0) * 100) / 100 };
+        });
         const mov = mkMov({ entidad: "orden", idEntidad: idOrden, documentoNo: o.numero, tipoMovimiento: "precio_corregido", detalle });
         return { ...d, ordenes, recepciones, movimientos: [mov, ...d.movimientos] };
       });

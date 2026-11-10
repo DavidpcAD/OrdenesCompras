@@ -21,7 +21,7 @@
 
 import { claveLinea, type LineaBc } from "./bc-conciliacion.ts";
 import { codigoDeItem } from "./unidad.ts";
-import { monedaIso, num } from "./helpers.ts";
+import { num, precioUnit } from "./helpers.ts";
 import type { Orden, OrdenLinea } from "./types.ts";
 
 // Lo que la pantalla pide: el precio nuevo de cada línea, en la moneda de la orden.
@@ -154,24 +154,68 @@ export function emparejarConBc(
   return { lineas, avisos };
 }
 
-// El precio con todos sus decimales: con un precio de 4 decimales el `money` de
-// siempre muestra 2, y la bitácora diría un precio que no es el que quedó.
+// El precio con todos sus decimales (ver precioUnit en helpers).
 export function precioTxt(n: number, currencyCode?: string): string {
-  const cur = monedaIso(currencyCode) || "CRC";
-  try {
-    return new Intl.NumberFormat("es-CR", { style: "currency", currency: cur, minimumFractionDigits: 2, maximumFractionDigits: DECIMALES_PRECIO }).format(n || 0);
-  } catch {
-    return `${cur} ${new Intl.NumberFormat("es-CR", { maximumFractionDigits: DECIMALES_PRECIO }).format(n || 0)}`;
-  }
+  return precioUnit(n, currencyCode);
 }
 
-// El renglón de la bitácora: qué línea, de cuánto a cuánto y por qué.
-export function detalleCorreccion(cambios: CambioValidado[], motivo: string, currencyCode?: string): string {
+// El renglón de la bitácora: qué línea, de cuánto a cuánto y por qué. El MOTIVO va
+// siempre al final (lo que escribió la persona puede traer cualquier cosa): `extras`
+// —avisos, si se relanzó— van antes. El formato es fijo porque las VERSIONES de una
+// recepción se arman releyéndolo (leerCorreccionPrecio, lib/versiones-recepcion.ts).
+export const PREFIJO_CORRECCION = "Precio corregido · ";
+// El tipo del movimiento en la bitácora de la ORDEN (lo escribe corregirPreciosOrden).
+export const MOV_PRECIO_CORREGIDO = "precio_corregido";
+const SEP = " · ";
+const MOTIVO = "Motivo: ";
+export function detalleCorreccion(cambios: CambioValidado[], motivo: string, currencyCode?: string, extras: string[] = []): string {
   const lineas = cambios.map((c) => {
     const cod = codigoDeItem(String(c.linea.articuloId ?? ""));
-    return `${c.linea.descripcion}${cod ? ` (${cod})` : ""}: ${precioTxt(c.antes, currencyCode)} → ${precioTxt(c.nuevo, currencyCode)}`;
+    const desc = String(c.linea.descripcion ?? "").replace(/\s*·\s*/g, " - ");
+    return `${desc}${cod ? ` (${cod})` : ""}: ${precioTxt(c.antes, currencyCode)} → ${precioTxt(c.nuevo, currencyCode)}`;
   });
-  return `Precio corregido · ${lineas.join(" · ")} · Motivo: ${String(motivo ?? "").replace(/\s+/g, " ").trim()}`.slice(0, 1000);
+  const m = String(motivo ?? "").replace(/\s+/g, " ").trim();
+  return [PREFIJO_CORRECCION + lineas.join(SEP), ...extras.filter(Boolean), MOTIVO + m].join(SEP).slice(0, 1000);
+}
+
+// "₡1 234,5678" → 1234.5678. Es el formato que escribe precioTxt (es-CR: coma decimal y
+// espacio de miles); cualquier otro símbolo de moneda se descarta.
+export function leerMonto(txt: string): number {
+  const t = String(txt ?? "").replace(/[^0-9,\-]/g, "").replace(",", ".");
+  return t ? Number(t) : Number.NaN;
+}
+
+// Lo contrario de detalleCorreccion. También entiende el formato del primer día
+// (10 nov 2026), cuando el "relanzada…" iba DESPUÉS del motivo. Null si el detalle no
+// es de una corrección de precio.
+export type CorreccionLeida = {
+  cambios: { descripcion: string; codigo: string; antesTxt: string; nuevoTxt: string; antes: number; nuevo: number }[];
+  motivo: string;
+};
+const COLAS_VIEJAS = [/^relanzada en Business Central/, /^el pedido quedó Abierto/];
+export function leerCorreccionPrecio(detalle: string | null | undefined): CorreccionLeida | null {
+  const t = String(detalle ?? "");
+  if (!t.startsWith(PREFIJO_CORRECCION)) return null;
+  const partes = t.slice(PREFIJO_CORRECCION.length).split(SEP);
+  const cambios: CorreccionLeida["cambios"] = [];
+  let motivo = "";
+  for (let i = 0; i < partes.length; i++) {
+    const p = partes[i];
+    if (p.startsWith(MOTIVO)) {
+      const resto: string[] = [p.slice(MOTIVO.length)];
+      for (let j = i + 1; j < partes.length && !COLAS_VIEJAS.some((re) => re.test(partes[j])); j++) resto.push(partes[j]);
+      motivo = resto.join(SEP).trim();
+      break;
+    }
+    const m = /^(.*) \(([^()]+)\): (.+?) → (.+)$/.exec(p);
+    if (m) {
+      const antes = leerMonto(m[3]); const nuevo = leerMonto(m[4]);
+      if (Number.isFinite(antes) && Number.isFinite(nuevo)) {
+        cambios.push({ descripcion: m[1], codigo: m[2], antesTxt: m[3], nuevoTxt: m[4], antes, nuevo });
+      }
+    }
+  }
+  return cambios.length ? { cambios, motivo } : null;
 }
 
 // La orden como quedaría con los precios nuevos (para recalcular totales y decidir

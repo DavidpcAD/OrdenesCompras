@@ -12,7 +12,7 @@ import { useStore } from "@/lib/store";
 import { useSoloMias } from "@/lib/use-solo-mias";
 import { useVariantes } from "@/lib/use-variantes";
 import { codigoDeItem } from "@/lib/unidad";
-import { money, formatDate, formatDateTime, isoLocal, ordenAlmacenes, ordenAvance, ordenBadge, ordenBadgeDe, ordenObras, ordenRecibidoPct, ordenSubtotal, ordenPedidos, ordenEsDirecta, ordenLineaImporte, ordenLineaPendiente, esLineaRecibible, etiquetaTipoLinea, proveedorLabel, num, numeroOrden, tieneBc, ordenEsperaCorreccion } from "@/lib/helpers";
+import { money, formatDate, formatDateTime, isoLocal, ordenAlmacenes, ordenAvance, ordenBadge, ordenBadgeDe, ordenObras, ordenRecibidoPct, ordenSubtotal, ordenPedidos, ordenEsDirecta, ordenLineaImporte, ordenLineaPendiente, esLineaRecibible, etiquetaTipoLinea, proveedorLabel, num, numeroOrden, precioUnit, tieneBc, ordenEsperaCorreccion } from "@/lib/helpers";
 import { ordenEnviada, resumenEnvio, vaAlProveedor } from "@/lib/envio-proveedor";
 import type { Orden } from "@/lib/types";
 
@@ -38,9 +38,10 @@ function CeldaDestino({ orden }: { orden: Orden }) {
   if (!alms.length && !obras.length) return <span className="ds-muted">—</span>;
   return (
     <div className="col" style={{ gap: 1 }}>
-      <span title={alms.join(" · ")}>{alms[0] ?? "—"}{alms.length > 1 ? ` +${alms.length - 1}` : ""}</span>
+      {/* Los códigos (ALM-CENTRAL, VN-L.24) no se parten en el guion. */}
+      <span className="ds-nowrap" title={alms.join(" · ")}>{alms[0] ?? "—"}{alms.length > 1 ? ` +${alms.length - 1}` : ""}</span>
       {obras.length > 0 && (
-        <span className="ds-body-sm ds-muted" title={`Se carga como consumo de ${obras.join(" · ")}`}>
+        <span className="ds-body-sm ds-muted ds-nowrap" title={`Se carga como consumo de ${obras.join(" · ")}`}>
           Obra {obras[0]}{obras.length > 1 ? ` +${obras.length - 1}` : ""}
         </span>
       )}
@@ -189,10 +190,13 @@ export function OrdenesLista({
       // número: la columna ya se llama N.º, así que la frase larga sobra. El
       // interno va en el title, para soporte.
       cell: (c) => { const o = c.row.original; return tieneBc(o)
-        ? <span className="ds-strong">{o.bcNumber}</span>
+        ? <span className="ds-strong ds-nowrap">{o.bcNumber}</span>
         : <span className="ds-muted" title={`N.º interno de la app: ${o.numero}`}>En armado</span>; },
     },
-    { id: "prov", header: "Proveedor", accessorFn: (o) => proveedorLabel(o, proveedores), meta: { label: "Proveedor" }, cell: (c) => c.getValue() },
+    // Dos renglones como máximo y con un ancho que la columna defiende: un nombre largo
+    // ("… REPRESENTACIONES INTERNACIONALES, S.A.") bajaba a cuatro y cada fila quedaba
+    // de otro alto. El nombre completo va en el title.
+    { id: "prov", header: "Proveedor", accessorFn: (o) => proveedorLabel(o, proveedores), meta: { label: "Proveedor" }, cell: (c) => <span className="ds-clamp-2 ds-celda-nombre" title={c.getValue()}>{c.getValue()}</span> },
     {
       id: "solic", header: "Solicitudes", accessorFn: (o) => (ordenEsDirecta(o) ? "Directa" : ordenPedidos(o).join(" ")), meta: { label: "Solicitudes" },
       cell: (c) => {
@@ -563,7 +567,7 @@ function LineasDeOrden({ orden, href, pedidoHref }: {
               {num.format(l.cantidad)} <span className="ocl-line__u">{l.unidad}</span>
               {pend > 0 && <span className="ocl-line__falta">faltan {num.format(pend)}</span>}
             </div>
-            <div className="ds-num ocl-line__price"><span className="ocl-line__lbl">Precio unit. </span>{money(l.precioUnitario, orden.currencyCode)}</div>
+            <div className="ds-num ocl-line__price"><span className="ocl-line__lbl">Precio unit. </span>{precioUnit(l.precioUnitario, orden.currencyCode)}</div>
             <div className="ds-num ocl-line__amt">{money(ordenLineaImporte(l), orden.currencyCode)}</div>
           </div>
         );

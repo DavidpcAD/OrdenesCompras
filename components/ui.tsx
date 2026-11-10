@@ -440,8 +440,12 @@ export function EmptyState({ icon, title, hint }: {
 // Esa lista toma el alto que sobra y scrollea sola, y el resto —título, campos,
 // resumen, botones— queda siempre a la vista. Sin esto había que adivinar en CSS
 // cuánto mide lo de alrededor (ver `.addl-scroll`) y, si crecía, salían dos scrolls.
-export function Modal({ title, onClose, children, footer, wide, conLista }: {
-  title: string; onClose: () => void; children: React.ReactNode; footer?: React.ReactNode; wide?: boolean; conLista?: boolean;
+// `lado`: PANEL AL COSTADO en vez de diálogo al centro. Para mirar algo completo (una
+// orden con sus líneas, versiones e historial) sin salir de la lista de donde se abrió.
+// El contenido que scrollea va en un hijo con la clase `modal__cuerpo`: así el título
+// y los botones del pie quedan siempre a la vista. Mismo foco, Escape y portal.
+export function Modal({ title, onClose, children, footer, wide, conLista, lado }: {
+  title: string; onClose: () => void; children: React.ReactNode; footer?: React.ReactNode; wide?: boolean; conLista?: boolean; lado?: boolean;
 }) {
   const titleId = useId();
   const modalRef = useRef<HTMLDivElement>(null);
@@ -487,8 +491,8 @@ export function Modal({ title, onClose, children, footer, wide, conLista }: {
   }, [montado]);
   if (!montado) return null;   // en el servidor no hay <body> al que portar
   return createPortal(
-    <div className="modal-overlay" onClick={onClose}>
-      <div ref={modalRef} tabIndex={-1} className={`modal ${wide ? "modal--wide" : ""} ${conLista ? "modal--lista" : ""}`} role="dialog" aria-modal="true" aria-labelledby={titleId} onClick={(e) => e.stopPropagation()}>
+    <div className={`modal-overlay ${lado ? "modal-overlay--lado" : ""}`} onClick={onClose}>
+      <div ref={modalRef} tabIndex={-1} className={`modal ${wide ? "modal--wide" : ""} ${conLista ? "modal--lista" : ""} ${lado ? "modal--lado" : ""}`} role="dialog" aria-modal="true" aria-labelledby={titleId} onClick={(e) => e.stopPropagation()}>
         <div className="row row--between" style={{ marginBottom: 16 }}>
           <h3 className="ds-subtitle-lg" id={titleId}>{title}</h3>
           <button className="modal-close" onClick={onClose} aria-label="Cerrar"><IconClose size={18} /></button>

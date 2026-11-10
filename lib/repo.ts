@@ -3,6 +3,7 @@ import { bcDeepLinkPedido, bcDeepLinkFacturaRegistrada, bcDeepLinkFacturaPorNo, 
 import { unidadCorregida, codigoDeItem } from "./unidad.ts";
 import { componerNotaRevision, DETALLE_EN_REVISION, etiquetaInterna, esTipoDevolucion, esTipoEdicion, leerNotaRevision, MARCA_DESDE_REVISION, motivoRestoDeFactura, ordenDeDetalleDevolucion, partirRecepcionPorFactura, repartirTotalRecepcion, type CantidadFacturada } from "./helpers.ts";
 import { resumirCambiosDeLineas } from "./cambios-orden.ts";
+import { MOV_PRECIO_CORREGIDO } from "./corregir-precio.ts";
 import { componerNotaCierre, detalleDeCierre, lineaCancelada, motivoObligatorio, quitarNotaCierre } from "./cierre-solicitud.ts";
 import { envioDeSello, leerSello, MOV_DESHECHO, MOV_ENVIADA, MOV_PDF, SELLO_SEP, type Sello } from "./envio-proveedor.ts";
 import type { UnidadCompraItem } from "./bc.ts";
@@ -2273,7 +2274,9 @@ export async function anotarIvaExoneradoEnBc(
 //
 // Lo que se recalcula: el total guardado de las recepciones que siguen EN REVISIÓN
 // (es el "Total est." de Archivo). Las ya facturadas no: su importe es el de su factura.
-export const MOV_PRECIO_CORREGIDO = "precio_corregido";
+// Y a sus líneas se les FIJA el precio con que se facturaron (precioFactura), porque la
+// pantalla muestra el precio de la orden cuando la recepción no tiene uno propio: sin
+// esto, una factura vieja pasaba a mostrar el precio nuevo.
 export async function corregirPreciosOrden(
   idOrden: number, cambios: { idOrdenCompraDet: number; precio: number }[], detalle: string, usuario: string, rol: Role,
 ): Promise<{ ordenNo: string; recepcionesRecalculadas: number }> {
@@ -2289,12 +2292,20 @@ export async function corregirPreciosOrden(
       // La línea tiene que ser de ESTA orden y no estar facturada completa: lo mismo
       // que validó la pantalla, pero contra lo que hay ahora en la base.
       const r = await pedirTx(tx).input("d", sql.Int, c.idOrdenCompraDet).input("o", sql.Int, idOrden)
-        .query(`SELECT descripcion, quantity, ISNULL(quantityFacturada,0) AS facturada
+        .query(`SELECT descripcion, quantity, ISNULL(quantityFacturada,0) AS facturada, directUnitCost AS precioAntes
                   FROM dbo.OrdenCompraDet WHERE idOrdenCompraDet=@d AND idOrdenCompra=@o`);
       const l = r.recordset[0];
       if (!l) throw new Error(`La línea ${c.idOrdenCompraDet} no es de esta orden. Recargá la página.`);
       if (Number(l.quantity) > 0 && Number(l.facturada) >= Number(l.quantity) - 1e-6) {
         throw new Error(`«${l.descripcion}» ya está facturada completa: su precio ya no se cambia.`);
+      }
+      if (l.precioAntes != null) {
+        await pedirTx(tx).input("d", sql.Int, c.idOrdenCompraDet).input("antes", sql.Decimal(18, 4), Number(l.precioAntes))
+          .query(`UPDATE d SET precioFactura=@antes
+                    FROM dbo.RecepcionCompraDet d
+                    JOIN dbo.RecepcionCompra r ON r.idRecepcionCompra = d.idRecepcionCompra
+                   WHERE d.idOrdenCompraDet=@d AND d.precioFactura IS NULL AND r.esEliminada=0
+                     AND LTRIM(RTRIM(ISNULL(r.numeroFactura,''))) <> ''`);
       }
       await pedirTx(tx).input("d", sql.Int, c.idOrdenCompraDet).input("p", sql.Decimal(18, 4), c.precio)
         .query("UPDATE dbo.OrdenCompraDet SET directUnitCost=@p WHERE idOrdenCompraDet=@d");

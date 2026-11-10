@@ -7,9 +7,10 @@ import type { ColumnDef } from "@tanstack/react-table";
 import { Badge, Button, Card, Field, Input, Modal, Tile, useToast } from "@/components/ui";
 import { BotonLineas, DataTable, FilaExpandida } from "@/components/data-table";
 import { LineasDeRecepcion } from "@/components/lineas-recepcion";
+import { PanelOrdenRevision, totalesDeRecepcion } from "@/components/panel-orden-revision";
 import { useStore } from "@/lib/store";
 import { api } from "@/lib/api";
-import { cuenta, money, formatDate, formatDateTime, leerNotaRevision, lineasDeRecepcion, MARCA_DESDE_REVISION, num, numeroOrden, type CantidadFacturada } from "@/lib/helpers";
+import { cuenta, money, formatDate, formatDateTime, leerNotaRevision, lineasDeRecepcion, MARCA_DESDE_REVISION, num, numeroOrden, precioUnit, type CantidadFacturada } from "@/lib/helpers";
 import { codigoDeItem } from "@/lib/unidad";
 import type { EnvioARevision, FacturadaDesdeRevision, Movimiento, Orden, Recepcion } from "@/lib/types";
 
@@ -82,7 +83,7 @@ function MotivoRevision({ envio }: { envio?: EnvioARevision }) {
 function PedidoBc({ orden }: { orden?: Orden }) {
   if (!orden) return <>—</>;
   const numero = numeroOrden(orden);
-  if (!orden.bcDeepLink) return <>{numero}</>;
+  if (!orden.bcDeepLink) return <span className="ds-nowrap">{numero}</span>;
   return (
     <a className="chip-link" href={orden.bcDeepLink} target="_blank" rel="noopener noreferrer"
       title={`Abrir el pedido ${numero} en Business Central`}>
@@ -173,7 +174,7 @@ function LineasDeLaFactura({ rec, orden, cant, setCant, excede, setExcede, pie }
                   {codigo && <span className="ocl-line__code">{codigo}</span>}
                   {codigo && ol?.almacen && <span className="ocl-line__sep" aria-hidden>·</span>}
                   {ol?.almacen && <span>{ol.almacen}</span>}
-                  <span className="frv-line__lbl">· {money(precio, cur)} c/u</span>
+                  <span className="frv-line__lbl">· {precioUnit(precio, cur)} c/u</span>
                 </span>
               </div>
               <div className="ds-num frv-line__rec"><span className="frv-line__lbl">Recibido </span>{num.format(recibida)} <span className="ocl-line__u">{u}</span></div>
@@ -256,6 +257,10 @@ export default function ArchivoPage() {
     if (sig.has(k)) sig.delete(k); else sig.add(k);
     return sig;
   });
+
+  // El PANEL de la orden (al costado): se abre tocando la fila de una factura en
+  // revisión, para ver cómo está la orden antes de registrar sin salir de Archivo.
+  const [panelRec, setPanelRec] = useState<string | null>(null);
 
   // Registrar la factura de una recepción que quedó en revisión. `cant` = lo que
   // trae la factura de cada línea (arranca con lo recibido); `notaResto` = qué pasa
@@ -371,7 +376,7 @@ export default function ArchivoPage() {
 
   const columns = useMemo<ColumnDef<Recepcion, any>[]>(() => [
     { id: "factura", header: "Factura", accessorFn: (r) => r.numeroFactura, meta: { label: "Factura" }, cell: (c) => <span className="ds-strong">{c.getValue()}</span> },
-    { id: "orden", header: "Orden", accessorFn: (r) => { const o = ordenDe(r); return o ? numeroOrden(o) : "—"; }, meta: { label: "Orden" }, cell: (c) => c.getValue() },
+    { id: "orden", header: "Orden", accessorFn: (r) => { const o = ordenDe(r); return o ? numeroOrden(o) : "—"; }, meta: { label: "Orden" }, cell: (c) => <span className="ds-nowrap">{c.getValue()}</span> },
     // Existe para BUSCAR, no para leerse: arranca oculta (igual que en la lista de
     // Órdenes). El N.º interno ya no se muestra en ninguna pantalla, pero está en
     // correos viejos, así que pegarlo en el buscador tiene que seguir encontrando la
@@ -435,18 +440,25 @@ export default function ArchivoPage() {
               ) : (
                 <div className="ds-table-wrap" style={{ boxShadow: "none" }}>
                   <table className="ds-table">
-                    <thead><tr><th className="dt-hx" aria-hidden /><th>Orden</th><th>Proveedor</th><th>Recibido</th><th>Factura y motivo</th><th className="ds-num">Total est.</th><th /></tr></thead>
+                    <thead><tr><th className="dt-hx" aria-hidden /><th>Orden</th><th>Proveedor</th><th>Recibido</th><th>Factura y motivo</th><th className="ds-num">Total</th><th /></tr></thead>
                     <tbody>
                       {enRevision.map((r) => {
                         const o = ordenDe(r);
                         const k = `p${r.id}`;
                         const abierta = abiertas.has(k);
                         const envio = hist.envioDe.get(r.id);
+                        const tot = totalesDeRecepcion(r, o);
+                        // Lo de adentro de la fila (el botón de líneas, el link a BC,
+                        // Registrar) hace lo suyo y no abre el panel.
+                        const sinPanel = (e: React.SyntheticEvent) => e.stopPropagation();
                         return (
                           <Fragment key={r.id}>
-                            <tr>
-                              <td className="dt-xcell"><BotonLineas abierto={abierta} onClick={() => alternar(k)} /></td>
-                              <td className="ds-strong ds-body-sm"><PedidoBc orden={o} /></td>
+                            <tr className={`is-clickable ${panelRec === r.id ? "is-panel" : ""}`} tabIndex={0}
+                              aria-label={`Ver la orden ${o ? numeroOrden(o) : ""} en el panel`}
+                              onClick={() => setPanelRec(r.id)}
+                              onKeyDown={(e) => { if (e.target === e.currentTarget && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); setPanelRec(r.id); } }}>
+                              <td className="dt-xcell" onClick={sinPanel}><BotonLineas abierto={abierta} onClick={() => alternar(k)} /></td>
+                              <td className="ds-strong ds-body-sm" onClick={sinPanel}><PedidoBc orden={o} /></td>
                               <td className="ds-body-sm">{provNombre(o)}</td>
                               <td className="ds-body-sm ds-muted">
                                 {formatDate(r.fechaRecepcion)} · {cuenta(r.lineas.length, "línea", "líneas")}
@@ -455,8 +467,14 @@ export default function ArchivoPage() {
                                 {(r.recibidoPor || envio?.enviadaPor) && <div>por {r.recibidoPor || envio?.enviadaPor}</div>}
                               </td>
                               <td className="ds-body-sm" style={{ maxWidth: 320 }}><MotivoRevision envio={envio} /></td>
-                              <td className="ds-num">{money(r.total, o?.currencyCode)}</td>
-                              <td className="ds-num"><Button variant="green" size="sm" onClick={() => abrirFactura(r, envio?.facturaProveedor)}>Registrar factura</Button></td>
+                              {/* Con IVA, que es lo que dice el "Total" del papel; abajo, sin IVA
+                                  (el "Subtotal" del pedido en BC). Antes era solo el sin IVA y
+                                  parecía que la app y BC decían montos distintos. */}
+                              <td className="ds-num">
+                                <span className="ds-strong ds-nowrap">{money(tot.total, o?.currencyCode)}</span>
+                                <div className="ds-body-sm ds-muted ds-nowrap">{money(tot.sub, o?.currencyCode)} sin IVA</div>
+                              </td>
+                              <td className="ds-num" onClick={sinPanel}><Button variant="green" size="sm" onClick={() => abrirFactura(r, envio?.facturaProveedor)}>Registrar factura</Button></td>
                             </tr>
                             <FilaExpandida plano abierta={abierta} colSpan={7}>
                               {abierta ? (
@@ -545,6 +563,17 @@ export default function ArchivoPage() {
 
         <h3 className="ds-subtitle mt-6" style={{ marginBottom: 12 }}>Facturas registradas</h3>
         <DataTable data={registradas} columns={columns} tablaKey="recepciones" columnVisibilityInicial={{ ordenInterno: false }} buscarPlaceholder="Buscar por N.º de factura o proveedor…" getRowId={(r) => r.id} onRowClick={(r) => router.push(`/facturacion/recepcion/${r.id}`)} vacio="Sin facturas registradas." />
+
+        {panelRec && (() => {
+          const r = enRevision.find((x) => x.id === panelRec);
+          if (!r) return null;
+          const envio = hist.envioDe.get(r.id);
+          return (
+            <PanelOrdenRevision rec={r} orden={ordenDe(r)} proveedores={proveedores} envio={envio}
+              onClose={() => setPanelRec(null)}
+              onRegistrar={() => { setPanelRec(null); abrirFactura(r, envio?.facturaProveedor); }} />
+          );
+        })()}
 
         {facObj && cuentaFactura && (
           <Modal wide conLista title={`Registrar factura · ${(() => { const o = ordenDe(facObj); return o ? numeroOrden(o) : ""; })()}`} onClose={() => setFacObj(null)}

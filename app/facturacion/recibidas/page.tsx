@@ -5,8 +5,9 @@ import { Badge, Card, EmptyState, Input, Tile } from "@/components/ui";
 import { IconCheck, IconChevronDown, IconWarning } from "@/components/icons";
 import { DestinoOrden } from "@/components/destino-linea";
 import { FotosFactura } from "@/components/fotos-factura";
+import { VersionesRecepcion } from "@/components/versiones-recepcion";
 import { useStore } from "@/lib/store";
-import { money, formatDate, todayISO, numeroOrden, motivoNC } from "@/lib/helpers";
+import { money, formatDate, todayISO, numeroOrden, motivoNC, precioUnit } from "@/lib/helpers";
 import Link from "next/link";
 
 // Bodega (recibe): historial de lo que se recibió, con quién lo recibió.
@@ -254,7 +255,7 @@ export default function RecibidasPage() {
                                       {ncLinea && <span className="rec-line__nc">NC · {motivoNC(ncLinea.motivo).label}</span>}
                                     </span>
                                     <span className="rec-line__qty ds-num">{cant} {ol?.unidad ?? "und"}</span>
-                                    <span className="rec-line__price ds-num">{money(precio)}</span>
+                                    <span className="rec-line__price ds-num">{precioUnit(precio, o?.currencyCode)}</span>
                                     <span className="rec-line__iva ds-num ds-muted">{ol?.ivaPct ?? 0}%</span>
                                     <span className="rec-line__amt ds-num">{money(importe)}</span>
                                   </div>
@@ -267,6 +268,8 @@ export default function RecibidasPage() {
                               <div className="rec-totals__row"><span className="ds-muted">IVA</span><span className="ds-num">{money(tot.iva)}</span></div>
                               <div className="rec-totals__row rec-totals__row--grand"><span>Total {enRevision ? "estimado" : "factura (con IVA)"}</span><span className="ds-num">{money(total)}</span></div>
                             </div>
+                            {/* Cómo entró y cómo fue cambiando (precio corregido, factura). */}
+                            <VersionesRecepcion rec={r} orden={o} />
                           </div>
                         )}
                       </>

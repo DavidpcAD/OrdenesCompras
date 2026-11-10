@@ -6,8 +6,9 @@ import { Badge, Button, Card, Skeleton, Textarea } from "@/components/ui";
 import { IconChevronDown, IconWarning } from "@/components/icons";
 import { OrderLinesTable } from "@/components/order-lines";
 import { Timeline } from "@/components/timeline";
+import { VersionesRecepcion } from "@/components/versiones-recepcion";
 import { useStore } from "@/lib/store";
-import { esLineaCargo, esLineaRecibible, money, num, formatDate, formatDateTime, ordenBadgeDe, proveedorLabel, ordenIva, ordenLineaImporte, ordenRecibidoPct, ordenPedidos, ordenEsDirecta, ordenTotalConIva, numeroOrden, tieneBc, destinoDeRecepcion, ordenEsperaCorreccion, chequeoBcVencido, envioARevisionDe, esRecepcionEnRevision } from "@/lib/helpers";
+import { esLineaCargo, esLineaRecibible, money, num, formatDate, formatDateTime, ordenBadgeDe, proveedorLabel, ordenIva, ordenLineaImporte, ordenRecibidoPct, ordenPedidos, ordenEsDirecta, ordenTotalConIva, numeroOrden, tieneBc, destinoDeRecepcion, ordenEsperaCorreccion, chequeoBcVencido, envioARevisionDe, esRecepcionEnRevision, precioUnit } from "@/lib/helpers";
 import { vaAlProveedor } from "@/lib/envio-proveedor";
 import { badgePrioridad } from "@/components/prioridad";
 import { ChipPedido } from "@/components/ordenes-lista";
@@ -711,8 +712,8 @@ export function OrdenDetalle({
                                     </div>
                                     <div className="fac-det__num">{num.format(rl.cantidadRecibida)} {ol?.unidad ?? ""}</div>
                                     <div className="fac-det__num">
-                                      {money(precio, orden.currencyCode)}
-                                      {distinto && <div className="ds-body-sm ds-pending-text">orden: {money(ol!.precioUnitario, orden.currencyCode)}</div>}
+                                      {precioUnit(precio, orden.currencyCode)}
+                                      {distinto && <div className="ds-body-sm ds-pending-text">orden: {precioUnit(ol!.precioUnitario, orden.currencyCode)}</div>}
                                     </div>
                                     <div className="fac-det__num ds-strong">{money(precio * rl.cantidadRecibida, orden.currencyCode)}</div>
                                   </div>
@@ -722,6 +723,8 @@ export function OrdenDetalle({
                                 <span>Total factura</span>
                                 <span className="fac-det__num">{money(r.total, orden.currencyCode)}</span>
                               </div>
+                              {/* Cómo entró y cómo fue cambiando (precio corregido, factura). */}
+                              <VersionesRecepcion rec={r} orden={orden} />
                             </div>
                           </td>
                         </tr>

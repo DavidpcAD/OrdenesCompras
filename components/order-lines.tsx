@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { Badge } from "@/components/ui";
 import { DestinoLinea } from "@/components/destino-linea";
-import { esLineaRecibible, etiquetaTipoLinea, money, num, ordenLineaImporte, ordenLineaPendiente } from "@/lib/helpers";
+import { esLineaRecibible, etiquetaTipoLinea, money, num, ordenLineaImporte, ordenLineaPendiente, precioUnit } from "@/lib/helpers";
 import { codigoDeItem } from "@/lib/unidad";
 import { useVariantes } from "@/lib/use-variantes";
 import type { Orden, OrdenLinea } from "@/lib/types";
@@ -111,7 +111,7 @@ export function OrderLinesTable({ orden, showRecepcion = true, solicitudHref }: 
                     pero el freno llega tarde si la pantalla no lo mostró antes. */}
                 <td className="ds-num">
                   {Number(l.precioUnitario) > 0
-                    ? money(l.precioUnitario, orden.currencyCode)
+                    ? precioUnit(l.precioUnitario, orden.currencyCode)
                     : <span className="ds-pending-text" title="Esta línea no tiene precio: sin él la orden no se puede enviar a aprobación.">
                         {money(0, orden.currencyCode)} · sin precio
                       </span>}

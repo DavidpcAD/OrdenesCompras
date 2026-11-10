@@ -440,6 +440,8 @@ h1, h2, h3, h4, p { margin: 0; }
 .ds-table tbody tr.is-clickable:hover { background: var(--ds-color-gray-100); }
 /* Foco de teclado en filas clickeables (a11y): outline inset para no recortarse. */
 .ds-table tbody tr.is-clickable:focus-visible { outline: 2px solid var(--ds-color-green-100); outline-offset: -2px; }
+/* La fila cuyo panel está abierto (Facturas en revisión): se sabe de cuál es. */
+.ds-table tbody tr.is-panel > td { background: color-mix(in srgb, var(--ds-color-green-100) 14%, var(--ds-tint-base)); }
 .ds-table tbody tr.row-pending td { background: color-mix(in srgb, var(--ds-color-red-100) 8%, var(--ds-tint-base)); }
 /* Solicitudes en borrador (sin enviar): acento amarillo + tinte para que se noten */
 .ds-table tbody tr.row-borrador td { background: color-mix(in srgb, var(--ds-color-yellow) 10%, var(--ds-tint-base)); }
@@ -1150,6 +1152,13 @@ td.ds-col-fija {
 
 /* truncate long cell text to keep rows on one line */
 .ds-truncate { max-width: 280px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* Un N.º de documento (CP-006607, PED-000983) nunca se parte. Las tablas reparten el
+   ancho solas y el guion es un punto de corte para el navegador: con la columna
+   apretada quedaba "CP-" arriba y "006607" abajo, y la fila crecía al doble. */
+.ds-nowrap { white-space: nowrap; }
+/* Un nombre (proveedor, obra) en una celda de tabla: con `ds-clamp-2`, dos renglones
+   y un piso de ancho para que la columna no se encoja hasta la palabra más larga. */
+.ds-celda-nombre { min-width: 11rem; }
 /* Descripción de material en DOS líneas. Los nombres de BC traen la medida AL FINAL
    ("CODO 45 PVC PARED DELGADA 3/4"), que es justo lo que distingue una línea de
    otra — con una sola línea y ellipsis se perdía siempre esa parte. Dos líneas
@@ -1165,6 +1174,37 @@ td.ds-col-fija {
    pantallas de menos de ~1300px, los inputs de cantidad y precio se la comen y
    vuelve el problema que esto venía a arreglar. Sin `anywhere`, el piso es la
    palabra más larga. Y las celdas llevan además un `minWidth` explícito. */
+
+/* ── Panel de la orden desde "Facturas en revisión" (panel-orden-revision.tsx) ── */
+.panel-orden__meta { display: flex; flex-direction: column; gap: var(--ds-space-2); margin-bottom: var(--ds-space-4); }
+.panel-orden__caja { border: 1px solid var(--ds-color-gray-100); border-radius: var(--ds-radius-lg); overflow: hidden; }
+/* Columnas más angostas que las de la lista (el panel mide 600px). Solo en ancho: en
+   angosto manda la rejilla apilada de `.ocl-line`. */
+@media (min-width: 761px) {
+  .panel-orden__caja .ocl-line, .panel-orden__caja .ocl-foot { grid-template-columns: minmax(0, 1fr) 88px 112px 112px; }
+}
+.panel-orden__totales { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--ds-space-4); margin-top: var(--ds-space-4); }
+.panel-orden__tot-col { display: flex; flex-direction: column; gap: 4px; padding: var(--ds-space-3) var(--ds-space-4); border-radius: var(--ds-radius-lg); background: color-mix(in srgb, var(--ds-color-gray-100) 50%, var(--ds-tint-base)); }
+.panel-orden__fila { display: flex; justify-content: space-between; gap: var(--ds-space-3); font-size: var(--ds-font-size-body-sm); }
+.panel-orden__fila .ds-num { white-space: nowrap; }
+.panel-orden__fila--total { font-size: var(--ds-font-size-body-md); font-weight: var(--ds-font-weight-semibold); border-top: 1px solid var(--ds-color-gray-200); padding-top: 4px; margin-top: 2px; }
+.panel-orden__ok { color: var(--ds-color-green-300); font-weight: var(--ds-font-weight-semibold); }
+.panel-orden__hist { margin-top: var(--ds-space-4); border-top: 1px solid var(--ds-color-gray-100); padding-top: var(--ds-space-3); }
+@media (max-width: 760px) { .panel-orden__totales { grid-template-columns: minmax(0, 1fr); } }
+
+/* ── Versiones de una recepción (components/versiones-recepcion.tsx) ──────────
+   La más nueva arriba. Lista simple con divisores: la versión actual se marca con
+   el Badge, no con color de fondo, para que las viejas se lean igual de bien. */
+.versiones { margin-top: var(--ds-space-4); border-top: 1px solid var(--ds-color-gray-100); padding-top: var(--ds-space-3); }
+.versiones__top { display: flex; align-items: center; gap: var(--ds-space-2); flex-wrap: wrap; margin-bottom: var(--ds-space-2); }
+.versiones__lista { list-style: none; margin: 0; padding: 0; }
+.version { padding: var(--ds-space-3) 0; border-bottom: 1px solid var(--ds-color-gray-100); }
+.version:last-child { border-bottom: 0; }
+.version__head { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px var(--ds-space-2); }
+.version__tot { margin-left: auto; white-space: nowrap; font-weight: var(--ds-font-weight-semibold); text-align: right; }
+.version__sub { display: block; font-weight: var(--ds-font-weight-regular); }
+.version__cambios { list-style: none; margin: 6px 0 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.version__motivo { margin-top: 4px; }
 
 /* Recibidas (Bodega): tarjeta expandible con las líneas recibidas. */
 .rec-card__toggle {
@@ -1827,6 +1867,24 @@ td.ds-col-fija {
 .modal--lista { display: flex; flex-direction: column; }
 .modal--lista > * { flex-shrink: 0; }
 .modal--lista > .modal__lista { flex: 1 1 auto; min-height: 200px; display: flex; flex-direction: column; }
+/* Panel al costado (`lado` en el Modal): ocupa el alto de la ventana, pegado a la
+   derecha. Título y pie fijos; scrollea solo `.modal__cuerpo`. Entra deslizándose
+   unos píxeles (no desde fuera de la pantalla) y sin animación si se pidió menos
+   movimiento. En celular ocupa todo el ancho. */
+.modal-overlay--lado { place-items: stretch end; padding: 0; overflow: hidden; }
+.modal--lado {
+  max-width: 600px; max-height: 100%; height: 100%; display: flex; flex-direction: column; overflow: hidden;
+  border-radius: var(--ds-radius-2xl) 0 0 var(--ds-radius-2xl);
+  animation: panel-entra .22s cubic-bezier(.2, .8, .2, 1);
+}
+.modal--lado > * { flex-shrink: 0; }
+.modal--lado > .modal__cuerpo {
+  flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain;
+  margin: 0 calc(-1 * var(--ds-space-6)); padding: 0 var(--ds-space-6) var(--ds-space-2);
+}
+@keyframes panel-entra { from { transform: translateX(24px); opacity: 0; } to { transform: none; opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .modal--lado { animation: none; } }
+@media (max-width: 760px) { .modal--lado { max-width: none; border-radius: 0; } }
 /* El reset deja los <p> en margen 0, y un diálogo que explica algo en dos o tres
    párrafos salía como un solo bloque de texto pegado (los otros diálogos lo tapaban
    porque tienen un campo en medio). Solo entre párrafos hermanos: el primero sigue

@@ -64,7 +64,7 @@ export function ComprasSolicitudes() {
     [enviadas, archivadas, filtro]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const columns = useMemo<ColumnDef<Pedido, any>[]>(() => [
-    { id: "num", header: "N.º", accessorFn: (p) => p.numero, meta: { label: "N.º" }, cell: (c) => <span className="ds-strong">{c.getValue()}</span> },
+    { id: "num", header: "N.º", accessorFn: (p) => p.numero, meta: { label: "N.º" }, cell: (c) => <span className="ds-strong ds-nowrap">{c.getValue()}</span> },
     { id: "tipo", header: "Tipo", accessorFn: (p) => tipoSolicitudBadge(p.tipoSolicitud).label, meta: { label: "Tipo" }, cell: (c) => { const t = tipoSolicitudBadge(c.row.original.tipoSolicitud); return <Badge tone={t.tone}>{t.label}</Badge>; } },
     {
       // A DÓNDE ENTRA EL MATERIAL, que es otra cosa que PARA QUÉ OBRA es (la columna

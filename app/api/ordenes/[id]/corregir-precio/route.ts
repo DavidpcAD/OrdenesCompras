@@ -79,11 +79,10 @@ export async function POST(req: Request, { params }: { params: { id: string } })
     }
 
     // 4) La base.
-    const detalle = [
-      detalleCorreccion(v.cambios, motivo, orden.currencyCode),
+    const detalle = detalleCorreccion(v.cambios, motivo, orden.currencyCode, [
       par.avisos.length ? `OJO: ${par.avisos.join("; ")}` : "",
       relanzada ? `relanzada en Business Central sin aprobación (${detalleAuto})` : "el pedido quedó Abierto en BC, pendiente de aprobación",
-    ].filter(Boolean).join(" · ");
+    ]);
     try {
       await corregirPreciosOrden(id, v.cambios.map((c) => ({ idOrdenCompraDet: Number(c.linea.id), precio: c.nuevo })), detalle, a.usuario, a.rol);
       if (relanzada) {

@@ -100,7 +100,7 @@ export function DevolucionesView({ role }: { role: Role }) {
 
   const columnas = (conEstado: boolean): ColumnDef<Dev, any>[] => [
     { id: "tipo", header: "Tipo", accessorFn: (d) => d.tipo, meta: { label: "Tipo" }, cell: (c) => <Badge tone={c.getValue() === "Orden" ? "red" : "yellow"}>{c.getValue()}</Badge> },
-    { id: "numero", header: "N.º", accessorFn: (d) => d.numero, meta: { label: "N.º" }, cell: (c) => <span className="ds-strong">{c.getValue()}</span> },
+    { id: "numero", header: "N.º", accessorFn: (d) => d.numero, meta: { label: "N.º" }, cell: (c) => <span className="ds-strong ds-nowrap">{c.getValue()}</span> },
     { id: "contra", header: "Proveedor / Destino", accessorFn: (d) => d.contra, meta: { label: "Proveedor / Destino" } },
     { id: "que", header: conEstado ? "Por ordenar" : "Qué se devolvió", accessorFn: (d) => d.que, meta: { label: conEstado ? "Por ordenar" : "Qué se devolvió" },
       cell: (c) => <span className="ds-clamp-2" style={{ maxWidth: 320 }}>{c.getValue()}</span> },

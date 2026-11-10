@@ -4,7 +4,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   motivoNoCorregible, lineasCorregibles, puedeCorregirPrecio, validarCorreccionPrecio,
-  emparejarConBc, detalleCorreccion, precioTxt, ordenConPrecios,
+  emparejarConBc, detalleCorreccion, precioTxt, ordenConPrecios, leerCorreccionPrecio, leerMonto,
 } from "./corregir-precio.ts";
 import type { LineaBc } from "./bc-conciliacion.ts";
 import type { Orden, OrdenLinea } from "./types.ts";
@@ -116,4 +116,31 @@ test("bitácora y totales: el precio va con todos sus decimales", () => {
   assert.match(d, /Motivo: factura 1 del proveedor$/);
   assert.equal(ordenConPrecios(o, [{ ordenLineaId: "a", precio: 7 }]).lineas[0].precioUnitario, 7);
   assert.equal(o.lineas[0].precioUnitario, 1000, "no muta la orden original");
+});
+
+test("bitácora: lo que escribe detalleCorreccion se vuelve a leer igual", () => {
+  const o = orden([linea({ id: "a" }), linea({ id: "b", articuloId: "M00-0002", descripcion: "OTRO · MATERIAL", precioUnitario: 50 })]);
+  const { cambios } = validarCorreccionPrecio(o, [{ ordenLineaId: "a", precio: 1234.5678 }, { ordenLineaId: "b", precio: 55 }], "factura 1");
+  const d = detalleCorreccion(cambios, "factura 1 · del proveedor", "", ["relanzada en Business Central sin aprobación (prueba)"]);
+  const r = leerCorreccionPrecio(d);
+  assert.ok(r);
+  assert.deepEqual(r!.cambios.map((c) => [c.codigo, c.antes, c.nuevo]), [["M00-0001", 1000, 1234.5678], ["M00-0002", 50, 55]]);
+  // El "·" de una descripción no rompe la lectura, y el motivo puede traer "·".
+  assert.equal(r!.cambios[1].descripcion, "OTRO - MATERIAL");
+  assert.equal(r!.motivo, "factura 1 · del proveedor");
+});
+
+test("bitácora: el formato del primer día (relanzada después del motivo) también se lee", () => {
+  const viejo = "Precio corregido · MATERIAL DE PRUEBA (M00-0001): ₡1 000,00 → ₡1 234,5678 · Motivo: subió el precio · relanzada en Business Central sin aprobación (Proveedor de prueba (PROV-000001): sin aprobación)";
+  const r = leerCorreccionPrecio(viejo);
+  assert.deepEqual(r?.cambios.map((c) => [c.codigo, c.antes, c.nuevo]), [["M00-0001", 1000, 1234.5678]]);
+  assert.equal(r?.motivo, "subió el precio");
+  assert.equal(leerCorreccionPrecio("Factura 8600 registrada (venía de revisión)"), null);
+  assert.equal(leerCorreccionPrecio(undefined), null);
+});
+
+test("montos: se leen en colones y en dólares con el formato de la app", () => {
+  assert.equal(leerMonto(precioTxt(1234.5678, "")), 1234.5678);
+  assert.equal(leerMonto(precioTxt(1234.5, "USD")), 1234.5);
+  assert.ok(Number.isNaN(leerMonto("")));
 });
