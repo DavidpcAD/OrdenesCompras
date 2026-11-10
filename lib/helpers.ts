@@ -1,4 +1,4 @@
-import type { LineType, MotivoNC, Orden, OrdenLinea, Pedido, PedidoLinea, Recepcion, Role, TipoSolicitud } from "./types.ts";
+import type { EnvioARevision, LineType, MotivoNC, Movimiento, Orden, OrdenLinea, Pedido, PedidoLinea, Recepcion, Role, TipoSolicitud } from "./types.ts";
 import { comentarioSinMarcasInternas, motivoDeCierre, segmentosDeNota } from "./cierre-solicitud.ts";
 
 // ── QUÉ ES CADA TIPO DE LÍNEA, EN UN SOLO LUGAR ──────────────────────────────
@@ -599,16 +599,37 @@ export function puedeDevolverLinea(l: PedidoLinea): boolean {
 // Órdenes que se llevaron ESTA línea de solicitud, con su estado. Sirve para
 // explicar por qué la línea no se puede devolver: "no se puede" a secas manda a
 // alguien a revisar orden por orden cuál se la llevó.
-export type OrdenDeLinea = { id: string; etiqueta: string; estado: Orden["estado"]; cantidad: number; enBc: boolean };
+// `proveedor`: a quién se le compró. Una solicitud se reparte entre varios
+// proveedores (un grupo de líneas por orden), y sin el nombre la línea decía
+// solo el N.º de la orden y había que abrirla para saber a quién se le pidió.
+export type OrdenDeLinea = { id: string; etiqueta: string; estado: Orden["estado"]; cantidad: number; enBc: boolean; proveedor?: string };
 export function ordenesDeLineaPedido(ordenes: Orden[], pedidoLineaId: string): OrdenDeLinea[] {
   const out: OrdenDeLinea[] = [];
   for (const o of ordenes) {
     const cantidad = o.lineas
       .filter((l) => l.tipo === "articulo" && l.pedidoLineaId === pedidoLineaId)
       .reduce((s, l) => s + (Number(l.cantidad) || 0), 0);
-    if (cantidad > 0) out.push({ id: o.id, etiqueta: numeroOrden(o), estado: o.estado, cantidad, enBc: !!o.bcNumber });
+    if (cantidad > 0) out.push({ id: o.id, etiqueta: numeroOrden(o), estado: o.estado, cantidad, enBc: !!o.bcNumber, proveedor: o.proveedorNombre?.trim() || undefined });
   }
   return out;
+}
+
+// CÓMO SE REPARTIÓ UNA SOLICITUD entre órdenes (y por lo tanto entre proveedores):
+// una fila por orden con cuántos de SUS materiales se llevó. Es lo que Proveeduría
+// necesita ver cuando parte una solicitud de 9 materiales en tres órdenes: qué ya
+// salió, a quién, y qué falta. `sinOrdenar` = líneas con saldo todavía por ordenar.
+export type OrdenDelReparto = OrdenDeLinea & { materiales: number };
+export function repartoDeSolicitud(ordenes: Orden[], pedido: Pick<Pedido, "lineas">): { ordenes: OrdenDelReparto[]; sinOrdenar: number } {
+  const porOrden = new Map<string, OrdenDelReparto>();
+  for (const l of pedido.lineas) {
+    for (const o of ordenesDeLineaPedido(ordenes, l.id)) {
+      const ya = porOrden.get(o.id);
+      if (ya) ya.materiales += 1;
+      else porOrden.set(o.id, { ...o, materiales: 1 });
+    }
+  }
+  const lista = [...porOrden.values()].sort((a, b) => a.etiqueta.localeCompare(b.etiqueta, "es", { numeric: true }));
+  return { ordenes: lista, sinOrdenar: pedido.lineas.filter((l) => pedidoLineaPendiente(l) > 0).length };
 }
 
 // ¿Es un BORRADOR que se puede descartar? Abierta o rechazada y sin N.º de BC: no
@@ -1275,6 +1296,45 @@ export function leerNotaRevision(detalle: string | undefined | null): { facturaP
   if (j >= 0) return { facturaProveedor: antes.slice(j + NOTA_REV_FACTURA.length).trim() || undefined, motivo };
   if (antes.endsWith(NOTA_REV_SIN_FACTURA)) return { motivo };
   return null;
+}
+
+// Cómo empieza el `detalle` de la bitácora cuando Bodega recibe SIN registrar la
+// factura (el movimiento de la recepción y el de la orden llevan el mismo). Lo
+// escriben createRecepcion (repo) y el store de prueba, y lo lee el historial para
+// no llamar "(parcial)" a lo que en realidad es una factura en revisión.
+export const DETALLE_EN_REVISION = "Recepción (factura en revisión)";
+
+// Una recepción está en revisión mientras no tenga N.º de factura: en modo API la
+// bandera no viaja en el bootstrap y lo único que la distingue es el número vacío.
+export function esRecepcionEnRevision(r: Pick<Recepcion, "facturaEnRevision" | "numeroFactura">): boolean {
+  return !!r.facturaEnRevision || !String(r.numeroFactura ?? "").trim();
+}
+
+// Quién mandó una recepción a revisión, cuándo y por qué, sacado de SU bitácora: es
+// el movimiento "recibido" que escribe createRecepcion. Null si no está (no debería
+// pasar). Las de antes de la confirmación de Bodega (6 nov 2026) vuelven sin motivo.
+export function envioARevisionDe(movs: Movimiento[], recepcionId: string): EnvioARevision | null {
+  const m = movs
+    .filter((x) => x.entidad === "recepcion" && x.idEntidad === recepcionId && x.tipoMovimiento === "recibido")
+    .sort((a, b) => (a.fecha < b.fecha ? 1 : -1))[0];
+  if (!m) return null;
+  const nota = leerNotaRevision(m.detalle);
+  return { recepcionId, enviadaEl: m.fecha, enviadaPor: m.usuario, facturaProveedor: nota?.facturaProveedor, motivo: nota?.motivo };
+}
+
+// EL FRENO DEL SERVIDOR: una recepción sin N.º de factura (va a revisión) tiene que
+// traer el porqué. La confirmación de Bodega ya no deja seguir sin motivo, pero eso
+// vive en el navegador: una pestaña abierta desde antes del despliegue del 6 nov
+// 2026 seguía corriendo el código viejo y mandaba recepciones sin nota, y Contabilidad
+// las veía como "Sin motivo anotado". Devuelve el mensaje para Bodega, o null si
+// está bien (o si no es una recepción en revisión).
+export function faltaMotivoRevision(r: { numeroFactura?: unknown; nota?: unknown } | null | undefined): string | null {
+  if (!r || typeof r !== "object") return null;
+  if (String(r.numeroFactura ?? "").trim()) return null;
+  const motivo = leerNotaRevision(String(r.nota ?? ""))?.motivo ?? "";
+  if (motivo && motivo !== "sin especificar") return null;
+  return "No se recibió: falta el motivo de por qué la factura va a revisión, y Contabilidad lo necesita para registrarla. "
+    + "Recargá la página (F5) y volvé a darle «Recibir sin factura»: te va a pedir el motivo.";
 }
 
 // La marca que deja en la bitácora una factura registrada DESPUÉS, sobre una

@@ -9,7 +9,7 @@ import { useStore } from "@/lib/store";
 import { useVolver } from "@/lib/use-volver";
 import { useVariantes } from "@/lib/use-variantes";
 import { codigoDeItem } from "@/lib/unidad";
-import { cuenta, formatDate, num, pedidoBadge, pedidoLineaPendiente, recibidoDeLineaPedido, destinoCodigo, destinoLabel, tipoSolicitudBadge, esConsumoDirecto, claseDestinoSolicitud, destinoSolicitudBadge, almacenesDeSolicitud, puedeDevolverLinea, motivoNoDevolver, ordenesDeLineaPedido, estadoDeDevolucion, correccionDeSolicitud, ordenDeDevolucion, numeroOrden, motivoDeCierreSolicitud, comentarioDeSolicitud } from "@/lib/helpers";
+import { cuenta, formatDate, num, pedidoBadge, pedidoLineaPendiente, recibidoDeLineaPedido, destinoCodigo, destinoLabel, tipoSolicitudBadge, esConsumoDirecto, claseDestinoSolicitud, destinoSolicitudBadge, almacenesDeSolicitud, puedeDevolverLinea, motivoNoDevolver, ordenesDeLineaPedido, estadoDeDevolucion, correccionDeSolicitud, ordenDeDevolucion, numeroOrden, motivoDeCierreSolicitud, comentarioDeSolicitud, repartoDeSolicitud, ordenBadge } from "@/lib/helpers";
 
 // Por qué se archiva una solicitud, en las palabras del oficio. Es un Select y no
 // un campo libre a propósito: el motivo es LA razón de ser del cierre, y con una
@@ -28,7 +28,7 @@ export default function ProveeduriaPedidoDetallePage() {
   // volver = pantalla anterior, con su filtro (el rótulo se ajusta solo)
   const { volver, etiqueta: volverTexto } = useVolver("/proveeduria/compras?vista=solicitudes", "Volver a solicitudes");
   const toast = useToast();
-  const { pedidos, ordenes, setBorrador, devolverPedido, cerrarSolicitud, reabrirSolicitud, retomarOrden, cargando } = useStore();
+  const { pedidos, ordenes, proveedores, setBorrador, devolverPedido, cerrarSolicitud, reabrirSolicitud, retomarOrden, cargando } = useStore();
   const [devolverOpen, setDevolverOpen] = useState(false);
   const [motivo, setMotivo] = useState("");
   const [devolviendo, setDevolviendo] = useState(false);
@@ -42,6 +42,10 @@ export default function ProveeduriaPedidoDetallePage() {
   // Líneas marcadas para devolver. La devolución es POR LÍNEA: lo que ya tiene orden
   // de compra no se puede devolver (el material ya se le pidió al proveedor).
   const [sel, setSel] = useState<Record<string, boolean>>({});
+  // Líneas marcadas para LA PRÓXIMA ORDEN. Una solicitud se reparte entre varios
+  // proveedores: se marcan las de uno, se crea su orden, y el resto queda pendiente
+  // para la siguiente. Es otra selección que la de devolver (esa vive en su diálogo).
+  const [paraOrden, setParaOrden] = useState<Record<string, boolean>>({});
 
   // Volver a usar la orden de la que salió este material, cuando la devolución vieja
   // la había descartado. La orden vuelve SIN material (el corregido se le agrega al
@@ -100,9 +104,25 @@ export default function ProveeduriaPedidoDetallePage() {
   const sinComprar = pedido.lineas.filter((l) => !l.devuelta && l.cantidad - l.cantidadOrdenada > 1e-9);
   const unidadesSinComprar = sinComprar.reduce((s, l) => s + (l.cantidad - l.cantidadOrdenada), 0);
 
+  // Lo que puede ir a una orden: con saldo y en una solicitud viva. Lo marcado se
+  // filtra contra esto en cada render: si el auto-refresh trae que otra persona ya
+  // ordenó una línea, deja de contar aunque siga marcada.
+  const ordenables = cerrada ? [] : pedido.lineas.filter((l) => pedidoLineaPendiente(l) > 0);
+  const elegidasOC = ordenables.filter((l) => paraOrden[l.id]);
+  const todasElegidas = ordenables.length > 0 && elegidasOC.length === ordenables.length;
+  const marcarTodas = (si: boolean) => setParaOrden(si ? Object.fromEntries(ordenables.map((l) => [l.id, true])) : {});
+  const alternarLinea = (lid: string) => setParaOrden((m) => ({ ...m, [lid]: !m[lid] }));
+  // En cuántas órdenes (y con qué proveedores) va esta solicitud.
+  const reparto = repartoDeSolicitud(ordenes, pedido);
+  const proveedorDe = (o: { id: string; proveedor?: string }) => {
+    if (o.proveedor) return o.proveedor;
+    const ord = ordenes.find((x) => x.id === o.id);
+    return proveedores.find((p) => p.id === ord?.proveedorId)?.nombre ?? "";
+  };
+
   function crearOC() {
-    const lineas = pedido!.lineas
-      .filter((l) => pedidoLineaPendiente(l) > 0)
+    // Lo marcado; sin nada marcado, todo lo pendiente (la solicitud de un solo proveedor).
+    const lineas = (elegidasOC.length ? elegidasOC : ordenables)
       .map((l) => ({ pedidoLineaId: l.id, cantidad: pedidoLineaPendiente(l), precio: 0, iva: 13 }));
     if (!lineas.length) { toast("Este pedido no tiene líneas pendientes por ordenar.", "error"); return; }
     setBorrador(lineas);
@@ -184,11 +204,11 @@ export default function ProveeduriaPedidoDetallePage() {
 
   return (
     <>
-      <main className="page">
+      <main className={`page${elegidasOC.length ? " is-con-barra" : ""}`}>
         <button type="button" className="back-link" onClick={volver}>{volverTexto}</button>
         <div className="page__head">
           <div className="page__title">
-            <div className="row gap-3">
+            <div className="row gap-3 wrap">
               <h1 className="ds-heading">{pedido.numero}</h1>
               <Badge tone={t.tone}>{t.label}</Badge>
               <span title={dest.ayuda}><Badge tone={dest.tone}>{dest.label}</Badge></span>
@@ -199,7 +219,9 @@ export default function ProveeduriaPedidoDetallePage() {
               {!!almacenes.length && ` · entra a ${almacenes.join(", ")}`}
             </p>
           </div>
-          <div className="row gap-3" style={{ alignItems: "center" }}>
+          {/* `wrap`: son cinco botones; en el celular no caben en un renglón y sin esto
+              empujaban la página entera a 900 px de ancho. */}
+          <div className="row gap-3 wrap" style={{ alignItems: "center" }}>
             <div className="row gap-2" style={{ alignItems: "center" }}><QtyRing recibida={rec} total={total} /><span className="ds-body-sm ds-muted">entregado</span></div>
             {/* Manda la lista de materiales a cotizar. Es un <a> al endpoint del
                 servidor (no un botón con fetch) para que el navegador baje el .pdf
@@ -234,7 +256,10 @@ export default function ProveeduriaPedidoDetallePage() {
                 title="Devolver al ingeniero las líneas que todavía no tienen orden de compra">
                 Devolver al ingeniero{devolvibles.length && devolvibles.length < pedido.lineas.length ? ` (${devolvibles.length})` : ""}
               </Button>
-              <Button onClick={crearOC} disabled={!hayPendiente}>Crear orden de compra →</Button>
+              <Button onClick={crearOC} disabled={!hayPendiente}
+                title={elegidasOC.length ? "Crea la orden solo con los materiales marcados; el resto queda pendiente" : "Crea la orden con todo lo pendiente. Para repartir entre proveedores, marcá primero los materiales de uno"}>
+                {elegidasOC.length ? `Crear orden con ${cuenta(elegidasOC.length, "material", "materiales")} →` : "Crear orden de compra →"}
+              </Button>
             </>)}
           </div>
         </div>
@@ -338,14 +363,71 @@ export default function ProveeduriaPedidoDetallePage() {
         )}
 
         <Card className="mt-4" style={{ padding: 0, overflow: "hidden" }}>
+          {/* EL REPARTO: a cuántas órdenes (y proveedores) fue esta solicitud y cuánto
+              falta. Va arriba de las líneas porque es lo primero que se pregunta
+              cuando la solicitud se parte entre proveedores: "¿qué ya salió, a quién?". */}
+          {reparto.ordenes.length > 0 && (
+            <div className="sol-reparto">
+              <div className="sol-reparto__head">
+                <span className="ds-strong">
+                  {reparto.ordenes.length === 1 ? "En 1 orden de compra" : `Repartida en ${reparto.ordenes.length} órdenes de compra`}
+                </span>
+                <span className="ds-body-sm ds-muted">
+                  {cerrada ? "Archivada" : reparto.sinOrdenar ? `${cuenta(reparto.sinOrdenar, "material", "materiales")} sin ordenar todavía` : "Todo ordenado"}
+                </span>
+              </div>
+              <ul className="sol-reparto__lista">
+                {reparto.ordenes.map((o) => {
+                  const bd = ordenBadge(o.estado);
+                  const prov = proveedorDe(o);
+                  return (
+                    <li key={o.id} className="sol-reparto__item">
+                      <button type="button" className="chip-link" title={`Abrir la orden ${o.etiqueta}`}
+                        onClick={() => router.push(`/proveeduria/ordenes/${o.id}`)}>
+                        {o.etiqueta}<span className="chip-link__ir" aria-hidden>↗</span>
+                      </button>
+                      <span className="sol-reparto__prov" title={prov || undefined}>{prov || "Sin proveedor"}</span>
+                      <span className="ds-body-sm ds-muted">{cuenta(o.materiales, "material", "materiales")}</span>
+                      <Badge tone={bd.tone}>{bd.label}</Badge>
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          )}
           <div className="ds-table-wrap" style={{ boxShadow: "none" }}>
             <table className="ds-table">
-              <thead><tr><th>Artículo</th><th>Destino</th><th className="ds-num">Solicitado</th><th className="ds-num">Ordenado</th><th className="ds-num">Pendiente</th></tr></thead>
+              <thead><tr>
+                {/* Marcar para la próxima orden. Solo si queda algo por ordenar. */}
+                {ordenables.length > 0 && (
+                  <th style={{ width: 44 }}>
+                    <input type="checkbox" className="ds-cbx" title="Marcar todo lo pendiente" aria-label="Marcar todo lo pendiente"
+                      checked={todasElegidas} ref={(el) => { if (el) el.indeterminate = elegidasOC.length > 0 && !todasElegidas; }}
+                      onChange={(e) => marcarTodas(e.target.checked)} />
+                  </th>
+                )}
+                <th>Artículo</th><th>Destino</th><th className="ds-num">Solicitado</th><th className="ds-num">Ordenado</th><th className="ds-num">Pendiente</th><th>Orden de compra</th>
+              </tr></thead>
               <tbody>
-                {pedido.lineas.map((l) => (
-                  <tr key={l.id} className={l.cerrada ? "fila-cancelada" : undefined} style={l.devuelta ? { opacity: 0.6 } : undefined}>
+                {pedido.lineas.map((l) => {
+                  const ordenable = ordenables.includes(l);
+                  const marcada = ordenable && !!paraOrden[l.id];
+                  const suyas = ordenesDeLineaPedido(ordenes, l.id);
+                  const clases = [l.cerrada ? "fila-cancelada" : "", ordenable ? "is-clickable" : "", marcada ? "dt-row-incluida" : ""].filter(Boolean).join(" ");
+                  return (
+                  <tr key={l.id} className={clases || undefined} style={l.devuelta ? { opacity: 0.6 } : undefined}
+                    onClick={ordenable ? () => alternarLinea(l.id) : undefined}>
+                    {ordenables.length > 0 && (
+                      <td onClick={(e) => e.stopPropagation()}>
+                        {ordenable && (
+                          <input type="checkbox" className="ds-cbx" checked={marcada}
+                            aria-label={`Marcar ${l.descripcion} para la próxima orden`}
+                            onChange={() => alternarLinea(l.id)} />
+                        )}
+                      </td>
+                    )}
                     <td>
-                      <div className="ds-clamp-2" title={l.descripcion} style={{ maxWidth: 420, minWidth: 240 }}>{l.descripcion}</div>
+                      <div className="ds-clamp-2" title={l.descripcion} style={{ maxWidth: 420, minWidth: 200 }}>{l.descripcion}</div>
                       {/* El código del material: es con lo que se busca en BC y con lo
                           que Proveeduría confirma que va a ordenar lo que pidieron. Va
                           pelado (el guardado puede traer la variante pegada, que BC no
@@ -372,7 +454,7 @@ export default function ProveeduriaPedidoDetallePage() {
                       {l.cerrada && <Badge tone="gray">⛔ Ya no se compra</Badge>}
                     </td>
                     <td className="ds-muted ds-body-sm">
-                      {l.almacen || "—"}
+                      <span style={{ whiteSpace: "nowrap" }}>{l.almacen || "—"}</span>
                       {/* La TAREA es lo que marca el consumo directo (así lo etiqueta
                           Ingeniería): con tarea, la orden se arma con obra + tarea y BC
                           consume el material contra el presupuesto de la obra; sin
@@ -383,24 +465,33 @@ export default function ProveeduriaPedidoDetallePage() {
                         ? <div title={l.taskDescr}>Obra {l.proyecto} · <span className="ds-strong">tarea {l.taskNo}</span>{l.taskDescr ? ` — ${l.taskDescr}` : ""}</div>
                         : l.proyecto && <div>Para obra {l.proyecto} · entra al almacén</div>}
                     </td>
-                    <td className="ds-num">{num.format(l.cantidad)} {l.unidad}</td>
-                    <td className="ds-num">
-                      {num.format(l.cantidadOrdenada)}
-                      {/* De qué orden se trata: "Ordenado: 25" sin decir dónde obliga a
-                          abrir orden por orden para saber quién se llevó el material. */}
-                      {ordenesDeLineaPedido(ordenes, l.id).map((o) => (
-                        <div key={o.id} style={{ marginTop: 4 }}>
-                          <button type="button" className="chip-link"
-                            title={o.enBc ? `Abrir la orden ${o.etiqueta}` : `${o.etiqueta}: borrador, todavía no está en Business Central`}
-                            onClick={() => router.push(`/proveeduria/ordenes/${o.id}`)}>
-                            {o.etiqueta}<span className="chip-link__ir" aria-hidden>↗</span>
-                          </button>
-                        </div>
-                      ))}
-                    </td>
+                    <td className="ds-num" style={{ whiteSpace: "nowrap" }}>{num.format(l.cantidad)} {l.unidad}</td>
+                    <td className="ds-num">{num.format(l.cantidadOrdenada)}</td>
                     <td className="ds-num">{pedidoLineaPendiente(l) > 0 ? <span className="ds-pending-text">{num.format(pedidoLineaPendiente(l))}</span> : "0"}</td>
+                    {/* De qué orden y a QUÉ PROVEEDOR: "Ordenado: 25" sin decir dónde
+                        obligaba a abrir orden por orden para saber quién se llevó el
+                        material. Si la línea se partió, va una por orden con su cantidad. */}
+                    <td className="ds-body-sm" onClick={(e) => e.stopPropagation()}>
+                      {suyas.length === 0 ? <span className="ds-muted">—</span> : (
+                        <div className="col gap-2">
+                          {suyas.map((o) => (
+                            <div key={o.id} className="sol-linea-oc">
+                              <button type="button" className="chip-link"
+                                title={o.enBc ? `Abrir la orden ${o.etiqueta}` : `${o.etiqueta}: borrador, todavía no está en Business Central`}
+                                onClick={() => router.push(`/proveeduria/ordenes/${o.id}`)}>
+                                {o.etiqueta}<span className="chip-link__ir" aria-hidden>↗</span>
+                              </button>
+                              <span className="ds-muted sol-linea-oc__prov" title={proveedorDe(o) || undefined}>
+                                {proveedorDe(o) || "Sin proveedor"}{suyas.length > 1 ? ` · ${num.format(o.cantidad)} ${l.unidad}` : ""}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -409,6 +500,32 @@ export default function ProveeduriaPedidoDetallePage() {
         <h3 className="ds-subtitle mt-6" style={{ marginBottom: 12 }}>Historial</h3>
         <Card><Timeline entidad="pedido" idEntidad={pedido.id} traza /></Card>
       </main>
+
+      {/* Lo marcado para la próxima orden: la misma barra de Materiales. Lleva el PDF
+          de SOLO esas líneas, porque a cada proveedor se le cotiza su grupo. */}
+      {elegidasOC.length > 0 && (
+        <div className="action-bar">
+          <div className="action-bar__inner">
+            <div className="row gap-4 wrap">
+              <span className="ds-strong">{cuenta(elegidasOC.length, "material marcado", "materiales marcados")} de {ordenables.length}</span>
+              <span className="ds-muted">
+                {elegidasOC.length < ordenables.length
+                  ? `van a una orden; ${cuenta(ordenables.length - elegidasOC.length, "queda", "quedan")} para la siguiente`
+                  : "todo lo pendiente va a una sola orden"}
+              </span>
+            </div>
+            <div className="row gap-3 action-bar__cta">
+              <button type="button" className="link-btn" onClick={() => marcarTodas(false)}>Limpiar</button>
+              <a className="ds-btn ds-btn--white" style={{ textDecoration: "none" }}
+                href={`/api/pedidos/${pedido.id}/pdf?lineas=${elegidasOC.map((l) => encodeURIComponent(l.id)).join(",")}`}
+                title="Baja en PDF solo los materiales marcados, con el precio en blanco, para mandárselos a un proveedor">
+                ⬇ PDF de estos para cotizar
+              </a>
+              <Button onClick={crearOC}>Crear orden con {elegidasOC.length === 1 ? "este" : `estos ${elegidasOC.length}`} →</Button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {cerrarOpen && (
         <Modal title={`Cerrar ${pedido.numero}`} onClose={() => setCerrarOpen(false)} footer={

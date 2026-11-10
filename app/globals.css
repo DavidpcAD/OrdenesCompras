@@ -603,6 +603,11 @@ td.ds-col-fija {
    gris del td .ds-muted, se alinea a la derecha como el texto anterior). */
 .fac-ver-btn { display: inline-flex; align-items: center; gap: 4px; border: 0; background: transparent; padding: 2px 4px; cursor: pointer; font: inherit; color: inherit; border-radius: var(--ds-radius-sm); transition: color .12s ease; }
 .fac-ver-btn:hover { color: var(--ds-text); }
+/* Por qué una recepción está en revisión: renglón pegado a su fila (sin raya en
+   medio), visible sin desplegar nada. */
+.ds-table tbody tr.fac-con-motivo > td { border-bottom: 0; }
+.ds-table tbody tr.fac-motivo > td { padding-top: 0; font-size: var(--ds-font-size-body-sm); white-space: normal; }
+.fac-motivo__txt { max-width: 72ch; }
 
 /* COTEJO LADO A LADO de una factura (Auditoría de facturas): a la izquierda lo que
    cobró el proveedor en su XML, a la derecha lo que se digitó en Business Central.
@@ -1254,6 +1259,19 @@ td.ds-col-fija {
   .action-bar__cta { flex-wrap: wrap; width: 100%; }
   .action-bar__cta > .ds-btn { flex: 1 1 100%; }
 }
+/* Reparto de una solicitud entre órdenes (proveedores): banda arriba de las líneas,
+   dentro de la misma tarjeta. */
+.sol-reparto { padding: var(--ds-space-4) var(--ds-space-4) var(--ds-space-3); border-bottom: 1px solid var(--ds-color-gray-100); }
+.sol-reparto__head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--ds-space-3); flex-wrap: wrap; margin-bottom: var(--ds-space-2); }
+.sol-reparto__lista { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--ds-space-2); }
+.sol-reparto__item { display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; align-items: center; gap: var(--ds-space-3); }
+.sol-reparto__prov { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@media (max-width: 760px) {
+  .sol-reparto__item { grid-template-columns: auto minmax(0, 1fr); row-gap: var(--ds-space-1); }
+}
+/* Cada orden de una línea: chip + a qué proveedor. */
+.sol-linea-oc { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; }
+.sol-linea-oc__prov { max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .action-bar__inner { max-width: 1180px; margin: 0 auto; display: flex; align-items: center; justify-content: space-between; gap: var(--ds-space-4); flex-wrap: wrap; }
 @keyframes barUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
 
@@ -1783,6 +1801,8 @@ td.ds-col-fija {
 .timeline__dot { position: absolute; left: -21px; top: 8px; width: 12px; height: 12px; border-radius: 50%; border: 2px solid var(--ds-color-white); box-shadow: 0 0 0 1px var(--ds-color-gray-200); }
 .timeline__title { font-weight: var(--ds-font-weight-semibold); font-size: var(--ds-font-size-label); }
 .timeline__meta { color: var(--ds-color-gray-400); font-size: var(--ds-font-size-body-sm); }
+/* El porqué de una factura en revisión: en el color del texto, no en el gris del meta. */
+.timeline__nota { margin-top: 2px; color: var(--ds-text); font-size: var(--ds-font-size-body-sm); }
 
 /* toast */
 .toast-wrap { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); z-index: 100; display: flex; flex-direction: column; gap: 8px; align-items: center; }

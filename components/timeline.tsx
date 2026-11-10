@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Skeleton } from "@/components/ui";
 import { useStore } from "@/lib/store";
 import { EVENTO_DATOS_CAMBIADOS } from "@/lib/fetch-guard";
-import { formatDateTime, ROL_LABEL, numeroOrden } from "@/lib/helpers";
+import { DETALLE_EN_REVISION, formatDateTime, leerNotaRevision, ROL_LABEL, numeroOrden } from "@/lib/helpers";
 import type { Movimiento } from "@/lib/types";
 
 // Códigos de estado -> nombre legible (pedidos y órdenes).
@@ -56,6 +56,11 @@ function etiqueta(m: Movimiento): string {
     // Menor a ₡210 000 o Holcim (lib/aprobacion-automatica.ts): el porqué va en el detalle.
     if (m.tipoMovimiento === "aprobado_automatico") return "Orden lanzada sin pasar por aprobación";
     if (m.tipoMovimiento === "rechazado") return "Orden rechazada por Aprobación";
+    // Recibido SIN registrar la factura: la orden no se cierra hasta que Contabilidad
+    // la registre, así que el tipo queda en "parcial" aunque haya entrado todo. Decir
+    // "(parcial)" ahí hacía creer que faltaba material, cuando lo pendiente es la factura.
+    if ((m.tipoMovimiento === "recepcion_parcial" || m.tipoMovimiento === "recepcion_total") && esEnRevision(m))
+      return "Recibido en bodega · factura en revisión";
     if (m.tipoMovimiento === "recepcion_parcial") return "Recibido en bodega (parcial)";
     if (m.tipoMovimiento === "recepcion_total") return "Recibido en bodega (total)";
     if (m.tipoMovimiento === "nc_resuelta") return "Nota de crédito acreditada";
@@ -94,7 +99,24 @@ function etiqueta(m: Movimiento): string {
     if (m.tipoMovimiento === "reabierto" && m.estadoAnterior === "cerrado") return "Se deshizo el archivado";
   }
   if (m.entidad === "recepcion" && m.tipoMovimiento === "creado") return "Factura registrada";
+  if (m.entidad === "recepcion" && m.tipoMovimiento === "recibido") return "Recibido sin factura · en revisión";
   return LABEL[m.tipoMovimiento] ?? m.tipoMovimiento;
+}
+
+const esEnRevision = (m: Movimiento) => (m.detalle ?? "").startsWith(DETALLE_EN_REVISION);
+
+// Lo que va en el renglón gris de cada movimiento. Cuando Bodega mandó una factura a
+// revisión, el porqué NO se deja ahí metido: va en su propio renglón (ver Timeline),
+// porque es lo que Proveeduría y Aprobación vienen a buscar y en gris no se veía.
+// El "Recepción (factura en revisión)" del inicio ya lo dice la etiqueta.
+function detalleVisible(m: Movimiento): string {
+  const d = m.detalle ?? "";
+  if (!esEnRevision(m)) return d;
+  if (leerNotaRevision(d)) return "";
+  const resto = d.slice(DETALLE_EN_REVISION.length).replace(/^\s*·\s*/, "");
+  // Las de antes de la confirmación de Bodega (6 nov 2026) no traen el porqué: se
+  // dice, para que no parezca que la pantalla se lo está comiendo.
+  return resto || "Sin motivo anotado";
 }
 
 // Color del punto por etapa, para que cada evento se distinga de un vistazo.
@@ -254,6 +276,8 @@ export function Timeline({
     <div className="timeline">
       {ordenados.map((m) => {
         const ctxOrden = m.entidad === "orden" ? numeroDeOrden.get(m.idEntidad) : undefined;
+        const nota = esEnRevision(m) ? leerNotaRevision(m.detalle) : null;
+        const detalle = detalleVisible(m);
         return (
           <div key={m.id} className="timeline__item">
             <span className="timeline__dot" style={{ background: colorPunto(m) }} />
@@ -271,8 +295,14 @@ export function Timeline({
               })()}
             </div>
             <div className="timeline__meta">
-              {m.usuario} · {ROL_LABEL[m.rol]} · {formatDateTime(m.fecha)}{m.detalle ? ` · ${m.detalle}` : ""}
+              {m.usuario} · {ROL_LABEL[m.rol]} · {formatDateTime(m.fecha)}{detalle ? ` · ${detalle}` : ""}
             </div>
+            {nota && (
+              <div className="timeline__nota">
+                <span className="ds-muted">Motivo: </span>{nota.motivo}
+                <span className="ds-muted"> · {nota.facturaProveedor ? `Factura del proveedor ${nota.facturaProveedor}` : "Sin factura del proveedor"}</span>
+              </div>
+            )}
           </div>
         );
       })}

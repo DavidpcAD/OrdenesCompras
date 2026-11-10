@@ -15,7 +15,7 @@ import {
   ordenPendienteResumen, devolverPendienteAPedidos, proveedorLabel,
   numeroOrden, etiquetaInterna, tieneBc, esConsumoDirecto, obraParaOrden, obraDeLinea, destinoDeRecepcion,
   claseDestinoSolicitud, destinoSolicitudBadge, almacenesDeSolicitud,
-  puedeDevolverLinea, motivoNoDevolver, ordenesDeLineaPedido, ordenEsBorradorDescartable,
+  puedeDevolverLinea, motivoNoDevolver, ordenesDeLineaPedido, ordenEsBorradorDescartable, repartoDeSolicitud,
   ordenAdmiteDevolucion, puedeDevolverLineaOrden, motivoNoDevolverLineaOrden, ordenQuedaSinMaterial,
   lineasACotizar, observacionesParaProveedor, motivoDevolucion, devolucionesDeRol,
   estadoDeDevolucion, devolucionesPendientes, correccionDeSolicitud,
@@ -25,8 +25,9 @@ import {
   esLineaMaterial, esLineaRecibible, esLineaCargo, etiquetaTipoLinea,
   chequeoBcVencido, CHEQUEO_BC_FRESCO_MS, MONEDAS, monedaIso, lineasSinPrecio,
   componerNotaRevision, leerNotaRevision, lineasDeRecepcion,
+  envioARevisionDe, esRecepcionEnRevision, DETALLE_EN_REVISION, faltaMotivoRevision,
 } from "./helpers.ts";
-import type { Orden, OrdenLinea, Pedido, PedidoLinea, Recepcion } from "./types.ts";
+import type { Movimiento, Orden, OrdenLinea, Pedido, PedidoLinea, Recepcion } from "./types.ts";
 
 const linea = (p: Partial<OrdenLinea> & { id: string }): OrdenLinea => ({
   id: p.id, tipo: p.tipo ?? "articulo", descripcion: p.descripcion ?? "X",
@@ -634,6 +635,30 @@ test("ordenesDeLineaPedido: encuentra las órdenes por pedidoLineaId y suma la c
   assert.equal(r[0].enBc, false);
   assert.equal(r[1].etiqueta, "CP-005192");   // con N.º de BC se muestra ese, no el interno
   assert.equal(r[1].enBc, true);
+});
+
+// Una solicitud repartida entre proveedores: una orden por grupo de líneas. El
+// reparto cuenta cuántos materiales se llevó cada orden y cuántos faltan.
+test("repartoDeSolicitud: una fila por orden con su proveedor, y lo que falta por ordenar", () => {
+  const conProv = (o: Orden, nombre: string): Orden => ({ ...o, proveedorNombre: nombre });
+  const a = conProv(ordenConLinea({ id: "10", bcNumber: "CP-000010" }, "pl1", 10), "PROVEEDOR UNO");
+  // La orden 10 también se lleva la segunda línea.
+  a.lineas.push({ ...a.lineas[0], id: "ol-10b", pedidoLineaId: "pl2", cantidad: 4 });
+  const b = conProv(ordenConLinea({ id: "9", bcNumber: "CP-000009", estado: "lanzado" }, "pl3", 2), "PROVEEDOR DOS");
+  const ajena = ordenConLinea({ id: "11" }, "de-otra-solicitud", 1);
+  const pedido = { lineas: [
+    lineaPed({ id: "pl1", cantidad: 10, cantidadOrdenada: 10 }),
+    lineaPed({ id: "pl2", cantidad: 4, cantidadOrdenada: 4 }),
+    lineaPed({ id: "pl3", cantidad: 5, cantidadOrdenada: 2 }),   // partida: quedan 3
+    lineaPed({ id: "pl4", cantidad: 8, cantidadOrdenada: 0 }),
+  ] };
+  const r = repartoDeSolicitud([a, b, ajena], pedido);
+  assert.deepEqual(r.ordenes.map((o) => [o.etiqueta, o.proveedor, o.materiales]), [
+    ["CP-000009", "PROVEEDOR DOS", 1],
+    ["CP-000010", "PROVEEDOR UNO", 2],
+  ]);
+  assert.equal(r.sinOrdenar, 2);   // pl3 (le quedan 3) y pl4
+  assert.deepEqual(repartoDeSolicitud([], { lineas: [lineaPed()] }), { ordenes: [], sinOrdenar: 1 });
 });
 
 test("ordenEsBorradorDescartable: solo abierta/rechazada y sin N.º de BC", () => {
@@ -1257,6 +1282,51 @@ test("revisión: las recepciones de antes (sin nota) no inventan motivo", () => 
   assert.equal(leerNotaRevision("Recepción (factura en revisión)"), null);
   assert.equal(leerNotaRevision("Recepción (factura en revisión) · Aviso de cargo: flete"), null);
   assert.equal(leerNotaRevision(undefined), null);
+});
+
+test("revisión: sin N.º de factura la recepción está en revisión aunque no traiga la bandera", () => {
+  assert.equal(esRecepcionEnRevision({ numeroFactura: "" }), true);
+  assert.equal(esRecepcionEnRevision({ numeroFactura: "  " }), true);
+  assert.equal(esRecepcionEnRevision({ numeroFactura: "8600" }), false);
+  assert.equal(esRecepcionEnRevision({ numeroFactura: "8600", facturaEnRevision: true }), true);
+});
+
+test("revisión: el porqué de una recepción sale de SU movimiento 'recibido', no del de otra", () => {
+  const mov = (p: Partial<Movimiento>): Movimiento => ({
+    id: "x", entidad: "recepcion", idEntidad: "r1", documentoNo: "", tipoMovimiento: "recibido",
+    usuario: "bodega1", rol: "facturacion", fecha: "2026-11-03T22:21:00Z", ...p,
+  });
+  const nota = componerNotaRevision("8600", "precio", "viene más caro");
+  const movs = [
+    mov({ id: "a", detalle: `${DETALLE_EN_REVISION} · ${nota}` }),
+    mov({ id: "b", idEntidad: "r2", detalle: `${DETALLE_EN_REVISION} · ${componerNotaRevision("", "sin_factura")}` }),
+    mov({ id: "c", tipoMovimiento: "creado", detalle: "Factura 8600 registrada (venía de revisión)" }),
+    mov({ id: "d", entidad: "orden", tipoMovimiento: "recepcion_parcial", detalle: `${DETALLE_EN_REVISION} · ${nota}` }),
+  ];
+  assert.deepEqual(envioARevisionDe(movs, "r1"), {
+    recepcionId: "r1", enviadaEl: "2026-11-03T22:21:00Z", enviadaPor: "bodega1",
+    facturaProveedor: "8600", motivo: "El precio no coincide con la orden — viene más caro",
+  });
+  // La de antes de la confirmación: dice quién y cuándo, sin inventar el motivo.
+  const vieja = envioARevisionDe([mov({ detalle: DETALLE_EN_REVISION })], "r1");
+  assert.equal(vieja?.enviadaPor, "bodega1");
+  assert.equal(vieja?.motivo, undefined);
+  assert.equal(envioARevisionDe(movs, "r9"), null);
+});
+
+test("revisión: el servidor no acepta una recepción sin factura y sin motivo (pestaña con el código viejo)", () => {
+  // Lo que mandaba una pestaña abierta antes del 6 nov: sin nota.
+  assert.match(faltaMotivoRevision({ numeroFactura: "", nota: undefined }) ?? "", /falta el motivo/);
+  assert.match(faltaMotivoRevision({ numeroFactura: "  " }) ?? "", /Recargá la página/);
+  // Una nota que no es de revisión (o vacía) tampoco cuenta como motivo.
+  assert.ok(faltaMotivoRevision({ numeroFactura: "", nota: "Aviso de cargo: flete" }));
+  assert.ok(faltaMotivoRevision({ numeroFactura: "", nota: componerNotaRevision("8600", "") }));
+  // Con la confirmación de Bodega pasa, con y sin N.º del proveedor.
+  assert.equal(faltaMotivoRevision({ numeroFactura: "", nota: componerNotaRevision("8600", "precio") }), null);
+  assert.equal(faltaMotivoRevision({ numeroFactura: "", nota: componerNotaRevision("", "otro", "vino a nombre de otra empresa") }), null);
+  // Con factura no es revisión: no se pide motivo.
+  assert.equal(faltaMotivoRevision({ numeroFactura: "8600" }), null);
+  assert.equal(faltaMotivoRevision(undefined), null);
 });
 
 test("líneas de una recepción: precio de la factura si lo hay, si no el de la orden, con descuento", () => {

@@ -6,6 +6,7 @@ import { actor, exigirSesion } from "@/lib/actor";
 import type { Role } from "@/lib/types";
 import { guardarRecepcionTrasBc } from "@/lib/guardado-tras-bc";
 import { anotarFalloDeBc } from "@/lib/fallo-posteo";
+import { faltaMotivoRevision } from "@/lib/helpers";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -32,6 +33,11 @@ export async function POST(req: Request) {
   // Cómo estaba el pedido en BC al EMPEZAR, según el freno de encabezado. Es lo
   // único que después permite saber si el posteo lo des-lanzó (ver abajo).
   let estadoBc: EstadoBcPedido | undefined;
+  // FRENO 0 — el MOTIVO de la revisión, ANTES de tocar BC: rechazarlo después de
+  // recibir allá dejaría el material adentro de BC y sin recepción acá. Sin
+  // `recepcion` es el modo mock, que no guarda nada en el servidor.
+  const sinMotivo = cuerpo?.recepcion ? faltaMotivoRevision(cuerpo.recepcion) : null;
+  if (sinMotivo) return NextResponse.json({ ok: false, error: sinMotivo, frenoMotivo: true }, { status: 400 });
   try {
     // FRENO 1 — el ENCABEZADO del pedido en BC: mismo proveedor y LANZADO allá
     // (ver lib/freno-encabezado.ts). Recibir contra el pedido de otro le mete el
