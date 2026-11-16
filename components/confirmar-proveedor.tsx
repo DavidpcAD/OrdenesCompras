@@ -15,7 +15,7 @@
 // Por eso el diálogo dice el nombre y nada más que lo imprescindible: un diálogo
 // lleno de datos se cierra sin leerlo, que es exactamente lo que no se quiere acá.
 //
-// Cuando la orden NO va a pasar por Aprobación (menor a ₡210 000 o Holcim, ver
+// Cuando la orden NO va a pasar por Aprobación (menor a ₡210 000 o Holcim con solo cemento industrial, ver
 // lib/aprobacion-automatica.ts), el diálogo lo dice: nadie más la va a mirar antes de
 // que el proveedor la tenga, así que este es el último vistazo de verdad.
 import { Button, Modal } from "./ui.tsx";

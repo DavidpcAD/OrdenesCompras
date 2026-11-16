@@ -402,7 +402,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
         } catch { /* si BC no contesta los totales, el envío no se frena por eso */ }
       }
 
-      // ── SIN APROBACIÓN: menor a ₡210 000 en colones, o Holcim ─────────────
+      // ── SIN APROBACIÓN: menor a ₡210 000 en colones, o Holcim con solo cemento industrial ──
       // La app lanza el pedido ella misma, con el mismo AdelantePO_ReleaseOrder que usa
       // Producción al aprobar (envía la solicitud en BC, la aprueba como la cuenta de
       // servicio y libera). Solo sobre un pedido que se acaba de VERIFICAR igual a la

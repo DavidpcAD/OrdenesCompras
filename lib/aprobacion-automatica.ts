@@ -14,11 +14,15 @@
 //     son pocas, casi todas importaciones, y compararlas contra un tope en colones
 //     obligaría a usar un tipo de cambio que se mueve todos los días.
 //
-//  2. PROVEEDOR: Holcim, sea cual sea el monto. El cemento a granel se pide por
-//     25 000 kg y la boleta trae 25 300 o 25 410: para registrar la factura exacta
-//     Proveeduría reabre la orden, ajusta la cantidad y la reenvía. Antes cada
-//     reenvío volvía a esperar a Luis por una diferencia de unos kilos; ahora sale
-//     lanzada al toque. Es el ÚNICO proveedor con esta excepción.
+//  2. PROVEEDOR + MATERIAL: Holcim, sea cual sea el monto, pero SOLO cuando la orden
+//     lleva únicamente CEMENTO INDUSTRIAL a granel (por kilos). Ese cemento se pide
+//     por 25 000 kg y la boleta trae 25 300 o 25 410: para registrar la factura
+//     exacta Proveeduría reabre la orden, ajusta la cantidad y la reenvía, y cada
+//     reenvío volvía a esperar a Luis por una diferencia de unos kilos. Cualquier
+//     otra orden de Holcim (cemento en sacos, por ejemplo) sigue la regla 1 como la
+//     de cualquier proveedor: por encima del tope va a aprobación (decisión de David,
+//     11 nov 2026, después de una de sacos por encima del tope que salió sola).
+//     Es el ÚNICO proveedor con esta excepción.
 //
 // Luis igual ve todas estas órdenes: quedan en la bitácora como `aprobado_automatico`
 // (con el motivo) y la app de Producción las lista en su histórico.
@@ -28,6 +32,7 @@
 // que se puede tocar sin desplegar es el interruptor de emergencia
 // APROBACION_AUTOMATICA=0, que manda todo otra vez a Luis.
 import { money } from "./helpers.ts";
+import { codigoDeItem } from "./unidad.ts";
 
 export const TOPE_SIN_APROBACION_CRC = 210_000;
 
@@ -35,6 +40,27 @@ export const TOPE_SIN_APROBACION_CRC = 210_000;
 export const PROVEEDORES_SIN_APROBACION: Record<string, string> = {
   "PROV-000694": "Holcim",
 };
+// Y los ÚNICOS artículos con los que esa excepción vale: la orden tiene que llevar
+// solo estos (ni otro material ni una línea de cargo). M10-0047 = cemento industrial
+// a granel, por kilos. Ojo: hay otro "CEMENTO INDUSTRIAL" en sacos (otro código) que
+// NO entra: se decide por el código, no por la descripción.
+export const ARTICULOS_SIN_APROBACION: Record<string, string[]> = {
+  "PROV-000694": ["M10-0047"],
+};
+const NOMBRE_ARTICULOS_SIN_APROBACION: Record<string, string> = {
+  "PROV-000694": "cemento industrial a granel",
+};
+
+// Las líneas con las que se decide (las de la orden, o las filas de la pantalla).
+export type LineaParaRegla = { tipo?: string; articuloId?: string };
+function soloArticulosDeLaExcepcion(codigoProv: string, lineas: LineaParaRegla[] | undefined): boolean {
+  const permitidos = ARTICULOS_SIN_APROBACION[codigoProv];
+  // Sin lista de artículos, o sin líneas para mirar, la excepción no se da: en la
+  // duda la orden va a aprobación.
+  if (!permitidos?.length || !lineas?.length) return false;
+  return lineas.every((l) => (l.tipo ?? "articulo") === "articulo"
+    && permitidos.includes(codigoDeItem(String(l.articuloId ?? "")).toUpperCase()));
+}
 
 // Quién figura en la bitácora como el que aprobó. No es una persona, y tiene que
 // leerse así en "Aprobada el … por …" de las dos apps.
@@ -68,16 +94,19 @@ const tope = () => money(TOPE_SIN_APROBACION_CRC, "");
 //               orden decía 1 %); sin verlo no se lanza nada a nombre de Luis.
 //   número    → manda el MAYOR de los dos.
 export function aprobacionAutomatica(
-  o: { proveedorNo?: string; proveedorId?: string; currencyCode?: string },
+  o: { proveedorNo?: string; proveedorId?: string; currencyCode?: string; lineas?: LineaParaRegla[] },
   totales: { app: number; bc?: number | null },
 ): AprobacionAutomatica {
   const codigo = String(o.proveedorNo || o.proveedorId || "").trim().toUpperCase();
   const nombre = PROVEEDORES_SIN_APROBACION[codigo];
-  if (nombre) {
+  // Holcim CON solo cemento industrial a granel. Cualquier otra orden suya sigue
+  // abajo, por el monto, como la de cualquier proveedor.
+  if (nombre && soloArticulosDeLaExcepcion(codigo, o.lineas)) {
+    const que = NOMBRE_ARTICULOS_SIN_APROBACION[codigo] ?? "los artículos de la excepción";
     return {
       aplica: true, motivo: "proveedor",
-      detalle: `Proveedor ${nombre} (${codigo}): sus órdenes se lanzan sin aprobación, para poder ajustar la cantidad a la boleta.`,
-      aviso: `Las órdenes de ${nombre} no pasan por aprobación: quedó lanzada en Business Central.`,
+      detalle: `Proveedor ${nombre} (${codigo}) con solo ${que}: se lanza sin aprobación, para poder ajustar la cantidad a la boleta.`,
+      aviso: `Las órdenes de ${nombre} de solo ${que} no pasan por aprobación: quedó lanzada en Business Central.`,
     };
   }
   if (!esMonedaLocal(o.currencyCode)) return { aplica: false };
@@ -93,11 +122,12 @@ export function aprobacionAutomatica(
 
 // Lo que dice el diálogo de envío antes de confirmar. Solo con el estimado de la
 // orden: si BC termina cobrando más, el servidor la manda a aprobación igual y lo dice.
-export function avisoAntesDeEnviar(o: { proveedorNo?: string; proveedorId?: string; currencyCode?: string }, totalApp: number): string | null {
+export function avisoAntesDeEnviar(o: { proveedorNo?: string; proveedorId?: string; currencyCode?: string; lineas?: LineaParaRegla[] }, totalApp: number): string | null {
   if (!aprobacionAutomaticaActiva()) return null;
   const d = aprobacionAutomatica(o, { app: totalApp });
   if (!d.aplica) return null;
+  const cod = String(o.proveedorNo || o.proveedorId || "").trim().toUpperCase();
   return d.motivo === "proveedor"
-    ? `${PROVEEDORES_SIN_APROBACION[String(o.proveedorNo || o.proveedorId || "").trim().toUpperCase()]} no pasa por aprobación: al enviarla queda lanzada en Business Central de una vez.`
+    ? `${PROVEEDORES_SIN_APROBACION[cod]} con solo ${NOMBRE_ARTICULOS_SIN_APROBACION[cod] ?? "estos artículos"} no pasa por aprobación: al enviarla queda lanzada en Business Central de una vez.`
     : `Es menor a ${tope()} con IVA: no pasa por aprobación. Al enviarla queda lanzada en Business Central de una vez.`;
 }

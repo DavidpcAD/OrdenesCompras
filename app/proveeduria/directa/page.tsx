@@ -966,7 +966,8 @@ export default function OrdenDirectaPage() {
         <ConfirmarProveedor
           nombre={provSel?.nombre ?? ""} codigo={provSel?.code}
           resumen={`${cuenta(rows.length, "línea", "líneas")} · ${money(total, currency)}`}
-          sinAprobacion={avisoAntesDeEnviar({ proveedorNo: provSel?.code, currencyCode: currency }, total)}
+          sinAprobacion={avisoAntesDeEnviar({ proveedorNo: provSel?.code, currencyCode: currency,
+            lineas: [...rows.map((r) => ({ tipo: r.tipo, articuloId: r.articuloId })), ...cargos.map(() => ({ tipo: "cargo" }))] }, total)}
           enviando={guardando}
           onCancelar={() => setConfirmarEnvio(false)}
           onConfirmar={() => { setConfirmarEnvio(false); void crear(true, true); }}

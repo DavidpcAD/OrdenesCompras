@@ -3,7 +3,7 @@
 // Lanzar sin aprobación es soltar plata sin que nadie la mire, así que lo que estas
 // pruebas cuidan es el borde: que el tope sea estricto, que una divisa nunca pase por
 // monto, que sin el total de BC no se suelte nada por monto, y que Holcim sea la única
-// excepción de proveedor.
+// excepción de proveedor — y SOLO con cemento industrial a granel.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
@@ -47,13 +47,30 @@ test("una orden en cero no se lanza sola", () => {
   assert.equal(aprobacionAutomatica(crc, { app: 0, bc: 0 }).aplica, false);
 });
 
-test("Holcim se lanza sola sea cual sea el monto, aunque BC no conteste", () => {
-  for (const bc of [3_149_137.68, null, undefined]) {
-    const d = aprobacionAutomatica({ proveedorNo: "PROV-000694", currencyCode: "" }, { app: 3_149_137.68, bc });
+const granel = [{ tipo: "articulo", articuloId: "M10-0047" }];
+
+test("Holcim con solo cemento industrial a granel se lanza sola, sea cual sea el monto", () => {
+  for (const bc of [3_000_000, null, undefined]) {
+    const d = aprobacionAutomatica({ proveedorNo: "PROV-000694", currencyCode: "", lineas: granel }, { app: 3_000_000, bc });
     assert.equal(d.aplica && d.motivo, "proveedor", String(bc));
   }
-  // El código llega a veces en proveedorId (es el CÓDIGO, no un GUID) y en minúscula.
-  assert.equal(aprobacionAutomatica({ proveedorId: " prov-000694 " }, { app: 1 }).aplica, true);
+  // El código llega a veces en proveedorId (es el CÓDIGO, no un GUID) y en minúscula,
+  // y el artículo puede traer el nombre pegado ("M10-0047 CEMENTO …").
+  assert.equal(aprobacionAutomatica({ proveedorId: " prov-000694 ", lineas: [{ articuloId: "m10-0047 cemento" }] }, { app: 1 }).aplica, true);
+});
+
+test("Holcim con otra cosa sigue la regla del monto, como cualquier proveedor", () => {
+  const sacos = [{ tipo: "articulo", articuloId: "M00-0999" }];
+  // Por encima del tope: a aprobación (el caso que trajo la regla).
+  assert.equal(aprobacionAutomatica({ proveedorNo: "PROV-000694", currencyCode: "", lineas: sacos }, { app: 276_000, bc: 276_000 }).aplica, false);
+  // Por debajo: sale sola, pero por el MONTO, no por ser Holcim.
+  const d = aprobacionAutomatica({ proveedorNo: "PROV-000694", currencyCode: "", lineas: sacos }, { app: 150_000, bc: 150_000 });
+  assert.equal(d.aplica && d.motivo, "monto");
+  // Cemento industrial MÁS otro material, o más un flete: ya no es "solo cemento industrial".
+  assert.equal(aprobacionAutomatica({ proveedorNo: "PROV-000694", lineas: [...granel, ...sacos] }, { app: 3_000_000, bc: 3_000_000 }).aplica, false);
+  assert.equal(aprobacionAutomatica({ proveedorNo: "PROV-000694", lineas: [...granel, { tipo: "cargo" }] }, { app: 3_000_000, bc: 3_000_000 }).aplica, false);
+  // Sin líneas para mirar, en la duda va a aprobación.
+  assert.equal(aprobacionAutomatica({ proveedorNo: "PROV-000694" }, { app: 3_000_000, bc: 3_000_000 }).aplica, false);
 });
 
 test("la Asociación Solidarista de Holcim NO es Holcim", () => {
@@ -83,7 +100,8 @@ test("el interruptor: encendido por defecto, se apaga solo con 0/false/no", () =
 
 test("el aviso del diálogo sale solo cuando aplica, y se calla con el interruptor apagado", () => {
   assert.match(String(avisoAntesDeEnviar(crc, 100_000)), /no pasa por aprobación/);
-  assert.match(String(avisoAntesDeEnviar({ proveedorNo: "PROV-000694" }, 3_000_000)), /^Holcim/);
+  assert.match(String(avisoAntesDeEnviar({ proveedorNo: "PROV-000694", lineas: granel }, 3_000_000)), /^Holcim con solo cemento industrial/);
+  assert.equal(avisoAntesDeEnviar({ proveedorNo: "PROV-000694", lineas: [{ articuloId: "M00-0999" }] }, 300_000), null);
   assert.equal(avisoAntesDeEnviar(crc, 300_000), null);
   assert.equal(con("0", () => avisoAntesDeEnviar(crc, 100_000)), null);
 });
