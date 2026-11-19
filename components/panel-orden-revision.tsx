@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Badge, Button, Modal } from "@/components/ui";
 import { LineasDeRecepcion } from "@/components/lineas-recepcion";
+import { OtrasEnRevision } from "@/components/otras-en-revision";
 import { VersionesRecepcion } from "@/components/versiones-recepcion";
 import { Timeline } from "@/components/timeline";
 import { formatDate, lineasDeRecepcion, money, numeroOrden, ordenBadgeDe, ordenRecibidoPct, proveedorLabel } from "@/lib/helpers";
@@ -31,8 +32,11 @@ type TotalesBc = { subtotal: number; iva: number; total: number; currencyCode?: 
 // registrar su factura, sin salir de Archivo. Lo que se va a facturar (la recepción),
 // lo que dice Business Central del pedido, las versiones de la recepción (precio
 // corregido) y el historial de la orden.
-export function PanelOrdenRevision({ rec, orden, proveedores, envio, onRegistrar, onClose }: {
+// `otras` = las demás recepciones en revisión de la misma orden, para juntarlas con
+// esta antes de registrar (ver OtrasEnRevision).
+export function PanelOrdenRevision({ rec, orden, proveedores, envio, otras = [], envioDe, onJuntar, onRegistrar, onClose }: {
   rec: Recepcion; orden?: Orden; proveedores: Proveedor[]; envio?: EnvioARevision;
+  otras?: Recepcion[]; envioDe?: Map<string, EnvioARevision>; onJuntar?: (otra: Recepcion) => Promise<unknown>;
   onRegistrar: () => void; onClose: () => void;
 }) {
   const cur = orden?.currencyCode;
@@ -84,6 +88,10 @@ export function PanelOrdenRevision({ rec, orden, proveedores, envio, onRegistrar
               )}
             </div>
           </div>
+        )}
+
+        {onJuntar && (
+          <OtrasEnRevision rec={rec} otras={otras} orden={orden} envioDe={envioDe ?? new Map()} onJuntar={onJuntar} />
         )}
 
         <div className="panel-orden__caja">

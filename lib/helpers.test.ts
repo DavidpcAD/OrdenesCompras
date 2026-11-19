@@ -27,6 +27,7 @@ import {
   componerNotaRevision, leerNotaRevision, lineasDeRecepcion,
   envioARevisionDe, esRecepcionEnRevision, DETALLE_EN_REVISION, faltaMotivoRevision,
   partirRecepcionPorFactura, repartirTotalRecepcion, motivoRestoDeFactura,
+  juntarLineasDeRecepcion, detalleJuntaRecepciones,
 } from "./helpers.ts";
 import type { Movimiento, Orden, OrdenLinea, Pedido, PedidoLinea, Recepcion } from "./types.ts";
 
@@ -1404,6 +1405,52 @@ test("partir recepción: números raros, líneas ajenas o repetidas, y nada que 
 test("partir recepción: decimales de 4 cifras sin arrastrar error de coma flotante", () => {
   const p = partirRecepcionPorFactura([{ ordenLineaId: "a", cantidadRecibida: 0.3 }], [{ ordenLineaId: "a", cantidad: 0.1 }]);
   assert.deepEqual(p.quedan, [{ ordenLineaId: "a", cantidadRecibida: 0.2 }]);
+});
+
+// Juntar dos recepciones en revisión de la misma orden: la factura trae más de lo que
+// tenía una sola (datos de prueba: 45 + 15 de la misma línea, y una línea que solo
+// está en la otra recepción).
+test("juntar recepciones: la misma línea se suma y la que falta se muda", () => {
+  const j = juntarLineasDeRecepcion(REC_3, [
+    { ordenLineaId: "a", cantidadRecibida: 15 },
+    { ordenLineaId: "d", cantidadRecibida: 3, precioFactura: 7 },
+  ]);
+  assert.equal(j.error, undefined);
+  assert.deepEqual(j.lineas, [
+    { ordenLineaId: "a", cantidadRecibida: 60 },
+    { ordenLineaId: "b", cantidadRecibida: 50, precioFactura: 10 },
+    { ordenLineaId: "c", cantidadRecibida: 20 },
+    { ordenLineaId: "d", cantidadRecibida: 3, precioFactura: 7 },
+  ]);
+  assert.deepEqual(j.sumadas, ["a"]);
+  assert.deepEqual(j.mudadas, ["d"]);
+  // No toca lo que le pasaron.
+  assert.equal(REC_3[0].cantidadRecibida, 45);
+  // Ya juntas, la factura de 60 se puede registrar.
+  assert.equal(partirRecepcionPorFactura(j.lineas, [{ ordenLineaId: "a", cantidad: 60 }]).error, undefined);
+});
+
+test("juntar recepciones: el precio de factura de una sola de las dos se conserva", () => {
+  const j = juntarLineasDeRecepcion([{ ordenLineaId: "a", cantidadRecibida: 1 }], [{ ordenLineaId: "a", cantidadRecibida: 2, precioFactura: 9.5 }]);
+  assert.deepEqual(j.lineas, [{ ordenLineaId: "a", cantidadRecibida: 3, precioFactura: 9.5 }]);
+  const k = juntarLineasDeRecepcion([{ ordenLineaId: "a", cantidadRecibida: 0.1, precioFactura: 9.5 }], [{ ordenLineaId: "a", cantidadRecibida: 0.2, precioFactura: 9.5 }]);
+  assert.deepEqual(k.lineas, [{ ordenLineaId: "a", cantidadRecibida: 0.3, precioFactura: 9.5 }]);
+});
+
+test("juntar recepciones: precios distintos, líneas repetidas o nada que juntar es error", () => {
+  assert.match(juntarLineasDeRecepcion(REC_3, [{ ordenLineaId: "b", cantidadRecibida: 1, precioFactura: 11 }]).error ?? "", /precios de factura distintos/);
+  assert.match(juntarLineasDeRecepcion(REC_3, []).error ?? "", /no tiene líneas/);
+  assert.match(juntarLineasDeRecepcion(REC_3, [{ ordenLineaId: "a", cantidadRecibida: 1 }, { ordenLineaId: "a", cantidadRecibida: 1 }]).error ?? "", /misma línea dos veces/);
+  assert.match(juntarLineasDeRecepcion([...REC_3, { ordenLineaId: "a", cantidadRecibida: 1 }], [{ ordenLineaId: "z", cantidadRecibida: 1 }]).error ?? "", /misma línea dos veces/);
+  assert.match(juntarLineasDeRecepcion(REC_3, [{ ordenLineaId: "a", cantidadRecibida: Number.NaN }]).error ?? "", /no es válida/);
+});
+
+test("juntar recepciones: la bitácora guarda lo que traía la otra", () => {
+  assert.equal(
+    detalleJuntaRecepciones({ otraNo: "REC-000002", lineas: 1, fechaRecepcion: "2026-01-04", recibidoPor: "Bodega", facturaProveedor: "0001", motivo: "Llegó más" }),
+    "Se le juntó la recepción REC-000002 del 04/01/2026 de Bodega (1 línea · Factura del proveedor 0001 · Motivo: Llegó más): queda un solo registro para la factura.",
+  );
+  assert.equal(detalleJuntaRecepciones({ lineas: 2 }), "Se le juntó la recepción en revisión (2 líneas): queda un solo registro para la factura.");
 });
 
 test("repartir total: las dos partes suman exactamente lo guardado", () => {

@@ -8,9 +8,10 @@ import { Badge, Button, Card, Field, Input, Modal, Tile, useToast } from "@/comp
 import { BotonLineas, DataTable, FilaExpandida } from "@/components/data-table";
 import { LineasDeRecepcion } from "@/components/lineas-recepcion";
 import { PanelOrdenRevision, totalesDeRecepcion } from "@/components/panel-orden-revision";
+import { OtrasEnRevision } from "@/components/otras-en-revision";
 import { useStore } from "@/lib/store";
 import { api } from "@/lib/api";
-import { cuenta, money, formatDate, formatDateTime, leerNotaRevision, lineasDeRecepcion, MARCA_DESDE_REVISION, num, numeroOrden, precioUnit, todayISO, type CantidadFacturada } from "@/lib/helpers";
+import { cuenta, money, formatDate, formatDateTime, juntarLineasDeRecepcion, leerNotaRevision, lineasDeRecepcion, MARCA_DESDE_REVISION, num, numeroOrden, precioUnit, todayISO, type CantidadFacturada } from "@/lib/helpers";
 import { codigoDeItem } from "@/lib/unidad";
 import type { EnvioARevision, FacturadaDesdeRevision, Movimiento, Orden, Recepcion } from "@/lib/types";
 
@@ -123,12 +124,14 @@ function FacturaBc({ rec, respaldo }: { rec: Recepcion; respaldo?: string }) {
 // en revisión, en una recepción aparte (ver partirRecepcionPorFactura).
 //
 // Nunca se puede facturar MÁS de lo recibido —BC no lo deja—: si se intenta, la
-// línea dice qué hacer en vez de cortar el número en silencio.
+// línea dice qué hacer en vez de cortar el número en silencio. `masEnOtras` = cuánto
+// más de cada línea hay en OTRAS recepciones en revisión de la misma orden: si la
+// factura lo trae, lo que hay que hacer es juntarlas (ver OtrasEnRevision).
 type Cantidades = Record<string, string>;
-function LineasDeLaFactura({ rec, orden, cant, setCant, excede, setExcede, pie }: {
+function LineasDeLaFactura({ rec, orden, cant, setCant, excede, setExcede, masEnOtras, pie }: {
   rec: Recepcion; orden?: Orden; cant: Cantidades; setCant: (f: (c: Cantidades) => Cantidades) => void;
   excede: Record<string, boolean>; setExcede: (f: (c: Record<string, boolean>) => Record<string, boolean>) => void;
-  pie?: React.ReactNode;
+  masEnOtras?: Map<string, number>; pie?: React.ReactNode;
 }) {
   const cur = orden?.currencyCode;
   const filas = lineasDeRecepcion(rec, orden);
@@ -166,6 +169,7 @@ function LineasDeLaFactura({ rec, orden, cant, setCant, excede, setExcede, pie }
           // recibido, ESO es lo que Bodega puede recibir antes de facturar.
           const porRecibir = ol ? Math.max(0, ol.cantidad - ol.cantidadRecibida) : 0;
           const nombre = ol?.descripcion ?? "Línea que ya no está en la orden";
+          const enOtras = masEnOtras?.get(id) ?? 0;
           return (
             <div key={id} className={`frv-line ${fuera ? "is-fuera" : ""}`}>
               <div className="ocl-line__desc frv-line__desc">
@@ -204,8 +208,10 @@ function LineasDeLaFactura({ rec, orden, cant, setCant, excede, setExcede, pie }
               {excede[id] ? (
                 <div className="frv-hint frv-hint--danger" role="status">
                   Se recibieron {num.format(recibida)} {u}: no se puede facturar más de lo recibido.{" "}
-                  {porRecibir > 0
-                    ? <>Si llegó más, Bodega tiene que recibir la diferencia primero (la orden tiene {num.format(porRecibir)} {u} por recibir). Si no llegó, lo que la factura cobra de más va a nota de crédito.</>
+                  {enOtras > 0
+                    ? <>Hay {num.format(enOtras)} {u} más de esta línea en otra recepción en revisión de esta orden: juntalas (arriba) y la factura puede traer hasta {num.format(Math.round((recibida + enOtras) * 1e4) / 1e4)} {u}.</>
+                    : porRecibir > 0
+                    ? <>Si llegó más, Bodega tiene que recibir la diferencia primero, sin factura (la orden tiene {num.format(porRecibir)} {u} por recibir), y después la juntás con esta. Si no llegó, lo que la factura cobra de más va a nota de crédito.</>
                     : <>La orden no tiene más por recibir: lo que la factura cobra de más va a nota de crédito.</>}
                 </div>
               ) : fuera ? (
@@ -249,7 +255,7 @@ export default function ArchivoPage() {
 }
 
 function ArchivoContenido() {
-  const { ordenes, recepciones, proveedores, movimientos, facturarRecepcion, modoApi, recargar } = useStore();
+  const { ordenes, recepciones, proveedores, movimientos, facturarRecepcion, juntarRecepciones, modoApi, recargar } = useStore();
   const router = useRouter();
   const params = useSearchParams();
   const toast = useToast();
@@ -259,6 +265,8 @@ function ArchivoContenido() {
   const completadas = ordenes.filter((o) => o.estado === "completado");
 
   const enRevision = recepciones.filter(esEnRevision);
+  // Las OTRAS recepciones en revisión de la misma orden (para juntarlas en un registro).
+  const otrasDe = (r: Recepcion) => enRevision.filter((x) => x.ordenId === r.ordenId && x.id !== r.id);
   const registradas = recepciones.filter((r) => !esEnRevision(r));
 
   // El histórico, cruzado con la recepción del store (de ahí salen la orden, el
@@ -304,7 +312,11 @@ function ArchivoContenido() {
   // Registrar la factura de una recepción que quedó en revisión. `cant` = lo que
   // trae la factura de cada línea (arranca con lo recibido); `notaResto` = qué pasa
   // con lo que no vino, para quien la retome.
-  const [facObj, setFacObj] = useState<Recepcion | null>(null);
+  // Por id y no la recepción misma: al JUNTAR otra con esta, la de la pantalla tiene
+  // que pasar a ser la que quedó (con las líneas sumadas), sin cerrar el modal.
+  const [facId, setFacId] = useState<string | null>(null);
+  const facObj = facId ? recepciones.find((r) => r.id === facId) ?? null : null;
+  const setFacObj = (r: Recepcion | null) => setFacId(r?.id ?? null);
   const [numFac, setNumFac] = useState("");
   const [cant, setCant] = useState<Cantidades>({});
   const [excede, setExcede] = useState<Record<string, boolean>>({});
@@ -348,6 +360,38 @@ function ArchivoContenido() {
     }
     return { sub: r2(sub), iva: r2(iva), lineas, restoLineas, restoSub: r2(restoSub), cur: o?.currencyCode, detalle };
   }, [facObj, cant, ordenes]);
+  // JUNTAR otra recepción en revisión de la misma orden con esta (ver OtrasEnRevision).
+  // `alJuntar` recibe la que quedó: la que se recibió primero, que puede ser la otra.
+  async function juntarCon(base: Recepcion, otra: Recepcion, alJuntar?: (destinoId: string) => void) {
+    try {
+      const destinoId = await juntarRecepciones(base.id, otra.id);
+      const o = ordenDe(base);
+      toast(`Listo: ${o ? numeroOrden(o) : "la orden"} quedó con un solo registro en revisión. Ya podés registrar la factura.`, "success");
+      void hist.recargar();
+      alJuntar?.(destinoId);
+    } catch (e: any) {
+      toast(`No se juntaron: ${String(e?.message ?? e)}`, "error");
+    }
+  }
+  // En el modal: la que quedó pasa a ser la de la pantalla. Las líneas que no se habían
+  // tocado arrancan con lo recibido entre las dos (lo de una + lo de la otra); las que se tocaron
+  // (una que se quitó, o se bajó) se quedan como estaban. Si no había N.º de factura y
+  // la otra lo traía de Bodega, se usa ese.
+  function juntarEnElModal(base: Recepcion, otra: Recepcion) {
+    return juntarCon(base, otra, (destinoId) => {
+      const suma = juntarLineasDeRecepcion(base.lineas, otra.lineas).lineas;
+      setCant((c) => Object.fromEntries(suma.map((l) => {
+        const antes = base.lineas.find((x) => x.ordenLineaId === l.ordenLineaId)?.cantidadRecibida;
+        const puesto = c[l.ordenLineaId];
+        const intacta = antes === undefined || puesto === undefined || Number(puesto) === antes;
+        return [l.ordenLineaId, intacta ? String(l.cantidadRecibida) : puesto];
+      })));
+      setExcede({});
+      const f = hist.envioDe.get(otra.id)?.facturaProveedor;
+      if (!numFac.trim() && f) setNumFac(f);
+      setFacId(destinoId);
+    });
+  }
   async function confirmarFactura() {
     const rec = facObj;
     if (!rec) return;
@@ -626,6 +670,8 @@ function ArchivoContenido() {
           const envio = hist.envioDe.get(r.id);
           return (
             <PanelOrdenRevision rec={r} orden={ordenDe(r)} proveedores={proveedores} envio={envio}
+              otras={otrasDe(r)} envioDe={hist.envioDe}
+              onJuntar={(otra) => juntarCon(r, otra, (destinoId) => { if (destinoId !== r.id) setPanelRec(destinoId); })}
               onClose={() => setPanelRec(null)}
               onRegistrar={() => { setPanelRec(null); abrirFactura(r, envio?.facturaProveedor); }} />
           );
@@ -647,6 +693,10 @@ function ArchivoContenido() {
                 </p>
               );
             })()}
+            {/* Otra recepción en revisión de esta orden: si la factura trae más de lo que
+                tiene esta, primero se juntan. */}
+            <OtrasEnRevision rec={facObj} otras={otrasDe(facObj)} orden={ordenDe(facObj)} envioDe={hist.envioDe}
+              onJuntar={(otra) => juntarEnElModal(facObj, otra)} />
             {/* LAS FECHAS que ya se conocen, a la vista mientras se elige la de la
                 factura: cuándo se emitió la orden y cuándo la recibió Bodega. */}
             <FechasDeLaRecepcion rec={facObj} orden={ordenDe(facObj)} enviadaPor={hist.envioDe.get(facObj.id)?.enviadaPor} />
@@ -667,6 +717,10 @@ function ArchivoContenido() {
               )}
             </div>
             <LineasDeLaFactura rec={facObj} orden={ordenDe(facObj)} cant={cant} setCant={setCant} excede={excede} setExcede={setExcede}
+              masEnOtras={otrasDe(facObj).reduce((m, x) => {
+                for (const l of x.lineas) m.set(l.ordenLineaId, (m.get(l.ordenLineaId) ?? 0) + l.cantidadRecibida);
+                return m;
+              }, new Map<string, number>())}
               pie={(
                 <div className="frv-sum">
                   <span className="ds-body-sm ds-muted">Se factura {cuenta(cuentaFactura.lineas, "línea", "líneas")} · {money(cuentaFactura.sub, cuentaFactura.cur)} sin IVA</span>

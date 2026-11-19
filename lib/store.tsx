@@ -8,7 +8,7 @@ import type {
   NotaCreditoLinea, MotivoNC, Prioridad,
 } from "./types";
 import * as seed from "./seed";
-import { componerNotaRevision, DETALLE_EN_REVISION, devolverPendienteAPedidos, esLineaRecibible, lineasDeRecepcion, MARCA_DESDE_REVISION, motivoRestoDeFactura, nextNumero, nowISO, ordenEstaCompleta, ordenTotalConIva, partirRecepcionPorFactura, PERSONA_POR_ROL, repartirTotalRecepcion, todayISO, type CantidadFacturada } from "./helpers";
+import { componerNotaRevision, DETALLE_EN_REVISION, detalleJuntaRecepciones, devolverPendienteAPedidos, juntarLineasDeRecepcion, leerNotaRevision, MOV_RECEPCION_JUNTADA, esLineaRecibible, lineasDeRecepcion, MARCA_DESDE_REVISION, motivoRestoDeFactura, nextNumero, nowISO, ordenEstaCompleta, ordenTotalConIva, partirRecepcionPorFactura, PERSONA_POR_ROL, repartirTotalRecepcion, todayISO, type CantidadFacturada } from "./helpers";
 import { aprobacionAutomatica, MOV_APROBACION_AUTOMATICA, USUARIO_APROBACION_AUTOMATICA } from "./aprobacion-automatica.ts";
 import { detalleCorreccion, ordenConPrecios, validarCorreccionPrecio } from "./corregir-precio.ts";
 import { componerNotaCierre, detalleDeCierre, lineaCancelada, motivoObligatorio, quitarNotaCierre } from "./cierre-solicitud.ts";
@@ -160,6 +160,10 @@ interface StoreShape {
   // `parcial`: la factura no trae todo lo recibido (cuánto trae de cada línea, y una
   // nota opcional de lo que queda). Lo demás sigue en revisión en una recepción aparte.
   facturarRecepcion: (recepcionId: string, numeroFactura: string, parcial?: { lineas: CantidadFacturada[]; nota?: string }, fechaFactura?: string) => Promise<void>;
+  // Juntar dos recepciones EN REVISIÓN de la misma orden en un solo registro (la
+  // factura trae más de lo que tenía una sola). Queda la que se recibió primero y
+  // devuelve su id; la otra sale de la lista. No toca BC.
+  juntarRecepciones: (idA: string, idB: string) => Promise<string>;
 
   // Devuelve al ingeniero las LÍNEAS elegidas de una solicitud. El pedido entero
   // pasa a "Devuelto" solo si no le queda ninguna línea viva (lo decide el server).
@@ -1133,6 +1137,48 @@ export function StoreProvider({ children, useApi }: { children: React.ReactNode;
       });
     };
 
+    // JUNTAR dos recepciones en revisión (ver juntarRecepcionesEnRevision en el repo).
+    const juntarRecepciones: StoreShape["juntarRecepciones"] = async (idA, idB) => {
+      if (USE_API) {
+        const r = await api.juntarRecepciones([idA, idB]);
+        await refreshFromApi();
+        return r.destinoId;
+      }
+      // Misma validación que el servidor, antes de tocar el estado.
+      const a = data.recepciones.find((r) => r.id === idA);
+      const b = data.recepciones.find((r) => r.id === idB);
+      if (!a || !b) throw new Error("Una de las dos recepciones ya no está en revisión. Recargá la página.");
+      if (a.id === b.id) throw new Error("Es la misma recepción: no hay nada que juntar.");
+      if (a.ordenId !== b.ordenId) throw new Error("Las dos recepciones son de órdenes distintas: no se pueden juntar.");
+      if (a.numeroFactura.trim() || b.numeroFactura.trim()) throw new Error("Solo se juntan recepciones en revisión (sin factura registrada).");
+      // Queda la que se recibió primero. En el store las nuevas van adelante (unshift),
+      // así que la de índice mayor es la más vieja; el servidor usa el id menor.
+      const [dest, orig] = data.recepciones.indexOf(a) > data.recepciones.indexOf(b) ? [a, b] : [b, a];
+      const j = juntarLineasDeRecepcion(dest.lineas, orig.lineas);
+      if (j.error) throw new Error(j.error);
+      setData((d) => {
+        const envio = d.movimientos.find((m) => m.entidad === "recepcion" && m.idEntidad === orig.id && m.tipoMovimiento === "recibido");
+        const nota = leerNotaRevision(envio?.detalle);
+        const detalle = detalleJuntaRecepciones({
+          lineas: orig.lineas.length, fechaRecepcion: orig.fechaRecepcion || undefined, recibidoPor: orig.recibidoPor,
+          facturaProveedor: nota?.facturaProveedor, motivo: nota?.motivo,
+        });
+        const orden = d.ordenes.find((o) => o.id === dest.ordenId);
+        const recepciones = d.recepciones
+          .filter((r) => r.id !== orig.id)
+          .map((r) => (r.id === dest.id
+            ? { ...r, lineas: j.lineas, total: Math.round((r.total + orig.total) * 100) / 100, fotos: [...(r.fotos ?? []), ...(orig.fotos ?? [])] }
+            : r));
+        const movs = [
+          mkMov({ entidad: "orden", idEntidad: dest.ordenId, documentoNo: orden?.numero ?? "", tipoMovimiento: MOV_RECEPCION_JUNTADA, detalle }),
+          mkMov({ entidad: "recepcion", idEntidad: orig.id, documentoNo: "(en revisión)", tipoMovimiento: "eliminado", detalle: "Se juntó con otra recepción en revisión de la misma orden: sus líneas pasaron a esa, para registrar una sola factura." }),
+          mkMov({ entidad: "recepcion", idEntidad: dest.id, documentoNo: "(en revisión)", tipoMovimiento: MOV_RECEPCION_JUNTADA, detalle }),
+        ];
+        return { ...d, recepciones, movimientos: [...movs, ...d.movimientos] };
+      });
+      return dest.id;
+    };
+
     // ---------------- DEVOLVER PEDIDO AL INGENIERO ----------------
     const devolverPedido: StoreShape["devolverPedido"] = async (id, motivo, lineaIds) => {
       if (USE_API) {
@@ -1423,7 +1469,7 @@ export function StoreProvider({ children, useApi }: { children: React.ReactNode;
       maquinas: seed.maquinas, almacenes: seed.almacenes,
       pedidos: data.pedidos, ordenes: data.ordenes, recepciones: data.recepciones, movimientos: data.movimientos,
       addPedido, editPedido, setPedidoEstado, deletePedido,
-      createOrden, updateOrden, setOrdenEstado, corregirBcNumber, marcarEnviadaProveedor, cerrarOrden, descartarOrden, retomarOrden, nuevaOrdenConPendiente, registrarRecepcion, guardarFotosRecepcion, facturarRecepcion, devolverPedido, cerrarSolicitud, reabrirSolicitud, devolverLineasOrden, alinearIvaConBc, exonerarIvaEnBc, corregirPrecio, devolverOrden, reset,
+      createOrden, updateOrden, setOrdenEstado, corregirBcNumber, marcarEnviadaProveedor, cerrarOrden, descartarOrden, retomarOrden, nuevaOrdenConPendiente, registrarRecepcion, guardarFotosRecepcion, facturarRecepcion, juntarRecepciones, devolverPedido, cerrarSolicitud, reabrirSolicitud, devolverLineasOrden, alinearIvaConBc, exonerarIvaEnBc, corregirPrecio, devolverOrden, reset,
       notasCredito, marcarNotasCredito, cargarNotasCredito, resolverNotaCredito,
       notificaciones: data.notificaciones, marcarNotifsLeidas, marcarNotifLeida,
       borrador, setBorrador,

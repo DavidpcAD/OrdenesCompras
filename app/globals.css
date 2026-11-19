@@ -1207,6 +1207,17 @@ td.ds-col-fija {
 .rev-lineas li:last-child { border-bottom: 0; }
 .rev-lineas .ds-num { white-space: nowrap; }
 .rev-total { margin-top: var(--ds-space-3); padding: var(--ds-space-3) var(--ds-space-4); border-radius: var(--ds-radius-lg); display: flex; flex-direction: column; gap: 4px; background: color-mix(in srgb, var(--ds-color-gray-100) 50%, var(--ds-tint-base)); }
+/* Otra recepción en revisión de la MISMA orden (components/otras-en-revision.tsx):
+   aviso para juntarlas antes de registrar, cuando la factura trae más de lo que tiene
+   una sola. Fondo ámbar suave como la fila de borrador: algo que mirar, no un error. */
+.rev-otra { margin: 0 0 var(--ds-space-3); padding: var(--ds-space-3) var(--ds-space-4); border-radius: var(--ds-radius-lg); background: color-mix(in srgb, var(--ds-color-yellow) 14%, var(--ds-tint-base)); font-size: var(--ds-font-size-body-sm); color: var(--ds-text); }
+.rev-otra__ttl { font-weight: var(--ds-font-weight-semibold); }
+.rev-otra__txt { margin: var(--ds-space-1) 0 0; color: var(--ds-color-gray-500); }
+.rev-otra__item { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--ds-space-2) var(--ds-space-4); margin-top: var(--ds-space-2); padding-top: var(--ds-space-2); border-top: 1px solid color-mix(in srgb, var(--ds-color-yellow) 40%, var(--ds-tint-base)); }
+.rev-otra__desc { flex: 1 1 280px; min-width: 0; display: flex; flex-direction: column; gap: var(--ds-space-1); overflow-wrap: anywhere; }
+.rev-otra__acc { display: flex; flex-wrap: wrap; align-items: center; gap: var(--ds-space-3); }
+.rev-otra__acc .link-btn { min-height: 44px; }
+.rev-otra__pregunta { font-weight: var(--ds-font-weight-semibold); }
 
 /* ── Versiones de una recepción (components/versiones-recepcion.tsx) ──────────
    La más nueva arriba. Lista simple con divisores: la versión actual se marca con

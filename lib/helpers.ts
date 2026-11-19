@@ -1340,6 +1340,70 @@ export function motivoRestoDeFactura(numeroFactura: string, nota = ""): string {
   return `No venía en la factura ${n}; lo demás de la recepción ya se registró con ella` + (extra ? `. ${extra}` : "");
 }
 
+// JUNTAR DOS RECEPCIONES EN REVISIÓN DE LA MISMA ORDEN. Pasa cuando la factura trae
+// MÁS de lo que se recibió en una recepción: el modal de registrar no deja facturar
+// más de lo recibido (BC tampoco), así que Bodega —o Contabilidad— recibe la
+// diferencia aparte y quedan DOS recepciones en revisión para una sola factura. El
+// N.º de factura del proveedor no se puede repetir en BC, así que hay que registrarlas
+// juntas. Caso que lo trajo: una línea con una parte en la recepción de Bodega, el
+// resto en otra recepción aparte, y la factura con el total de las dos.
+//
+// En BC no hay nada que juntar: el codeunit factura por LÍNEA DEL PEDIDO lo recibido
+// sin facturar, venga de la recepción que venga. Es solo la app la que tiene que
+// tener un registro.
+//
+// Las líneas de `origen` pasan a `destino`: si la misma línea de la orden está en las
+// dos, se SUMA (partirRecepcionPorFactura no acepta la misma línea dos veces); si no,
+// se muda tal cual. Nunca se juntan precios de factura distintos para la misma línea:
+// sumarlas obligaría a elegir uno y eso es plata mal puesta.
+export function juntarLineasDeRecepcion(
+  destino: RecepcionLinea[],
+  origen: RecepcionLinea[],
+): { lineas: RecepcionLinea[]; sumadas: string[]; mudadas: string[]; error?: string } {
+  const falla = (error: string) => ({ lineas: [], sumadas: [], mudadas: [], error });
+  const porId = new Map<string, RecepcionLinea>();
+  for (const l of destino) {
+    if (porId.has(l.ordenLineaId)) return falla("Una de las recepciones tiene la misma línea dos veces y no se puede juntar. Avisale a Proveeduría.");
+    porId.set(l.ordenLineaId, { ...l });
+  }
+  if (!origen.length) return falla("La otra recepción no tiene líneas: no hay nada que juntar.");
+  const vistas = new Set<string>();
+  const sumadas: string[] = [];
+  const mudadas: string[] = [];
+  const nuevas: RecepcionLinea[] = [];
+  for (const l of origen) {
+    if (vistas.has(l.ordenLineaId)) return falla("Una de las recepciones tiene la misma línea dos veces y no se puede juntar. Avisale a Proveeduría.");
+    vistas.add(l.ordenLineaId);
+    const q = Number(l.cantidadRecibida);
+    if (!Number.isFinite(q) || q < 0) return falla("Una cantidad de la otra recepción no es válida. Recargá la página y volvé a intentarlo.");
+    const d = porId.get(l.ordenLineaId);
+    if (!d) { nuevas.push({ ...l }); mudadas.push(l.ordenLineaId); continue; }
+    if (d.precioFactura != null && l.precioFactura != null && Math.abs(d.precioFactura - l.precioFactura) > 1e-6) {
+      return falla("Una misma línea tiene precios de factura distintos en las dos recepciones: no se juntan para no mezclar precios. Registralas por separado o avisale a Proveeduría.");
+    }
+    d.cantidadRecibida = r4((Number(d.cantidadRecibida) || 0) + q);
+    if (d.precioFactura == null && l.precioFactura != null) d.precioFactura = l.precioFactura;
+    sumadas.push(l.ordenLineaId);
+  }
+  return { lineas: [...destino.map((l) => porId.get(l.ordenLineaId)!), ...nuevas], sumadas, mudadas };
+}
+
+// El tipo de movimiento de la bitácora (en la recepción que queda y en la orden).
+export const MOV_RECEPCION_JUNTADA = "recepcion_juntada";
+
+// Lo que queda escrito en la recepción que absorbe a la otra, con lo que esa otra
+// traía de su envío a revisión (N.º de factura del proveedor y motivo): la otra sale
+// de la lista y, sin esto, ese dato se perdía.
+export function detalleJuntaRecepciones(o: {
+  otraNo?: string; lineas: number; fechaRecepcion?: string; recibidoPor?: string; facturaProveedor?: string; motivo?: string;
+}): string {
+  const cual = [o.otraNo, o.fechaRecepcion ? `del ${formatDate(o.fechaRecepcion)}` : "", o.recibidoPor ? `de ${o.recibidoPor}` : ""]
+    .filter(Boolean).join(" ");
+  const traia = [cuenta(o.lineas, "línea", "líneas"), o.facturaProveedor ? `Factura del proveedor ${o.facturaProveedor}` : "", o.motivo ? `Motivo: ${o.motivo}` : ""]
+    .filter(Boolean).join(" · ");
+  return `Se le juntó la recepción ${cual || "en revisión"} (${traia}): queda un solo registro para la factura.`.slice(0, 600);
+}
+
 // POR QUÉ UNA FACTURA QUEDA EN REVISIÓN. Bodega lo elige en la confirmación de
 // "Recibir sin factura" (antes era un clic y la recepción quedaba sin decir nada):
 // Contabilidad necesita saber qué revisar antes de registrarla. `otro` obliga a

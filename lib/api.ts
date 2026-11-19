@@ -186,6 +186,10 @@ export const api = {
   // MODO 2: registrar la factura de una recepción que estaba en revisión.
   setRecepcionFactura: (id: string, body: unknown): Promise<{ ok: true }> =>
     fetch(`/api/recepciones/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }).then(jsonOrThrow),
+  // Juntar dos recepciones en revisión de la misma orden (la factura trae más de lo
+  // que tenía una sola). Devuelve cuál quedó: la que se recibió primero.
+  juntarRecepciones: (ids: [string, string]): Promise<{ ok: true; destinoId: string; origenId: string }> =>
+    fetch("/api/recepciones/juntar", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids }) }).then(jsonOrThrow),
   // …y lo que dice la bitácora de las que pasaron por revisión: por qué se
   // mandaron y a cuáles ya se les registró la factura.
   revisionDeRecepciones: (): Promise<{ envios: EnvioARevision[]; registradas: FacturadaDesdeRevision[] }> =>

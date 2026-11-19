@@ -1,7 +1,7 @@
 import { getAuthPool, getPool, pedir, pedirTx, sql } from "./db.ts";
 import { bcDeepLinkPedido, bcDeepLinkFacturaRegistrada, bcDeepLinkFacturaPorNo, bcDeepLinkFacturaBorrador, bcDeepLinkRecepcion, bcUnidadesDeCompra, sanearObrasDeLineas } from "./bc.ts";
 import { unidadCorregida, codigoDeItem } from "./unidad.ts";
-import { componerNotaRevision, DETALLE_EN_REVISION, etiquetaInterna, esTipoDevolucion, esTipoEdicion, leerNotaRevision, MARCA_DESDE_REVISION, motivoRestoDeFactura, ordenDeDetalleDevolucion, partirRecepcionPorFactura, repartirTotalRecepcion, type CantidadFacturada } from "./helpers.ts";
+import { componerNotaRevision, DETALLE_EN_REVISION, detalleJuntaRecepciones, etiquetaInterna, esTipoDevolucion, esTipoEdicion, juntarLineasDeRecepcion, leerNotaRevision, MARCA_DESDE_REVISION, MOV_RECEPCION_JUNTADA, motivoRestoDeFactura, ordenDeDetalleDevolucion, partirRecepcionPorFactura, repartirTotalRecepcion, type CantidadFacturada } from "./helpers.ts";
 import { resumirCambiosDeLineas } from "./cambios-orden.ts";
 import { MOV_PRECIO_CORREGIDO } from "./corregir-precio.ts";
 import { componerNotaCierre, detalleDeCierre, lineaCancelada, motivoObligatorio, quitarNotaCierre } from "./cierre-solicitud.ts";
@@ -2639,6 +2639,105 @@ export async function errorDeFacturaParcial(idRec: number, parcial: FacturaParci
     .query("SELECT idOrdenCompraDet, quantityRecibida FROM dbo.RecepcionCompraDet WHERE idRecepcionCompra=@id");
   const lineas: RecepcionLinea[] = d.recordset.map((x: any) => ({ ordenLineaId: String(x.idOrdenCompraDet), cantidadRecibida: Number(x.quantityRecibida ?? 0) }));
   return partirRecepcionPorFactura(lineas, parcial.lineas).error ?? null;
+}
+
+// JUNTAR dos recepciones EN REVISIÓN de la misma orden en un solo registro, para
+// registrar una factura que trae más de lo que tenía una sola (ver
+// juntarLineasDeRecepcion). No toca BC: allá el codeunit factura por línea del pedido
+// lo recibido sin facturar, venga de la recepción que venga.
+//
+// Queda la que se recibió PRIMERO (el id menor): conserva su N.º, quién recibió y la
+// fecha. La otra se marca eliminada —sus filas quedan para la historia, como en
+// sql/deshacer_recepcion_factura_ajena.sql—, sus fotos pasan a la que queda y lo que
+// traía de su envío a revisión (N.º de factura y motivo) queda en la bitácora.
+// OrdenCompraDet no cambia: lo recibido es lo mismo, solo cambia en qué registro está.
+export async function juntarRecepcionesEnRevision(idA: number, idB: number, usuario: string, rol: Role): Promise<{ destinoId: number; origenId: number }> {
+  if (!Number.isInteger(idA) || !Number.isInteger(idB) || idA <= 0 || idB <= 0) throw new Error("Faltan las dos recepciones a juntar. Recargá la página.");
+  if (idA === idB) throw new Error("Es la misma recepción: no hay nada que juntar.");
+  const idDest = Math.min(idA, idB);
+  const idOrig = Math.max(idA, idB);
+  const pool = await getPool();
+  const tx = new sql.Transaction(pool); await tx.begin();
+  try {
+    // UPDLOCK: que nadie registre la factura de una de las dos mientras se juntan.
+    const recs = (await pedirTx(tx).input("a", sql.Int, idDest).input("b", sql.Int, idOrig)
+      .query(`SELECT idRecepcionCompra, idOrdenCompra, recepcionNo, numeroFactura, fechaRecepcion, total, creadoPor, esEliminada
+                FROM dbo.RecepcionCompra WITH (UPDLOCK, ROWLOCK) WHERE idRecepcionCompra IN (@a, @b)`)).recordset as any[];
+    const dest = recs.find((r) => r.idRecepcionCompra === idDest);
+    const orig = recs.find((r) => r.idRecepcionCompra === idOrig);
+    if (!dest || !orig || dest.esEliminada || orig.esEliminada) {
+      throw new Error("Una de las dos recepciones ya no está en revisión (otra persona la juntó o la registró). Recargá la página.");
+    }
+    if (dest.idOrdenCompra !== orig.idOrdenCompra) throw new Error("Las dos recepciones son de órdenes distintas: no se pueden juntar.");
+    for (const r of [dest, orig]) {
+      const f = String(r.numeroFactura ?? "").trim();
+      if (f) throw new Error(`La recepción ${r.recepcionNo} ya tiene la factura ${f} registrada: solo se juntan recepciones en revisión. Recargá la página.`);
+    }
+
+    const dets = (await pedirTx(tx).input("a", sql.Int, idDest).input("b", sql.Int, idOrig)
+      .query(`SELECT idRecepcionCompraDet, idRecepcionCompra, idOrdenCompraDet, quantityRecibida, precioFactura
+                FROM dbo.RecepcionCompraDet WHERE idRecepcionCompra IN (@a, @b) ORDER BY lineNum, idRecepcionCompraDet`)).recordset as any[];
+    const aLinea = (d: any): RecepcionLinea => ({
+      ordenLineaId: String(d.idOrdenCompraDet), cantidadRecibida: Number(d.quantityRecibida ?? 0),
+      precioFactura: d.precioFactura != null ? Number(d.precioFactura) : undefined,
+    });
+    const dDest = dets.filter((d) => d.idRecepcionCompra === idDest);
+    const dOrig = dets.filter((d) => d.idRecepcionCompra === idOrig);
+    const j = juntarLineasDeRecepcion(dDest.map(aLinea), dOrig.map(aLinea));
+    if (j.error) throw new Error(j.error);
+    const final = new Map(j.lineas.map((l) => [l.ordenLineaId, l]));
+
+    // La misma línea en las dos: la de la que queda pasa a tener la suma. La fila de la
+    // otra se queda con ella (eliminada), para que se sepa qué traía.
+    for (const id of j.sumadas) {
+      const d = dDest.find((x) => String(x.idOrdenCompraDet) === id);
+      const l = final.get(id);
+      if (!d || !l) throw new Error("No se pudo juntar una línea. No se cambió nada: recargá la página y volvé a intentarlo.");
+      await pedirTx(tx).input("det", sql.Int, d.idRecepcionCompraDet)
+        .input("q", sql.Decimal(18, 4), l.cantidadRecibida).input("p", sql.Decimal(18, 4), l.precioFactura ?? null)
+        .query("UPDATE dbo.RecepcionCompraDet SET quantityRecibida=@q, precioFactura=@p WHERE idRecepcionCompraDet=@det");
+    }
+    // La que solo está en la otra se muda tal cual (conserva quién y cuándo la recibió).
+    for (const id of j.mudadas) {
+      const d = dOrig.find((x) => String(x.idOrdenCompraDet) === id);
+      if (!d) throw new Error("No se pudo juntar una línea. No se cambió nada: recargá la página y volvé a intentarlo.");
+      await pedirTx(tx).input("det", sql.Int, d.idRecepcionCompraDet).input("dest", sql.Int, idDest)
+        .query("UPDATE dbo.RecepcionCompraDet SET idRecepcionCompra=@dest WHERE idRecepcionCompraDet=@det");
+    }
+    // El total guardado de las dos, sumado (no recalculado): es lo que Bodega registró.
+    await pedirTx(tx).input("dest", sql.Int, idDest)
+      .input("t", sql.Decimal(18, 2), Math.round((Number(dest.total ?? 0) + Number(orig.total ?? 0)) * 100) / 100)
+      .query("UPDATE dbo.RecepcionCompra SET total=@t WHERE idRecepcionCompra=@dest");
+    await pedirTx(tx).input("orig", sql.Int, idOrig)
+      .query("UPDATE dbo.RecepcionCompra SET esEliminada=1 WHERE idRecepcionCompra=@orig");
+    if (await tablaFotoExiste()) {
+      await pedirTx(tx).input("orig", sql.Int, idOrig).input("dest", sql.Int, idDest)
+        .query("UPDATE dbo.RecepcionCompraFoto SET idRecepcionCompra=@dest WHERE idRecepcionCompra=@orig");
+    }
+
+    // Lo que la otra decía al ir a revisión (N.º de factura del proveedor y motivo).
+    const env = (await pedirTx(tx).input("orig", sql.Int, idOrig)
+      .query(`SELECT TOP 1 detalle FROM dbo.Movimiento
+               WHERE entidad='recepcion' AND idEntidad=@orig AND tipoMovimiento='recibido'
+               ORDER BY fecha DESC, idMovimiento DESC`)).recordset[0];
+    const nota = leerNotaRevision(env?.detalle);
+    const detalle = detalleJuntaRecepciones({
+      otraNo: orig.recepcionNo, lineas: dOrig.length,
+      fechaRecepcion: (orig.fechaRecepcion?.toISOString?.() ?? "").slice(0, 10) || undefined,
+      recibidoPor: orig.creadoPor ?? undefined, facturaProveedor: nota?.facturaProveedor, motivo: nota?.motivo,
+    });
+    const ord = await pedirTx(tx).input("id", sql.Int, dest.idOrdenCompra).query("SELECT ordenNo FROM dbo.OrdenCompra WHERE idOrdenCompra=@id");
+    const ordenNo = ord.recordset[0]?.ordenNo ?? "";
+    await logMov(tx, { entidad: "recepcion", idEntidad: idDest, documentoNo: "(en revisión)", tipoMovimiento: MOV_RECEPCION_JUNTADA, usuario, rol, detalle });
+    await logMov(tx, { entidad: "recepcion", idEntidad: idOrig, documentoNo: "(en revisión)", tipoMovimiento: "eliminado", usuario, rol,
+      detalle: `Se juntó con la recepción ${dest.recepcionNo}: sus líneas pasaron a esa, que sigue en revisión, para registrar una sola factura.` });
+    await logMov(tx, { entidad: "orden", idEntidad: dest.idOrdenCompra, documentoNo: ordenNo, tipoMovimiento: MOV_RECEPCION_JUNTADA, usuario, rol, detalle: `${dest.recepcionNo}: ${detalle}` });
+    await tx.commit();
+    return { destinoId: idDest, origenId: idOrig };
+  } catch (e) {
+    await tx.rollback();
+    throw e;
+  }
 }
 
 // El siguiente REC-…, dentro de la transacción que lo va a usar.
