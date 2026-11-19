@@ -755,6 +755,14 @@ function ArchivoContenido() {
                 <dt>Proveedor</dt><dd>{provNombre(o)}</dd>
                 <dt>Pedido</dt><dd>{o ? numeroOrden(o) : "—"}</dd>
                 <dt>N.º de factura</dt><dd>{numFac.trim()}</dd>
+                {/* Cuántas líneas trae, para contarlas contra el papel antes de registrar. */}
+                <dt>Líneas</dt>
+                <dd>
+                  {cuenta(cuentaFactura.lineas, "línea", "líneas")}
+                  {cuentaFactura.restoLineas > 0
+                    ? <span className="ds-muted rev-datos__nota"> · de {facObj.lineas.length} recibidas; {cuenta(cuentaFactura.restoLineas, "sigue", "siguen")} en revisión</span>
+                    : null}
+                </dd>
                 <dt>Fecha de la factura</dt><dd>{fechaReg ? formatDate(fechaReg) : "—"} <span className="ds-muted rev-datos__nota">· es la fecha de registro en BC y de ella sale el vencimiento</span></dd>
                 <dt>Recibido en bodega</dt><dd>{facObj.fechaRecepcion ? formatDate(facObj.fechaRecepcion) : "—"}{(facObj.recibidoPor || hist.envioDe.get(facObj.id)?.enviadaPor) ? <span className="ds-muted rev-datos__nota"> · {facObj.recibidoPor || hist.envioDe.get(facObj.id)?.enviadaPor}</span> : null}</dd>
                 {o?.fecha && <><dt>Orden emitida</dt><dd>{formatDate(o.fecha)}</dd></>}
