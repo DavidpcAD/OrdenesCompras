@@ -8,7 +8,7 @@ import type {
   NotaCreditoLinea, MotivoNC, Prioridad,
 } from "./types";
 import * as seed from "./seed";
-import { componerNotaRevision, DETALLE_EN_REVISION, detalleJuntaRecepciones, devolverPendienteAPedidos, juntarLineasDeRecepcion, leerNotaRevision, MOV_RECEPCION_JUNTADA, esLineaRecibible, lineasDeRecepcion, MARCA_DESDE_REVISION, motivoRestoDeFactura, nextNumero, nowISO, ordenEstaCompleta, ordenTotalConIva, partirRecepcionPorFactura, PERSONA_POR_ROL, repartirTotalRecepcion, todayISO, type CantidadFacturada } from "./helpers";
+import { componerNotaRevision, DETALLE_EN_REVISION, detalleJuntaRecepciones, detalleNoLlego, MOV_RECEPCION_NO_LLEGO, devolverPendienteAPedidos, juntarLineasDeRecepcion, leerNotaRevision, MOV_RECEPCION_JUNTADA, esLineaRecibible, lineasDeRecepcion, MARCA_DESDE_REVISION, motivoRestoDeFactura, nextNumero, nowISO, ordenEstaCompleta, ordenTotalConIva, partirRecepcionPorFactura, PERSONA_POR_ROL, repartirTotalRecepcion, todayISO, type CantidadFacturada } from "./helpers";
 import { aprobacionAutomatica, MOV_APROBACION_AUTOMATICA, USUARIO_APROBACION_AUTOMATICA } from "./aprobacion-automatica.ts";
 import { detalleCorreccion, ordenConPrecios, validarCorreccionPrecio } from "./corregir-precio.ts";
 import { componerNotaCierre, detalleDeCierre, lineaCancelada, motivoObligatorio, quitarNotaCierre } from "./cierre-solicitud.ts";
@@ -164,6 +164,9 @@ interface StoreShape {
   // factura trae más de lo que tenía una sola). Queda la que se recibió primero y
   // devuelve su id; la otra sale de la lista. No toca BC.
   juntarRecepciones: (idA: string, idB: string) => Promise<string>;
+  // "No llegó": la recepción en revisión sale de la lista y la orden deja de contar
+  // ese material como recibido. Con base, el servidor mira antes que BC ya no lo tenga.
+  recepcionNoLlego: (recepcionId: string, motivo: string) => Promise<void>;
 
   // Devuelve al ingeniero las LÍNEAS elegidas de una solicitud. El pedido entero
   // pasa a "Devuelto" solo si no le queda ninguna línea viva (lo decide el server).
@@ -1179,6 +1182,37 @@ export function StoreProvider({ children, useApi }: { children: React.ReactNode;
       return dest.id;
     };
 
+    // "NO LLEGÓ" (ver marcarRecepcionNoLlego en el repo). En modo prueba no hay BC que mirar.
+    const recepcionNoLlego: StoreShape["recepcionNoLlego"] = async (recepcionId, motivo) => {
+      const m = String(motivo ?? "").trim();
+      if (!m) throw new Error("Poné por qué no llegó: queda en el historial de la orden.");
+      if (USE_API) {
+        await api.recepcionNoLlego(recepcionId, m);
+        await refreshFromApi();
+        return;
+      }
+      const rec = data.recepciones.find((r) => r.id === recepcionId);
+      if (!rec) throw new Error("Esa recepción ya no está en revisión. Recargá la página.");
+      if (rec.numeroFactura.trim()) throw new Error(`Esa recepción ya tiene la factura ${rec.numeroFactura} registrada.`);
+      setData((d) => {
+        const orden = d.ordenes.find((o) => o.id === rec.ordenId);
+        const enEsta = new Map<string, number>();
+        for (const l of rec.lineas) enEsta.set(l.ordenLineaId, (enEsta.get(l.ordenLineaId) ?? 0) + l.cantidadRecibida);
+        const ordenes = d.ordenes.map((o) => (o.id !== rec.ordenId ? o : {
+          ...o, lineas: o.lineas.map((l) => (enEsta.has(l.id) ? { ...l, cantidadRecibida: Math.max(0, l.cantidadRecibida - (enEsta.get(l.id) ?? 0)) } : l)),
+        }));
+        const detalle = detalleNoLlego({
+          motivo: m,
+          lineas: rec.lineas.map((l) => { const ol = orden?.lineas.find((x) => x.id === l.ordenLineaId); return { descripcion: ol?.descripcion ?? "Línea", cantidad: l.cantidadRecibida, unidad: ol?.unidad }; }),
+        });
+        const movs = [
+          mkMov({ entidad: "orden", idEntidad: rec.ordenId, documentoNo: orden?.numero ?? "", tipoMovimiento: MOV_RECEPCION_NO_LLEGO, detalle }),
+          mkMov({ entidad: "recepcion", idEntidad: rec.id, documentoNo: "(en revisión)", tipoMovimiento: "eliminado", detalle }),
+        ];
+        return { ...d, ordenes, recepciones: d.recepciones.filter((r) => r.id !== recepcionId), movimientos: [...movs, ...d.movimientos] };
+      });
+    };
+
     // ---------------- DEVOLVER PEDIDO AL INGENIERO ----------------
     const devolverPedido: StoreShape["devolverPedido"] = async (id, motivo, lineaIds) => {
       if (USE_API) {
@@ -1469,7 +1503,7 @@ export function StoreProvider({ children, useApi }: { children: React.ReactNode;
       maquinas: seed.maquinas, almacenes: seed.almacenes,
       pedidos: data.pedidos, ordenes: data.ordenes, recepciones: data.recepciones, movimientos: data.movimientos,
       addPedido, editPedido, setPedidoEstado, deletePedido,
-      createOrden, updateOrden, setOrdenEstado, corregirBcNumber, marcarEnviadaProveedor, cerrarOrden, descartarOrden, retomarOrden, nuevaOrdenConPendiente, registrarRecepcion, guardarFotosRecepcion, facturarRecepcion, juntarRecepciones, devolverPedido, cerrarSolicitud, reabrirSolicitud, devolverLineasOrden, alinearIvaConBc, exonerarIvaEnBc, corregirPrecio, devolverOrden, reset,
+      createOrden, updateOrden, setOrdenEstado, corregirBcNumber, marcarEnviadaProveedor, cerrarOrden, descartarOrden, retomarOrden, nuevaOrdenConPendiente, registrarRecepcion, guardarFotosRecepcion, facturarRecepcion, juntarRecepciones, recepcionNoLlego, devolverPedido, cerrarSolicitud, reabrirSolicitud, devolverLineasOrden, alinearIvaConBc, exonerarIvaEnBc, corregirPrecio, devolverOrden, reset,
       notasCredito, marcarNotasCredito, cargarNotasCredito, resolverNotaCredito,
       notificaciones: data.notificaciones, marcarNotifsLeidas, marcarNotifLeida,
       borrador, setBorrador,

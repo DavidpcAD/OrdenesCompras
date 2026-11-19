@@ -1218,6 +1218,10 @@ td.ds-col-fija {
 .rev-otra__acc { display: flex; flex-wrap: wrap; align-items: center; gap: var(--ds-space-3); }
 .rev-otra__acc .link-btn { min-height: 44px; }
 .rev-otra__pregunta { font-weight: var(--ds-font-weight-semibold); }
+/* Lo que el servidor contesta cuando no deja (por ejemplo, BC todavía tiene el
+   material recibido): se queda en el diálogo, con sus renglones, porque es lo que
+   hay que ir a hacer. */
+.rev-error { margin-top: var(--ds-space-3); padding: var(--ds-space-3) var(--ds-space-4); border-radius: var(--ds-radius-lg); background: color-mix(in srgb, var(--ds-color-red-100) 12%, var(--ds-tint-base)); color: var(--ds-text); font-size: var(--ds-font-size-body-sm); white-space: pre-line; overflow-wrap: anywhere; }
 
 /* ── Versiones de una recepción (components/versiones-recepcion.tsx) ──────────
    La más nueva arriba. Lista simple con divisores: la versión actual se marca con

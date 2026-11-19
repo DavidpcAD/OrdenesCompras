@@ -27,7 +27,7 @@ import {
   componerNotaRevision, leerNotaRevision, lineasDeRecepcion,
   envioARevisionDe, esRecepcionEnRevision, DETALLE_EN_REVISION, faltaMotivoRevision,
   partirRecepcionPorFactura, repartirTotalRecepcion, motivoRestoDeFactura,
-  juntarLineasDeRecepcion, detalleJuntaRecepciones,
+  juntarLineasDeRecepcion, detalleJuntaRecepciones, faltaDeshacerEnBc, detalleNoLlego,
 } from "./helpers.ts";
 import type { Movimiento, Orden, OrdenLinea, Pedido, PedidoLinea, Recepcion } from "./types.ts";
 
@@ -1451,6 +1451,33 @@ test("juntar recepciones: la bitácora guarda lo que traía la otra", () => {
     "Se le juntó la recepción REC-000002 del 04/01/2026 de Bodega (1 línea · Factura del proveedor 0001 · Motivo: Llegó más): queda un solo registro para la factura.",
   );
   assert.equal(detalleJuntaRecepciones({ lineas: 2 }), "Se le juntó la recepción en revisión (2 líneas): queda un solo registro para la factura.");
+});
+
+// "No llegó": solo se saca de revisión si BC ya no lo tiene recibido.
+test("no llegó: si BC ya deshizo la recepción, deja", () => {
+  assert.equal(faltaDeshacerEnBc([{ descripcion: "Material de prueba", unidad: "UND", enEsta: 50, recibidaApp: 50, recibidaBc: 0 }]), null);
+  // Otra recepción de la misma línea sí llegó: BC se queda con esa parte.
+  assert.equal(faltaDeshacerEnBc([{ descripcion: "Material de prueba", enEsta: 5, recibidaApp: 12, recibidaBc: 7 }]), null);
+  assert.equal(faltaDeshacerEnBc([{ descripcion: "Material de prueba", enEsta: 0.3, recibidaApp: 0.5, recibidaBc: 0.2 }]), null);
+});
+
+test("no llegó: si BC todavía lo tiene recibido (o no tiene la línea), no deja y dice qué hacer", () => {
+  const m = faltaDeshacerEnBc([
+    { descripcion: "Material A", unidad: "UND", enEsta: 50, recibidaApp: 50, recibidaBc: 50 },
+    { descripcion: "Material B", enEsta: 1, recibidaApp: 1 },
+  ]) ?? "";
+  assert.match(m, /^No se sacó de revisión/);
+  assert.match(m, /Material A: BC todavía tiene 50 UND recibidos y sin esta recepción deberían ser 0 UND/);
+  assert.match(m, /Material B: Business Central no tiene esa línea/);
+  assert.match(m, /Deshacer recepción/);
+  assert.match(m, /hoja de aplicación/);
+});
+
+test("no llegó: la bitácora dice qué, cuánto y por qué", () => {
+  assert.equal(
+    detalleNoLlego({ recepcionNo: "REC-000001", lineas: [{ descripcion: "Material  de prueba", cantidad: 50, unidad: "UND" }], motivo: "  El proveedor no lo trajo " }),
+    "No llegó (REC-000001): 50 UND Material de prueba. Se sacó de revisión y la orden ya no lo cuenta como recibido. Motivo: El proveedor no lo trajo",
+  );
 });
 
 test("repartir total: las dos partes suman exactamente lo guardado", () => {

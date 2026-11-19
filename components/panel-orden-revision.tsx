@@ -34,10 +34,11 @@ type TotalesBc = { subtotal: number; iva: number; total: number; currencyCode?: 
 // corregido) y el historial de la orden.
 // `otras` = las demás recepciones en revisión de la misma orden, para juntarlas con
 // esta antes de registrar (ver OtrasEnRevision).
-export function PanelOrdenRevision({ rec, orden, proveedores, envio, otras = [], envioDe, onJuntar, onRegistrar, onClose }: {
+// `onNoLlego` = el material de esta recepción nunca llegó (ver NoLlegoDialogo).
+export function PanelOrdenRevision({ rec, orden, proveedores, envio, otras = [], envioDe, onJuntar, onNoLlego, onRegistrar, onClose }: {
   rec: Recepcion; orden?: Orden; proveedores: Proveedor[]; envio?: EnvioARevision;
   otras?: Recepcion[]; envioDe?: Map<string, EnvioARevision>; onJuntar?: (otra: Recepcion) => Promise<unknown>;
-  onRegistrar: () => void; onClose: () => void;
+  onNoLlego?: () => void; onRegistrar: () => void; onClose: () => void;
 }) {
   const cur = orden?.currencyCode;
   const t = totalesDeRecepcion(rec, orden);
@@ -61,6 +62,7 @@ export function PanelOrdenRevision({ rec, orden, proveedores, envio, otras = [],
     <Modal lado title={titulo} onClose={onClose} footer={
       <>
         <Button variant="outline" onClick={onClose}>Cerrar</Button>
+        {onNoLlego && <Button variant="outline" onClick={onNoLlego}>No llegó</Button>}
         <Button variant="green" onClick={onRegistrar}>Registrar factura</Button>
       </>
     }>

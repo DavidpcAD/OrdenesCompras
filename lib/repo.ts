@@ -1,7 +1,7 @@
 import { getAuthPool, getPool, pedir, pedirTx, sql } from "./db.ts";
 import { bcDeepLinkPedido, bcDeepLinkFacturaRegistrada, bcDeepLinkFacturaPorNo, bcDeepLinkFacturaBorrador, bcDeepLinkRecepcion, bcUnidadesDeCompra, sanearObrasDeLineas } from "./bc.ts";
 import { unidadCorregida, codigoDeItem } from "./unidad.ts";
-import { componerNotaRevision, DETALLE_EN_REVISION, detalleJuntaRecepciones, etiquetaInterna, esTipoDevolucion, esTipoEdicion, juntarLineasDeRecepcion, leerNotaRevision, MARCA_DESDE_REVISION, MOV_RECEPCION_JUNTADA, motivoRestoDeFactura, ordenDeDetalleDevolucion, partirRecepcionPorFactura, repartirTotalRecepcion, type CantidadFacturada } from "./helpers.ts";
+import { componerNotaRevision, DETALLE_EN_REVISION, detalleJuntaRecepciones, detalleNoLlego, etiquetaInterna, esTipoDevolucion, esTipoEdicion, juntarLineasDeRecepcion, leerNotaRevision, MARCA_DESDE_REVISION, MOV_RECEPCION_JUNTADA, MOV_RECEPCION_NO_LLEGO, motivoRestoDeFactura, ordenDeDetalleDevolucion, partirRecepcionPorFactura, repartirTotalRecepcion, type CantidadFacturada } from "./helpers.ts";
 import { resumirCambiosDeLineas } from "./cambios-orden.ts";
 import { MOV_PRECIO_CORREGIDO } from "./corregir-precio.ts";
 import { componerNotaCierre, detalleDeCierre, lineaCancelada, motivoObligatorio, quitarNotaCierre } from "./cierre-solicitud.ts";
@@ -2734,6 +2734,89 @@ export async function juntarRecepcionesEnRevision(idA: number, idB: number, usua
     await logMov(tx, { entidad: "orden", idEntidad: dest.idOrdenCompra, documentoNo: ordenNo, tipoMovimiento: MOV_RECEPCION_JUNTADA, usuario, rol, detalle: `${dest.recepcionNo}: ${detalle}` });
     await tx.commit();
     return { destinoId: idDest, origenId: idOrig };
+  } catch (e) {
+    await tx.rollback();
+    throw e;
+  }
+}
+
+// "NO LLEGÓ" (ver faltaDeshacerEnBc en helpers). Primero, lo que hace falta para mirar
+// BC: el pedido, y por línea de la recepción cuánto trae y cuánto tiene recibido la
+// orden en la app. La ruta lo coteja contra BC ANTES de marcar nada.
+export type LineaParaNoLlego = { idOrdenCompraDet: number; lineNum: number; itemNo: string; descripcion: string; unidad: string; enEsta: number; recibidaApp: number };
+export async function lineasParaNoLlego(idRec: number): Promise<{ orderNo: string; recepcionNo: string; lineas: LineaParaNoLlego[] }> {
+  const pool = await getPool();
+  const rec = (await pedir(pool).input("id", sql.Int, idRec)
+    .query(`SELECT r.recepcionNo, r.numeroFactura, o.bcNo
+              FROM dbo.RecepcionCompra r JOIN dbo.OrdenCompra o ON o.idOrdenCompra = r.idOrdenCompra
+             WHERE r.idRecepcionCompra=@id AND r.esEliminada=0`)).recordset[0];
+  if (!rec) throw new Error("Esa recepción ya no está en revisión. Recargá la página.");
+  const f = String(rec.numeroFactura ?? "").trim();
+  if (f) throw new Error(`Esa recepción ya tiene la factura ${f} registrada: lo que no llegó de una factura registrada va por nota de crédito.`);
+  const dets = (await pedir(pool).input("id", sql.Int, idRec)
+    .query(`SELECT d.idOrdenCompraDet, ISNULL(o.lineNum,0) AS lineNum, ISNULL(o.itemNo,'') AS itemNo, ISNULL(o.descripcion,'') AS descripcion,
+                   ISNULL(o.unitOfMeasureCode,'') AS unidad, d.quantityRecibida AS enEsta, ISNULL(o.quantityRecibida,0) AS recibidaApp
+              FROM dbo.RecepcionCompraDet d JOIN dbo.OrdenCompraDet o ON o.idOrdenCompraDet = d.idOrdenCompraDet
+             WHERE d.idRecepcionCompra=@id ORDER BY d.lineNum, d.idRecepcionCompraDet`)).recordset as any[];
+  return {
+    orderNo: String(rec.bcNo ?? "").trim(),
+    recepcionNo: String(rec.recepcionNo ?? ""),
+    lineas: dets.map((d) => ({
+      idOrdenCompraDet: Number(d.idOrdenCompraDet), lineNum: Number(d.lineNum) || 0, itemNo: String(d.itemNo).trim(),
+      descripcion: String(d.descripcion).trim(), unidad: String(d.unidad).trim(),
+      enEsta: Number(d.enEsta ?? 0), recibidaApp: Number(d.recibidaApp ?? 0),
+    })),
+  };
+}
+
+// …y ya cotejado: la recepción sale de revisión (eliminada, sus filas quedan para la
+// historia) y la orden deja de contar ese material como recibido. El estado de la
+// orden no se toca: con lo que no llegó pendiente sigue lanzada, y Proveeduría decide
+// si la cierra ("Cerrar orden" devuelve el saldo a las solicitudes) o espera el resto.
+export async function marcarRecepcionNoLlego(idRec: number, motivo: string, usuario: string, rol: Role): Promise<{ ordenNo: string }> {
+  const m = String(motivo ?? "").replace(/\s+/g, " ").trim();
+  if (!m) throw new Error("Poné por qué no llegó: queda en el historial de la orden.");
+  const pool = await getPool();
+  const tx = new sql.Transaction(pool); await tx.begin();
+  try {
+    const rec = (await pedirTx(tx).input("id", sql.Int, idRec)
+      .query(`SELECT idOrdenCompra, recepcionNo, numeroFactura FROM dbo.RecepcionCompra WITH (UPDLOCK, ROWLOCK)
+               WHERE idRecepcionCompra=@id AND esEliminada=0`)).recordset[0];
+    if (!rec) throw new Error("Esa recepción ya no está en revisión. Recargá la página.");
+    const f = String(rec.numeroFactura ?? "").trim();
+    if (f) throw new Error(`Esa recepción ya tiene la factura ${f} registrada. Recargá la página.`);
+    const dets = (await pedirTx(tx).input("id", sql.Int, idRec)
+      .query(`SELECT d.idOrdenCompraDet, d.quantityRecibida AS q, ISNULL(o.quantityRecibida,0) AS recibidaApp,
+                     ISNULL(o.descripcion,'') AS descripcion, ISNULL(o.unitOfMeasureCode,'') AS unidad
+                FROM dbo.RecepcionCompraDet d JOIN dbo.OrdenCompraDet o ON o.idOrdenCompraDet = d.idOrdenCompraDet
+               WHERE d.idRecepcionCompra=@id`)).recordset as any[];
+    // La suma por línea de la orden, por si la recepción trajera la misma dos veces.
+    const resta = new Map<number, { q: number; recibidaApp: number; descripcion: string }>();
+    for (const d of dets) {
+      const k = Number(d.idOrdenCompraDet);
+      const prev = resta.get(k);
+      resta.set(k, { q: (prev?.q ?? 0) + Number(d.q ?? 0), recibidaApp: Number(d.recibidaApp ?? 0), descripcion: String(d.descripcion) });
+    }
+    for (const [, r] of resta) {
+      if (r.recibidaApp - r.q < -0.0001) {
+        throw new Error(`«${r.descripcion}» quedaría con recibido negativo en la orden. No se tocó nada: avisale a Proveeduría.`);
+      }
+    }
+    for (const [idDet, r] of resta) {
+      await pedirTx(tx).input("id", sql.Int, idDet).input("q", sql.Decimal(18, 4), r.q)
+        .query("UPDATE dbo.OrdenCompraDet SET quantityRecibida = ISNULL(quantityRecibida,0) - @q WHERE idOrdenCompraDet=@id");
+    }
+    await pedirTx(tx).input("id", sql.Int, idRec).query("UPDATE dbo.RecepcionCompra SET esEliminada=1 WHERE idRecepcionCompra=@id");
+    const ord = await pedirTx(tx).input("id", sql.Int, rec.idOrdenCompra).query("SELECT ordenNo FROM dbo.OrdenCompra WHERE idOrdenCompra=@id");
+    const ordenNo = String(ord.recordset[0]?.ordenNo ?? "");
+    const detalle = detalleNoLlego({
+      recepcionNo: rec.recepcionNo ?? undefined, motivo: m,
+      lineas: dets.map((d) => ({ descripcion: String(d.descripcion).trim(), cantidad: Number(d.q ?? 0), unidad: String(d.unidad).trim() })),
+    });
+    await logMov(tx, { entidad: "recepcion", idEntidad: idRec, documentoNo: "(en revisión)", tipoMovimiento: "eliminado", usuario, rol, detalle });
+    await logMov(tx, { entidad: "orden", idEntidad: rec.idOrdenCompra, documentoNo: ordenNo, tipoMovimiento: MOV_RECEPCION_NO_LLEGO, usuario, rol, detalle });
+    await tx.commit();
+    return { ordenNo };
   } catch (e) {
     await tx.rollback();
     throw e;

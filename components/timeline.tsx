@@ -42,6 +42,7 @@ const LABEL: Record<string, string> = {
   bc_iva_exento: "IVA quitado en Business Central",
   precio_corregido: "Precio corregido (con material recibido)",
   recepcion_juntada: "Recepciones en revisión juntadas en un solo registro",
+  recepcion_no_llego: "Material que no llegó: salió de revisión",
   pdf_proveedor: "PDF bajado para el proveedor",
   enviada_proveedor: "Marcada como enviada al proveedor",
   envio_deshecho: "Se quitó la marca de enviada",
@@ -141,6 +142,7 @@ function colorPunto(m: Movimiento): string {
       case "bc_iva_exento": return "var(--ds-color-yellow)";  // se le quitó el IVA al pedido en BC
       case "precio_corregido": return "var(--ds-color-yellow)";  // cambió el precio de algo ya recibido
       case "recepcion_juntada": return "var(--ds-color-gray-400)"; // dos recepciones en revisión, ahora una
+      case "recepcion_no_llego": return "var(--ds-color-red-100)"; // se había dado por recibido y no llegó
       case "pdf_proveedor":
       case "enviada_proveedor": return "var(--ds-color-green-100)";  // salió al proveedor
       case "envio_deshecho": return "var(--ds-color-gray-400)";      // se deshizo la marca

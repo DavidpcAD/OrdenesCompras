@@ -1404,6 +1404,46 @@ export function detalleJuntaRecepciones(o: {
   return `Se le juntó la recepción ${cual || "en revisión"} (${traia}): queda un solo registro para la factura.`.slice(0, 600);
 }
 
+// "NO LLEGÓ": una recepción en revisión con material que Bodega dio por recibido y
+// nunca llegó. Se saca de revisión y la orden deja de contarlo como recibido, para
+// que Proveeduría la pueda cerrar. La app NO deshace la recepción en BC: hay que
+// hacerlo allá primero (Recepciones registradas → Deshacer recepción), y si la
+// entrada ya se usó —una toma física que la ajustó, por ejemplo— BC no deja
+// deshacerla hasta que Contabilidad la desaplique. Así que la app MIRA BC antes: si
+// allá el pedido todavía tiene ese material recibido, no deja. Si dejara, la app
+// diría "no llegó" y BC "recibido", y la próxima factura o recepción se cruzaría.
+//
+// Por línea de la recepción: lo que la orden tiene recibido en la app, lo que trae
+// ESTA recepción y lo que BC tiene recibido en esa línea del pedido (undefined = BC
+// no tiene la línea). Devuelve el mensaje para la pantalla, o null si BC ya está.
+export type LineaNoLlego = { descripcion: string; unidad?: string; enEsta: number; recibidaApp: number; recibidaBc?: number };
+export function faltaDeshacerEnBc(lineas: LineaNoLlego[]): string | null {
+  const malas: string[] = [];
+  for (const l of lineas) {
+    const u = l.unidad ? ` ${l.unidad}` : "";
+    const esperado = r4((Number(l.recibidaApp) || 0) - (Number(l.enEsta) || 0));
+    if (l.recibidaBc === undefined || !Number.isFinite(l.recibidaBc)) {
+      malas.push(`${l.descripcion}: Business Central no tiene esa línea en el pedido.`);
+    } else if (l.recibidaBc > esperado + 1e-6) {
+      malas.push(`${l.descripcion}: BC todavía tiene ${num.format(l.recibidaBc)}${u} recibidos y sin esta recepción deberían ser ${num.format(Math.max(0, esperado))}${u}.`);
+    }
+  }
+  if (!malas.length) return null;
+  return "No se sacó de revisión: en Business Central el material todavía consta como recibido.\n\n"
+    + malas.map((m) => `• ${m}`).join("\n")
+    + "\n\nPrimero hay que deshacer la recepción en BC (Recepciones registradas → la recepción del pedido → la línea → Deshacer recepción). "
+    + "Si BC no deja porque esa entrada ya se usó (por ejemplo, la ajustó una toma física), Contabilidad la desaplica primero en la hoja de aplicación. "
+    + "Después volvé a darle «No llegó».";
+}
+
+// El tipo de movimiento en la orden, y lo que queda escrito.
+export const MOV_RECEPCION_NO_LLEGO = "recepcion_no_llego";
+export function detalleNoLlego(o: { recepcionNo?: string; lineas: { descripcion: string; cantidad: number; unidad?: string }[]; motivo: string }): string {
+  const que = o.lineas.map((l) => `${num.format(l.cantidad)}${l.unidad ? ` ${l.unidad}` : ""} ${l.descripcion}`.replace(/\s+/g, " ").trim()).join(", ");
+  const motivo = String(o.motivo ?? "").replace(/\s+/g, " ").trim();
+  return `No llegó${o.recepcionNo ? ` (${o.recepcionNo})` : ""}: ${que}. Se sacó de revisión y la orden ya no lo cuenta como recibido. Motivo: ${motivo}`.slice(0, 1000);
+}
+
 // POR QUÉ UNA FACTURA QUEDA EN REVISIÓN. Bodega lo elige en la confirmación de
 // "Recibir sin factura" (antes era un clic y la recepción quedaba sin decir nada):
 // Contabilidad necesita saber qué revisar antes de registrarla. `otro` obliga a

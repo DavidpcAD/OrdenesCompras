@@ -9,6 +9,7 @@ import { BotonLineas, DataTable, FilaExpandida } from "@/components/data-table";
 import { LineasDeRecepcion } from "@/components/lineas-recepcion";
 import { PanelOrdenRevision, totalesDeRecepcion } from "@/components/panel-orden-revision";
 import { OtrasEnRevision } from "@/components/otras-en-revision";
+import { NoLlegoDialogo } from "@/components/no-llego-dialogo";
 import { useStore } from "@/lib/store";
 import { api } from "@/lib/api";
 import { cuenta, money, formatDate, formatDateTime, juntarLineasDeRecepcion, leerNotaRevision, lineasDeRecepcion, MARCA_DESDE_REVISION, num, numeroOrden, precioUnit, todayISO, type CantidadFacturada } from "@/lib/helpers";
@@ -255,7 +256,7 @@ export default function ArchivoPage() {
 }
 
 function ArchivoContenido() {
-  const { ordenes, recepciones, proveedores, movimientos, facturarRecepcion, juntarRecepciones, modoApi, recargar } = useStore();
+  const { ordenes, recepciones, proveedores, movimientos, facturarRecepcion, juntarRecepciones, recepcionNoLlego, modoApi, recargar } = useStore();
   const router = useRouter();
   const params = useSearchParams();
   const toast = useToast();
@@ -360,6 +361,18 @@ function ArchivoContenido() {
     }
     return { sub: r2(sub), iva: r2(iva), lineas, restoLineas, restoSub: r2(restoSub), cur: o?.currencyCode, detalle };
   }, [facObj, cant, ordenes]);
+  // "NO LLEGÓ" (ver NoLlegoDialogo): la recepción de la que se abrió el diálogo.
+  const [noLlegoId, setNoLlegoId] = useState<string | null>(null);
+  const noLlegoRec = noLlegoId ? enRevision.find((r) => r.id === noLlegoId) ?? null : null;
+  async function confirmarNoLlego(rec: Recepcion, motivo: string) {
+    // Un error (BC todavía lo tiene recibido) lo muestra el diálogo: acá no se atrapa.
+    await recepcionNoLlego(rec.id, motivo);
+    const o = ordenDe(rec);
+    toast(`Listo: ${o ? numeroOrden(o) : "la orden"} ya no cuenta ese material como recibido. Proveeduría puede cerrar la orden si no va a llegar.`, "success");
+    setNoLlegoId(null);
+    void hist.recargar();
+  }
+
   // JUNTAR otra recepción en revisión de la misma orden con esta (ver OtrasEnRevision).
   // `alJuntar` recibe la que quedó: la que se recibió primero, que puede ser la otra.
   async function juntarCon(base: Recepcion, otra: Recepcion, alJuntar?: (destinoId: string) => void) {
@@ -672,10 +685,16 @@ function ArchivoContenido() {
             <PanelOrdenRevision rec={r} orden={ordenDe(r)} proveedores={proveedores} envio={envio}
               otras={otrasDe(r)} envioDe={hist.envioDe}
               onJuntar={(otra) => juntarCon(r, otra, (destinoId) => { if (destinoId !== r.id) setPanelRec(destinoId); })}
+              onNoLlego={() => { setPanelRec(null); setNoLlegoId(r.id); }}
               onClose={() => setPanelRec(null)}
               onRegistrar={() => { setPanelRec(null); abrirFactura(r, envio?.facturaProveedor); }} />
           );
         })()}
+
+        {noLlegoRec && (
+          <NoLlegoDialogo rec={noLlegoRec} orden={ordenDe(noLlegoRec)}
+            onConfirmar={(motivo) => confirmarNoLlego(noLlegoRec, motivo)} onClose={() => setNoLlegoId(null)} />
+        )}
 
         {facObj && cuentaFactura && !revisar && (
           <Modal wide conLista title={`Registrar factura · ${(() => { const o = ordenDe(facObj); return o ? numeroOrden(o) : ""; })()}`} onClose={() => setFacObj(null)}

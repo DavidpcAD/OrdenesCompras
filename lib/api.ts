@@ -190,6 +190,10 @@ export const api = {
   // que tenía una sola). Devuelve cuál quedó: la que se recibió primero.
   juntarRecepciones: (ids: [string, string]): Promise<{ ok: true; destinoId: string; origenId: string }> =>
     fetch("/api/recepciones/juntar", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids }) }).then(jsonOrThrow),
+  // "No llegó": saca de revisión una recepción cuyo material nunca llegó (el servidor
+  // mira antes que BC ya no lo tenga recibido).
+  recepcionNoLlego: (id: string, motivo: string): Promise<{ ok: true; ordenNo: string }> =>
+    fetch(`/api/recepciones/${id}/no-llego`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ motivo }) }).then(jsonOrThrow),
   // …y lo que dice la bitácora de las que pasaron por revisión: por qué se
   // mandaron y a cuáles ya se les registró la factura.
   revisionDeRecepciones: (): Promise<{ envios: EnvioARevision[]; registradas: FacturadaDesdeRevision[] }> =>
