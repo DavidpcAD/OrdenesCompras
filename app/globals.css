@@ -2153,6 +2153,9 @@ td.ds-col-fija {
    eran ~240 px de alto para siete números que solo sirven para filtrar: de acá sale
    casi todo el espacio que gana la tabla. El conteo grande quedó en las pestañas. */
 .filtros { display: flex; align-items: center; gap: var(--ds-space-3); flex-wrap: wrap; margin-top: var(--ds-space-5); }
+/* Órdenes por recibir: buscador y almacén en una fila; en el celular, uno abajo del otro. */
+.bodega-filtros { display: grid; grid-template-columns: minmax(0, 1fr) minmax(200px, 280px); gap: var(--ds-space-3); align-items: center; }
+@media (max-width: 640px) { .bodega-filtros { grid-template-columns: minmax(0, 1fr); } }
 .filtro-chip { display: inline-flex; align-items: center; gap: var(--ds-space-2); background: var(--ds-surface); border: 2px solid transparent; border-radius: var(--ds-radius-xl); box-shadow: var(--ds-shadow-01); padding: 8px 16px; font-family: inherit; font-size: var(--ds-font-size-label); line-height: var(--ds-line-height-label); color: var(--ds-color-gray-500); cursor: pointer; transition: border-color .12s ease, box-shadow .12s ease, color .12s ease; }
 .filtro-chip:hover { border-color: var(--ds-color-gray-200); color: var(--ds-text); }
 .filtro-chip:focus-visible { outline: 2px solid var(--ds-color-green-100); outline-offset: 2px; }

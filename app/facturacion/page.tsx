@@ -2,11 +2,12 @@
 
 import { useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Badge, Button, Card, EmptyState, Input, Persona, QtyRing, Tile } from "@/components/ui";
+import { Badge, Button, Card, EmptyState, Input, Persona, QtyRing, Select, Tile } from "@/components/ui";
 import { DestinoOrden } from "@/components/destino-linea";
 import { IconDelivery } from "@/components/icons";
 import { useStore } from "@/lib/store";
-import { money, formatDate, ordenAvance, ordenEsParcial, ordenRecibidoPct, ordenSubtotal, ordenTotalConIva, numeroOrden } from "@/lib/helpers";
+import { money, formatDate, ordenAlmacenes, ordenAvance, ordenEsParcial, ordenRecibidoPct, ordenSubtotal, ordenTotalConIva, numeroOrden } from "@/lib/helpers";
+import { useFiltroPantalla } from "@/lib/use-filtro-pantalla";
 
 // Filtros de la bandeja de bodega. Son los estados que le importan a quien recibe:
 // lo que todavía no llegó, lo que llegó a medias (y hay que completar) y lo que ya
@@ -14,11 +15,21 @@ import { money, formatDate, ordenAvance, ordenEsParcial, ordenRecibidoPct, orden
 // aprobación, que Bodega no ve en ninguna pantalla ni puede tocar.
 type Filtro = "porRecibir" | "sinRecibir" | "parcial" | "completado";
 
+// EL ALMACÉN. Cada bodega recibe lo suyo (ALM-GRAL, F-MADERAS…) y con cientos de
+// órdenes abiertas la de uno se perdía entre las de los demás. "" = todos; una orden
+// sin almacén (todo va a obra, consumo directo) cae en SIN_ALMACEN. Se recuerda la
+// jornada, como los paneles (useFiltroPantalla): volver de registrar una factura
+// tiene que devolver la lista como estaba, y al otro día arranca con todos.
+const SIN_ALMACEN = "__sin_almacen__";
+const enAlmacen = (o: Parameters<typeof ordenAlmacenes>[0], alm: string) =>
+  !alm ? true : alm === SIN_ALMACEN ? ordenAlmacenes(o).length === 0 : ordenAlmacenes(o).includes(alm);
+
 export default function FacturacionPage() {
   const { ordenes, proveedores } = useStore();
   const router = useRouter();
   const prov = (id: string) => proveedores.find((p) => p.id === id);
   const [filtro, setFiltro] = useState<Filtro>("porRecibir");
+  const [almacen, setAlmacen] = useFiltroPantalla<string>("adelante_oc_bodega_almacen", "");
   const listaRef = useRef<HTMLDivElement>(null);
   function seleccionar(f: Filtro) {
     setFiltro(f);
@@ -27,12 +38,28 @@ export default function FacturacionPage() {
     setTimeout(() => listaRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
   }
 
-  // órdenes lanzadas pendientes de recibir (total o parcial)
-  const porRecibir = ordenes.filter((o) => o.estado === "lanzado");
+  // Los almacenes que aparecen en la bandeja, con cuántas órdenes tiene cada uno por
+  // recibir (las que importan al elegir). Va también el elegido aunque ya no tenga
+  // ninguna, para que el filtro no desaparezca de la lista sin poder quitarlo.
+  const almacenes = useMemo(() => {
+    const cuenta = new Map<string, number>();
+    for (const o of ordenes) {
+      if (o.estado !== "lanzado" && o.estado !== "completado") continue;
+      const alms = ordenAlmacenes(o);
+      for (const a of alms.length ? alms : [SIN_ALMACEN]) cuenta.set(a, (cuenta.get(a) ?? 0) + (o.estado === "lanzado" ? 1 : 0));
+    }
+    if (almacen && !cuenta.has(almacen)) cuenta.set(almacen, 0);
+    return [...cuenta].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+  }, [ordenes, almacen]);
+  const nombreAlmacen = (a: string) => (a === SIN_ALMACEN ? "Sin almacén (consumo directo)" : a);
+
+  // órdenes lanzadas pendientes de recibir (total o parcial), del almacén elegido.
+  // Los paneles de arriba cuentan también solo ese almacén.
+  const porRecibir = ordenes.filter((o) => o.estado === "lanzado" && enAlmacen(o, almacen));
   const parciales = porRecibir.filter(ordenEsParcial).length;
   // Todavía no llegó NADA de esta orden: es la cola real de bodega.
   const sinRecibir = porRecibir.filter((o) => ordenRecibidoPct(o) === 0).length;
-  const completadas = ordenes.filter((o) => o.estado === "completado");
+  const completadas = ordenes.filter((o) => o.estado === "completado" && enAlmacen(o, almacen));
   const esCompletado = filtro === "completado";
 
   // Sobre qué universo se busca y se lista, según el panel elegido.
@@ -66,7 +93,7 @@ export default function FacturacionPage() {
         .some((v) => (v ?? "").toLowerCase().includes(t));
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ordenes, proveedores, q, filtro]);
+  }, [ordenes, proveedores, q, filtro, almacen]);
 
   return (
     <>
@@ -91,10 +118,18 @@ export default function FacturacionPage() {
             onClick={() => seleccionar("completado")} active={filtro === "completado"} />
         </div>
 
-        {base.length > 0 && (
+        {almacenes.length > 0 && (
           <div className="mt-4">
-            <Input value={q} onChange={(e) => setQ(e.target.value)} aria-label="Buscar orden"
-              placeholder="Buscar por N.º de orden, proveedor, pedido o quién la creó…" />
+            <div className="bodega-filtros">
+              <Input value={q} onChange={(e) => setQ(e.target.value)} aria-label="Buscar orden"
+                placeholder="Buscar por N.º de orden, proveedor, pedido o quién la creó…" />
+              <Select value={almacen} onChange={(e) => setAlmacen(e.target.value)} ariaLabel="Filtrar por almacén" placeholder="Todos los almacenes">
+                <option value="">Todos los almacenes</option>
+                {almacenes.map(([a, n]) => (
+                  <option key={a} value={a}>{`${nombreAlmacen(a)} · ${n} por recibir`}</option>
+                ))}
+              </Select>
+            </div>
             {q.trim() !== "" && (
               <p className="ds-body-sm ds-muted" style={{ margin: "6px 0 0" }} role="status">
                 {lista.length} de {base.length} orden(es)
@@ -104,12 +139,18 @@ export default function FacturacionPage() {
         )}
 
         <div ref={listaRef} className="row row--between mt-6" style={{ marginBottom: 12, alignItems: "baseline", scrollMarginTop: 80 }}>
-          <span className="ds-label ds-muted">{etiqueta[filtro]}</span>
-          {filtro !== "porRecibir" && <button type="button" className="link-btn" onClick={() => setFiltro("porRecibir")}>Ver las que faltan recibir</button>}
+          <span className="ds-label ds-muted">{etiqueta[filtro]}{almacen ? <> · <span className="ds-strong ds-nowrap">{nombreAlmacen(almacen)}</span></> : null}</span>
+          <span className="row gap-4 wrap">
+            {almacen && <button type="button" className="link-btn" onClick={() => setAlmacen("")}>Ver todos los almacenes</button>}
+            {filtro !== "porRecibir" && <button type="button" className="link-btn" onClick={() => setFiltro("porRecibir")}>Ver las que faltan recibir</button>}
+          </span>
         </div>
 
         <div className="col gap-4">
-          {base.length === 0 && <Card><EmptyState icon={<IconDelivery size={24} />}
+          {base.length === 0 && almacen && <Card><EmptyState icon={<IconDelivery size={24} />}
+            title={`No hay órdenes de ${nombreAlmacen(almacen)} en este panel.`}
+            hint={<>Elegí otro almacén o «Todos los almacenes», o tocá otro panel de arriba.</>} /></Card>}
+          {base.length === 0 && !almacen && <Card><EmptyState icon={<IconDelivery size={24} />}
             title={filtro === "porRecibir" ? "No hay órdenes pendientes de recibir."
               : filtro === "sinRecibir" ? "Todas las órdenes pendientes ya tienen algo recibido."
               : filtro === "parcial" ? "Ninguna orden viene a medias."
