@@ -257,6 +257,15 @@ export interface Orden {
   // la app de Producción las llenó, y si no de la bitácora (las dos apps escriben
   // en dbo.Movimiento). Puede no estar: órdenes viejas, o aprobadas fuera del flujo.
   aprobacion?: { fecha: string; usuario?: string };
+  // EL INGENIERO LA CORRIGIÓ desde Producción (hoy: un subcontrato que Proveeduría le
+  // devolvió y él volvió a meter a esta misma orden). Sale de la bitácora, por la marca
+  // MARCA_CORRECCION_INGENIERO. `ultima` = es lo último que le pasó a la orden: nadie
+  // la editó, reenvió, rechazó ni lanzó después. Con eso y una aprobación de Luis
+  // anterior, la orden se lanza sin volver a aprobación (regla 3 de
+  // lib/aprobacion-automatica.ts).
+  // `rechazo` = la fecha del último rechazo de Aprobación, si hubo: uno posterior a la
+  // aprobación quiere decir que Luis le dijo que no a una versión más nueva.
+  correccionIngeniero?: { fecha: string; usuario?: string; ultima: boolean; rechazo?: string };
   // YA SE LE MANDÓ AL PROVEEDOR. Es lo que contesta "¿cuáles de las que me aprobaron
   // el viernes ya salieron?": se marca sola al descargar el PDF y también a mano
   // (cuando se manda por WhatsApp o se reenvía). No es una columna — vive en la

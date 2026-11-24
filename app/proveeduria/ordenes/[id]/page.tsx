@@ -8,10 +8,10 @@ import { OrdenDetalle } from "@/components/orden-detalle";
 import { ConfirmarProveedor } from "@/components/confirmar-proveedor";
 import { CorregirPrecioDialogo, type ResultadoCorreccion } from "@/components/corregir-precio-dialogo";
 import { puedeCorregirPrecio } from "@/lib/corregir-precio";
-import { avisoAntesDeEnviar } from "@/lib/aprobacion-automatica";
+import { avisoAntesDeEnviar, correccionYaAprobada } from "@/lib/aprobacion-automatica";
 import { useStore } from "@/lib/store";
 import { useOrden } from "@/lib/use-orden";
-import { cuenta, lineasSinPrecio, money, num, ordenTotalConIva, proveedorLabel, ordenPendienteResumen, numeroOrden, ordenAdmiteDevolucion, puedeDevolverLineaOrden, motivoNoDevolverLineaOrden, ordenQuedaSinMaterial, ordenEsperaCorreccion, lineasCorregidasDeOrden, ordenPedidos } from "@/lib/helpers";
+import { cuenta, formatDateTime, lineasSinPrecio, money, num, ordenTotalConIva, proveedorLabel, ordenPendienteResumen, numeroOrden, ordenAdmiteDevolucion, puedeDevolverLineaOrden, motivoNoDevolverLineaOrden, ordenQuedaSinMaterial, ordenEsperaCorreccion, lineasCorregidasDeOrden, ordenPedidos } from "@/lib/helpers";
 
 export default function ProvOrdenDetallePage() {
   const { id } = useParams<{ id: string }>();
@@ -326,6 +326,13 @@ export default function ProvOrdenDetallePage() {
   // ¿El ingeniero ya devolvió el material corregido? Si sí, esta pantalla tiene que
   // decirlo y llevar a traerlo, no dejar a Proveeduría esperando algo que ya llegó.
   const corregidas = espera ? lineasCorregidasDeOrden(pedidos, orden) : [];
+  // El ingeniero la corrigió él mismo desde Producción (un subcontrato que se le
+  // devolvió vuelve directo a esta orden) y eso es lo último que le pasó. Antes la orden
+  // pasaba de "Esperando corrección" a una "Abierta" cualquiera y nada decía que ya
+  // estaba lista. Si Luis ya la había aprobado, se LANZA sin volver a aprobación
+  // (regla 3 de lib/aprobacion-automatica.ts): el botón y el aviso lo dicen.
+  const corregidaIng = !espera && orden.estado === "abierto" && orden.correccionIngeniero?.ultima ? orden.correccionIngeniero : null;
+  const yaAprobada = correccionYaAprobada(orden);
 
   const acciones = (
     <>
@@ -344,9 +351,11 @@ export default function ProvOrdenDetallePage() {
                 toast(`${cuenta(sinPrecio.length, "línea va", "líneas van")} en ₡0,00 — ${sinPrecio.slice(0, 3).join("; ")}${sinPrecio.length > 3 ? "…" : ""}. Entrá a “Editar”, poné el precio acordado con el proveedor y volvé a enviarla.`, "error");
                 return;
               }
-              setConfirmarEnvio({ msg: `${numeroOrden(orden)} enviada a aprobación`, etiqueta: "Sí, enviar a aprobación" });
+              setConfirmarEnvio(yaAprobada
+                ? { msg: `${numeroOrden(orden)} lanzada`, etiqueta: "Sí, lanzar" }
+                : { msg: `${numeroOrden(orden)} enviada a aprobación`, etiqueta: "Sí, enviar a aprobación" });
             }}>
-              {procesando ? "Enviando…" : "Enviar a aprobación"}
+              {procesando ? (yaAprobada ? "Lanzando…" : "Enviando…") : yaAprobada ? "Lanzar" : "Enviar a aprobación"}
             </Button>
           )}
         </>
@@ -492,6 +501,30 @@ export default function ProvOrdenDetallePage() {
               <div className="ds-callout__body" style={{ whiteSpace: "pre-wrap" }}>{avisoBc}</div>
             </div>
             <Button variant="outline" size="sm" onClick={() => setAvisoBc(null)}>Entendido</Button>
+          </div>
+        ) : corregidaIng ? (
+          <div className={`ds-callout ${yaAprobada ? "ds-callout--green" : "ds-callout--yellow"} mb-4`} role="status">
+            <span className="ds-callout__icon"><IconWarning size={18} /></span>
+            <div style={{ flex: 1 }}>
+              <div className="ds-callout__title">{yaAprobada ? "Corregida por el ingeniero: lista para lanzar" : "Corregida por el ingeniero"}</div>
+              <div className="ds-callout__body">
+                <span className="ds-strong">{corregidaIng.usuario || "El ingeniero"}</span> la corrigió el {formatDateTime(corregidaIng.fecha)} y
+                volvió a esta orden.{" "}
+                {yaAprobada ? (
+                  <>
+                    Ya la había aprobado <span className="ds-strong">{yaAprobada.aprobadaPor || "Aprobación"}</span> el {formatDateTime(yaAprobada.fechaAprobacion)},
+                    así que no vuelve a aprobación: al tocar <span className="ds-strong">Lanzar</span>, el pedido{" "}
+                    <span className="ds-strong">{orden.bcNumber}</span> de Business Central se reescribe con estas líneas y queda lanzado.
+                  </>
+                ) : (
+                  <>
+                    Al enviarla a aprobación, el pedido <span className="ds-strong">{orden.bcNumber}</span> de Business Central se
+                    reescribe con estas líneas.
+                  </>
+                )}{" "}
+                Hasta entonces BC tiene las líneas de antes de la corrección: por eso su total todavía no calza con el de la orden.
+              </div>
+            </div>
           </div>
         ) : null} />
 

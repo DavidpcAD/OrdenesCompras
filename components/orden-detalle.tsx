@@ -223,6 +223,13 @@ export function OrdenDetalle({
   // solicitud: sin la excepción se leía "Directa · sin solicitud de origen", que es
   // lo contrario de lo que pasó (salió de una solicitud y el material volvió a ella).
   const espera = ordenEsperaCorreccion(orden);
+  // El ingeniero ya la corrigió (volvió a esta orden desde Producción) pero todavía no
+  // se lanzó ni se reenvió: el pedido de BC sigue con las líneas de ANTES. Sus totales
+  // no son los de esta orden, y compararlos acusaba una "diferencia de IVA" que era el
+  // precio corregido (CP-006835: ₡516 000 en BC contra ₡518 000 corregidos), con el
+  // botón "Usar el IVA de BC" al lado. Mismo trato que `espera`: se muestra lo de acá.
+  const corregidaPendiente = !espera && orden.estado === "abierto" && !!orden.correccionIngeniero?.ultima;
+  const bcViejo = espera || corregidaPendiente;
   const esDirecta = ordenEsDirecta(orden) && !espera;
   const recs = recepciones.filter((r) => r.ordenId === orden.id);
   const revision = useEnviosARevision(recs);
@@ -254,7 +261,7 @@ export function OrdenDetalle({
   const hayDifBc = Math.abs(difBc) > 0.01;
   // El IVA que hoy está vivo para esta orden: el que BC va a contabilizar si se pudo
   // leer, si no el estimado de acá.
-  const ivaVigente = bcTot && !espera ? bcTot.iva : iva;
+  const ivaVigente = bcTot && !bcViejo ? bcTot.iva : iva;
   // Una importación va sin IVA —el impuesto se paga en aduana y viene en su propia
   // línea de cargo—, pero BC le pone el 13% del artículo. Si la orden TAMBIÉN dice
   // 13%, los totales coinciden, el aviso amarillo no sale y hasta hoy no quedaba por
@@ -262,7 +269,7 @@ export function OrdenDetalle({
   // SRL, EUR 215,76 de IVA sobre una compra a Italia). Por eso la salida se ofrece
   // acá también, junto al IVA que está de más. Cuando el aviso SÍ sale con BC
   // cobrando de más, el botón ya va ahí y no se repite.
-  const ofrecerExonerar = !!onExonerarIva && !espera && !!orden.bcNumber
+  const ofrecerExonerar = !!onExonerarIva && !bcViejo && !!orden.bcNumber
     && ivaVigente > 0.01 && !(hayDifBc && difBc > 0);
   // El PDF para el proveedor solo se habilita cuando la orden fue APROBADA (Lanzada
   // en BC) — o ya completada. Antes de eso no debe enviarse nada al proveedor.
@@ -500,7 +507,7 @@ export function OrdenDetalle({
               mostrarlos es decir que una orden sin material vale ₡72.300. Se muestra
               lo que esta orden tiene hoy: nada. Los de BC vuelven en cuanto se le
               agregue el material corregido y se reenvíe. */}
-          {bcTot && !espera ? (
+          {bcTot && !bcViejo ? (
             <>
               <div className="totals__row"><span>Subtotal (excl. IVA)</span><span>{money(bcTot.subtotal, bcTot.currencyCode || orden.currencyCode)}</span></div>
               <div className="totals__row"><span>IVA</span><span>{money(bcTot.iva, bcTot.currencyCode || orden.currencyCode)}</span></div>
@@ -522,6 +529,8 @@ export function OrdenDetalle({
                 <div style={{ gridColumn: "1 / -1" }} className="ds-body-sm ds-muted">
                   {espera
                     ? "Sin material: volvió al ingeniero. El total sale de cero cuando se le agregue el corregido."
+                    : corregidaPendiente
+                      ? `Estimado local · el pedido ${orden.bcNumber} de BC todavía tiene las líneas de antes de la corrección: se actualizan al lanzarla o enviarla.`
                     : hayRegistroEnBc && bcRegistrado
                       ? `Estimado local · BC ya registró ${bcRegistrado.facturas.map((f) => f.numero).join(", ")} por ${money(bcRegistrado.total, bcRegistrado.currencyCode || orden.currencyCode)} con IVA.`
                     : pedidoFantasma ? `Estimado local · BC no tiene el pedido ${orden.bcNumber}.` : "Estimado local · los totales definitivos los calcula BC."}
@@ -546,7 +555,7 @@ export function OrdenDetalle({
       {/* Por qué el total de BC no es el de la orden. Sin esto el número aparecía
           cambiado y no había a qué agarrarse: el IVA% de la orden es solo para la
           cuenta de acá. */}
-      {hayDifBc && !espera && (
+      {hayDifBc && !bcViejo && (
         <div className="ds-callout ds-callout--yellow mt-4" role="status">
           <span className="ds-callout__icon"><IconWarning size={18} /></span>
           <div>

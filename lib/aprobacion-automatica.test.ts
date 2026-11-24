@@ -7,7 +7,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  aprobacionAutomatica, aprobacionAutomaticaActiva, avisoAntesDeEnviar, esMonedaLocal,
+  aprobacionAutomatica, aprobacionAutomaticaActiva, avisoAntesDeEnviar, correccionYaAprobada, esMonedaLocal,
   TOPE_SIN_APROBACION_CRC,
 } from "./aprobacion-automatica.ts";
 
@@ -104,4 +104,68 @@ test("el aviso del diálogo sale solo cuando aplica, y se calla con el interrupt
   assert.equal(avisoAntesDeEnviar({ proveedorNo: "PROV-000694", lineas: [{ articuloId: "M00-0999" }] }, 300_000), null);
   assert.equal(avisoAntesDeEnviar(crc, 300_000), null);
   assert.equal(con("0", () => avisoAntesDeEnviar(crc, 100_000)), null);
+});
+
+// ── Regla 3: ya aprobada y corregida por el ingeniero (PED-001171 / CP-006835) ──
+// Lo que se cuida: que salga sola SOLO si Luis la firmó antes, la corrección es
+// posterior y es lo último que le pasó a la orden. Cualquier otra cosa, a Luis.
+const corregida = {
+  proveedorNo: "PROV-000934", currencyCode: "", estado: "abierto", bcNumber: "CP-006835",
+  lineas: [{ tipo: "articulo", articuloId: "S24-0014" }],
+  aprobacion: { fecha: "2026-11-20T20:19:00.000Z", usuario: "Luis Roberto Navarro Jimenez" },
+  correccionIngeniero: { fecha: "2026-11-24T20:18:00.000Z", usuario: "Laura Ureña Alfaro", ultima: true },
+};
+
+test("regla 3: aprobada por Luis y corregida después por el ingeniero → se lanza, aunque pase el tope", () => {
+  const d = aprobacionAutomatica(corregida, { app: 585_340, bc: 583_080 });
+  assert.equal(d.aplica, true);
+  assert.equal(d.aplica && d.motivo, "corregida");
+  assert.match(d.aplica ? d.detalle : "", /Luis Roberto Navarro Jimenez/);
+  assert.match(d.aplica ? d.detalle : "", /Laura Ureña Alfaro/);
+  // En dólares también: Luis ya firmó esta orden, la moneda no cambia eso.
+  assert.equal(aprobacionAutomatica({ ...corregida, currencyCode: "USD" }, { app: 9_000, bc: null }).aplica, true);
+});
+
+test("regla 3: si después de la corrección le pasó algo más, va a aprobación", () => {
+  const otra = { ...corregida, correccionIngeniero: { ...corregida.correccionIngeniero, ultima: false } };
+  assert.equal(aprobacionAutomatica(otra, { app: 585_340, bc: 583_080 }).aplica, false);
+});
+
+test("regla 3: sin aprobación previa, o si la última salió sola, va a aprobación", () => {
+  assert.equal(aprobacionAutomatica({ ...corregida, aprobacion: undefined }, { app: 585_340 }).aplica, false);
+  assert.equal(aprobacionAutomatica({ ...corregida, aprobacion: { fecha: corregida.aprobacion.fecha, usuario: "Aprobación automática" } }, { app: 585_340 }).aplica, false);
+});
+
+test("regla 3: si Luis la rechazó después de aprobarla, la corrección vuelve a él", () => {
+  const rechazada = { ...corregida, correccionIngeniero: { ...corregida.correccionIngeniero, rechazo: "2026-11-22T15:00:00.000Z" } };
+  assert.equal(correccionYaAprobada(rechazada), null);
+  // Un rechazo de ANTES de la aprobación no cuenta: después la aprobó.
+  const viejo = { ...corregida, correccionIngeniero: { ...corregida.correccionIngeniero, rechazo: "2026-11-19T15:00:00.000Z" } };
+  assert.notEqual(correccionYaAprobada(viejo), null);
+});
+
+test("regla 3: la corrección tiene que ser POSTERIOR a la aprobación", () => {
+  const antes = { ...corregida, correccionIngeniero: { ...corregida.correccionIngeniero, fecha: "2026-11-19T10:00:00.000Z" } };
+  assert.equal(aprobacionAutomatica(antes, { app: 585_340 }).aplica, false);
+});
+
+test("regla 3: solo una orden Abierta, en BC y con algo que comprar", () => {
+  // Se mira la regla 3 sola: una orden chica igual puede salir por la del monto.
+  assert.equal(correccionYaAprobada({ ...corregida, estado: "pendiente_aprobacion" }), null);
+  assert.equal(correccionYaAprobada({ ...corregida, bcNumber: undefined }), null);
+  assert.equal(correccionYaAprobada({ ...corregida, lineas: [] }), null);
+  assert.equal(correccionYaAprobada({ ...corregida, lineas: [{ tipo: "cargo" }] }), null);
+  assert.notEqual(correccionYaAprobada(corregida), null);
+});
+
+test("regla 3: el diálogo lo dice antes de lanzar, y el interruptor la apaga", () => {
+  assert.match(String(avisoAntesDeEnviar(corregida, 585_340)), /no vuelve a aprobación/);
+  assert.match(String(avisoAntesDeEnviar(corregida, 585_340)), /CP-006835/);
+  assert.equal(con("0", () => avisoAntesDeEnviar(corregida, 585_340)), null);
+});
+
+test("regla 3: la fecha de la bitácora sale en hora de Costa Rica", () => {
+  const d = aprobacionAutomatica(corregida, { app: 585_340 });
+  // 20:18 UTC = 2:18 p. m. en Costa Rica.
+  assert.match(d.aplica ? d.detalle : "", /24\/11\/2026,? 0?2:18/);
 });

@@ -6,6 +6,7 @@ import { resumirCambiosDeLineas } from "./cambios-orden.ts";
 import { MOV_PRECIO_CORREGIDO } from "./corregir-precio.ts";
 import { componerNotaCierre, detalleDeCierre, lineaCancelada, motivoObligatorio, quitarNotaCierre } from "./cierre-solicitud.ts";
 import { envioDeSello, leerSello, MOV_DESHECHO, MOV_ENVIADA, MOV_PDF, SELLO_SEP, type Sello } from "./envio-proveedor.ts";
+import { MARCA_CORRECCION_INGENIERO } from "./aprobacion-automatica.ts";
 import type { UnidadCompraItem } from "./bc.ts";
 import type { DevolucionSolicitud, EnvioARevision, FacturadaDesdeRevision, Orden, OrdenLinea, Pedido, PedidoLinea, Prioridad, Recepcion, RecepcionFoto, RecepcionLinea, Role, NotaCreditoLinea, CargoRecibidoHist, LineaCargoHist } from "./types.ts";
 
@@ -1206,7 +1207,18 @@ const SQL_ES_APROBACION = `((tipoMovimiento LIKE '%aprob%' AND tipoMovimiento NO
 // como hora de acá y todo aparecería 6 horas después.
 const SQL_SELLO = `CONVERT(varchar(23), fecha, 126) + 'Z' + '${SELLO_SEP}' + ISNULL(usuario,'') + '${SELLO_SEP}' + ISNULL(tipoMovimiento,'')`;
 
-interface SellosOrden { aprobacion?: Sello; envio?: Sello }
+// Lo que CAMBIA una orden (su contenido o su estado). Sirve para saber si la
+// corrección del ingeniero sigue siendo lo último que le pasó: si después la editaron,
+// la reenviaron, la rechazaron o la lanzaron, ya no es "la orden que Luis firmó más la
+// corrección" y la regla 3 de lib/aprobacion-automatica.ts no aplica. Lo que NO cambia
+// nada (el PDF, marcarla enviada, la verificación contra BC) no entra.
+// Las ediciones se toleran como las lee `esTipoEdicion` (edit / edic / modific).
+const SQL_ES_CAMBIO = `(tipoMovimiento IN ('encabezado_cambiado','bc_iva_exento','bc_renumerado','${MOV_PRECIO_CORREGIDO}','enviado_aprobacion','reabierto','eliminado','devuelto','cerrado','completado')
+      OR tipoMovimiento LIKE '%edit%' OR tipoMovimiento LIKE '%edic%' OR tipoMovimiento LIKE '%modific%'
+      OR tipoMovimiento LIKE '%rechaz%'
+      OR (${SQL_ES_APROBACION}))`;
+
+interface SellosOrden { aprobacion?: Sello; envio?: Sello; correccion?: Sello; correccionEsUltima?: boolean; rechazo?: Sello }
 
 // `idOrden` acota a una sola orden (detalle, PDF, PATCH): sin eso, abrir una orden
 // barría la bitácora entera para leer dos fechas.
@@ -1221,20 +1233,30 @@ async function sellosDeOrdenes(idOrden?: number, rango?: RangoIds | null): Promi
       .input("idPendiente", sql.Int, await idDeEstado("pendiente_aprobacion"))
       .input("pdf", sql.NVarChar(50), MOV_PDF)
       .input("enviada", sql.NVarChar(50), MOV_ENVIADA)
-      .input("deshecho", sql.NVarChar(50), MOV_DESHECHO);
+      .input("deshecho", sql.NVarChar(50), MOV_DESHECHO)
+      .input("marcaCorreccion", sql.NVarChar(100), `%${MARCA_CORRECCION_INGENIERO}%`);
     let filtroId = "";
     if (idOrden !== undefined) { req.input("idOrden", sql.Int, idOrden); filtroId = " AND idEntidad = @idOrden"; }
     else filtroId = filtroRango(req, rango, "idEntidad");
     const r = await req
       .query(`SELECT idEntidad,
                 MAX(CASE WHEN ${SQL_ES_APROBACION} THEN ${SQL_SELLO} END) AS aprobacion,
-                MAX(CASE WHEN tipoMovimiento IN (@pdf,@enviada,@deshecho) THEN ${SQL_SELLO} END) AS envio
+                MAX(CASE WHEN tipoMovimiento IN (@pdf,@enviada,@deshecho) THEN ${SQL_SELLO} END) AS envio,
+                MAX(CASE WHEN tipoMovimiento = 'editado' AND detalle LIKE @marcaCorreccion THEN ${SQL_SELLO} END) AS correccion,
+                MAX(CASE WHEN ${SQL_ES_CAMBIO} THEN ${SQL_SELLO} END) AS cambio,
+                MAX(CASE WHEN tipoMovimiento LIKE '%rechaz%' THEN ${SQL_SELLO} END) AS rechazo
                 FROM dbo.Movimiento
                WHERE entidad='orden'${filtroId}
-                 AND (tipoMovimiento IN (@pdf,@enviada,@deshecho) OR ${SQL_ES_APROBACION})
+                 AND (tipoMovimiento IN (@pdf,@enviada,@deshecho) OR ${SQL_ES_CAMBIO})
                GROUP BY idEntidad`);
     for (const m of r.recordset) {
-      out.set(String(m.idEntidad), { aprobacion: leerSello(m.aprobacion), envio: leerSello(m.envio) });
+      out.set(String(m.idEntidad), {
+        aprobacion: leerSello(m.aprobacion), envio: leerSello(m.envio),
+        correccion: leerSello(m.correccion),
+        // El mismo sello (fecha al milisegundo + usuario + tipo) = el mismo renglón.
+        correccionEsUltima: !!m.correccion && m.correccion === m.cambio,
+        rechazo: leerSello(m.rechazo),
+      });
     }
   } catch { /* sin bitácora la orden queda sin fecha de aprobación: la pantalla lo dice */ }
   return out;
@@ -1332,6 +1354,10 @@ function mapOrden(o: any, lineas: any[], motivoRechazo?: string, unidades: Recor
     creadoPor: o.creadoPor || undefined,     // quién generó la OC (reportes)
     aprobacion,                              // cuándo la lanzó Aprobación (para "las aprobadas el viernes")
     envioProveedor: envioDeSello(sellos?.envio),  // cuándo se le mandó el PDF al proveedor
+    // El ingeniero la corrigió desde Producción (regla 3 de lib/aprobacion-automatica.ts).
+    correccionIngeniero: sellos?.correccion
+      ? { fecha: sellos.correccion.fecha, usuario: sellos.correccion.usuario || undefined, ultima: !!sellos.correccionEsUltima, rechazo: sellos.rechazo?.fecha }
+      : undefined,
     observaciones: o.notaCreador || undefined,   // se imprimen en el PDF del proveedor
     notaInterna: o.notaInterna || undefined,     // mensaje al aprobador; NUNCA sale en el PDF
     // Prioridad (columna opcional: sql/orden_prioridad.sql). Sin la columna, o con un
