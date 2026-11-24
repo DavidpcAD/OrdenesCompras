@@ -1,4 +1,4 @@
-import { esLineaRecibible, ordenEsperaCorreccion, pedidoOrdenadoPct } from "./helpers.ts";
+import { esLineaRecibible, ordenCorregidaPorIngeniero, ordenEsperaCorreccion, pedidoOrdenadoPct } from "./helpers.ts";
 import { monedaDe } from "./compras-kpis.ts";
 import type { Orden, Pedido } from "./types.ts";
 
@@ -13,6 +13,7 @@ import type { Orden, Pedido } from "./types.ts";
 //   · Rechazadas ..................... espera a Proveeduría (corregir y reenviar)
 //   · Aprobadas sin mandar ........... espera a Proveeduría (el proveedor no se enteró)
 //   · Esperando corrección ........... espera al ingeniero
+//   · Corregidas por el ingeniero .... espera a Proveeduría (lanzarlas o reenviarlas)
 //
 // La cuarta es la que nadie estaba mirando: una orden puede estar aprobada y lanzada en
 // BC desde hace una semana y el proveedor no saber que existe, porque el PDF nunca salió.
@@ -42,7 +43,10 @@ export function loQueEstaEnTuCancha(ordenes: Orden[], pedidos: Pedido[], moneda:
   const sinOrden = pedidos.filter(
     (p) => p.estado !== "borrador" && p.estado !== "devuelto" && p.estado !== "cerrado" && pedidoOrdenadoPct(p) === 0,
   );
-  const abiertas = dela.filter((o) => o.estado === "abierto" && !ordenEsperaCorreccion(o));
+  // Las que el ingeniero ya corrigió tienen su propia parada: no son borradores "armados
+  // acá", vuelven listas para lanzar (o para enviar a aprobación).
+  const corregidas = dela.filter(ordenCorregidaPorIngeniero);
+  const abiertas = dela.filter((o) => o.estado === "abierto" && !ordenEsperaCorreccion(o) && !ordenCorregidaPorIngeniero(o));
   const esperan = dela.filter(ordenEsperaCorreccion);
   const rechazadas = dela.filter((o) => o.estado === "rechazado");
   // Ya la aprobaron y el proveedor todavía no la tiene. Las completadas no cuentan:
@@ -55,6 +59,12 @@ export function loQueEstaEnTuCancha(ordenes: Orden[], pedidos: Pedido[], moneda:
       detalle: "Ingeniería las mandó y nadie las ha comprado",
       cuenta: sinOrden.length, monto: null, color: "var(--ds-color-gray-300)",
       vista: "solicitudes", filtro: "pendiente", deQuien: "vos",
+    },
+    {
+      clave: "corregida", etiqueta: "Corregidas por el ingeniero",
+      detalle: "Volvieron corregidas: si ya estaban aprobadas se lanzan de una vez",
+      cuenta: corregidas.length, monto: suma(corregidas), color: "var(--ds-color-green-100)",
+      vista: "ordenes", filtro: "corregida", deQuien: "vos",
     },
     {
       clave: "abierto", etiqueta: "Órdenes abiertas sin enviar a aprobación",

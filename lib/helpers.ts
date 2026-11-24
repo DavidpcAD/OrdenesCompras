@@ -558,6 +558,15 @@ export function ordenEsperaCorreccion(o: Pick<Orden, "bcNumber" | "lineas">): bo
   return !!(o.bcNumber ?? "").trim() && !o.lineas.some(esLineaRecibible);
 }
 
+// El paso siguiente a esperar: el ingeniero ya la CORRIGIÓ él mismo desde Producción
+// (un subcontrato devuelto vuelve directo a esta orden) y es lo último que le pasó.
+// Sin esto pasaba de "Esperando corrección" a una "Abierta" cualquiera y nada le decía
+// a Proveeduría que ya le tocaba. Si Luis ya la había aprobado se lanza sin volver a
+// aprobación (`correccionYaAprobada`, regla 3 de lib/aprobacion-automatica.ts).
+export function ordenCorregidaPorIngeniero(o: Pick<Orden, "estado" | "bcNumber" | "lineas" | "correccionIngeniero">): boolean {
+  return o.estado === "abierto" && !ordenEsperaCorreccion(o) && !!o.correccionIngeniero?.ultima;
+}
+
 // La orden a la que hay que devolverle el material que el ingeniero acaba de corregir.
 // `null` si la solicitud no salió de ninguna orden, o si esa orden ya no está en la
 // app (devoluciones viejas, cuando la devolución total la descartaba): ahí la pantalla
@@ -1122,8 +1131,9 @@ export function ordenBadge(estado: Orden["estado"]): { label: string; tone: stri
 // una orden que se quedó sin material esperando la corrección del ingeniero se leía
 // como una "Abierta" cualquiera en ₡0 — que es justo lo que hace que a nadie le quede
 // claro por qué está parada y de quién es la próxima jugada.
-export function ordenBadgeDe(o: Pick<Orden, "estado" | "bcNumber" | "lineas">): { label: string; tone: string } {
+export function ordenBadgeDe(o: Pick<Orden, "estado" | "bcNumber" | "lineas" | "correccionIngeniero">): { label: string; tone: string } {
   if (ordenEsperaCorreccion(o)) return { label: "Esperando corrección", tone: "yellow" };
+  if (ordenCorregidaPorIngeniero(o)) return { label: "Corregida por el ingeniero", tone: "green" };
   return ordenBadge(o.estado);
 }
 

@@ -24,6 +24,17 @@
 //     11 nov 2026, después de una de sacos por encima del tope que salió sola).
 //     Es el ÚNICO proveedor con esta excepción.
 //
+//  3. YA APROBADA Y CORREGIDA POR EL INGENIERO: Luis ya la había aprobado, Proveeduría
+//     la reabrió y se la devolvió al ingeniero, y el ingeniero la corrigió él mismo
+//     desde Producción (hoy, los subcontratos: la corrección vuelve directo a esta
+//     orden). Lo que Luis firmó era esta orden; volver a mandársela por la corrección
+//     era hacerle firmar dos veces lo mismo (PED-001171 / CP-006835, 24 nov 2026,
+//     decisión de David: "si ya había sido aprobada, cuando la corrijan debería
+//     lanzarse de una vez"). Solo si la corrección es lo ÚLTIMO que le pasó: si
+//     después alguien la editó, la reenvió o la rechazaron, va a aprobación como
+//     cualquier otra. Y solo si la última aprobación fue de una persona: una que salió
+//     por las reglas 1 o 2 no la firmó nadie.
+//
 // Luis igual ve todas estas órdenes: quedan en la bitácora como `aprobado_automatico`
 // (con el motivo) y la app de Producción las lista en su histórico.
 //
@@ -68,8 +79,57 @@ export const USUARIO_APROBACION_AUTOMATICA = "Aprobación automática";
 export const MOV_APROBACION_AUTOMATICA = "aprobado_automatico";
 
 export type AprobacionAutomatica =
-  | { aplica: true; motivo: "monto" | "proveedor"; detalle: string; aviso: string }
+  | { aplica: true; motivo: "monto" | "proveedor" | "corregida"; detalle: string; aviso: string }
   | { aplica: false };
+
+// ── REGLA 3: la corrección del ingeniero sobre una orden ya aprobada ──
+//
+// La marca la escribe la app de PRODUCCIÓN en dbo.Movimiento cuando el ingeniero
+// corrige un subcontrato cuya orden vive en BC (`updateSubcontrato` en su
+// lib/compras/repo.ts): tipo "editado", detalle "Subcontrato PED-… corregido por el
+// ingeniero · …". Si allá cambia ese texto, cambia esta marca con él (mismo trato que
+// "Devuelta desde la orden", que va en sentido contrario).
+export const MARCA_CORRECCION_INGENIERO = "corregido por el ingeniero";
+
+// Lo que la regla necesita de la orden. `correccionIngeniero.ultima` = la corrección
+// es lo último que le pasó (nadie la editó, reenvió, rechazó ni lanzó después); lo
+// arma el repo desde la bitácora (`sellosDeOrdenes`).
+export type OrdenParaCorreccion = {
+  estado?: string;
+  bcNumber?: string;
+  lineas?: LineaParaRegla[];
+  aprobacion?: { fecha: string; usuario?: string };
+  correccionIngeniero?: { fecha: string; usuario?: string; ultima: boolean; rechazo?: string };
+};
+export type CorreccionYaAprobada = {
+  aprobadaPor?: string; fechaAprobacion: string;
+  corregidaPor?: string; fechaCorreccion: string;
+};
+
+export function correccionYaAprobada(o: OrdenParaCorreccion): CorreccionYaAprobada | null {
+  const c = o.correccionIngeniero;
+  const ap = o.aprobacion;
+  if (o.estado !== "abierto" || !o.bcNumber || !c?.ultima || !ap?.fecha) return null;
+  // Sin nada que comprar no hay qué lanzar (es la orden que todavía espera).
+  if (!o.lineas?.some((l) => (l.tipo ?? "articulo") !== "cargo")) return null;
+  // La última vez salió sola (reglas 1 o 2): nadie la firmó, así que no hay firma
+  // que respetar. Va a aprobación, y ahí las reglas 1 y 2 deciden de nuevo.
+  if ((ap.usuario ?? "").trim() === USUARIO_APROBACION_AUTOMATICA) return null;
+  // La corrección tiene que ser POSTERIOR a la aprobación.
+  const tAp = Date.parse(ap.fecha), tCo = Date.parse(c.fecha);
+  if (!Number.isFinite(tAp) || !Number.isFinite(tCo) || tCo <= tAp) return null;
+  // Luis la RECHAZÓ después de aprobarla (le dijo que no a una versión más nueva): la
+  // firma vieja ya no cubre lo que se corrija ahora. Vuelve a él.
+  const tRe = c.rechazo ? Date.parse(c.rechazo) : NaN;
+  if (Number.isFinite(tRe) && tRe > tAp) return null;
+  return { aprobadaPor: ap.usuario || undefined, fechaAprobacion: ap.fecha, corregidaPor: c.usuario || undefined, fechaCorreccion: c.fecha };
+}
+
+// Fecha y hora de Costa Rica aunque corra en el servidor (UTC): este texto queda en la
+// bitácora y lo lee Luis.
+const fechaCr = (iso: string) => new Date(iso).toLocaleString("es-CR", {
+  timeZone: "America/Costa_Rica", day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit",
+});
 
 // Encendida salvo que alguien la apague a propósito y bien escrito (mismo criterio
 // que los frenos de BC): un typo en Azure no puede cambiar quién aprueba.
@@ -94,9 +154,20 @@ const tope = () => money(TOPE_SIN_APROBACION_CRC, "");
 //               orden decía 1 %); sin verlo no se lanza nada a nombre de Luis.
 //   número    → manda el MAYOR de los dos.
 export function aprobacionAutomatica(
-  o: { proveedorNo?: string; proveedorId?: string; currencyCode?: string; lineas?: LineaParaRegla[] },
+  o: { proveedorNo?: string; proveedorId?: string; currencyCode?: string; lineas?: LineaParaRegla[] } & OrdenParaCorreccion,
   totales: { app: number; bc?: number | null },
 ): AprobacionAutomatica {
+  // Regla 3 primero: no depende del monto ni de la moneda (Luis ya firmó esta orden).
+  const corr = correccionYaAprobada(o);
+  if (corr) {
+    const quien = corr.aprobadaPor || "Aprobación";
+    const ing = corr.corregidaPor || "el ingeniero";
+    return {
+      aplica: true, motivo: "corregida",
+      detalle: `Ya la había aprobado ${quien} el ${fechaCr(corr.fechaAprobacion)}; ${ing} la corrigió el ${fechaCr(corr.fechaCorreccion)}: se lanzó sin volver a aprobación.`,
+      aviso: `Ya la había aprobado ${quien} y ${ing} la corrigió: el pedido ${o.bcNumber} quedó actualizado y lanzado en Business Central, sin volver a aprobación.`,
+    };
+  }
   const codigo = String(o.proveedorNo || o.proveedorId || "").trim().toUpperCase();
   const nombre = PROVEEDORES_SIN_APROBACION[codigo];
   // Holcim CON solo cemento industrial a granel. Cualquier otra orden suya sigue
@@ -122,10 +193,14 @@ export function aprobacionAutomatica(
 
 // Lo que dice el diálogo de envío antes de confirmar. Solo con el estimado de la
 // orden: si BC termina cobrando más, el servidor la manda a aprobación igual y lo dice.
-export function avisoAntesDeEnviar(o: { proveedorNo?: string; proveedorId?: string; currencyCode?: string; lineas?: LineaParaRegla[] }, totalApp: number): string | null {
+export function avisoAntesDeEnviar(o: { proveedorNo?: string; proveedorId?: string; currencyCode?: string; lineas?: LineaParaRegla[] } & OrdenParaCorreccion, totalApp: number): string | null {
   if (!aprobacionAutomaticaActiva()) return null;
   const d = aprobacionAutomatica(o, { app: totalApp });
   if (!d.aplica) return null;
+  if (d.motivo === "corregida") {
+    const corr = correccionYaAprobada(o);
+    return `Ya la aprobó ${corr?.aprobadaPor || "Aprobación"} y ${corr?.corregidaPor || "el ingeniero"} la corrigió: no vuelve a aprobación. Al lanzarla, el pedido ${o.bcNumber} de Business Central se reescribe con estas líneas y queda lanzado de una vez.`;
+  }
   const cod = String(o.proveedorNo || o.proveedorId || "").trim().toUpperCase();
   return d.motivo === "proveedor"
     ? `${PROVEEDORES_SIN_APROBACION[cod]} con solo ${NOMBRE_ARTICULOS_SIN_APROBACION[cod] ?? "estos artículos"} no pasa por aprobación: al enviarla queda lanzada en Business Central de una vez.`

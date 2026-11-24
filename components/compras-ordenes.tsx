@@ -5,7 +5,7 @@ import { FiltroChip } from "@/components/ui";
 import { OrdenesLista } from "@/components/ordenes-lista";
 import { useStore } from "@/lib/store";
 import { useFiltroPantalla } from "@/lib/use-filtro-pantalla";
-import { ordenEsperaCorreccion } from "@/lib/helpers";
+import { ordenCorregidaPorIngeniero, ordenEsperaCorreccion } from "@/lib/helpers";
 
 // La pestaña "Órdenes" de Compras: las órdenes enviadas a proveedores. Era
 // `app/proveeduria/ordenes/page.tsx`; lo que cambió al mudarse es que los recuadros
@@ -15,8 +15,10 @@ import { ordenEsperaCorreccion } from "@/lib/helpers";
 // material porque todo volvió al ingeniero y que conserva su N.º de BC. Se filtra como
 // un chip más porque es donde hay trabajo detenido esperando a otra persona, y sin
 // esto se leía como una Abierta cualquiera en ₡0 (o, peor, se perdía de vista).
-type Filtro = "todas" | "abierto" | "espera" | "pendiente_aprobacion" | "rechazado" | "lanzado" | "completado";
-const PANELES: Filtro[] = ["todas", "abierto", "espera", "pendiente_aprobacion", "rechazado", "lanzado", "completado"];
+// "corregida" tampoco: es la que volvió corregida por el ingeniero y le toca a
+// Proveeduría lanzarla (o enviarla a aprobación). Ver `ordenCorregidaPorIngeniero`.
+type Filtro = "todas" | "abierto" | "espera" | "corregida" | "pendiente_aprobacion" | "rechazado" | "lanzado" | "completado";
+const PANELES: Filtro[] = ["todas", "abierto", "espera", "corregida", "pendiente_aprobacion", "rechazado", "lanzado", "completado"];
 
 export function ComprasOrdenes() {
   const { ordenes, pedidos } = useStore();
@@ -41,7 +43,9 @@ export function ComprasOrdenes() {
   // Las que esperan corrección salen del chip de Abiertas: están abiertas, pero no
   // hay nada que hacer con ellas hasta que el ingeniero devuelva el material.
   const esperan = ordenes.filter(ordenEsperaCorreccion);
-  const abiertas = ordenes.filter((o) => o.estado === "abierto" && !ordenEsperaCorreccion(o)).length;
+  // Las corregidas por el ingeniero también salen de Abiertas: esas ya están listas.
+  const corregidas = ordenes.filter(ordenCorregidaPorIngeniero);
+  const abiertas = ordenes.filter((o) => o.estado === "abierto" && !ordenEsperaCorreccion(o) && !ordenCorregidaPorIngeniero(o)).length;
   // Las que ya están en BC esperando que Aprobación las lance.
   const pendientes = ordenes.filter((o) => o.estado === "pendiente_aprobacion").length;
   const rechazadas = ordenes.filter((o) => o.estado === "rechazado").length;
@@ -51,13 +55,15 @@ export function ComprasOrdenes() {
   const lista = ordenes.filter((o) => {
     if (filtro === "todas") return true;
     if (filtro === "espera") return ordenEsperaCorreccion(o);
-    if (filtro === "abierto") return o.estado === "abierto" && !ordenEsperaCorreccion(o);
+    if (filtro === "corregida") return ordenCorregidaPorIngeniero(o);
+    if (filtro === "abierto") return o.estado === "abierto" && !ordenEsperaCorreccion(o) && !ordenCorregidaPorIngeniero(o);
     return o.estado === filtro;
   });
   const etiqueta: Record<Filtro, string> = {
     todas: "Todas las órdenes",
     abierto: "Órdenes abiertas (borrador)",
     espera: "Órdenes esperando la corrección del ingeniero",
+    corregida: "Órdenes que el ingeniero ya corrigió (lanzarlas, o enviarlas a aprobación si nunca se aprobaron)",
     pendiente_aprobacion: "Órdenes pendientes de aprobación (ya están en Business Central, esperando que Aprobación las lance)",
     rechazado: "Órdenes rechazadas (corregir y reenviar)",
     lanzado: "Órdenes lanzadas",
@@ -72,6 +78,9 @@ export function ComprasOrdenes() {
         {/* Solo si hay: un chip en 0 permanente es ruido. */}
         {esperan.length > 0 && (
           <FiltroChip value={esperan.length} label="Esperando corrección" accent="var(--ds-color-yellow)" onClick={() => seleccionar("espera")} active={filtro === "espera"} />
+        )}
+        {corregidas.length > 0 && (
+          <FiltroChip value={corregidas.length} label="Corregidas por el ingeniero" accent="var(--ds-color-green-100)" onClick={() => seleccionar("corregida")} active={filtro === "corregida"} />
         )}
         <FiltroChip value={pendientes} label="Pendientes de aprobación" accent="var(--ds-color-yellow)" onClick={() => seleccionar("pendiente_aprobacion")} active={filtro === "pendiente_aprobacion"} />
         <FiltroChip value={rechazadas} label="Rechazadas" accent="var(--ds-color-red-200)" onClick={() => seleccionar("rechazado")} active={filtro === "rechazado"} />
