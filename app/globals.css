@@ -2827,6 +2827,10 @@ button.ana-kpi:active { transform: translateY(1px); }
 /* Flete/cargo de la orden como tarjeta informativa dentro de la lista móvil. */
 .recv-cargo { display: flex; align-items: center; gap: var(--ds-space-3); padding: var(--ds-space-3) var(--ds-space-4); border-radius: var(--ds-radius-lg); border: 1px dashed var(--ds-color-gray-200); }
 
+/* Qué le falta a la factura para registrarla: debajo de los botones, en su propia
+   línea, para que el botón gris nunca quede sin explicación. */
+.recv-actions__falta { flex-basis: 100%; margin: 0; }
+
 /* Botonera de acciones a ancho completo en móvil (objetivos táctiles grandes). */
 @media (max-width: 760px) {
   .recv-actions { width: 100%; }

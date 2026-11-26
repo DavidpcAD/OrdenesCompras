@@ -17,6 +17,7 @@ import type { MotivoNC, OrdenLinea } from "@/lib/types";
 import type { MotivoRevision } from "@/lib/helpers";
 import type { ComprobanteDeFactura } from "@/lib/enlace-factura";
 import { explicarFacturaYaUsada, queHacerConFacturaYaUsada, tituloFacturaYaUsada } from "@/lib/factura-ajena";
+import { faltaParaRegistrar, unirConY } from "@/lib/falta-para-registrar";
 
 // Una opción de BC (código + nombre) para los selects de "pago con tarjeta". Mismo
 // shape que OpcionBc de lib/bc.ts, acá local para no importar server-only al cliente.
@@ -365,6 +366,17 @@ export default function RegistrarFacturaPage() {
   );
   const totalConIva = totalFactura + ivaFactura;
   const algoRecibido = recibibles.some((l) => Number(recibir[l.id] || 0) > 0);
+  // Lo que le falta a la factura para poder registrarla. Apaga el botón Y se muestra
+  // debajo: antes el botón se ponía gris sin decir por qué (Bodega, nov 2026, con el
+  // N.º de factura vacío arriba de todo, fuera de la pantalla).
+  const falta = faltaParaRegistrar({ algoRecibido, numeroFactura, tarjetaOn, tarjeta, dimCode, dimValue });
+  const irANumeroFactura = () => {
+    const el = document.getElementById("numero-factura-proveedor") as HTMLInputElement | null;
+    if (!el) return;
+    const quieto = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+    el.scrollIntoView({ behavior: quieto ? "auto" : "smooth", block: "center" });
+    el.focus({ preventScroll: true });
+  };
   const fechasCoinciden = fechaFactura === fechaRegistro;
 
   if (!orden) {
@@ -1413,7 +1425,15 @@ export default function RegistrarFacturaPage() {
             {esContabilidad && (
               <Button variant="ghost" onClick={abrirRevision} disabled={!algoRecibido || guardando} title="El material llegó pero la factura no se puede registrar todavía: recibí el material y mandá la factura a revisión (te pide el motivo).">Recibir sin factura (a revisión)</Button>
             )}
-            <Button variant="green" onClick={registrar} disabled={!algoRecibido || !numeroFactura.trim() || (tarjetaOn && (!tarjeta || !dimCode || !dimValue))} loading={guardando}>{guardando ? "Registrando…" : "Registrar factura"}</Button>
+            <Button variant="green" onClick={registrar} disabled={falta.length > 0} loading={guardando}>{guardando ? "Registrando…" : "Registrar factura"}</Button>
+            {falta.length > 0 && !guardando && (
+              <p className="ds-body-sm ds-muted recv-actions__falta" aria-live="polite">
+                Para registrar falta {unirConY(falta)}.
+                {!numeroFactura.trim() && (
+                  <> <button type="button" className="link-btn link-btn--sm" onClick={irANumeroFactura}>Escribir el N.º</button></>
+                )}
+              </p>
+            )}
           </div>
           {guardando && (
             <p className="ds-body-sm ds-muted" role="status" style={{ marginTop: 10, display: "flex", alignItems: "center", gap: 8 }}>
@@ -1563,7 +1583,7 @@ export default function RegistrarFacturaPage() {
             onClose={() => setPreview(false)}
             footer={<>
               <Button variant="outline" onClick={() => setPreview(false)}>Cerrar</Button>
-              <Button variant="green" onClick={() => { setPreview(false); registrar(); }} disabled={!numeroFactura.trim() || guardando}>Confirmar y registrar</Button>
+              <Button variant="green" onClick={() => { setPreview(false); registrar(); }} disabled={falta.length > 0 || guardando}>Confirmar y registrar</Button>
             </>}
           >
             <p className="ds-label">Factura del proveedor <span className="ds-strong">{orden.proveedorNombre ?? prov?.nombre}</span> por:</p>
