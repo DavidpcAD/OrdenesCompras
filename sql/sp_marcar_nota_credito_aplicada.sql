@@ -18,6 +18,7 @@
 --   EXEC dbo.sp_MarcarNotaCreditoAplicada @idNotaCreditoDet = 123,
 --        @usuario = N'bryan.arauz', @aplicar = 0;                          -- reabrir
 --
+-- Requiere la columna dbo.NotaCreditoDet.cierreMotivo (sql/notas_credito.sql).
 -- Idempotente (CREATE OR ALTER). La corre David en AdelantePRO.
 -- ============================================================================
 CREATE OR ALTER PROCEDURE dbo.sp_MarcarNotaCreditoAplicada
@@ -48,9 +49,12 @@ BEGIN
     IF @idOrdenCompra IS NULL
       THROW 50001, 'Nota de crédito no encontrada o eliminada.', 1;
 
-    -- 1) Estado compartido con Contabilidad de Compras.
+    -- 1) Estado compartido con Contabilidad de Compras. Aplicar (con NC) o reabrir
+    --    borra el motivo de un cierre SIN NC previo (ver sp_CerrarNotaCreditoSinNC):
+    --    si no, al volver a 'resuelta' se mostraría como cerrada sin NC.
     UPDATE dbo.NotaCreditoDet
-       SET estado = @estado
+       SET estado = @estado,
+           cierreMotivo = NULL
      WHERE idNotaCreditoDet = @idNotaCreditoDet;
 
     -- 2) Rastro en la bitácora de Compras (dbo.Movimiento). idEstadoAnterior/Nuevo

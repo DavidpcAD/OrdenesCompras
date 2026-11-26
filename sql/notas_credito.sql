@@ -28,3 +28,16 @@ BEGIN
   );
   CREATE INDEX IX_NotaCreditoDet_orden ON dbo.NotaCreditoDet(idOrdenCompra);
 END;
+
+-- ----------------------------------------------------------------------------
+-- Cierre SIN nota de crédito (2026-11-26). A veces la NC no hace falta: p.ej.
+-- "menos cantidad" donde el proveedor facturó solo lo que entregó. Digitación
+-- cierra la línea con un motivo (dbo.sp_CerrarNotaCreditoSinNC): estado queda
+-- 'resuelta' (sale de pendientes en las dos apps) y el motivo va acá.
+--   cierreMotivo NULL     → resuelta CON NC (acreditada/aplicada).
+--   cierreMotivo NOT NULL → resuelta SIN NC, por ese motivo.
+-- sp_MarcarNotaCreditoAplicada lo limpia al aplicar o reabrir.
+-- Idempotente.
+-- ----------------------------------------------------------------------------
+IF COL_LENGTH('dbo.NotaCreditoDet', 'cierreMotivo') IS NULL
+  ALTER TABLE dbo.NotaCreditoDet ADD cierreMotivo NVARCHAR(300) NULL;
