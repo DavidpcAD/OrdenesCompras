@@ -1,14 +1,24 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Badge, Card, EmptyState, Input, Tile } from "@/components/ui";
+import { Badge, Card, EmptyState, FiltroChip, Input, Select, Tile } from "@/components/ui";
 import { IconCheck, IconChevronDown, IconWarning } from "@/components/icons";
 import { DestinoOrden } from "@/components/destino-linea";
 import { FotosFactura } from "@/components/fotos-factura";
 import { VersionesRecepcion } from "@/components/versiones-recepcion";
 import { useStore } from "@/lib/store";
+import { useFiltroPantalla } from "@/lib/use-filtro-pantalla";
 import { money, formatDate, todayISO, numeroOrden, motivoNC, precioUnit } from "@/lib/helpers";
+import type { Recepcion } from "@/lib/types";
 import Link from "next/link";
+
+// CON O SIN FACTURA. Pedido de Jerson (jefe de bodega, nov 2026): ver aparte lo que se
+// recibió sin N.º de factura, que queda en revisión con Contabilidad. Es la misma regla
+// que pinta la pastilla "Factura en revisión" de cada tarjeta.
+type Vista = "todas" | "con" | "sin";
+const VISTAS: Vista[] = ["todas", "con", "sin"];
+const sinFactura = (r: Recepcion) => !!r.facturaEnRevision || !String(r.numeroFactura ?? "").trim();
+const enVista = (r: Recepcion, v: Vista) => (v === "todas" ? true : v === "sin" ? sinFactura(r) : !sinFactura(r));
 
 // Bodega (recibe): historial de lo que se recibió, con quién lo recibió.
 // Pensada para celular/tablet: tarjetas grandes, sin tablas anchas.
@@ -34,24 +44,48 @@ export default function RecibidasPage() {
   // Buscador: la lista solo crece, y para conciliar una factura hay que poder
   // encontrarla por su número (o por orden / proveedor) sin scrollear todo.
   const [q, setQ] = useState("");
+  // Los dos filtros se recuerdan la jornada (useFiltroPantalla, igual que el almacén
+  // en Órdenes por recibir): entrar a una orden y volver deja la lista como estaba, y
+  // al otro día arranca con todo.
+  const [vista, setVista] = useFiltroPantalla<Vista>("adelante_oc_digitadas_vista", "todas", (v) => (VISTAS as string[]).includes(v));
+  // QUIÉN LA RECIBIÓ. Pedido de Jessie (nov 2026): revisar lo que digitó cada
+  // bodeguero sin buscarlo tarjeta por tarjeta. "" = todos.
+  const [persona, setPersona] = useFiltroPantalla<string>("adelante_oc_digitadas_persona", "");
   // Recepciones con material recibido (registradas o en revisión), más nuevas primero.
   const todas = useMemo(
     () => [...recepciones].sort((a, b) => (b.fechaRecepcion || "").localeCompare(a.fechaRecepcion || "")),
     [recepciones]
   );
-  const lista = useMemo(() => {
+  // Los que recibieron, con cuántas recepciones tiene cada uno. Va también el elegido
+  // aunque ya no tenga ninguna, para que el filtro no desaparezca sin poder quitarlo.
+  const personas = useMemo(() => {
+    const n = new Map<string, number>();
+    for (const r of todas) {
+      const p = (r.recibidoPor ?? "").trim();
+      if (p) n.set(p, (n.get(p) ?? 0) + 1);
+    }
+    if (persona && !n.has(persona)) n.set(persona, 0);
+    return [...n].sort((a, b) => a[0].localeCompare(b[0], "es", { sensitivity: "base" }));
+  }, [todas, persona]);
+  // Búsqueda + bodeguero. Los chips de con/sin factura cuentan sobre ESTO, así dicen
+  // cuántas sin factura tiene el bodeguero elegido.
+  const filtradas = useMemo(() => {
     const t = q.trim().toLowerCase();
-    if (!t) return todas;
     return todas.filter((r) => {
+      if (persona && (r.recibidoPor ?? "").trim() !== persona) return false;
+      if (!t) return true;
       const o = ordenes.find((x) => x.id === r.ordenId);
       const prov = o ? (o.proveedorNombre ?? proveedores.find((p) => p.id === o.proveedorId)?.nombre ?? "") : "";
       // Se busca por lo que se VE (el rótulo o el N.º de BC) y también por el CP-
       // interno crudo, que es el que anda en correos y en la bitácora.
-      return [r.numeroFactura, r.bcFacturaNo, o ? numeroOrden(o) : "", o?.numero, o?.bcNumber, prov, formatDate(r.fechaRecepcion)]
+      return [r.numeroFactura, r.bcFacturaNo, o ? numeroOrden(o) : "", o?.numero, o?.bcNumber, prov, r.recibidoPor, formatDate(r.fechaRecepcion)]
         .some((v) => (v ?? "").toLowerCase().includes(t));
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [todas, q, ordenes, proveedores]);
+  }, [todas, q, persona, ordenes, proveedores]);
+  const cuentaVista = (v: Vista) => filtradas.filter((r) => enVista(r, v)).length;
+  const lista = useMemo(() => filtradas.filter((r) => enVista(r, vista)), [filtradas, vista]);
+  const hayFiltro = q.trim() !== "" || persona !== "" || vista !== "todas";
   // `new Date().toISOString()` da la fecha UTC: en CR (UTC−6), después de las 6pm
   // ya es el día siguiente y el contador "Este mes" cambiaba de mes antes de tiempo.
   const hoy = todayISO();
@@ -74,26 +108,47 @@ export default function RecibidasPage() {
         </div>
 
         <div className="mt-4">
-          <Input value={q} onChange={(e) => setQ(e.target.value)} aria-label="Buscar recepción"
-            placeholder="Buscar por N.º de factura, orden o proveedor…" />
-          {q.trim() !== "" && (
-            <p className="ds-body-sm ds-muted" style={{ margin: "6px 0 0" }} role="status">
+          <div className="bodega-filtros">
+            <Input value={q} onChange={(e) => setQ(e.target.value)} aria-label="Buscar recepción"
+              placeholder="Buscar por N.º de factura, orden o proveedor…" />
+            <Select value={persona} onChange={(e) => setPersona(e.target.value)} ariaLabel="Filtrar por quién la recibió" placeholder="Recibidas por todos">
+              <option value="">Recibidas por todos</option>
+              {personas.map(([p, n]) => (
+                <option key={p} value={p}>{`${p} · ${n}`}</option>
+              ))}
+            </Select>
+          </div>
+          <div className="filtros" style={{ marginTop: "var(--ds-space-3)" }}>
+            {/* "Sin factura" va segundo: en el celular la tira se desliza y el tercer
+                chip queda medio afuera, y este es el que se viene a buscar. */}
+            <FiltroChip value={cuentaVista("todas")} label="Todas" onClick={() => setVista("todas")} active={vista === "todas"} />
+            <FiltroChip value={cuentaVista("sin")} label="Sin factura" accent="var(--ds-color-red-100)"
+              title="Recibidas sin N.º de factura: quedan en revisión hasta que Contabilidad registre la factura."
+              onClick={() => setVista("sin")} active={vista === "sin"} />
+            <FiltroChip value={cuentaVista("con")} label="Con factura" accent="var(--ds-color-green-200)"
+              onClick={() => setVista("con")} active={vista === "con"} />
+          </div>
+          {hayFiltro && (
+            <p className="ds-body-sm ds-muted" style={{ margin: "8px 0 0" }} role="status">
               {lista.length} de {todas.length} recepción(es)
+              {persona ? <> · recibidas por <span className="ds-strong">{persona}</span></> : null}
             </p>
           )}
         </div>
 
         {lista.length === 0 ? (
           <Card className="mt-6">
-            {q.trim() !== ""
-              ? <EmptyState icon={<IconCheck size={24} />} title="Ninguna recepción coincide con la búsqueda." hint={<>Probá con el N.º de factura, el de orden o el proveedor.</>} />
+            {hayFiltro
+              ? <EmptyState icon={<IconCheck size={24} />}
+                  title={vista === "sin" && !q.trim() ? "No hay recepciones sin factura con estos filtros." : "Ninguna recepción coincide con los filtros."}
+                  hint={<>Probá con <strong>Todas</strong>, con otro bodeguero o con el N.º de factura, el de orden o el proveedor.</>} />
               : <EmptyState icon={<IconCheck size={24} />} title="Todavía no recibiste material." hint={<>Cuando registres una recepción en <strong>Órdenes por recibir</strong>, aparece acá.</>} />}
           </Card>
         ) : (
           <div className="col gap-3 mt-6">
             {lista.map((r) => {
               const o = ordenDe(r.ordenId);
-              const enRevision = !!r.facturaEnRevision || !r.numeroFactura;
+              const enRevision = sinFactura(r);
               const unidades = r.lineas.reduce((s, l) => s + (Number(l.cantidadRecibida) || 0), 0);
               // Totales tal cual BC (precio del pedido, con descuento e IVA por línea).
               const tot = r.lineas.reduce((acc, rl) => {

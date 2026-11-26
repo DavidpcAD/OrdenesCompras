@@ -352,6 +352,8 @@ const RECIBIDAS: HelpEntry = {
   ],
   pasos: [
     "Mirá la tarjeta: N.º de orden, proveedor, almacén de recepción, fecha, quién recibió, total y estado.",
+    "Para ver solo lo que se recibió sin N.º de factura, tocá “Sin factura”; “Con factura” deja las que ya tienen su número.",
+    "Para revisar lo de un bodeguero, elegilo en “Recibidas por todos”, al lado del buscador. Los números de “Con factura” y “Sin factura” cuentan solo lo suyo.",
     "Tocá “Ver factura y líneas” para el detalle tal cual viaja a BC: artículo, cantidad, precio unitario, IVA e importe.",
     "Si la recepción trae foto de la factura (etiqueta “Con foto”), tocá la miniatura para verla grande; “Abrir imagen” la deja en otra pestaña para hacer zoom.",
     "Al final de las líneas ves el Subtotal, IVA y Total de la factura.",
