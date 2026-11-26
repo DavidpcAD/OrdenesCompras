@@ -434,9 +434,45 @@ export function obraParaOrden(l: Pick<PedidoLinea, "proyecto" | "taskNo">): stri
 //
 // Vale para el artículo con obra (consumo directo, Job No.) y para el recurso o el
 // activo fijo con obra (la obra viaja como CC). El cargo no: no lleva obra.
+//
+// Sin obra, el artículo es STOCK, y el stock de fábrica ya no entra a las bodegas F-:
+// va a ALM-FAB (`almacenVigente`). Así una orden vieja, un pedido de antes del cambio
+// o un borrador que traía F-MADERAS se cura solo al guardarla o enviarla.
 export function almacenDeLinea(l: { tipo?: LineType; proyecto?: string }, elegido: string): string {
   const obra = (l.proyecto ?? "").trim();
-  return obra && l.tipo !== "cargo" ? obra : (elegido ?? "").trim();
+  if (obra && l.tipo !== "cargo") return obra;
+  const alm = (elegido ?? "").trim();
+  return esLineaDeProducto(l.tipo) ? almacenVigente(alm) : alm;
+}
+
+// ─── Bodegas de fábrica F- → ALM-FAB (David, 24-nov-2026) ──────────────────────
+// Ese día todo el inventario de las bodegas de fábrica (F-AGREGADO, F-MADERAS,
+// F-MAD-NUE, F-METALES, F-MUEBLES, F-PREFA) pasó a ALM-FAB en BC (TRASL-FAB-*).
+// ALM-FAB es el almacén físico de la fábrica y funciona igual que ALM-GRAL (CC INV,
+// «Mismo código»; `BC_CC_POR_ALMACEN` ya lo trae). Una compra para STOCK que se
+// recibe en una F- vuelve a dejar inventario ahí (CP-006911, CP-006914 y CP-006892,
+// recibidas el 25-nov en F-METALES, F-MADERAS y F-AGREGADO).
+//
+// Solo el STOCK de producto: la compra a proyecto (línea con obra y tarea) sigue
+// entrando al almacén de su obra aunque la obra sea F-MAD-NUE o F-METALES —las F-
+// también son obras y esa línea se liquida sola—, y el cargo, el recurso y el activo
+// fijo no son inventario.
+export const ALMACEN_FABRICA = "ALM-FAB";
+
+/** ¿Es una bodega de fábrica F-? (las reemplaza ALM-FAB para el stock) */
+export function esBodegaDeFabrica(codigo: string | null | undefined): boolean {
+  return (codigo ?? "").trim().toUpperCase().startsWith("F-");
+}
+
+/** El almacén al que entra hoy el stock: ALM-FAB en lugar de una F-; cualquier otro, igual. */
+export function almacenVigente(codigo: string | null | undefined): string {
+  const c = (codigo ?? "").trim();
+  return esBodegaDeFabrica(c) ? ALMACEN_FABRICA : c;
+}
+
+/** Línea de PRODUCTO (artículo). Sin tipo = línea de material de un pedido, que es artículo. */
+function esLineaDeProducto(tipo: LineType | undefined): boolean {
+  return !tipo || tipo === "articulo";
 }
 
 // LA CASA: la obra PARA la que se pidió la línea, entre o no al almacén.
@@ -1173,6 +1209,16 @@ export function almacenesParaRecepcion<T extends { codigo: string }>(list: T[]):
   return [...list].sort((a, b) =>
     Number(esAlmacenFisico(b.codigo)) - Number(esAlmacenFisico(a.codigo)) ||
     a.codigo.localeCompare(b.codigo, "es"));
+}
+
+// Lo que ofrece el selector «Almacén / centro de costo de recepción»: lo mismo, sin las
+// bodegas F- de fábrica (desde el 24-nov-2026 el stock de fábrica entra a ALM-FAB, que
+// sale con las bodegas). `elegido` se conserva aunque sea una F-: una orden vieja que
+// se abre no pierde su valor en pantalla (al guardar, `almacenDeLinea` la pasa a
+// ALM-FAB). La lista completa se sigue usando para ponerle nombre a un código.
+export function almacenesElegibles<T extends { codigo: string }>(list: T[], elegido = ""): T[] {
+  const e = (elegido ?? "").trim();
+  return list.filter((a) => !esBodegaDeFabrica(a.codigo) || (!!e && a.codigo === e));
 }
 
 // Las compras de UN insumo según las órdenes de esta app: una fila por línea de orden

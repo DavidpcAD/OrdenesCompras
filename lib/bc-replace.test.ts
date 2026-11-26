@@ -8,7 +8,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { payloadReplaceLines, sinObrasInexistentes, avisoDeSaneo, lineasOrdenParaBc, obrasSinTarea, lineasSinUnidad, lineasSinAlmacen, centroCostoDeOrden, centroCostoDeLinea, decidirVariantes, crearEnBcAlEnviar, bcPideAbierto, devolucionTrasFallo, hayQueReponerLanzamiento, ccForzadoDelAlmacen, type LineaReplaceBc } from "./bc.ts";
 import type { OrdenLinea } from "./types.ts";
-import { almacenDeLinea } from "./helpers.ts";
+import { almacenDeLinea, almacenesElegibles, almacenVigente } from "./helpers.ts";
 
 const item = (p: Partial<LineaReplaceBc> = {}): LineaReplaceBc => ({
   tipo: "articulo", itemNo: "M01-0147", descripcion: "VARILLA DEFORME #3",
@@ -312,16 +312,17 @@ test("la línea con obra viaja al almacén de su obra, no al de la orden", () =>
 // lo carga a esa tarea (CR-011994: +5,76 y −5,76 en INF-HDAII, tarea 13.2). Mandarla
 // al almacén de la obra no puede costar ni la obra ni la tarea de la liquidación.
 test("almacén suma existencia en su bodega; consumo directo se liquida en la tarea", () => {
-  process.env.BC_CC_POR_ALMACEN = "ALM-GRAL=INV,F-MADERAS=F-MADERAS";
+  // Desde el 24-nov-2026 el stock que se pedía a F-MADERAS entra a ALM-FAB (INV).
+  process.env.BC_CC_POR_ALMACEN = "ALM-GRAL=INV,ALM-FAB=INV,F-MADERAS=F-MADERAS";
   try {
     const { lines } = payloadReplaceLines(lineasOrdenParaBc([
       lineaApp({ almacen: "ALM-GRAL" }),
       lineaApp({ almacen: "F-MADERAS" }),
       lineaApp({ almacen: "ALM-GRAL", proyecto: "VN-L.42", taskNo: "2.7" }),
     ]));
-    const [general, maderas, consumo] = lines;
+    const [general, fabrica, consumo] = lines;
     assert.deepEqual([general.locationCode, general.jobNo, general.taskNo, general.ccValue], ["ALM-GRAL", "", "", "INV"]);
-    assert.deepEqual([maderas.locationCode, maderas.jobNo, maderas.taskNo, maderas.ccValue], ["F-MADERAS", "", "", "F-MADERAS"]);
+    assert.deepEqual([fabrica.locationCode, fabrica.jobNo, fabrica.taskNo, fabrica.ccValue], ["ALM-FAB", "", "", "INV"]);
     assert.deepEqual([consumo.locationCode, consumo.jobNo, consumo.taskNo, consumo.ccValue], ["VN-L.42", "VN-L.42", "2.7", "VN-L.42"]);
   } finally { delete process.env.BC_CC_POR_ALMACEN; }
 });
@@ -668,15 +669,15 @@ test("con Job No., el CC de la obra le gana al que amarra el almacén", () => {
 // no el de un destino. BC no lo acepta: ALM-GRAL amarra INV con "Igual código" y la
 // línea se traba al registrar, en manos de Bodega. Gana el almacén.
 test("sin Job No., el CC del almacén le gana al de la obra que lo pidió", () => {
-  process.env.BC_CC_POR_ALMACEN = "ALM-GRAL=INV,F-MUEBLES=F-MUEBLES";
+  process.env.BC_CC_POR_ALMACEN = "ALM-GRAL=INV,HER=HER";
   try {
     const { lines } = payloadReplaceLines([
       item({ locationCode: "ALM-GRAL", centroCosto: "PV-NOVARUM" }),
-      item({ locationCode: "F-MUEBLES", centroCosto: "VN-L.34" }),
+      item({ locationCode: "HER", centroCosto: "VN-L.34" }),
       item({ locationCode: "ALM-BAR", centroCosto: "GEN-BAR" }),
     ]);
     assert.equal(lines[0].ccValue, "INV");         // era CP-005336: iba "PV-NOVARUM" y no registraba
-    assert.equal(lines[1].ccValue, "F-MUEBLES");
+    assert.equal(lines[1].ccValue, "HER");
     assert.equal(lines[2].ccValue, "GEN-BAR");     // almacén que no amarra: la obra de la solicitud queda
   } finally { delete process.env.BC_CC_POR_ALMACEN; }
 });
@@ -684,10 +685,10 @@ test("sin Job No., el CC del almacén le gana al de la obra que lo pidió", () =
 // Sin obra no hay a quién respetarle nada, y ahí el valor del almacén sí sirve: deja
 // la línea con el CC que BC le va a exigir en vez de mandarla sin ninguno.
 test("el almacén amarrado pone el CC cuando la línea no trae obra", () => {
-  process.env.BC_CC_POR_ALMACEN = "F-MUEBLES";
+  process.env.BC_CC_POR_ALMACEN = "HER";
   try {
-    const { lines } = payloadReplaceLines([item({ locationCode: "F-MUEBLES" })]);
-    assert.equal(lines[0].ccValue, "F-MUEBLES");
+    const { lines } = payloadReplaceLines([item({ locationCode: "HER" })]);
+    assert.equal(lines[0].ccValue, "HER");
     assert.equal(lines[0].ccCode, "CC");
   } finally { delete process.env.BC_CC_POR_ALMACEN; }
 });
@@ -938,4 +939,54 @@ test("de la línea de la orden al linesJson, la máquina no se pierde", () => {
   assert.equal(lines[0].maquinaNo, "MAQ00017");
   // Y así es como sale en el body real: `linesJson` es un STRING con el JSON escapado.
   assert.match(JSON.stringify({ lines }), /"maquinaNo":"MAQ00017"/);
+});
+
+// ─── Bodegas F- de fábrica → ALM-FAB (24-nov-2026) ────────────────────────────
+// CP-006911/006914 se crearon y recibieron en F-METALES/F-MADERAS después del
+// traslado, y CP-006892 volvió a F-AGREGADO porque un guardado reescribió la línea.
+test("stock de producto en una F-: viaja a ALM-FAB con el CC de ALM-FAB", () => {
+  process.env.BC_CC_POR_ALMACEN = "ALM-GRAL=INV,ALM-FAB=INV,F-MADERAS=F-MADERAS,F-AGREGADO=F-AGREGADO";
+  try {
+    const { lines } = payloadReplaceLines([
+      item({ locationCode: "F-MADERAS", centroCosto: "VN-L.13" }),
+      item({ locationCode: "f-agregado" }),
+    ]);
+    assert.equal(lines[0].locationCode, "ALM-FAB");
+    assert.equal(lines[0].ccValue, "INV");
+    assert.equal(lines[1].locationCode, "ALM-FAB");
+    assert.equal(lines[1].ccValue, "INV");
+  } finally { delete process.env.BC_CC_POR_ALMACEN; }
+});
+
+test("compra a proyecto en una obra F- y líneas que no son producto: no se tocan", () => {
+  const { lines } = payloadReplaceLines([
+    item({ locationCode: "F-MAD-NUE", jobNo: "F-MAD-NUE", taskNo: "EM-01", centroCosto: "F-MAD-NUE" }),
+    { tipo: "recurso", itemNo: "EQ-0133", cantidad: 1, precio: 500, locationCode: "F-METALES" },
+  ]);
+  assert.equal(lines[0].locationCode, "F-MAD-NUE");
+  assert.equal(lines[1].locationCode, "F-METALES");
+});
+
+test("almacenDeLinea: el stock en una F- pasa a ALM-FAB; la obra F- y el cargo no", () => {
+  assert.equal(almacenDeLinea({ tipo: "articulo", proyecto: "" }, "F-MADERAS"), "ALM-FAB");
+  assert.equal(almacenDeLinea({ proyecto: "" }, " F-METALES "), "ALM-FAB");
+  assert.equal(almacenDeLinea({ tipo: "articulo", proyecto: "F-MAD-NUE" }, "ALM-GRAL"), "F-MAD-NUE");
+  assert.equal(almacenDeLinea({ tipo: "cargo", proyecto: "" }, "F-MADERAS"), "F-MADERAS");
+  assert.equal(almacenDeLinea({ tipo: "recurso", proyecto: "" }, "F-PREFA"), "F-PREFA");
+  assert.equal(almacenDeLinea({ tipo: "articulo", proyecto: "" }, "ALM-GRAL"), "ALM-GRAL");
+});
+
+test("lineasOrdenParaBc: una orden vieja de stock en F- sale hacia BC en ALM-FAB", () => {
+  const l = { id: "1", tipo: "articulo", articuloId: "M01-0099", descripcion: "TUBO", cantidad: 3, unidad: "UND",
+    precioUnitario: 100, almacen: "F-METALES" } as unknown as OrdenLinea;
+  assert.equal(lineasOrdenParaBc([l])[0].locationCode, "ALM-FAB");
+});
+
+test("selector de recepción: sin las F-, salvo la que ya tenía la orden", () => {
+  const list = [{ codigo: "ALM-GRAL" }, { codigo: "ALM-FAB" }, { codigo: "F-MADERAS" }, { codigo: "F-METALES" }, { codigo: "VN-L.13" }];
+  assert.deepEqual(almacenesElegibles(list).map((a) => a.codigo), ["ALM-GRAL", "ALM-FAB", "VN-L.13"]);
+  assert.deepEqual(almacenesElegibles(list, "F-METALES").map((a) => a.codigo), ["ALM-GRAL", "ALM-FAB", "F-METALES", "VN-L.13"]);
+  assert.equal(almacenVigente("F-PREFA"), "ALM-FAB");
+  assert.equal(almacenVigente("ALM-CAST"), "ALM-CAST");
+  assert.equal(almacenVigente(""), "");
 });

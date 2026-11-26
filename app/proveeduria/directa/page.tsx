@@ -10,7 +10,7 @@ import { avisoAntesDeEnviar } from "@/lib/aprobacion-automatica";
 import { IconCheck, IconWarning } from "@/components/icons";
 import { useStore } from "@/lib/store";
 import { leerBorrador, guardarBorrador, borrarBorrador, hace, type BorradorOrden } from "@/lib/borrador-orden";
-import { cuenta, etiquetaTipoLinea, lineasSinPrecio, money, almacenesParaRecepcion, almacenDeLinea, esAlmacenFisico, monedaApp, numeroOrden, MONEDAS } from "@/lib/helpers";
+import { cuenta, etiquetaTipoLinea, lineasSinPrecio, money, almacenesParaRecepcion, almacenesElegibles, almacenVigente, almacenDeLinea, esAlmacenFisico, monedaApp, numeroOrden, MONEDAS } from "@/lib/helpers";
 import { CampoMaquina, RepartoMaquinasModal, buscarMaquina, etiquetaMaquina, nombreDeMaquina, useMaquinasBc, type MaquinaCat } from "@/components/maquina-linea";
 import { PrioridadTag } from "@/components/prioridad";
 import { precioEnUnidad, precioEntreUnidades, cantidadEntreUnidades, equivalencia, equivalenciaDeUnidad, mismaMoneda, codigoDeItem, opcionesDeUnidad, type UnidadDeItem } from "@/lib/unidad";
@@ -75,7 +75,7 @@ export default function OrdenDirectaPage() {
   const tipoId = useId();
   const [proveedorId, setProveedorId] = useState(rescate?.proveedorId ?? "");
   const [currency, setCurrency] = useState(rescate?.currency ?? "");
-  const [almacen, setAlmacen] = useState(rescate?.almacen ?? "ALM-GRAL");
+  const [almacen, setAlmacen] = useState(almacenVigente(rescate?.almacen ?? "ALM-GRAL"));
   const [observaciones, setObservaciones] = useState(rescate?.observaciones ?? "");
   // Comentario para el APROBADOR: interno, no viaja al proveedor.
   const [notaInterna, setNotaInterna] = useState(rescate?.notaInterna ?? "");
@@ -637,7 +637,7 @@ export default function OrdenDirectaPage() {
               <Select value={currency} onChange={(e) => setCurrency(e.target.value)}>{MONEDAS.map((m) => <option key={m.value || "CRC"} value={m.value}>{m.label}</option>)}</Select>
             </Field>
             <Field label="Almacén / centro de costo de recepción" help="Dónde entra el material en BC. Por defecto el Almacén General, pero podés elegir cualquier centro de costo. Las líneas que van a una obra entran siempre al almacén de su obra.">
-              <Combobox items={catAlm} value={almacen} onChange={(k) => setAlmacen(k)}
+              <Combobox items={almacenesElegibles(catAlm, almacen)} value={almacen} onChange={(k) => setAlmacen(k)}
                 getKey={(a) => a.codigo} getLabel={(a) => `${a.codigo} — ${a.nombre}`}
                 getSearch={(a) => `${a.codigo} ${a.nombre}`}
                 groupBy={(a) => (esAlmacenFisico(a.codigo) ? "Bodegas" : "Centros de costo")}

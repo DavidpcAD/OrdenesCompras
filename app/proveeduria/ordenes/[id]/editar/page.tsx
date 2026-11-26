@@ -9,7 +9,7 @@ import { IconWarning } from "@/components/icons";
 import { Combobox } from "@/components/combobox";
 import { CampoMaquina, RepartoMaquinasModal, nombreDeMaquina, useMaquinasBc } from "@/components/maquina-linea";
 import { useStore } from "@/lib/store";
-import { cuenta, etiquetaTipoLinea, money, num, ordenEsDirecta, ordenEsperaCorreccion, lineasCorregidasDeOrden, ordenPedidos, almacenesParaRecepcion, almacenDeLinea, esAlmacenFisico, repartoDeLineaSolicitud, pedidoLineaPendiente, obraDeLinea, obraParaOrden, ultimoPrecioProveedor, monedaApp, numeroOrden, MONEDAS } from "@/lib/helpers";
+import { cuenta, etiquetaTipoLinea, money, num, ordenEsDirecta, ordenEsperaCorreccion, lineasCorregidasDeOrden, ordenPedidos, almacenesParaRecepcion, almacenesElegibles, almacenVigente, almacenDeLinea, esAlmacenFisico, repartoDeLineaSolicitud, pedidoLineaPendiente, obraDeLinea, obraParaOrden, ultimoPrecioProveedor, monedaApp, numeroOrden, MONEDAS } from "@/lib/helpers";
 import { precioEnUnidad, precioEntreUnidades, cantidadEntreUnidades, equivalencia, equivalenciaDeUnidad, mismaMoneda, codigoDeItem, opcionesDeUnidad, type UnidadDeItem, type PrecioRef } from "@/lib/unidad";
 import { useVariantes } from "@/lib/use-variantes";
 import { useSalida } from "@/lib/use-volver";
@@ -155,7 +155,8 @@ export default function EditarOrdenPage() {
   // Se edita cantidad × precio, igual que en compra directa: un cargo puede venir
   // como 17 × ₡1 121,00 y no como 1 × ₡19 057,00.
   const [cargoRows, setCargoRows] = useState<CargoRow[]>(filasDeCargos(orden?.lineas ?? []));
-  const [almacen, setAlmacen] = useState(almacenComun(orden?.lineas ?? []));
+  // Una orden vieja de stock en una bodega F- abre ya en ALM-FAB (`almacenVigente`).
+  const [almacen, setAlmacen] = useState(almacenVigente(almacenComun(orden?.lineas ?? [])));
   const [observaciones, setObservaciones] = useState(orden?.observaciones ?? "");
   const [notaInterna, setNotaInterna] = useState(orden?.notaInterna ?? "");
   const [prioridad, setPrioridad] = useState<Prioridad>(orden?.prioridad ?? "normal");
@@ -172,7 +173,7 @@ export default function EditarOrdenPage() {
     hidratado.current = true;
     setProveedorId(orden.proveedorId ?? "");
     setCurrency(monedaApp(orden.currencyCode));
-    setAlmacen(almacenComun(orden.lineas));
+    setAlmacen(almacenVigente(almacenComun(orden.lineas)));
     setObservaciones(orden.observaciones ?? "");
     setNotaInterna(orden.notaInterna ?? "");
     setPrioridad(orden.prioridad ?? "normal");
@@ -804,7 +805,7 @@ export default function EditarOrdenPage() {
               help={almacen
                 ? "Dónde entra el material en BC. Al guardar se aplica a todas las líneas, menos las que van a una obra: esas entran siempre al almacén de su obra."
                 : "Las líneas tienen almacenes distintos. Elegí uno solo si querés moverlas todas al mismo; si lo dejás en blanco, cada una se queda con el suyo."}>
-              <Combobox items={catAlm} value={almacen} onChange={(k) => setAlmacen(k)}
+              <Combobox items={almacenesElegibles(catAlm, almacen)} value={almacen} onChange={(k) => setAlmacen(k)}
                 getKey={(a) => a.codigo} getLabel={(a) => `${a.codigo} — ${a.nombre}`}
                 getSearch={(a) => `${a.codigo} ${a.nombre}`}
                 groupBy={(a) => (esAlmacenFisico(a.codigo) ? "Bodegas" : "Centros de costo")}

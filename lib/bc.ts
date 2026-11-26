@@ -8,7 +8,7 @@
 import type { OrdenLinea } from "./types.ts";
 import { claveVariante } from "./variantes.ts";
 import { codigoDeItem } from "./unidad.ts";
-import { almacenDeLinea } from "./helpers.ts";
+import { almacenDeLinea, almacenVigente } from "./helpers.ts";
 import { cotejarLineas, type Cotejo, type LineaApp, type LineaBc } from "./bc-conciliacion.ts";
 import type { FacturaBcPeriodo } from "./barrido-bc.ts";
 import { importeDelCargo, tipoDeFacturaBc, type FacturaMismoNumero } from "./cargo-recibido.ts";
@@ -1801,7 +1801,8 @@ export async function bcCrearPedido(input: { vendorNo: string; currencyCode?: st
   // Almacén de recepción fijo (p.ej. ALM-GRAL): aunque Ingeniería pida para una
   // obra, el material entra siempre al almacén general. Configurable por env.
   // La línea estándar de BC requiere el GUID (locationId), no el código.
-  const loc = input.locationCode || process.env.BC_RECEPCION_LOCATION;
+  // Stock: una bodega F- de fábrica pasa a ALM-FAB (`almacenVigente`).
+  const loc = almacenVigente(input.locationCode || process.env.BC_RECEPCION_LOCATION) || undefined;
   const locId = loc ? await getStdLocationId(cid, loc) : null;
   for (const l of lineas) {
     const lineBody: Record<string, unknown> = { lineType: "Item", lineObjectNumber: l.itemNo, quantity: l.cantidad };
@@ -2176,6 +2177,14 @@ export function ccForzadoDelAlmacen(locationCode?: string): string {
   return "";
 }
 
+// Línea de STOCK de producto (artículo sin obra): su almacén, el vigente (F- → ALM-FAB).
+// La compra a proyecto (con obra) se queda en el almacén de su obra.
+export function lineaStockVigente(l: LineaReplaceBc): LineaReplaceBc {
+  if (l.tipo !== "articulo" || (l.jobNo ?? "").trim()) return l;
+  const loc = almacenVigente(l.locationCode);
+  return loc === (l.locationCode ?? "").trim() ? l : { ...l, locationCode: loc };
+}
+
 // Traduce las líneas de la app al JSON que espera AdelantePO_ReplaceOrderLines.
 // Está separado y exportado porque acá se decide QUÉ CANTIDAD y QUÉ PRECIO quedan
 // en BC — o sea, contra qué van a recibir Bodega y facturar Contabilidad. Cubierto
@@ -2242,11 +2251,18 @@ function ccComunDeMateriales(lineas: LineaReplaceBc[]): string {
   return ccs.size === 1 && unico ? unico : "";
 }
 
-export function payloadReplaceLines(lineas: LineaReplaceBc[]): { lines: Record<string, unknown>[]; omitidas: string[] } {
+export function payloadReplaceLines(lineasIn: LineaReplaceBc[]): { lines: Record<string, unknown>[]; omitidas: string[] } {
   const lines: Record<string, unknown>[] = [];
   const omitidas: string[] = [];
+  // Última barrera antes de BC: el STOCK de producto no entra a una bodega F- de
+  // fábrica, va a ALM-FAB (ver `almacenVigente`). Todo lo que reescribe un pedido pasa
+  // por acá —crear al enviar, editar, devolver líneas—, así que ningún camino vuelve a
+  // ponerle una F- a una línea que en BC ya está en ALM-FAB (CP-006892 se recibió en
+  // F-AGREGADO porque un guardado le reescribió la ubicación). Va ANTES de las
+  // dimensiones: el CC lo amarra el almacén (ALM-FAB → INV).
+  const lineas = (lineasIn ?? []).map(lineaStockVigente);
   const ccDeLasLineas = ccComunDeMateriales(lineas);
-  for (const l of lineas ?? []) {
+  for (const l of lineas) {
     const nombre = l.descripcion || l.itemNo || l.chargeNo || "línea sin nombre";
     const cantidad = Number(l.cantidad) || 0;
     // El codeunit también omite las cantidades <= 0, pero se filtran acá para que el
