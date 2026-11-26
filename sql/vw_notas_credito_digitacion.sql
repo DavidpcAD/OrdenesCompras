@@ -19,6 +19,7 @@
 -- El link a la factura en BC lo arma Digitación con el bcNo (ver el mensaje de
 -- entrega): page=146 (Posted Purchase Invoices) filtrado por 'Order No.' IS '{bcNo}'.
 --
+-- Requiere la columna dbo.NotaCreditoDet.cierreMotivo (sql/notas_credito.sql).
 -- Idempotente (CREATE OR ALTER). La corre David en AdelantePRO.
 -- ============================================================================
 CREATE OR ALTER VIEW dbo.vw_NotasCredito_Digitacion
@@ -38,7 +39,10 @@ SELECT
   nc.nota,
   nc.estado,                          -- 'pendiente' | 'resuelta' (resuelta = ya aplicada)
   nc.fechaCreacion,
-  nc.creadoPor                        -- usuario de Bodega que la marcó
+  nc.creadoPor,                       -- usuario de Bodega que la marcó
+  -- Motivo del cierre SIN nota de crédito (sp_CerrarNotaCreditoSinNC); NULL si se
+  -- aplicó con NC o sigue pendiente. Solo cuenta mientras la línea esté resuelta.
+  CASE WHEN nc.estado = N'resuelta' THEN nc.cierreMotivo END AS cierreMotivo
 FROM dbo.NotaCreditoDet nc
 LEFT JOIN dbo.OrdenCompra    o  ON o.idOrdenCompra     = nc.idOrdenCompra
 LEFT JOIN dbo.OrdenCompraDet od ON od.idOrdenCompraDet = nc.idOrdenCompraDet
