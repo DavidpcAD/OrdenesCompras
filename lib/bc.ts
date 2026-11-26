@@ -3107,7 +3107,13 @@ export function crearEnBcAlEnviar(): boolean {
 // El registro SÍ se puede hacer: lo que falta es reabrir el pedido. Se hace acá, se
 // reintenta UNA vez, y `Purch.-Post` lo vuelve a lanzar al registrar. Si el reintento
 // también falla, el mensaje avisa que el pedido quedó abierto en BC.
-const BC_PIDE_ABIERTO = /Status must be equal to 'Open'|El estado debe ser igual a 'Abierto'|no está Abierto en Business Central/i;
+//
+// "debe estar Abierto" es el freno del propio codeunit en AdelantePO_ReplaceOrderLines
+// ("El pedido X debe estar Abierto para reescribir líneas. Estado actual: Released").
+// Sin él, el reenvío de una orden con el pedido Lanzado y el encabezado igual (nada
+// que sincronizar, así que nadie lo reabría antes) no reabría nunca: las líneas
+// quedaban VIEJAS en BC y la orden se iba a aprobación igual (CP-006578, 26 nov 2026).
+const BC_PIDE_ABIERTO = /Status must be equal to 'Open'|El estado debe ser igual a 'Abierto'|no está Abierto en Business Central|debe estar Abierto/i;
 
 /** ¿El error de BC es "este pedido tiene que estar Abierto"? (cubierto por tests) */
 export function bcPideAbierto(textoDelError: string): boolean {

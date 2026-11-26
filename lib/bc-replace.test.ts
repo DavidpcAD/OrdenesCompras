@@ -503,6 +503,10 @@ test("se reconoce el error de BC que pide el pedido abierto", () => {
   // El mensaje que arma la propia app al sincronizar el encabezado: es el mismo hecho
   // dicho en nuestras palabras, y tiene que disparar el reabrir-y-reintentar.
   assert.equal(bcPideAbierto("el pedido CP-005249 no está Abierto en Business Central (está Released) y así no se le puede cambiar el encabezado: reabrilo primero"), true);
+  // El freno del codeunit al reescribir líneas, tal como llega (con la í escapada en el
+  // JSON). Sin esto el reenvío dejaba las líneas viejas en BC.
+  const replace = `BC 400: {"error":{"code":"Application_DialogException","message":"El pedido CP-000000 debe estar Abierto para reescribir l\\u00edneas. Estado actual: Released. Re\\u00e1brelo primero (AdelantePO_ReopenOrder).  CorrelationId:  00000000-0000-0000-0000-000000000000."}}`;
+  assert.equal(bcPideAbierto(replace), true);
   // Un error cualquiera NO puede disparar la reapertura del pedido.
   assert.equal(bcPideAbierto(`{"error":{"message":"The field Vendor Invoice No. of table Purchase Header contains a value that cannot be found"}}`), false);
   assert.equal(bcPideAbierto(""), false);
