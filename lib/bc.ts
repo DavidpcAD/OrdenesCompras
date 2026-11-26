@@ -13,6 +13,7 @@ import { cotejarLineas, type Cotejo, type LineaApp, type LineaBc } from "./bc-co
 import type { FacturaBcPeriodo } from "./barrido-bc.ts";
 import { importeDelCargo, tipoDeFacturaBc, type FacturaMismoNumero } from "./cargo-recibido.ts";
 import { duenoDeLaFactura, facturaNoSirve, pruebaQueYaEntro } from "./factura-ajena.ts";
+import { CAMPOS_FICHA, fichaDeOdata, type ProveedorFicha } from "./proveedores.ts";
 
 type TokenCache = { token: string; exp: number };
 let tokenCache: TokenCache | null = null;
@@ -5567,6 +5568,29 @@ export async function bcProveedoresConCedula(): Promise<BcProveedorCedula[]> {
       });
     }
     if (filas.length < VIG_PAGINA) break;
+  }
+  return out.filter((p) => p.codigo);
+}
+
+/**
+ * La ficha COMPLETA de cada proveedor, para la pantalla Proveedores (contacto,
+ * cédula, condiciones de pago, saldo). Sale del web service OData
+ * `Ficha_proveedor_Excel` y no de la API estándar porque esa no trae celular,
+ * tipo de identificación, grupos contables ni lo vencido. Trae TODO, bloqueados
+ * incluidos: es para consultar, no para escoger. Solo lectura; se cachea 10 min
+ * (son ~850 fichas y BC tarda unos 3 s en darlas).
+ */
+export async function bcFichaProveedores(): Promise<ProveedorFicha[]> {
+  const empresa = await getCompanyName();
+  let url: string | null = `${odataRoot()}/Company('${encodeURIComponent(empresa)}')/Ficha_proveedor_Excel?$select=${CAMPOS_FICHA}`;
+  const out: ProveedorFicha[] = [];
+  let guard = 0;
+  while (url && guard++ < 50) {
+    const res = await bcFetch(url, { next: { revalidate: 600 } } as RequestInit);
+    if (!res.ok) throw new Error(`BC ${res.status} en Ficha_proveedor_Excel: ${(await res.text()).slice(0, 250)}`);
+    const data: any = await res.json();
+    for (const r of data.value ?? []) out.push(fichaDeOdata(r));
+    url = data["@odata.nextLink"] ?? null;
   }
   return out.filter((p) => p.codigo);
 }

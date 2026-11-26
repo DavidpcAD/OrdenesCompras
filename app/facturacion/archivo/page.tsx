@@ -12,7 +12,7 @@ import { OtrasEnRevision } from "@/components/otras-en-revision";
 import { NoLlegoDialogo } from "@/components/no-llego-dialogo";
 import { useStore } from "@/lib/store";
 import { api } from "@/lib/api";
-import { cuenta, money, formatDate, formatDateTime, juntarLineasDeRecepcion, leerNotaRevision, lineasDeRecepcion, MARCA_DESDE_REVISION, num, numeroOrden, precioUnit, todayISO, type CantidadFacturada } from "@/lib/helpers";
+import { cuenta, money, formatDate, formatDateTime, juntarLineasDeRecepcion, leerNotaRevision, lineasDeRecepcion, MARCA_DESDE_REVISION, num, numeroOrden, ordenPedidos, precioUnit, todayISO, type CantidadFacturada } from "@/lib/helpers";
 import { codigoDeItem } from "@/lib/unidad";
 import type { EnvioARevision, FacturadaDesdeRevision, Movimiento, Orden, Recepcion } from "@/lib/types";
 
@@ -495,6 +495,10 @@ function ArchivoContenido() {
     // correos viejos, así que pegarlo en el buscador tiene que seguir encontrando la
     // factura. El buscador mira todas las columnas; el export, solo las visibles.
     { id: "ordenInterno", header: "N.º interno", accessorFn: (r) => ordenDe(r)?.numero ?? "", meta: { label: "N.º interno" }, cell: (c) => <span className="ds-muted">{c.getValue()}</span> },
+    // De qué solicitud viene y quién armó la orden (nov 2026): para el seguimiento
+    // de una NC había que ir a BC a buscarlo.
+    { id: "solicitud", header: "Solicitud", accessorFn: (r) => { const o = ordenDe(r); return o ? (ordenPedidos(o).join(" ") || "Directa") : "—"; }, meta: { label: "Solicitud" }, cell: (c) => <span className="ds-body-sm">{c.getValue()}</span> },
+    { id: "creadaPor", header: "Orden creada por", accessorFn: (r) => ordenDe(r)?.creadoPor || "—", meta: { label: "Orden creada por" }, cell: (c) => <span className="ds-body-sm">{c.getValue()}</span> },
     { id: "proveedor", header: "Proveedor", accessorFn: (r) => { const o = ordenDe(r); return (o ? (o.proveedorNombre ?? prov(o.proveedorId)?.nombre) : "") ?? "—"; }, meta: { label: "Proveedor" }, cell: (c) => c.getValue() },
     { id: "fecha", header: "Fecha registro", accessorFn: (r) => r.fechaRegistro, meta: { label: "Fecha registro" }, cell: (c) => formatDate(c.getValue()) },
     { id: "recibidoPor", header: "Recibido por", accessorFn: (r) => r.recibidoPor ?? "—", meta: { label: "Recibido por" }, cell: (c) => <span className="ds-body-sm">{c.getValue()}</span> },

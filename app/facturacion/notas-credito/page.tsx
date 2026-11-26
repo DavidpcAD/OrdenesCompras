@@ -5,14 +5,14 @@ import Link from "next/link";
 import { Badge, Button, Card, EmptyState, Tile, useToast } from "@/components/ui";
 import { IconEdit, IconReceipt, IconBox, IconEye } from "@/components/icons";
 import { useStore } from "@/lib/store";
-import { cuenta, money, formatDate, motivoNC } from "@/lib/helpers";
+import { cuenta, money, formatDate, motivoNC, ordenPedidos } from "@/lib/helpers";
 
 // Notas de crédito (Bodega · Kattya): líneas de facturas recibidas marcadas con
 // problema (dañado / menos cantidad / precio distinto / llegó otro material)
 // para emitir una NC.
 // Distinto de Devoluciones (que devuelve toda la OC/pedido).
 export default function NotasCreditoPage() {
-  const { notasCredito, cargarNotasCredito, recepciones, resolverNotaCredito } = useStore();
+  const { notasCredito, cargarNotasCredito, recepciones, ordenes, resolverNotaCredito } = useStore();
   const toast = useToast();
   useEffect(() => { cargarNotasCredito(); /* eslint-disable-next-line */ }, []);
   // Por defecto se ven las pendientes; el toggle muestra las ya acreditadas para
@@ -86,10 +86,27 @@ export default function NotasCreditoPage() {
               // o alguna parcial). Si se recibió todo de una, va solo "Factura registrada".
               const recs = recepciones.filter((r) => r.ordenId === g.ordenId);
               const huboParciales = recs.length > 1 || recs.some((r) => r.parcial);
+              // TODOS LOS NÚMEROS DE LA ORDEN (nov 2026): para darle seguimiento a la NC
+              // había que ir a BC a ver de qué solicitud venía la compra y quién la
+              // armó. Ahora va acá: la solicitud (PED-…), quién creó la orden, las
+              // facturas (la del proveedor y la de BC) y quién recibió.
+              const o = ordenes.find((x) => String(x.id) === String(g.ordenId));
+              const peds = o ? ordenPedidos(o) : [];
+              const facturas = [...new Set(recs.map((r) => [r.numeroFactura, r.bcFacturaNo].filter(Boolean).join(" / ")).filter(Boolean))];
+              const recibio = [...new Set(recs.map((r) => r.recibidoPor).filter(Boolean))];
+              const datos = [
+                o ? `Solicitud ${peds.length ? peds.join(", ") : "— compra directa"}` : null,
+                o?.creadoPor ? `Orden creada por ${o.creadoPor}` : null,
+                facturas.length ? `Factura ${facturas.join(", ")}` : null,
+                recibio.length ? `Recibida por ${recibio.join(", ")}` : null,
+              ].filter(Boolean).join(" · ");
               return (
               <Card key={gi} style={{ padding: 0, overflow: "hidden" }}>
                 <div className="nc-grp-head">
-                  <span className="ds-strong">{g.ordenNumero || "— sin orden"}{g.proveedor ? <span className="ds-muted"> · {g.proveedor}</span> : null}</span>
+                  <span className="col" style={{ gap: 2, minWidth: 0 }}>
+                    <span className="ds-strong">{g.ordenNumero || "— sin orden"}{g.proveedor ? <span className="ds-muted"> · {g.proveedor}</span> : null}</span>
+                    {datos && <span className="ds-body-sm ds-muted">{datos}</span>}
+                  </span>
                   <span className="row gap-3 wrap" style={{ alignItems: "center" }}>
                     <span className="ds-body-sm ds-muted">{cuenta(g.lineas.length, "línea", "líneas")}</span>
                     {g.bcFacturaUrl && (

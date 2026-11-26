@@ -8,7 +8,7 @@ import { FotosFactura } from "@/components/fotos-factura";
 import { VersionesRecepcion } from "@/components/versiones-recepcion";
 import { useStore } from "@/lib/store";
 import { useFiltroPantalla } from "@/lib/use-filtro-pantalla";
-import { money, formatDate, todayISO, numeroOrden, motivoNC, precioUnit } from "@/lib/helpers";
+import { money, formatDate, todayISO, numeroOrden, motivoNC, ordenPedidos, precioUnit } from "@/lib/helpers";
 import type { Recepcion } from "@/lib/types";
 import Link from "next/link";
 
@@ -78,7 +78,7 @@ export default function RecibidasPage() {
       const prov = o ? (o.proveedorNombre ?? proveedores.find((p) => p.id === o.proveedorId)?.nombre ?? "") : "";
       // Se busca por lo que se VE (el rótulo o el N.º de BC) y también por el CP-
       // interno crudo, que es el que anda en correos y en la bitácora.
-      return [r.numeroFactura, r.bcFacturaNo, o ? numeroOrden(o) : "", o?.numero, o?.bcNumber, prov, r.recibidoPor, formatDate(r.fechaRecepcion)]
+      return [r.numeroFactura, r.bcFacturaNo, o ? numeroOrden(o) : "", o?.numero, o?.bcNumber, prov, r.recibidoPor, o?.creadoPor, ...(o ? ordenPedidos(o) : []), formatDate(r.fechaRecepcion)]
         .some((v) => (v ?? "").toLowerCase().includes(t));
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -194,6 +194,20 @@ export default function RecibidasPage() {
                       <span className="ds-label ds-muted">Recibido por</span>
                       <span className="ds-body-sm ds-strong">{r.recibidoPor || "—"}</span>
                     </span>
+                    {/* De qué solicitud viene la compra y quién armó la orden: sin esto
+                        había que buscarlo en BC para darle seguimiento (nov 2026). */}
+                    {o && (
+                      <span className="col" style={{ gap: 1 }}>
+                        <span className="ds-label ds-muted">Solicitud</span>
+                        <span className="ds-body-sm ds-strong">{ordenPedidos(o).join(", ") || "Compra directa"}</span>
+                      </span>
+                    )}
+                    {o?.creadoPor && (
+                      <span className="col" style={{ gap: 1 }}>
+                        <span className="ds-label ds-muted">Orden creada por</span>
+                        <span className="ds-body-sm ds-strong">{o.creadoPor}</span>
+                      </span>
+                    )}
                     <span className="col" style={{ gap: 1 }}>
                       <span className="ds-label ds-muted">Líneas</span>
                       <span className="ds-body-sm ds-strong">{r.lineas.length} · {unidades} und</span>

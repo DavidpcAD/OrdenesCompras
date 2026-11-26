@@ -499,6 +499,25 @@ const GENERIC: HelpEntry = {
   ],
 };
 
+const PROVEEDORES: HelpEntry = {
+  titulo: "Proveedores",
+  resumen: "La ficha de cada proveedor en Business Central, con sus notas de crédito pendientes.",
+  detalle: [
+    "Sirve para saber a quién llamar o escribir por una nota de crédito sin abrir Business Central.",
+    "Los datos salen de la ficha de BC tal cual. Si falta el teléfono, el correo o la cédula, se completa en BC y aparece acá.",
+  ],
+  pasos: [
+    "Tocá “Con NC pendientes” para ver solo los proveedores a los que hay que pedirles una nota de crédito. Salen primero los que tienen más líneas.",
+    "Buscá por nombre, código, cédula, teléfono o correo en la barra de búsqueda.",
+    "Tocá ⇕ en una fila para ver la ficha completa y sus NC pendientes: orden, solicitud, quién creó la orden, material, motivo e importe.",
+    "En el celular, tocá el teléfono para llamar o el correo para escribir.",
+    "En “Columnas” podés mostrar el resto de la ficha (dirección, grupos contables, vencido…). “Exportar” descarga lo que estás viendo.",
+  ],
+  tips: [
+    "“Sin teléfono ni correo” muestra las fichas que hay que completar en BC.",
+  ],
+};
+
 // Devuelve la ayuda de la ruta actual (de la más específica a la más general).
 export function helpForPath(p: string, vista?: string | null): HelpEntry {
   // ---- Bodega ----
@@ -506,6 +525,8 @@ export function helpForPath(p: string, vista?: string | null): HelpEntry {
   if (p.startsWith("/facturacion/recibidas")) return RECIBIDAS;
   if (p.startsWith("/facturacion/archivo")) return ARCHIVO;
   if (p.startsWith("/facturacion/notas-credito")) return NOTAS_CREDITO;
+  // Antes de la regla de /facturacion/{id}: "proveedores" también es un segmento suelto.
+  if (p.startsWith("/facturacion/proveedores")) return PROVEEDORES;
   if (p.startsWith("/facturacion/cargo")) return CARGO;
   if (p.startsWith("/facturacion/todas")) return TODAS;
   if (p.startsWith("/facturacion/devoluciones")) return DEVOLUCIONES;

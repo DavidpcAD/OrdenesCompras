@@ -1192,6 +1192,12 @@ td.ds-col-fija {
 .panel-orden__hist { margin-top: var(--ds-space-4); border-top: 1px solid var(--ds-color-gray-100); padding-top: var(--ds-space-3); }
 @media (max-width: 760px) { .panel-orden__totales { grid-template-columns: minmax(0, 1fr); } }
 
+/* Proveedores: la ficha completa al desplegar una fila. Tres bloques (contacto,
+   identificación y pago, contabilidad) que se acomodan solos al ancho. */
+.prov-ficha { padding: var(--ds-space-2) var(--ds-space-2) var(--ds-space-3); }
+.prov-ficha__grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 0 var(--ds-space-6); }
+.prov-ficha__grid .rev-datos { margin-top: var(--ds-space-2); }
+
 /* ── Paso de revisión antes de escribir en BC (registrar factura, corregir precio) ──
    Datos clave en pares rótulo/valor, las líneas que se mueven y el total que se
    compara contra el papel. */

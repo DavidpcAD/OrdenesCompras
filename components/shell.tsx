@@ -12,7 +12,7 @@ import { marcarNavegacion } from "@/lib/navegacion";
 import { borrarCacheBootstrap } from "@/lib/cache-bootstrap";
 import {
   IconBell, IconList, IconReceipt, IconCheck, IconDelivery, IconFolder,
-  IconPlus, IconLogout, IconBox, IconWarning, IconEdit, IconMatrix,
+  IconPlus, IconLogout, IconBox, IconWarning, IconEdit, IconMatrix, IconUser,
   AdelanteMark,
 } from "@/components/icons";
 
@@ -83,6 +83,9 @@ const ROLE_META: Record<Role, { label: string; persona: string; home: string; na
     nav: [
       { href: "/facturacion", label: "Órdenes por recibir", icon: IconDelivery },
       { href: "/facturacion/recibidas", label: "Facturas digitadas", icon: IconCheck },
+      // La ficha de BC de cada proveedor (teléfono, correo, cédula) con sus NC
+      // pendientes. Va también acá porque Jessie y Jerson entran con este rol.
+      { href: "/facturacion/proveedores", label: "Proveedores", icon: IconUser },
     ],
   },
   contabilidad: {
@@ -95,6 +98,8 @@ const ROLE_META: Record<Role, { label: string; persona: string; home: string; na
       // la dejaba registrar; lo único que faltaba era la entrada en el menú.
       { href: "/facturacion", label: "Órdenes por recibir", icon: IconDelivery },
       { href: "/facturacion/notas-credito", label: "Notas de crédito", icon: IconEdit },
+      // Con quién hablar por cada NC: la ficha de BC del proveedor y lo que tiene pendiente.
+      { href: "/facturacion/proveedores", label: "Proveedores", icon: IconUser },
       { href: "/facturacion/cargo", label: "Cargo sobre factura", icon: IconPlus },
       // Los detalles que cuelgan de estas dos entran por `alt`: sin eso, ahora que
       // "/facturacion" está en el menú, el riel saltaba a Órdenes por recibir al abrir
