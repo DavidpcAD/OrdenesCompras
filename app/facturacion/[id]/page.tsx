@@ -3,7 +3,7 @@
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Badge, Button, Card, Checkbox, EmptyState, Field, Input, Modal, Persona, Select, Skeleton, Textarea, useToast } from "@/components/ui";
-import { IconWarning } from "@/components/icons";
+import { IconChevronDown, IconWarning } from "@/components/icons";
 import { DateField } from "@/components/date-field";
 import { DestinoOrden } from "@/components/destino-linea";
 import { useStore } from "@/lib/store";
@@ -114,6 +114,8 @@ export default function RegistrarFacturaPage() {
   // BC frena el registro: al volver a abrir no hay que escribirlo otra vez.
   const [revision, setRevision] = useState<{ abierta: boolean; factura: string; motivo: MotivoRevision | ""; detalle: string }>(
     { abierta: false, factura: "", motivo: "", detalle: "" });
+  // Bodega no ve "Recibir sin factura" de entrada: primero abre esta pregunta.
+  const [sinFacturaAbierto, setSinFacturaAbierto] = useState(false);
   const [fechaFactura, setFechaFactura] = useState(todayISO());
   const [fechaRegistro, setFechaRegistro] = useState(todayISO());
   const [fechaRecepcion, setFechaRecepcion] = useState(todayISO());
@@ -1406,7 +1408,11 @@ export default function RegistrarFacturaPage() {
           </div>
           <div className="row gap-3 wrap recv-actions">
             <Button variant="outline" onClick={() => setPreview(true)} disabled={!algoRecibido}>Vista previa</Button>
-            <Button variant="ghost" onClick={abrirRevision} disabled={!algoRecibido || guardando} title="El material llegó pero la factura no se puede registrar todavía: recibí el material y mandá la factura a revisión (te pide el motivo).">Recibir sin factura (a revisión)</Button>
+            {/* Contabilidad es la dueña de la revisión: a ella el botón le queda a mano.
+                A Bodega no (ver "¿Llegó el material pero no la factura?", abajo). */}
+            {esContabilidad && (
+              <Button variant="ghost" onClick={abrirRevision} disabled={!algoRecibido || guardando} title="El material llegó pero la factura no se puede registrar todavía: recibí el material y mandá la factura a revisión (te pide el motivo).">Recibir sin factura (a revisión)</Button>
+            )}
             <Button variant="green" onClick={registrar} disabled={!algoRecibido || !numeroFactura.trim() || (tarjetaOn && (!tarjeta || !dimCode || !dimValue))} loading={guardando}>{guardando ? "Registrando…" : "Registrar factura"}</Button>
           </div>
           {guardando && (
@@ -1416,6 +1422,36 @@ export default function RegistrarFacturaPage() {
             </p>
           )}
         </div>
+
+        {/* RECIBIR SIN FACTURA, PARA BODEGA: un paso más, no a primera vista. Estaba
+            al lado de "Registrar factura" y se usaba de más (nov 2026: recepciones
+            que quedaban en revisión sin motivo y le tocaba a Contabilidad desenredarlas).
+            Ahora primero hay que abrir la pregunta, leer cuándo corresponde y recién ahí
+            aparece el botón, que igual pide N.º y motivo antes de recibir. */}
+        {!esContabilidad && (
+          <div className="mt-6">
+            <button type="button" className="rec-card__toggle" aria-expanded={sinFacturaAbierto} aria-controls="recibir-sin-factura"
+              onClick={() => setSinFacturaAbierto((v) => !v)}>
+              <IconChevronDown size={16} className={`rec-card__chev${sinFacturaAbierto ? " is-open" : ""}`} />
+              ¿Llegó el material pero no la factura?
+            </button>
+            {sinFacturaAbierto && (
+              <div id="recibir-sin-factura" className="ds-callout ds-callout--yellow mt-2">
+                <span className="ds-callout__icon"><IconWarning size={18} /></span>
+                <div>
+                  <div className="ds-callout__title">Solo si el material no puede esperar la factura</div>
+                  <div className="ds-callout__body">
+                    Lo normal es esperar la factura y registrarla acá con su número. Si el material ya se tiene que usar,
+                    se puede recibir sin factura: entra al inventario y la factura queda pendiente para que Contabilidad la registre.
+                  </div>
+                  <Button variant="outline" size="sm" className="mt-3" onClick={abrirRevision} disabled={!algoRecibido || guardando}>
+                    Recibir sin factura…
+                  </Button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
 
         {ncModal && (
           <Modal

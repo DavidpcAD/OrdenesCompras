@@ -322,7 +322,7 @@ const ORDENES_POR_RECIBIR: HelpEntry = {
 };
 const RECIBIR: HelpEntry = {
   titulo: "Recibir / registrar factura",
-  resumen: "Anotá lo que llegó y registrá (o dejá en revisión) la factura.",
+  resumen: "Anotá lo que llegó y registrá la factura.",
   detalle: [
     "Acá confirmás cuánto material entró a bodega y registrás la factura del proveedor.",
     "Abajo ves el Subtotal, IVA y Total de la factura tal cual va a Business Central.",
@@ -335,7 +335,7 @@ const RECIBIR: HelpEntry = {
     "Antes de registrar, en “Foto de la factura” podés adjuntar la foto de la factura física: se guarda con la recepción y después la ves en Facturas digitadas.",
     "Si la factura está bien → “Registrar factura” y escribí el N.º de factura del proveedor.",
     "Al escribir el N.º, la app busca el comprobante que el proveedor mandó al correo de facturación. Si lo encuentra, bajo “Fecha de la factura” te dice la fecha de emisión de verdad y si no coincide con la que pusiste; “Usar esa fecha” la corrige.",
-    "Si el material está bien pero la factura tiene un problema → “Recibir sin factura (a revisión)”: Contabilidad la registra después.",
+    "Lo normal es esperar la factura. Si no vino (o viene mala) y el material ya se tiene que usar → abajo de todo, “¿Llegó el material pero no la factura?” → “Recibir sin factura”: te pide el motivo y Contabilidad la registra después.",
   ],
   tips: [
     "Podés recibir parcial: registrás lo que llegó y la orden queda abierta para el resto.",
