@@ -2173,6 +2173,44 @@ td.ds-col-fija {
 .filtro-chip__dot { background: var(--filtro-accent, var(--ds-color-green-100)); }
 .filtro-chip__n { font-size: var(--ds-font-size-body-md); font-weight: var(--ds-font-weight-semibold); color: var(--ds-text); font-variant-numeric: tabular-nums; }
 
+/* ---- Solicitudes: lista con el detalle al lado (components/compras-solicitudes.tsx)
+   La tabla y el panel van en dos columnas cuando la zona da para las dos (lo decide
+   el componente midiendo, no un @media: con el riel fijado la misma ventana deja
+   200 px menos). El panel se queda pegado mientras la tabla baja, igual que la lista
+   de pedidos de `.md-aside`: un detalle que se va de la pantalla al segundo scroll
+   obliga a subir a leerlo. Título y botones fijos; scrollea solo el cuerpo. */
+.sol-md { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--ds-space-6); align-items: start; margin-top: var(--ds-space-6); }
+.sol-md--al-lado { grid-template-columns: minmax(0, 1fr) 400px; }
+.sol-md__lista { min-width: 0; }
+.sol-panel {
+  /* El tope de alto lo pone el componente según dónde está el panel (ver `panelRef`);
+     este es el respaldo hasta que mide. */
+  position: sticky; top: 80px; max-height: calc(100dvh - 104px);
+  display: flex; flex-direction: column; min-width: 0; overflow: hidden;
+  background: var(--ds-surface); border-radius: var(--ds-radius-lg); box-shadow: var(--ds-shadow-01);
+}
+.sol-panel--vacio { justify-content: center; min-height: 320px; }
+.sol-panel__top { display: flex; align-items: center; justify-content: space-between; gap: var(--ds-space-3); padding: var(--ds-space-3) var(--ds-space-3) 0 var(--ds-space-6); flex-shrink: 0; }
+.sol-panel__cuerpo { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: var(--ds-space-1) var(--ds-space-6) var(--ds-space-6); }
+.sol-panel__pie { display: flex; gap: var(--ds-space-3); padding: var(--ds-space-4) var(--ds-space-6); border-top: 1px solid var(--ds-color-gray-100); flex-shrink: 0; }
+.sol-panel__pie > .ds-btn { flex: 1 1 0; min-width: 0; }
+.sol-panel__sub { margin-top: var(--ds-space-1); }
+.sol-panel__datos { margin: var(--ds-space-4) 0 0; font-size: var(--ds-font-size-label); gap: var(--ds-space-2) var(--ds-space-4); }
+.sol-panel__h { display: flex; align-items: center; gap: var(--ds-space-2); margin: var(--ds-space-6) 0 var(--ds-space-3); font-size: var(--ds-font-size-label); font-weight: var(--ds-font-weight-semibold); }
+/* Observaciones: bloque de relleno gray-100 dentro de la tarjeta blanca (la regla
+   del DS para separar algo dentro de una Card: relleno, no borde ni sombra). */
+.sol-panel__nota { background: var(--ds-color-gray-100); border-radius: var(--ds-radius-md); padding: var(--ds-space-3) var(--ds-space-4); font-size: var(--ds-font-size-label); white-space: pre-wrap; overflow-wrap: anywhere; }
+/* Los artículos: lista con divisores, sin tabla (el thead negro del DS en un panel
+   de 400 px se come el ancho y la cantidad quedaba partida en dos renglones). */
+.sol-art { list-style: none; margin: 0; padding: 0; }
+.sol-art__fila { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--ds-space-4); padding: var(--ds-space-3) 0; border-bottom: 1px solid var(--ds-color-gray-100); }
+.sol-art__fila:first-child { padding-top: 0; }
+.sol-art__fila:last-child { border-bottom: 0; }
+.sol-art__fila.is-apagada .sol-art__nombre, .sol-art__fila.is-apagada .sol-art__cant { color: var(--ds-color-gray-400); }
+.sol-art__desc { min-width: 0; }
+.sol-art__nombre { font-size: var(--ds-font-size-label); overflow-wrap: anywhere; }
+.sol-art__cant { display: flex; align-items: baseline; gap: var(--ds-space-1); flex-shrink: 0; font-size: var(--ds-font-size-label); font-variant-numeric: tabular-nums; white-space: nowrap; }
+
 @media (max-width: 760px) {
   /* "Ver por" baja a su propia línea y las pestañas se corren de lado en vez de
      envolverse: envueltas dejaban la segunda fila suelta, con el subrayado despegado
